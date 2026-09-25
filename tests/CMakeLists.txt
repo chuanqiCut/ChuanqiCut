@@ -112,3 +112,21 @@ if(Python3_Interpreter_FOUND)
         COMMAND ${Python3_EXECUTABLE}
                 ${CMAKE_SOURCE_DIR}/tools/pal/check_pal_headers.py)
 endif()
+
+# ---- PALA-001：Apple Metal 后端离屏渲染 + 读回像素验证 ----
+# 仅在 Apple 平台构建。链接 cq_pal_apple（Metal 实现）与 cq_core，证明：
+#   * 用例 A：清屏红 -> 读回中心像素 = (255,0,0,255)
+#   * 用例 B：全屏采样四色纹理 -> 读回四角 = 红/绿/蓝/黄（采样管线真的通）
+# 测试 TU 为纯 C++，只通过 pal/apple 内部辅助（ReadRenderTargetPixels / UploadTextureData）
+# 接触 Metal，不污染内核头。
+if(APPLE)
+    add_executable(cq_tests_pala_metal
+        unit/test_gfx_metal.cpp)
+    target_include_directories(cq_tests_pala_metal PRIVATE
+        ${CMAKE_SOURCE_DIR}/core/include
+        ${CMAKE_SOURCE_DIR}/pal/apple)
+    target_link_libraries(cq_tests_pala_metal PRIVATE cq_core cq_pal_apple)
+    cq_require_cxx20(cq_tests_pala_metal)
+    apply_cq_warnings(cq_tests_pala_metal)
+    add_test(NAME pala_metal_render COMMAND cq_tests_pala_metal)
+endif()

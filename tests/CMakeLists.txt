@@ -24,3 +24,37 @@ cq_require_cxx20(cq_tests_cxx20_smoke)
 apply_cq_warnings(cq_tests_cxx20_smoke)
 
 add_test(NAME cq_cxx20_smoke COMMAND cq_tests_cxx20_smoke)
+
+# ---- CORE-001 / CORE-002：base 层单测 ----
+# 复用与 smoke 一致的编译/警告配置（-Werror + 项目警告集合）。
+# 命名：test name 以 core_ 前缀，便于 `ctest -R core_time` / `ctest -R core_status`。
+
+add_executable(cq_tests_core_time
+    unit/test_time.cpp)
+target_link_libraries(cq_tests_core_time PRIVATE cq_core)
+cq_require_cxx20(cq_tests_core_time)
+apply_cq_warnings(cq_tests_core_time)
+add_test(NAME core_time COMMAND cq_tests_core_time)
+
+add_executable(cq_tests_core_status
+    unit/test_status.cpp)
+target_link_libraries(cq_tests_core_status PRIVATE cq_core)
+cq_require_cxx20(cq_tests_core_status)
+apply_cq_warnings(cq_tests_core_status)
+add_test(NAME core_status COMMAND cq_tests_core_status)
+
+# ---- CORE-003：日志与帧级 trace ----
+add_executable(cq_tests_core_log
+    unit/test_log.cpp)
+target_link_libraries(cq_tests_core_log PRIVATE cq_core)
+cq_require_cxx20(cq_tests_core_log)
+apply_cq_warnings(cq_tests_core_log)
+add_test(NAME core_log COMMAND cq_tests_core_log)
+
+# ---- CORE-004：内存池 / Arena / 纹理预算记账 ----
+add_executable(cq_tests_core_alloc
+    unit/test_alloc.cpp)
+target_link_libraries(cq_tests_core_alloc PRIVATE cq_core)
+cq_require_cxx20(cq_tests_core_alloc)
+apply_cq_warnings(cq_tests_core_alloc)
+add_test(NAME core_alloc COMMAND cq_tests_core_alloc)

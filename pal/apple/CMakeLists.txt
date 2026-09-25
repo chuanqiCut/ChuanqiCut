@@ -8,7 +8,8 @@
 
 add_library(cq_pal_apple STATIC
     gfx_metal.mm
-    gfx_metal_internal.h)
+    gfx_metal_internal.h
+    media_demux.mm)
 
 target_include_directories(cq_pal_apple PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}

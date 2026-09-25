@@ -15,7 +15,11 @@ include(${CMAKE_SOURCE_DIR}/cmake/Warnings.cmake)
 # 它不实现任何内核业务逻辑，只用于：(1) 让静态库非空、可链接；
 # (2) 证明该 TU 在 -Werror 下能干净编译；(3) 给 smoke 测试提供可链接目标。
 add_library(cq_core STATIC
-    src/cq_build_anchor.cpp)
+    src/cq_build_anchor.cpp
+    src/base/status.cpp
+    src/base/time.cpp
+    src/base/log.cpp
+    src/base/alloc.cpp)
 
 # 公共头目录：对外 C ABI 伞形头 core/include。
 target_include_directories(cq_core PUBLIC

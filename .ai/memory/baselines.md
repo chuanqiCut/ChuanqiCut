@@ -320,3 +320,72 @@ cd third_party/src/ffmpeg
 > **正确路径**：Apple 平台的图片导入应走**原生 API**（`ImageIO` / `Photos.framework` / `CoreGraphics`），FFmpeg demux 档位只负责**视频容器**与**受支持的位图格式**（PNG/JPEG/WebP/GIF 等）。
 > **不要**试图加 `heic` demuxer —— 它不存在；HEIC 解码应作为独立能力（原生框架或后续引入的专用解码库）处理，不在本 demux 档位职责内。
 > 此结论对后续视频编辑 SDK 的图片导入设计有指导意义：HEIC 导入链路与 FFmpeg demux 解耦。
+
+---
+
+## RationalTime 溢出边界（CORE-001, 2026-09-25）
+> 设备：Intel i7-9750H，macOS，AppleClang 17.0.0，构建 `tools/build/build_core.sh --platform=apple --config=Debug`。
+> 源码：`core/include/cq/base/time.h`、`core/src/base/time.cpp`。单测 `tests/unit/test_time.cpp::TestOverflowBoundary`。
+
+### 数值基础
+- `RationalTime.value` 为 `int64_t`，`INT64_MAX = 9223372036854775807`（≈9.22×10¹⁸）。
+- `timescale` 为 `int32_t`，项目统一 `kProjectTimeScale = 60000`。
+
+### 边界核算（`static_assert` 已固化于单测）
+| 场景 | 计算 | value | 结论 |
+|---|---|---|---|
+| 24h 项目 @60000 | 86400 × 60000 | 5,184,000,000 | ≪ INT64_MAX，安全 |
+| 1 年项目 @60000 | 31536000 × 60000 | 1,892,160,000,000 | ≪ INT64_MAX，安全 |
+| 理论上限 @60000 | INT64_MAX / 60000 | — | ≈1.537×10¹⁴ s ≈ **4.87×10⁶ 年** |
+
+### 溢出行为（必须显式上报，不静默环绕）
+- 运算全程整数，`AddRational`/`SubRational`/`ScaleRational`/`Rescale` 检测 int64/int32 溢出，经 `Status::kOverflow`（CORE-002 码值 8000）返回。
+- 已验证：`INT64_MAX + 1` 相加 → `kOverflow`；`INT64_MAX × 2` 重定标 → `kOverflow`。
+- 内核无异常（ARCH-001），`Status` 为唯一错误传播通道。
+
+### ⚠️ 待 ADR 决策：项目 timescale 60000 对 23.976fps 不精确
+- 23.976fps 帧周期 = 1001/24000 s；在 timescale=60000 需 2502.5 tick（非整数），逐帧须舍入、累积误差。
+- 其余七种（含 29.97=30000/1001、59.94=60000/1001）在 60000 下均精确。
+- **建议 ADR-0006 将项目 timescale 改为 `120000`（= lcm(60000,24000)）**：23.976 @120000 = 5005 tick 精确，八种帧率全部整数化。本任务按 ADR 维持 60000，未就地改值。
+- 八帧率 × 10000 步进零漂移实测见 CORE-001 单测输出（drift 全为 0，因步进在各自原生 timescale 下进行）。
+
+## base 层实测（CORE-001~004，2026-09-25，apple-x86_64 / AppleClang 17.0.0）
+
+### RationalTime 八帧率零漂移（步进 10000 次）
+| 帧率 | timescale | 累计 value | 期望 | drift |
+|---|---:|---:|---:|---:|
+| 24 | 60000 | 25000000 | 25000000 | 0 |
+| 25 | 60000 | 24000000 | 24000000 | 0 |
+| 30 | 60000 | 20000000 | 20000000 | 0 |
+| 50 | 60000 | 12000000 | 12000000 | 0 |
+| 60 | 60000 | 10000000 | 10000000 | 0 |
+| 23.976 | 24000 | 10010000 | 10010000 | 0 |
+| 29.97 | 30000 | 10010000 | 10010000 | 0 |
+| 59.94 | 60000 | 10010000 | 10010000 | 0 |
+
+⚠️ 上表在**各自原生 timescale** 下成立。ADR-0009 已将项目 timescale 由 60000 修订为 **120000**：
+60000 下 23.976 单帧 = 2502.5 tick（非整数）必须舍入；120000 下全部帧率整数，不精确 0 种。
+int64 上限 @120000 ≈ 243 万年。素材仍可保留原生 timescale，两者互补。
+
+### 溢出边界
+- 24h @60000 → value = 5,184,000,000；1y @60000 → 1,892,160,000,000
+- INT64_MAX = 9,223,372,036,854,775,807 → 理论上限约 4.87e6 年
+- `INT64_MAX+1` 相加、`INT64_MAX×2` 重定标均返回 `Status::kOverflow`，不静默环绕
+
+### 单测规模（ctest，5/5 通过）
+| 用例 | 检查项 | 失败 |
+|---|---:|---:|
+| cq_cxx20_smoke | — | 0 |
+| core_time | 64 | 0 |
+| core_status | 20 | 0 |
+| core_log | 25 | 0 |
+| core_alloc | 158 | 0 |
+
+### 纹理预算并发（TextureBudget，8 线程 × 10 张 1MiB）
+- 并发登记后 UsedCount = 80，UsedBytes = 83,886,080（80.00 MiB）
+- 超预算 Register 返回 code = 5000（kResourceExhausted），且 UsedBytes 不增长
+- 注销 id=5 后 UsedBytes = 94,371,840，UsedCount = 9，Remaining = 10,485,760
+
+### 构建
+`-Werror` 下零警告（警告集含 -Wconversion / -Wshadow / -Wold-style-cast），
+全量 `build_core.sh --test` EXIT=0，总测试耗时 < 0.05s。

@@ -20,7 +20,8 @@ add_library(cq_core STATIC
     src/base/time.cpp
     src/base/log.cpp
     src/base/alloc.cpp
-    src/base/concurrency.cpp)
+    src/base/concurrency.cpp
+    src/media/system_frame_provider.cpp)
 
 # 公共头目录：对外 C ABI 伞形头 core/include。
 target_include_directories(cq_core PUBLIC

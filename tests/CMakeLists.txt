@@ -101,6 +101,19 @@ cq_require_cxx20(cq_tests_media_frame_provider_compile)
 apply_cq_warnings(cq_tests_media_frame_provider_compile)
 add_test(NAME media_frame_provider_compile COMMAND cq_tests_media_frame_provider_compile)
 
+# ---- MEDIA-020：SystemFrameProvider 编排逻辑单测（Mock 驱动，不依赖平台后端）----
+# 用 MockDemuxer + MockDecoder 注入带 B 帧的小 GOP，验证精确 seek 编排
+# （kExact 命中真正展示帧含 B 帧 / kKeyframeBefore 取关键帧 / kNearest 取最近 /
+#  取消返回 kCancelled 非错误 / 显示区间归属）。平台无关，全平台可跑。
+add_executable(cq_tests_media_system_frame_provider
+    unit/test_system_frame_provider.cpp)
+target_include_directories(cq_tests_media_system_frame_provider PRIVATE
+    ${CMAKE_SOURCE_DIR}/core/include)
+target_link_libraries(cq_tests_media_system_frame_provider PRIVATE cq_core)
+cq_require_cxx20(cq_tests_media_system_frame_provider)
+apply_cq_warnings(cq_tests_media_system_frame_provider)
+add_test(NAME media_system_frame_provider COMMAND cq_tests_media_system_frame_provider)
+
 # ---- CORE-006：PAL 头文件「零平台类型 / 零 FFmpeg 类型」静态门禁 ----
 # 纯 stdlib python3 脚本：先剥离注释与字符串字面量（避免评论/字符串误报），
 # 再匹配平台类型 / 平台头文件 / FFmpeg 类型 / throw / 裸 double（time 统一用 RationalTime）。
@@ -129,4 +142,37 @@ if(APPLE)
     cq_require_cxx20(cq_tests_pala_metal)
     apply_cq_warnings(cq_tests_pala_metal)
     add_test(NAME pala_metal_render COMMAND cq_tests_pala_metal)
+
+    # ---- PALA-010：Apple 解封装后端真实文件验证 ----
+    add_executable(cq_tests_pala_demux
+        unit/test_media_demux_apple.cpp)
+    target_include_directories(cq_tests_pala_demux PRIVATE
+        ${CMAKE_SOURCE_DIR}/core/include)
+    target_compile_definitions(cq_tests_pala_demux PRIVATE
+        CQ_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
+    target_link_libraries(cq_tests_pala_demux PRIVATE cq_core cq_pal_apple)
+    cq_require_cxx20(cq_tests_pala_demux)
+    apply_cq_warnings(cq_tests_pala_demux)
+    add_test(NAME pala_demux COMMAND cq_tests_pala_demux)
+
+    # demux 测试直接用到的 Apple 框架（确保最终可执行链接到 CoreMedia/AVFoundation）。
+    find_library(AVFOUNDATION_T_LIB AVFoundation REQUIRED)
+    find_library(COREMEDIA_T_LIB   CoreMedia    REQUIRED)
+    target_link_libraries(cq_tests_pala_demux PRIVATE
+        ${AVFOUNDATION_T_LIB} ${COREMEDIA_T_LIB})
+
+    # ---- MEDIA-020 真实链路冒烟：PALA-010 真实 demux + SystemFrameProvider ----
+    # 半程打通：demux 真实通；解码后端（PALA-011）未实现，AcquireFrame 如实返回
+    # kDecodeUnsupported，绝不 mock 伪造。仅 Apple 平台（需 PALA-010 后端）。
+    add_executable(cq_tests_media_smoke_apple
+        unit/test_media_smoke_apple.cpp)
+    target_include_directories(cq_tests_media_smoke_apple PRIVATE
+        ${CMAKE_SOURCE_DIR}/core/include)
+    target_compile_definitions(cq_tests_media_smoke_apple PRIVATE
+        CQ_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
+    target_link_libraries(cq_tests_media_smoke_apple PRIVATE
+        cq_core cq_pal_apple ${AVFOUNDATION_T_LIB} ${COREMEDIA_T_LIB})
+    cq_require_cxx20(cq_tests_media_smoke_apple)
+    apply_cq_warnings(cq_tests_media_smoke_apple)
+    add_test(NAME media_smoke_apple COMMAND cq_tests_media_smoke_apple)
 endif()

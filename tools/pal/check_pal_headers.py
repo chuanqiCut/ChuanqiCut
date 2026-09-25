@@ -212,23 +212,27 @@ def scan_file(path):
 
 
 def main(argv):
-    # 默认扫描 core/include/cq/pal；可用第一个参数覆盖
-    if len(argv) > 1:
-        pal_dir = argv[1]
-    else:
-        here = os.path.dirname(os.path.abspath(__file__))
-        root = os.path.dirname(os.path.dirname(here))  # tools/pal -> repo root
-        pal_dir = os.path.join(root, "core", "include", "cq", "pal")
+    here = os.path.dirname(os.path.abspath(__file__))
+    root = os.path.dirname(os.path.dirname(here))  # tools/pal -> repo root
+    cq_inc = os.path.join(root, "core", "include", "cq")
 
-    if not os.path.isdir(pal_dir):
-        print("PAL include dir not found: %s" % pal_dir, file=sys.stderr)
-        return 2
+    # 默认扫描全部「跨平台接口目录」（CORE-006 已锁定 pal；GFX-001 / MEDIA-010 新增
+    # gfx / media，同样必须零平台类型。门禁统一兜底，不只为 pal 一目录设防）。
+    # 可用第一个参数覆盖为单个目录（直接手动调试时用）。
+    if len(argv) > 1:
+        scan_dirs = [argv[1]]
+    else:
+        scan_dirs = [os.path.join(cq_inc, d) for d in ("pal", "gfx", "media")]
 
     headers = []
-    for dirpath, _, filenames in os.walk(pal_dir):
-        for fn in filenames:
-            if fn.endswith(".h"):
-                headers.append(os.path.join(dirpath, fn))
+    for d in scan_dirs:
+        if not os.path.isdir(d):
+            print("include dir not found: %s" % d, file=sys.stderr)
+            return 2
+        for dirpath, _, filenames in os.walk(d):
+            for fn in filenames:
+                if fn.endswith(".h"):
+                    headers.append(os.path.join(dirpath, fn))
     headers.sort()
 
     total = 0
@@ -247,12 +251,12 @@ def main(argv):
                 print("  %s:%d: [%s] matched '%s'  |  %s" % (rel, ln, cat, tok, snippet))
 
     print("-" * 60)
-    print("scanned %d header(s), %d violation(s) in %d file(s)"
-          % (len(headers), total, failed_files))
+    print("scanned %d header(s) across %d dir(s), %d violation(s) in %d file(s)"
+          % (len(headers), len(scan_dirs), total, failed_files))
 
     if total > 0:
         return 1
-    print("OK: no platform types / FFmpeg types / exceptions / double in PAL headers")
+    print("OK: no platform types / FFmpeg types / exceptions / double in cq interface headers")
     return 0
 
 

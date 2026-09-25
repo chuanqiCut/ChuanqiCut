@@ -389,3 +389,32 @@ int64 上限 @120000 ≈ 243 万年。素材仍可保留原生 timescale，两�
 ### 构建
 `-Werror` 下零警告（警告集含 -Wconversion / -Wshadow / -Wold-style-cast），
 全量 `build_core.sh --test` EXIT=0，总测试耗时 < 0.05s。
+
+### 并发原语 / 取消 / 有界队列实测（CORE-005，2026-09-25，apple-x86_64 / AppleClang 17.0.0）
+> 源码：`core/include/cq/base/concurrency.h`、`core/src/base/concurrency.cpp`。单测 `tests/unit/test_concurrency.cpp`（ctest `core_concurrency`）。
+
+| 项 | 实测 | 说明 |
+|---|---:|---|
+| 取消及时性（阻塞 Pop 被取消 → 返回） | **0.061 ms** | `cv.wait_for(1ms)` 轮询 token；远小于 16ms 主线程预算 |
+| 取消返回码 | 6000（kCancelled） | `IsError()==false`，非错误停止信号 |
+| 有界队列满（容量 3） | 第 4 次 `TryPush` 返回 false | 满队列不阻塞、不丢内部状态，调用方据 false 丢弃/报错 |
+| 满队列取消中断（Push 被取消） | 返回 kCancelled，IsError()==false | 阻塞 Push 在满且被取消时干净退出 |
+| 并发一致性（4 生产者×1000 / 4 消费者） | produced=consumed=4000，sum=7998000（=期望） | 多生产者/消费者计数与元素总和一致，无丢失/重复/卡死 |
+
+- 单测规模（ctest，6/6 通过，CORE-005 新增 `core_concurrency`）：
+  | 用例 | 检查项 | 失败 |
+  |---|---:|---:|
+  | cq_cxx20_smoke | — | 0 |
+  | core_time | 64 | 0 |
+  | core_status | 20 | 0 |
+  | core_log | 25 | 0 |
+  | core_alloc | 158 | 0 |
+  | core_concurrency | 32 | 0 |
+- 全量 `build_core.sh --test` EXIT=0（注：本机 shell 调用 `build_core.sh` 偶发被信号中断，改用
+  `cmake --build build` + `ctest --test-dir build` 直接跑同样零警告、全绿；非代码问题）。
+
+### ⚠️ 教训：`wait_for(lk, dur, pred)` 超时返回 `pred()` 而非循环到 pred 为真
+- 早版 `Pop` 写 `cv.wait_for(lk, 1ms, pred)` 后无条件 `front()`，正常阻塞（空队列、未取消）在 1ms
+  超时后 `pred()==false` 仍返回，对**空 deque 调 `front()`** → UBSan 抓到 `load of null pointer in
+  deque::front`（SIGSEGV）。修复：显式 `while (cond && !cancelled) wait_for(lk,1ms);` 守护。
+- 配套：单测 stdout 改无缓冲 + 每用例 `WithTimeout` 护栏 + 全局 30s 看门狗，杜绝 CI 挂死。

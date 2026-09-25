@@ -9,6 +9,10 @@
 //   6. 队列取消中断：满队列的阻塞 Push 被取消返回 kCancelled 且 IsError()==false。
 //   7. 并发一致性：多生产者/多消费者计数与元素总和一致（无丢失/重复）。
 // 所有计时为可复现实测输出（见各用例打印）。
+//
+// 防挂死：stdout 改为无缓冲（管道/文件下全缓冲会掩盖进度）；每个阻塞用例包在
+//   WithTimeout 护栏里，超时即请求取消以解除可能的 cv 阻塞并判失败（而非让 CI 挂死）；
+//   另有全局看门狗作为终极保险。
 
 #include <atomic>
 #include <chrono>
@@ -31,6 +35,31 @@ void Check(bool cond, const char* msg) {
         ++g_failures;
         std::printf("  FAIL: %s\n", msg);
     }
+    std::fflush(stdout);
+}
+
+// 阻塞操作超时护栏：在 deadline_ms 内运行 fn；若超时仍未结束，请求取消（tok）以解除
+// 可能的 condition_variable 阻塞，使下方既有 Check 判失败（超时=失败，而非 CI 挂死）。
+template <typename Fn>
+void WithTimeout(cq::CancelToken& tok, double deadline_ms, const char* label, Fn&& fn) {
+    std::atomic<bool> finished{false};
+    std::thread watchdog([&finished, &tok, deadline_ms, label]() {
+        auto end = std::chrono::steady_clock::now() +
+                   std::chrono::milliseconds(static_cast<long>(deadline_ms));
+        while (!finished.load(std::memory_order_acquire)) {
+            if (std::chrono::steady_clock::now() >= end) {
+                std::printf("  [看门狗] %s 超过 %.0fms 未完成，请求取消以解除阻塞\n",
+                            label, deadline_ms);
+                std::fflush(stdout);
+                tok.RequestCancel();  // 解除 cv 等待；被解除后用例既有 Check 应失败
+                return;
+            }
+            std::this_thread::sleep_for(std::chrono::milliseconds(5));
+        }
+    });
+    fn();
+    finished.store(true, std::memory_order_release);
+    if (watchdog.joinable()) watchdog.join();
 }
 
 // 编译期守卫：取消码值稳定为 6000 且「不是错误」的语义闭合。
@@ -49,6 +78,7 @@ void TestCancelTokenBasic() {
     Check(token.IsCancelled(), "请求取消后 IsCancelled()==true");
     token.RequestCancel();  // 幂等
     Check(token.IsCancelled(), "重复请求仍取消（幂等）");
+    std::fflush(stdout);
 }
 
 void TestCancelTokenSharedState() {
@@ -60,6 +90,7 @@ void TestCancelTokenSharedState() {
     b.RequestCancel();  // 通过 b 请求
     Check(a.IsCancelled(), "a 感知到 b 的取消（共享状态）");
     Check(c.IsCancelled(), "c 也感知到取消");
+    std::fflush(stdout);
 }
 
 void TestCancelSemanticsClosure() {
@@ -78,6 +109,7 @@ void TestCancelSemanticsClosure() {
     cq::Status s2 = cq::CancelledStatus();
     Check(s2.IsCancelled() && !s2.IsError() && static_cast<int>(s2.code) == 6000,
           "CancelledStatus() 同样返回 6000 且非错误");
+    std::fflush(stdout);
 }
 
 void TestCancelTimeliness() {
@@ -89,10 +121,9 @@ void TestCancelTimeliness() {
         int v = 0;
         result = q.Pop(v, token);  // 阻塞在空队列
     });
-    // 让 consumer 先进入阻塞态。
-    std::this_thread::sleep_for(std::chrono::milliseconds(20));
+    std::this_thread::sleep_for(std::chrono::milliseconds(20));  // 让 consumer 先进入阻塞
     auto t0 = std::chrono::steady_clock::now();
-    token.RequestCancel();
+    token.RequestCancel();  // 护栏：若未能及时返回，看门狗会再取消一次（此处不会触发）
     consumer.join();
     auto t1 = std::chrono::steady_clock::now();
     double ms = std::chrono::duration<double, std::milli>(t1 - t0).count();
@@ -100,6 +131,7 @@ void TestCancelTimeliness() {
     Check(ms < 50.0, "取消请求到阻塞 Pop 返回的耗时 < 50ms（实测远低于 16ms 预算）");
     std::printf("  取消请求 -> 阻塞 Pop 返回：实测 %.3f ms（code=%d）\n",
                 ms, static_cast<int>(result.code));
+    std::fflush(stdout);
 }
 
 void TestQueueNormalPath() {
@@ -116,6 +148,7 @@ void TestQueueNormalPath() {
     Check(s.IsOk(), "未取消的阻塞 Pop 成功");
     Check(v == 42, "Pop 拿到正确值 42");
     producer.join();
+    std::fflush(stdout);
 }
 
 void TestQueueFullBehavior() {
@@ -147,6 +180,7 @@ void TestQueueFullBehavior() {
     cq::Status s = q.Push(4, token);
     Check(s.IsOk(), "阻塞 Push 在腾出空间后成功（未取消不失败）");
     consumer.join();
+    std::fflush(stdout);
 }
 
 void TestQueueCancelInterrupt() {
@@ -170,13 +204,14 @@ void TestQueueCancelInterrupt() {
     trigger.join();
     std::printf("  满队列 Push 被取消返回：耗时 %.3f ms，code=%d\n",
                 ms, static_cast<int>(s.code));
+    std::fflush(stdout);
 }
 
 void TestQueueConcurrent() {
     std::printf("[test] 有界队列并发一致性：4 生产者 × 1000 / 4 消费者计数与总和一致\n");
     constexpr size_t kCap = 16;
     cq::BoundedQueue<int> q(kCap);
-    cq::CancelToken token;  // 本测试全程不取消
+    cq::CancelToken token;  // 本测试全程不取消；仅用于 WithTimeout 护栏
     constexpr int kProducers = 4;
     constexpr int kPerProducer = 1000;
     constexpr int kTotal = kProducers * kPerProducer;
@@ -204,13 +239,19 @@ void TestQueueConcurrent() {
                     sum.fetch_add(static_cast<int64_t>(v), std::memory_order_relaxed);
                     consumed.fetch_add(1, std::memory_order_relaxed);
                 } else {
-                    break;  // 仅取消才可能发生，本测试不应到达
+                    break;  // 仅取消才可能发生（本测试末段由下式触发）
                 }
             }
         });
     }
-    for (auto& t : producers) t.join();
-    for (auto& t : consumers) t.join();
+
+    // 护栏：若整个并发流程超时未结束，请求取消以解除可能残留的消费者阻塞（判失败）。
+    WithTimeout(token, 10000.0, "TestQueueConcurrent", [&]() {
+        for (auto& t : producers) t.join();
+        // 生产者全部结束后，请求取消：解除仍在空队列上阻塞的消费者，使其干净退出。
+        token.RequestCancel();
+        for (auto& t : consumers) t.join();
+    });
 
     Check(produced.load() == kTotal, "全部生产完成（计数一致）");
     Check(consumed.load() == kTotal, "全部消费完成（计数一致，无丢失/卡死）");
@@ -227,11 +268,23 @@ void TestQueueConcurrent() {
                 static_cast<int>(consumed.load()),
                 static_cast<long long>(sum.load()),
                 static_cast<long long>(expected));
+    std::fflush(stdout);
 }
 
 }  // namespace
 
 int main() {
+    // stdout 无缓冲：管道/文件下全缓冲会掩盖进度，导致「挂起」无法定位。
+    std::setvbuf(stdout, nullptr, _IONBF, 0);
+
+    // 全局看门狗（终极保险）：任何未预料的死锁都不应让 CI 挂死，应失败而非挂起。
+    std::thread watchdog([]() {
+        std::this_thread::sleep_for(std::chrono::seconds(30));
+        std::fprintf(stderr, "FATAL: core_concurrency 单测超过 30s 未结束，判定挂死\n");
+        std::abort();
+    });
+    watchdog.detach();
+
     std::printf("== ChuanqiCut core_concurrency 单测 ==\n");
     TestCancelTokenBasic();
     TestCancelTokenSharedState();

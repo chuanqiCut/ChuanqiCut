@@ -115,7 +115,7 @@ ADR-0006（有理数时间与版本模型）、ARCH-001 §5/§6
 
 ---
 
-# base 层已实现（CORE-001 ~ CORE-004，2026-09-25）
+# base 层已实现（CORE-001 ~ CORE-005，2026-09-25）
 
 按依赖顺序推进，为 CORE-006「PAL 接口冻结」打地基。BACKLOG 第 327 行要求：
 **CORE-006 之前任何 PAL 实现不得开始**，故 base 类型必须先定型。
@@ -182,7 +182,64 @@ int64 上限 @120000 ≈ 243 万年（原 487 万年），仍远超需求。
 - **`TextureBudget` 纹理预算记账**：GPU 纹理是移动端最稀缺资源，可查询当前用量/上限，
   超预算返回 `Status::kResourceExhausted`(5000)。**只做"账本"，不定义任何 GFX 接口**（GFX-001 的事）
 - 线程安全用 `<atomic>`/`<mutex>`（未实现 CORE-005 的并发原语）
-- 单测 158 项，0 失败；含 8 线程 × 10 张 1MiB 并发登记 → UsedCount=80、UsedBytes=83,886,080 (80.00 MiB)
+-   单测 158 项，0 失败；含 8 线程 × 10 张 1MiB 并发登记 → UsedCount=80、UsedBytes=83,886,080 (80.00 MiB)
+
+## CORE-005 `concurrency` — `core/include/cq/base/concurrency.h` / `core/src/base/concurrency.cpp`（2026-09-25）
+
+> 写集（边界内，未碰 CORE-001~004 头文件、未碰 pal/）：
+> `core/include/cq/base/concurrency.h`、`core/src/base/concurrency.cpp`、`tests/unit/test_concurrency.cpp`
+> `core/CMakeLists.txt`（加 `concurrency.cpp`）、`tests/CMakeLists.txt`（注册 ctest `core_concurrency`）
+
+并发原语提供「必要的最小集合」——**只** CancelToken（协作取消）+ BoundedQueue（背压）。
+不造线程池 / 读写锁 / future 封装（那属于 CORE-008 线程模型骨架）；`std::mutex`/`std::atomic`
+直接沿用（CORE-004 已定此先例），不封装。
+
+### CancelToken（本任务重点）
+- 共享状态：`shared_ptr<State>` 持有 `std::atomic<bool>`，使 token 可**值拷贝**并分发给多个
+  worker 线程，共享同一取消标志（一个 source 请求，多方感知）。
+- 协作式：长任务在 pass 边界 / 解码边界轮询 `IsCancelled()`；不传取消原因、不加回调/监听
+  （避免额外加锁 —— 与「音频线程禁锁」红线冲突，且属过度设计）。若未来需区分取消原因，
+  在 State 增 reason 字段即可（本期不动）。
+- **语义闭合**：`Cancelled()` / 便捷函数 `CancelledStatus()` 返回 `Status{kCancelled}`；
+  其 `IsError()` 为 false（CORE-002 已定，`static_assert` 在头文件与单测双重固化：
+  kCancelled==6000 且 `!IsError()`）。调用方据此区分「用户取消 → 清理退出」vs「文件损坏 → 失败」。
+
+### BoundedQueue<T>（背压，ARCH-001 §6 铁律）
+- 队列满的三种行为（验收要求）映射到 API：
+  | 需求 | API | 行为 |
+  |---|---|---|
+  | 阻塞 | `Push(v, token)` | 满则阻塞直到有空间或被取消（可被取消唤醒） |
+  | 丢弃 | `TryPush(v)` 返回 false | 调用方直接丢弃新帧（推理/预览丢帧） |
+  | 返回 Status | `Push(v, token)` 被取消 → `kCancelled` | 非错误停止信号；若不允许阻塞，用 `TryPush` 的 false 自行映射本域 Status |
+- 设计选择：背压优先「暂停」而非「失败」——满队列在预览场景应让上游暂停，而非抛错。
+- 多生产者 / 多消费者安全（mutex + 双条件变量）；`T` 须可拷贝或可移动。
+
+### 取消及时性（UI 响应性关键）
+- 阻塞 `Push/Pop` 用 `cv.wait_for(1ms)` 步长轮询 `token.IsCancelled()`，同时正常入队/出队
+  `notify_one`。故即使另一端已退出、无人 notify，取消请求也能在 **≤ ~1ms + 调度延迟**内唤醒
+  阻塞方（远小于主线程 16ms 预算），无需在 token 上注册回调。实测取消延迟 **0.061ms**（见下）。
+
+### ⚠️ 关键教训（已踩坑，记此防复发）
+- `std::condition_variable::wait_for(lk, dur, pred)` 的语义是：**超时即返回 `pred()` 的值，并不会
+  循环到 `pred()` 为真**。早版误写为 `wait_for(lk, 1ms, pred)` 后无条件 `front()`，导致正常阻塞
+  （队列空、未取消）在 1ms 超时后 `pred()==false` 仍返回，随后对**空 deque 调 `front()`**——
+  UBSan 抓到 `load of null pointer in deque::front`（SIGSEGV）。**修复**：改为显式
+  `while (cond && !cancelled) { cv.wait_for(lk, 1ms); }` 守护，仅在「有元素/有空间」或「被取消」时
+  离开等待（Push 同理，否则会在满队列上越界 push 破坏有界不变量）。
+- 配套：单测 stdout 改无缓冲（`setvbuf(_IONBF)` + `Check` 内 `fflush`），否则管道/文件下全缓冲会
+  掩盖进度、把「卡在第几个用例」藏起来；每个阻塞用例包 `WithTimeout` 护栏（超时即请求取消解除 cv
+  阻塞并判失败，而非让 CI 挂死），外加 30s 全局看门狗兜底。
+
+### 与 CORE-004 `TextureBudget` 的关系（未改动，说明理由）
+- **不动 `alloc.*`**。TextureBudget 是「预算账本」（计数），无阻塞等待 / 队列 / 取消需求；
+  其超预算返回 `kResourceExhausted(5000)` 与队列满（背压，应暂停而非失败）语义正交、职责不同。
+  改用本任务原语既无必要也引入无关改动，故保持独立。
+
+### 单测（`tests/unit/test_concurrency.cpp`，ctest `core_concurrency`）
+- **32 项检查，0 失败**。覆盖：CancelToken 基础 / 共享状态 / 语义闭合（static_assert + 运行期）；
+  取消及时性（阻塞 Pop 被取消 0.061ms 返回）；正常路径不受影响；队列满（容量 3、第 4 次 TryPush
+  返回 false）；满队列取消中断（返回 kCancelled 且非错误）；并发一致性（4 生产者×1000 / 4 消费者，
+  produced=consumed=4000，sum=7998000 与期望一致，无丢失/重复/卡死）。
 
 ## 约束遵守（重要，勿回退）
 
@@ -193,5 +250,6 @@ int64 上限 @120000 ≈ 243 万年（原 487 万年），仍远超需求。
 
 ## 下一步
 
-- **CORE-005**：并发原语 / 有界队列 / `CancelToken`（最后一个 base 前置；2026-09-25 因 API 限流中断，待重派）
+- ~~CORE-005~~：并发原语 / 有界队列 / `CancelToken`（已完成，2026-09-25）
 - **CORE-006**：PAL 接口冻结（GFX/Media/Audio/Inference/FS/Clock/Log/Capabilities），依赖 CORE-001~005
+  —— **base 层前置已全部就绪，现在可以冻结全部平台接口**

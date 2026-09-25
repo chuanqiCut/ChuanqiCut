@@ -1,0 +1,9 @@
+# 非法样例 1：缺字段（缺 version）。预期：MISSING_FIELD，退出码 1。
+[[dep]]
+name = "foo"
+upstream = "https://github.com/acme/foo"
+license = "MIT"
+integration = "source"
+visibility = "private"
+owner = "x"
+platforms = ["apple"]

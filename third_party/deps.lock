@@ -1,0 +1,81 @@
+# ChuanqiCut dependency lock — GENERATED, do not edit by hand.
+# Regenerate: python3 tools/deps/deps.py lock <manifest>
+# 确定性输出（按 name 升序、字段顺序固定）；schema_version 预留迁移器链。
+# lock_digest 为防篡改摘要，任何手改都会让 check 失败。
+schema_version = "1.0"
+generator = "tools/deps/deps.py"
+lock_digest = "2ad92f944637198eb7a224ccedf3f1b6c560fbfea2c8849a81cb8bd3cfea6cb3"
+
+[[locked]]
+name = "SPIRV-Cross"
+version = "git-aa217ae"
+integration = "source"
+scope = "build"
+resolved_ref = "aa217aeb6c9f0ace7a0ab233b28807edf45eb165"
+commit = "aa217aeb6c9f0ace7a0ab233b28807edf45eb165"
+patches = []
+lock_state = "locked"
+
+[[locked]]
+name = "doctest"
+version = "2.5.3"
+integration = "source"
+scope = "build"
+resolved_ref = "2d0a9359a60c51affe2a9bebb1be1dca47868151"
+commit = "2d0a9359a60c51affe2a9bebb1be1dca47868151"
+patches = []
+lock_state = "locked"
+
+[[locked]]
+name = "ffmpeg"
+version = "9.0.2"
+integration = "auto"
+scope = "runtime"
+profile = "demux"
+resolved_ref = "946fcce07b6dcd0331c8cc609192aeff5e1924f8"
+commit = "946fcce07b6dcd0331c8cc609192aeff5e1924f8"
+patches = []
+artifacts = [
+  {platform = "apple-x86_64", url = "local-build://prebuilt/apple-x86_64-demux", sha256 = "e1850cd2726005e80c31bf721d8392fcb7813ff5f259bb5bd9c49c536bcf110b", size_bytes = 2325424},
+]
+lock_state = "locked"
+
+[[locked]]
+name = "glslang"
+version = "16.0.0"
+integration = "source"
+scope = "build"
+resolved_ref = "a57276bf558f5cf94d3a9854ebdf5a2236849a5a"
+commit = "a57276bf558f5cf94d3a9854ebdf5a2236849a5a"
+patches = []
+lock_state = "locked"
+
+[[locked]]
+name = "oboe"
+version = "1.9.3"
+integration = "source"
+scope = "runtime"
+resolved_ref = "b15f5e39c01a7ada306d959e5129620b145fb8b4"
+commit = "b15f5e39c01a7ada306d959e5129620b145fb8b4"
+patches = []
+lock_state = "locked"
+
+[[locked]]
+name = "signalsmith-stretch"
+version = "git-57b93f4"
+integration = "source"
+scope = "runtime"
+resolved_ref = "57b93f4e9206a089a45387eaa39bdc9f310d3308"
+commit = "57b93f4e9206a089a45387eaa39bdc9f310d3308"
+patches = []
+lock_state = "locked"
+
+[[locked]]
+name = "tflite"
+version = "2.16.1"
+integration = "auto"
+scope = "runtime"
+resolved_ref = "5bc9d26649cca274750ad3625bd93422617eed4b"
+commit = "5bc9d26649cca274750ad3625bd93422617eed4b"
+patches = []
+lock_state = "locked"

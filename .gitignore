@@ -1,0 +1,34 @@
+# ChuanqiCut — 仓库忽略规则（INFRA-001 建立）
+# 构建目录：cmake -S . -B build 的产物不入库
+/build/
+build/
+cmake-build-*/
+out/
+
+# 编译产物
+*.o
+*.obj
+*.a
+*.lib
+*.so
+*.dylib
+*.xcframework/
+*.framework/
+
+# 编辑器/OS
+.DS_Store
+*.swp
+*~
+
+# shader 生成产物（ARCH-001 §8：shaders/generated 为构建产物，不入库）
+shaders/generated/
+
+# 第三方源码 checkout 与构建产物（DEPS-002 / DEPS-010）
+# 源码不进仓库；构建产物（*.a 等）已被上面的编译产物规则忽略，这里再显式忽略目录
+third_party/src/
+prebuilt/
+
+# 临时目录：tempfile.mkdtemp() 若在仓库内被调用且进程被中断，会留下 tmpXXXXXXXX/ 形态的中间产物
+# （2026-09-24 因 worker 被 429 打断，实际泄漏过 5 个、共约 8.5MB PNG）。
+# golden manifest 有 "keep total <=10MB" 的提交策略，这类垃圾一旦入库直接超标，故显式防御。
+tmp*/

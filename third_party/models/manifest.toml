@@ -1,0 +1,54 @@
+# =============================================================================
+# ChuanqiCut 模型资产清单（third_party/models/manifest.toml）
+# -----------------------------------------------------------------------------
+# 真源：docs/specs/ARCH-002 §7.1；docs/decisions/ADR-0005
+# 模型是「依赖，不是资源」：登记来源、许可、SHA-256、张量规格、目标精度、实测耗时。
+# 顶层用 [[model]]，与代码依赖 [[dep]] 区分，便于后续 SBOM / 审计分别处理。
+#
+# 关键原则（ADR-0005）：引入的是 MediaPipe 的「模型资产」，不是 MediaPipe SDK。
+#   - Apple 端路径 A：构建期 coremltools 转 .mlpackage（零第三方运行时）
+#   - 回退路径 B：随包发 .tflite，用 LiteRT 的 CoreML delegate（需引入运行时，待 AI-013 判定）
+# sha256 为占位示例，真实值须实测后登记；转换链须在 manifest 登记 coremltools 版本（AI-012）。
+# =============================================================================
+
+[[model]]
+name                 = "face_landmark"
+version              = "0.5.0"
+source               = "https://github.com/google-ai-edge/mediapipe/tree/master/mediapipe/modules/face_landmark"
+license              = "Apache-2.0"
+sha256               = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+purpose              = "人脸 468 点 landmark（美型/磨皮依赖），Vision 65 点精度不足"
+target_precision     = "FP16"            # 路径 A 目标精度（FP16/INT8 可脚本化控制）
+estimated_latency_ms = 6.0               # [hypothesis] 待 AI-013 实测入库
+platforms            = ["apple", "android", "ohos"]
+notes                = "Apple 端转 .mlpackage；回退路径 B 需 LiteRT 运行时"
+
+  # 输入/输出张量规格（供推理后端校验与后处理共享逻辑使用）
+  [[model.inputs]]
+  name      = "input_image"
+  dtype     = "float32"
+  shape     = [1, 256, 256, 3]
+  [[model.outputs]]
+  name      = "landmarks"
+  dtype     = "float32"
+  shape     = [1, 468, 3]
+
+[[model]]
+name                 = "face_detection_short_range"
+version              = "0.5.0"
+source               = "https://github.com/google-ai-edge/mediapipe/tree/master/mediapipe/modules/face_detection"
+license              = "Apache-2.0"
+sha256               = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+purpose              = "人脸检测框（short range），驱动 landmark 前处理 crop"
+target_precision     = "FP16"
+estimated_latency_ms = 3.0               # [hypothesis] 待实测
+platforms            = ["apple", "android", "ohos"]
+
+  [[model.inputs]]
+  name      = "input_image"
+  dtype     = "float32"
+  shape     = [1, 192, 192, 3]
+  [[model.outputs]]
+  name      = "detection"
+  dtype     = "float32"
+  shape     = [1, 1, 4]

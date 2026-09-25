@@ -1,0 +1,546 @@
+# ChuanqiCut — Golden Frame 样本库清单 (QA-001)
+#
+# 本文件是 golden 样本库的「真源」：generate.py 与 verify.py 都读取它。
+# 命名规范见 README.md。
+#
+# 字段说明（每个 [[sample]]）：
+#   id            全局唯一 ID，同时是 frames/<id>/ 目录名
+#   category      素材类别（solid / colorref / extreme / motion / codec）
+#   resolution    逻辑分辨率标签：720p / 1080p / 4k
+#   width,height  像素尺寸
+#   fps           名义帧率（PNG 序列为意图播放率；VFR 见 vfr 字段）
+#   frame_count   帧数
+#   duration_s    名义时长 = frame_count / fps
+#   pattern       生成器用的图案类型（generate.py 据此绘制）
+#   codec         介质编码：raw_png（合成帧）/ h264 / hevc
+#   gop_size      关键帧间隔（仅编码样本，PNG 无意义填 0）
+#   bframes       B 帧数（仅编码样本）
+#   vfr           true=可变帧率
+#   rotation      旋转 metadata（度）
+#   audio         true=带音轨
+#   use_case      验收用途（测哪个环节）
+#   file_glob     相对 tests/golden/ 的文件匹配
+#   requires      生成所需工具：python-png（本机可用）/ ffmpeg（本机缺失）
+#   status        built（已生成）/ unbuilt（待补，缺编码器）
+#   note          备注
+
+schema_version = "1.0"
+library = "chuanqi-cut-golden"
+purpose = "预览渲染与导出走同一张 RenderGraph 的 PSNR/SSIM 比对基准 (ARCH-001 §9 / ARCH-003 §9)"
+
+# 本机生成实际使用的路径（verify.py 会核对并回显）。
+#   python-png : 纯标准库 PNG 序列合成（无 ffmpeg 依赖）
+#   ffmpeg     : 编码类样本用 ffmpeg 生成（tessus 静态构建 6.1.1，仅用于测试夹具）
+generator_path = "python-png + ffmpeg(tessus 6.1.1 仅作测试夹具)"
+
+# 提交策略（team-lead 决策，见 README §7）：本 manifest 登记的夹具随仓库提交，
+# 属于「基准/测试资产」而非 AGENTS.md 禁止的「生成媒体」产物；总体积保持 <=10MB。
+commit_policy = "fixtures registered here are committed with the repo; keep total <=10MB"
+
+# ！！！ffmpeg 工具约束（team-lead 拍板）！！！
+# 本仓库所用的 ffmpeg 二进制（evermeet.cx tessus 静态构建 6.1.1，含 GPL/libx264/libx265）
+# 只准用于【生成测试夹具】，绝对不能：
+#   1) 链接进任何发布产物 / SDK 构建；
+#   2) 当作 FFmpeg 体积或符号基线的数据源（那是 DEPS-013 用自研 demux 档位构建测的）。
+# 脚本中通过环境变量 CQ_FFMPEG_BIN / CQ_FFPROBE_BIN 覆盖路径，默认指向
+# /Users/zhuning/.workbuddy/binaries/ffmpeg/bin/。
+
+# ---- 目标验收维度（本库要覆盖的） ----
+target_dimensions = [
+  "resolution: 720p / 1080p / 4k",
+  "codec: h264 / hevc (requires ffmpeg, 见 unbuilt)",
+  "long-GOP with B-frames (requires ffmpeg)",
+  "variable frame rate / VFR (requires ffmpeg)",
+  "rotation metadata (requires ffmpeg)",
+  "with audio track (requires ffmpeg)",
+  "extreme: pure black / pure white / high-dynamic stripes / fine texture / fractal",
+  "color reference: SMPTE 75% bars (primaries / matrix)",
+  "motion: multi-frame seek / temporal stability",
+]
+
+# =====================================================================
+# 已构建样本（本机 python-png 合成，全部 status=built）
+# =====================================================================
+
+# --- 极端场景：纯黑 / 纯白，覆盖三档分辨率（色彩与缩放基线） ---
+[[sample]]
+id = "gf_720p_solid_black"
+category = "solid"
+resolution = "720p"
+width = 1280
+height = 720
+fps = 30
+frame_count = 1
+duration_s = 0.0333
+pattern = "solid"
+color = [0, 0, 0]
+codec = "raw_png"
+gop_size = 0
+bframes = 0
+vfr = false
+rotation = 0
+audio = false
+use_case = "黑位/零输入色彩管线基线；缩放与色调映射下限"
+file_glob = "frames/gf_720p_solid_black/frame_*.png"
+requires = "python-png"
+status = "built"
+
+[[sample]]
+id = "gf_720p_solid_white"
+category = "solid"
+resolution = "720p"
+width = 1280
+height = 720
+fps = 30
+frame_count = 1
+duration_s = 0.0333
+pattern = "solid"
+color = [255, 255, 255]
+codec = "raw_png"
+gop_size = 0
+bframes = 0
+vfr = false
+rotation = 0
+audio = false
+use_case = "白场/饱和上限；曝光与白色裁剪检测"
+file_glob = "frames/gf_720p_solid_white/frame_*.png"
+requires = "python-png"
+status = "built"
+
+[[sample]]
+id = "gf_1080p_solid_black"
+category = "solid"
+resolution = "1080p"
+width = 1920
+height = 1080
+fps = 30
+frame_count = 1
+duration_s = 0.0333
+pattern = "solid"
+color = [0, 0, 0]
+codec = "raw_png"
+gop_size = 0
+bframes = 0
+vfr = false
+rotation = 0
+audio = false
+use_case = "1080p 黑位基线"
+file_glob = "frames/gf_1080p_solid_black/frame_*.png"
+requires = "python-png"
+status = "built"
+
+[[sample]]
+id = "gf_1080p_solid_white"
+category = "solid"
+resolution = "1080p"
+width = 1920
+height = 1080
+fps = 30
+frame_count = 1
+duration_s = 0.0333
+pattern = "solid"
+color = [255, 255, 255]
+codec = "raw_png"
+gop_size = 0
+bframes = 0
+vfr = false
+rotation = 0
+audio = false
+use_case = "1080p 白场基线"
+file_glob = "frames/gf_1080p_solid_white/frame_*.png"
+requires = "python-png"
+status = "built"
+
+[[sample]]
+id = "gf_4k_solid_black"
+category = "solid"
+resolution = "4k"
+width = 3840
+height = 2160
+fps = 30
+frame_count = 1
+duration_s = 0.0333
+pattern = "solid"
+color = [0, 0, 0]
+codec = "raw_png"
+gop_size = 0
+bframes = 0
+vfr = false
+rotation = 0
+audio = false
+use_case = "4K 黑位基线；大尺寸纹理分配压力"
+file_glob = "frames/gf_4k_solid_black/frame_*.png"
+requires = "python-png"
+status = "built"
+
+[[sample]]
+id = "gf_4k_solid_white"
+category = "solid"
+resolution = "4k"
+width = 3840
+height = 2160
+fps = 30
+frame_count = 1
+duration_s = 0.0333
+pattern = "solid"
+color = [255, 255, 255]
+codec = "raw_png"
+gop_size = 0
+bframes = 0
+vfr = false
+rotation = 0
+audio = false
+use_case = "4K 白场基线"
+file_glob = "frames/gf_4k_solid_white/frame_*.png"
+requires = "python-png"
+status = "built"
+
+# --- 色彩参考：SMPTE 75% 彩条（基色矩阵 / 主色验证） ---
+[[sample]]
+id = "gf_720p_smptebars"
+category = "colorref"
+resolution = "720p"
+width = 1280
+height = 720
+fps = 30
+frame_count = 1
+duration_s = 0.0333
+pattern = "smptebars"
+codec = "raw_png"
+gop_size = 0
+bframes = 0
+vfr = false
+rotation = 0
+audio = false
+use_case = "YCbCr 矩阵 / 主色还原；与导出色彩一致比对"
+file_glob = "frames/gf_720p_smptebars/frame_*.png"
+requires = "python-png"
+status = "built"
+
+[[sample]]
+id = "gf_1080p_smptebars"
+category = "colorref"
+resolution = "1080p"
+width = 1920
+height = 1080
+fps = 30
+frame_count = 1
+duration_s = 0.0333
+pattern = "smptebars"
+codec = "raw_png"
+gop_size = 0
+bframes = 0
+vfr = false
+rotation = 0
+audio = false
+use_case = "1080p 彩条色彩基准"
+file_glob = "frames/gf_1080p_smptebars/frame_*.png"
+requires = "python-png"
+status = "built"
+
+# --- 极端场景：高动态条纹（最大局部对比，暴露缩放/色度子采样振铃） ---
+[[sample]]
+id = "gf_1080p_stripes_hd"
+category = "extreme"
+resolution = "1080p"
+width = 1920
+height = 1080
+fps = 30
+frame_count = 1
+duration_s = 0.0333
+pattern = "stripes_hd"
+codec = "raw_png"
+gop_size = 0
+bframes = 0
+vfr = false
+rotation = 0
+audio = false
+use_case = "高空间频率/极值对比；缩放重采样与色度子采样振铃检测"
+file_glob = "frames/gf_1080p_stripes_hd/frame_*.png"
+requires = "python-png"
+status = "built"
+
+[[sample]]
+id = "gf_4k_stripes_hd"
+category = "extreme"
+resolution = "4k"
+width = 3840
+height = 2160
+fps = 30
+frame_count = 1
+duration_s = 0.0333
+pattern = "stripes_hd"
+codec = "raw_png"
+gop_size = 0
+bframes = 0
+vfr = false
+rotation = 0
+audio = false
+use_case = "4K 高动态条纹；4K 下重采样/抗锯齿 bug 放大"
+file_glob = "frames/gf_4k_stripes_hd/frame_*.png"
+requires = "python-png"
+status = "built"
+
+# --- 极端场景：细密纹理（棋盘格，暴露重采样锯齿/混叠） ---
+[[sample]]
+id = "gf_1080p_texture_fine"
+category = "extreme"
+resolution = "1080p"
+width = 1920
+height = 1080
+fps = 30
+frame_count = 1
+duration_s = 0.0333
+pattern = "texture_fine"
+codec = "raw_png"
+gop_size = 0
+bframes = 0
+vfr = false
+rotation = 0
+audio = false
+use_case = "细密高频纹理；缩放混叠/摩尔纹检测"
+file_glob = "frames/gf_1080p_texture_fine/frame_*.png"
+requires = "python-png"
+status = "built"
+
+[[sample]]
+id = "gf_4k_texture_fine"
+category = "extreme"
+resolution = "4k"
+width = 3840
+height = 2160
+fps = 30
+frame_count = 1
+duration_s = 0.0333
+pattern = "texture_fine"
+codec = "raw_png"
+gop_size = 0
+bframes = 0
+vfr = false
+rotation = 0
+audio = false
+use_case = "4K 细密纹理；4K 重采样莫尔纹检测"
+file_glob = "frames/gf_4k_texture_fine/frame_*.png"
+requires = "python-png"
+status = "built"
+
+# --- 分形：高频细节 + 平滑渐变（兼顾细节与插值） ---
+[[sample]]
+id = "gf_720p_mandelbrot"
+category = "extreme"
+resolution = "720p"
+width = 1280
+height = 720
+fps = 30
+frame_count = 1
+duration_s = 0.0333
+pattern = "mandelbrot"
+codec = "raw_png"
+gop_size = 0
+bframes = 0
+vfr = false
+rotation = 0
+audio = false
+use_case = "分形高频边缘 + 平滑渐变；重采样与插值质量"
+file_glob = "frames/gf_720p_mandelbrot/frame_*.png"
+requires = "python-png"
+status = "built"
+
+# --- 平滑渐变：色调映射 / 插值线性度 ---
+[[sample]]
+id = "gf_1080p_gradient"
+category = "extreme"
+resolution = "1080p"
+width = 1920
+height = 1080
+fps = 30
+frame_count = 1
+duration_s = 0.0333
+pattern = "gradient"
+codec = "raw_png"
+gop_size = 0
+bframes = 0
+vfr = false
+rotation = 0
+audio = false
+use_case = "黑→白线性渐变；色调映射与插值线性度检测"
+file_glob = "frames/gf_1080p_gradient/frame_*.png"
+requires = "python-png"
+status = "built"
+
+# --- 运动：多帧，红块横移（seek/逐帧准确性的合成代理） ---
+[[sample]]
+id = "gf_1080p_motion_block"
+category = "motion"
+resolution = "1080p"
+width = 1920
+height = 1080
+fps = 30
+frame_count = 16
+duration_s = 0.5333
+pattern = "motion_block"
+codec = "raw_png"
+gop_size = 0
+bframes = 0
+vfr = false
+rotation = 0
+audio = false
+use_case = "多帧时序；逐帧 seek 准确性与帧间稳定性（B 帧/GOP 的时序代理，真值见 unbuilt 编码样本）"
+file_glob = "frames/gf_1080p_motion_block/frame_*.png"
+requires = "python-png"
+status = "built"
+
+# =====================================================================
+# 待补样本（requires=ffmpeg，本机缺失 → status=unbuilt）
+# 这些维度无法用 PNG 序列合成，需要 ffmpeg 或授权真实素材。
+# generate.py 已内置 ffmpeg 分支，安装 ffmpeg 后重跑即可补全。
+# =====================================================================
+
+[[sample]]
+id = "gf_1080p_h264"
+category = "codec"
+resolution = "1080p"
+width = 1920
+height = 1080
+fps = 30
+frame_count = 150
+duration_s = 5.0
+pattern = "smptebars"
+codec = "h264"
+gop_size = 30
+bframes = 0
+vfr = false
+rotation = 0
+audio = false
+use_case = "H.264 基线解码/导出基准"
+file_glob = "frames/gf_1080p_h264.mp4"
+requires = "ffmpeg"
+status = "built"
+note = "本机无 ffmpeg，无法编码 H.264；需 ffmpeg 或授权真实 H.264 素材"
+
+[[sample]]
+id = "gf_1080p_hevc"
+category = "codec"
+resolution = "1080p"
+width = 1920
+height = 1080
+fps = 30
+frame_count = 150
+duration_s = 5.0
+pattern = "smptebars"
+codec = "hevc"
+gop_size = 30
+bframes = 0
+vfr = false
+rotation = 0
+audio = false
+use_case = "HEVC 解码/导出基准（10-bit 管道预留）"
+file_glob = "frames/gf_1080p_hevc.mp4"
+requires = "ffmpeg"
+status = "built"
+note = "本机无 ffmpeg，无法编码 HEVC"
+
+[[sample]]
+id = "gf_1080p_h264_long_gop_bframes"
+category = "codec"
+resolution = "1080p"
+width = 1920
+height = 1080
+fps = 30
+frame_count = 300
+duration_s = 10.0
+pattern = "smptebars"
+codec = "h264"
+gop_size = 60
+bframes = 3
+vfr = false
+rotation = 0
+audio = false
+use_case = "长 GOP + B 帧的精确 seek 与帧重排正确性"
+file_glob = "frames/gf_1080p_h264_long_gop_bframes.mp4"
+requires = "ffmpeg"
+status = "built"
+note = "B 帧/长 GOP 是容器+编码属性，PNG 序列无法表达；需 ffmpeg"
+
+[[sample]]
+id = "gf_1080p_vfr"
+category = "codec"
+resolution = "1080p"
+width = 1920
+height = 1080
+fps = 30
+frame_count = 90
+# ⚠️ 实测值 4.466667s，≠ frame_count/fps(3.0)。这是 VFR 的固有属性：
+#    间隔在 1tick(30fps)/2tick(15fps) 间交替，实际时长必然长于名义时长。
+#    分布实测：0.03333s × 46，0.06667s × 42。不得按 3.0 回填。
+duration_s = 4.466667
+pattern = "smptebars"
+codec = "h264"
+gop_size = 30
+bframes = 0
+vfr = true
+rotation = 0
+audio = false
+use_case = "可变帧率时间戳正确性（与恒定帧率比对）"
+file_glob = "frames/gf_1080p_vfr.mp4"
+requires = "ffmpeg"
+status = "built"
+note = "VFR 是 pts/duration 属性，PNG 序列无法表达；需 ffmpeg"
+
+[[sample]]
+id = "gf_1080p_rot90"
+category = "codec"
+resolution = "1080p"
+width = 1920
+height = 1080
+fps = 30
+frame_count = 150
+duration_s = 5.0
+pattern = "smptebars"
+codec = "h264"
+gop_size = 30
+bframes = 0
+vfr = false
+rotation = 90
+audio = false
+use_case = "旋转 metadata 正确应用（显示矩阵/transpose）"
+file_glob = "frames/gf_1080p_rot90.mp4"
+requires = "ffmpeg"
+status = "built"
+note = "旋转 metadata 是容器侧属性，PNG 序列无法表达；需 ffmpeg"
+
+[[sample]]
+id = "gf_1080p_with_audio"
+category = "codec"
+resolution = "1080p"
+width = 1920
+height = 1080
+fps = 30
+frame_count = 150
+duration_s = 5.0
+pattern = "smptebars"
+codec = "h264"
+gop_size = 30
+bframes = 0
+vfr = false
+rotation = 0
+audio = true
+use_case = "音画同步（audio master clock，MEDIA-030）基准"
+file_glob = "frames/gf_1080p_with_audio.mp4"
+requires = "ffmpeg"
+status = "built"
+note = "音轨无法用 PNG 序列表达；需 ffmpeg + 静音/合成音轨"
+
+# =====================================================================
+# 合成素材覆盖不了的维度（需用户提供真实授权素材）
+# 见 README.md 「局限与缺口」
+# =====================================================================
+uncovered_by_synthesis = [
+  "真实相机噪声 / 传感器特性（合成帧无噪声模型）",
+  "真实 VFR 录像的抖动与丢帧模式",
+  "真实旋转手机拍摄的显示矩阵与裁剪行为",
+  "真实 HDR/EDR 与 10-bit 素材（需授权 HDR 样片）",
+  "真实绿幕/人像/文字场景（合成棋盘格/彩条只能近似）",
+  "真实音频波形与唇形同步（需授权音视频）",
+  "真实长片（体积与码率波动，需授权或网络下载——本任务禁止）",
+]

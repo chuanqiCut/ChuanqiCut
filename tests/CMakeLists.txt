@@ -58,3 +58,11 @@ target_link_libraries(cq_tests_core_alloc PRIVATE cq_core)
 cq_require_cxx20(cq_tests_core_alloc)
 apply_cq_warnings(cq_tests_core_alloc)
 add_test(NAME core_alloc COMMAND cq_tests_core_alloc)
+
+# ---- CORE-005：并发原语 / 有界队列 / CancelToken ----
+add_executable(cq_tests_core_concurrency
+    unit/test_concurrency.cpp)
+target_link_libraries(cq_tests_core_concurrency PRIVATE cq_core)
+cq_require_cxx20(cq_tests_core_concurrency)
+apply_cq_warnings(cq_tests_core_concurrency)
+add_test(NAME core_concurrency COMMAND cq_tests_core_concurrency)

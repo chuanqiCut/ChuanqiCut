@@ -127,6 +127,15 @@ public:
     virtual TextureHandle GetColorTexture() = 0;
     virtual uint32_t GetWidth() const = 0;
     virtual uint32_t GetHeight() const = 0;
+
+    // 返回本资源对应的 opaque 句柄，供 `ICommandEncoder::BeginRenderPass` 使用。
+    // ⚠️ 此方法是 2026-09-25 的**接口缺陷修复**（PALA-001 首次真实使用时暴露）：
+    //    `CreateRenderTarget` 产出的是 `PalPtr<IRenderTarget>`（接口指针），
+    //    而 `BeginRenderPass` 收的是 `RenderTargetHandle`（opaque 指针），
+    //    原接口没有任何途径把前者转成后者 —— 创建出的 RenderTarget 无法被编码器使用。
+    //    即「头文件能编译」不等于「接口能真正串联跑通」；
+    //    编译验证 TU 只能证明前者，是本次缺陷未被早期发现的原因。
+    virtual RenderTargetHandle Handle() = 0;
 };
 
 class IPipeline : public IPalResource {};

@@ -1,0 +1,12 @@
+# 非法样例 5：档位声明矛盾（ffmpeg demux 档位不允许 decoder feature）。预期：PROFILE_CONTRADICTION，退出码 1。
+[[dep]]
+name = "ffmpeg"
+version = "7.1"
+upstream = "https://git.ffmpeg.org/ffmpeg.git"
+license = "LGPL-2.1-or-later"
+integration = "source"
+visibility = "private"
+owner = "media"
+platforms = ["apple"]
+profile = "demux"
+features = ["demux", "decoder"]

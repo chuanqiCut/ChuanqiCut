@@ -1,0 +1,10 @@
+# 非法样例 4：集成方式取值非法（container 不在 source/binary/auto）。预期：BAD_ENUM，退出码 1。
+[[dep]]
+name = "foo"
+version = "1.0"
+upstream = "https://github.com/acme/foo"
+license = "MIT"
+integration = "container"
+visibility = "private"
+owner = "x"
+platforms = ["apple"]

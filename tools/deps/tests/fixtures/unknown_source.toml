@@ -1,0 +1,10 @@
+# 非法样例 2：来源未登记（evil.example.com 不在 SOURCE_REGISTRY）。预期：UNKNOWN_SOURCE，退出码 1。
+[[dep]]
+name = "foo"
+version = "1.0"
+upstream = "https://evil.example.com/foo.git"
+license = "MIT"
+integration = "source"
+visibility = "private"
+owner = "x"
+platforms = ["apple"]

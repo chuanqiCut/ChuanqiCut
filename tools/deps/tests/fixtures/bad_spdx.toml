@@ -1,0 +1,10 @@
+# 非法样例 3：SPDX 表达式非法（FooBar-1.0 不是合法 SPDX 协议）。预期：INVALID_SPDX，退出码 1。
+[[dep]]
+name = "foo"
+version = "1.0"
+upstream = "https://github.com/acme/foo"
+license = "FooBar-1.0"
+integration = "source"
+visibility = "private"
+owner = "x"
+platforms = ["apple"]

@@ -1,0 +1,25 @@
+完整规则：.ai/source/AGENTS.root.md
+
+## 必读
+- .ai/source/AGENTS.root.md（根规则与架构红线）
+- .ai/modules/<当前模块>.md
+- docs/tasks/TASK-<ID>.md
+
+## 硬性约束
+1. 业务逻辑必须下沉到 core/ (C++20)，不得在 Swift/Kotlin/ArkTS 实现。
+2. PAL 头文件禁止出现平台类型（CVPixelBuffer / AHardwareBuffer / VkImage）。
+3. 能力用 cq_query_capability() 运行时查询，禁止 #if __APPLE__ 推断。
+4. 时间只用 RationalTime{value, timescale}，禁止浮点秒。
+5. UI 所有变更走 Command，禁止直接改模型。
+6. Shader 双层：shaders/src/*.glsl 为 Portable 层（禁平台扩展、经 SPIR-V 生成）；平台特化只放 pal/<platform>/shaders/（可选加速，须先有 Portable 实现且收益 ≥20%）。禁止手改生成产物。
+7. 公共头 core/include/cq/cq_sdk.h 只含 C 类型与 opaque 句柄。
+8. 主线程零阻塞；音频线程无锁无分配。
+9. 预览与导出共用同一 RenderGraph。
+10. 依赖变更走 third_party/manifest.toml。
+
+## 验证
+tools/build/build_core.sh --platform=<apple|android>
+ctest --test-dir build -R <模块>
+tools/qa/golden_compare.sh --case=<case>
+
+完成 = 门禁通过，不是自述完成。

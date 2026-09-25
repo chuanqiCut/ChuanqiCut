@@ -66,3 +66,29 @@ target_link_libraries(cq_tests_core_concurrency PRIVATE cq_core)
 cq_require_cxx20(cq_tests_core_concurrency)
 apply_cq_warnings(cq_tests_core_concurrency)
 add_test(NAME core_concurrency COMMAND cq_tests_core_concurrency)
+
+# ---- CORE-006：PAL 头文件编译期自洽验证（零平台类型 / 零 FFmpeg 类型 / base 类型契约）----
+# 仅包含 PAL 头文件 + static_assert，不链接任何 PAL 实现（接口冻结阶段无实现）。
+# 证明：头文件自洽（include 顺序无关）、跨层资源均为 opaque 指针（零平台类型）、
+# 时间用 RationalTime、错误用 Status、长任务接受 CancelToken、资源用 PalPtr 生命周期。
+add_executable(cq_tests_pal_headers_compile
+    unit/pal_headers_compile.cpp)
+# 不链接 cq_core：本 TU 只验证 core/include 下的接口头自洽，无需内核实现。
+# 但需指向内核头目录，使 "cq/pal/*.h" 可被找到。
+target_include_directories(cq_tests_pal_headers_compile PRIVATE
+    ${CMAKE_SOURCE_DIR}/core/include)
+cq_require_cxx20(cq_tests_pal_headers_compile)
+apply_cq_warnings(cq_tests_pal_headers_compile)
+add_test(NAME pal_headers_compile COMMAND cq_tests_pal_headers_compile)
+
+# ---- CORE-006：PAL 头文件「零平台类型 / 零 FFmpeg 类型」静态门禁 ----
+# 纯 stdlib python3 脚本：先剥离注释与字符串字面量（避免评论/字符串误报），
+# 再匹配平台类型 / 平台头文件 / FFmpeg 类型 / throw / 裸 double（time 统一用 RationalTime）。
+# 违规时非零退出（EXIT=1）。已自测证明有效：临时插入 jobject 必被捕获，回退后恢复绿。
+# 脚本默认扫描 core/include/cq/pal（按脚本自身位置做路径推导），故无需额外参数。
+find_package(Python3 COMPONENTS Interpreter)
+if(Python3_Interpreter_FOUND)
+    add_test(NAME pal_header_gate
+        COMMAND ${Python3_EXECUTABLE}
+                ${CMAKE_SOURCE_DIR}/tools/pal/check_pal_headers.py)
+endif()

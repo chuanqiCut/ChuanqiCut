@@ -129,6 +129,46 @@ class FrameProvider {                 // 跨平台帧接口（抽象，MEDIA-020
     而非「解封装」，**未用 mock 伪造** ✅（7/7 检查通过）
 - **诚实报告**：真实视频解码被 PALA-011（VideoToolbox）阻塞；本任务 deliberately 不伪造，
   解码接缝已就位，PALA-011 落地后只需实现 `IFrameDecoder` 适配器即可端到端打通。
+
+### MEDIA-020 真实 B 帧文件精确 seek（mock → 真实 golden 升级，2026-09-25 落地）
+- **背景纠正**：此前误判「golden 为全 I 帧、B 帧精确 seek 无法在真实文件上验证」并建议新增素材。
+  **实则仓库已有 B 帧 golden**：`tests/golden/frames/gf_1080p_h264_long_gop_bframes.mp4`
+  （manifest: `fps=30, frame_count=300, gop_size=60, bframes=3`）。教训：**提"新增素材"前先确认
+  现有仓库里有没有**。本任务据此把 B 帧精确 seek 从「mock 小 GOP」升级到「真实文件」。
+- **新用例**：ctest `media_bframe_real`（`tests/unit/test_media_bframe_real_apple.cpp`，仅 Apple）。
+  真实 `CreateMediaDemuxer` 读该文件 + **仅按 pts 网格重排**的 `ReorderingMockDecoder`（不预知 GOP，
+  刻意暴露并消化「解码序≠显示序」分离）驱动 `SystemFrameProvider::AcquireFrame(kExact, ...)`。
+- **真实文件 ground truth（ffprobe，仅参考工具，不进产物）**：300 帧；`pict_type` I=5/P=75/B=220；
+  关键帧(I)显示时间 0/2/4/6/8 s；B 帧如 0.066667/0.100000/2.066667 s。
+- **交付物结果（全绿，10/10 检查，EXIT=0）**：
+  - 总帧数=300（与 manifest/ffprobe 一致）✅；300 个 pts 互异 ✅
+  - **原始(dts)序 pts 非单调** ✅ —— 真实暴露团队警示点「AVAssetReader passthrough 输出是解码序
+    而非显示序」；重排→显示序后严格单调递增 300 帧 ✅（解码序→显示序无损）
+  - **kExact 对 B 帧目标 t=0.066667/0.100000/2.066667 s 返回展示帧 pts=8000/12000/248000（均为
+    目标处 B 帧），且「非关键帧」用 ffprobe 真值核对成立** ✅ —— **核心交付物达成**：真实文件上
+    kExact 仍能正确取 t 处的 B 帧展示帧，而非关键帧/未重建包。
+- **DIAGNOSTIC A — PALA-010 `is_keyframe` 在 passthrough 下不可靠（已暴露，如实记录）**：
+  demuxer 报告关键帧数=300（ffprobe 真值=5）；ffprobe 真值关键帧被正确标记仅 4/5；误报 288 个。
+  根因：`media_demux.mm` 的 `IsKeyframe` 用 `kCMSampleAttachmentKey_DependsOnOthers`，passthrough
+  下该附件常被省略，代码退化为「保守当作关键帧」。→ **这是 PALA-010 既有缺陷，不在本任务范围**；
+  本测试「kExact 不是关键帧」改以 ffprobe 真值关键帧集合核对，不依赖损坏的 demuxer 标志。
+- **DIAGNOSTIC B — `kKeyframeBefore` 当前未回退到真值关键帧（PALA-010 限制，如实记录）**：
+  全新 provider 对每个 t 取 `kKeyframeBefore`：t=0.0667s 返回 pts=8000（=目标 B 帧，非关键帧 0）；
+  t=2.0667s 返回 pts=248000（=目标，非关键帧 240000）。根因：`PALA-010 Seek` 仅设 `timeRange.start=
+  target`、**不回退/吸附到关键帧**，故 kKeyframeBefore 退化为「≈目标处帧」。属 PALA-010 既有缺陷。
+- **mock 与真实一致性结论**：
+  - 一致处：kExact 编排在「解码序≠显示序」分离下均正确取 t 处展示帧；本真实 MockDecoder 用
+    pts 网格重排（与旧 mock 的「显式 GOP release 依赖」不同机制），都证明了 SystemFrameProvider 的
+    区间归属 + 前向解码逻辑正确。
+  - 差异处（真实文件暴露、mock 掩盖的）：
+    1. **解码序≠显示序是真实分离的**（真实 dts/pts 发散）；旧 mock 用 dts 0,1,2,3 / pts 0,1,2,3
+       同序，根本没触发重排，掩盖了 passthrough 行为。**这是团队重点警示点的实证**。
+    2. **demuxer `is_keyframe` 不可靠**（真实 300 误报 vs 5 真值）；mock 里关键帧是手填的真值，
+       不反映该缺陷。故真实测试必须把「是否关键帧」改以 ffprobe 真值核对。
+    3. **`kKeyframeBefore` 行为不达标**（真实不回退关键帧）；mock 里关键帧是手填，掩盖了
+       PALA-010 Seek 不吸附关键帧的缺陷。
+  - 结论：**mock 验证了「编排逻辑正确」，但会掩盖「平台后端（PALA-010）的 passthrough 行为缺陷」；
+    真实文件升级后既证明 kExact 在真实分离下仍正确，又暴露了 PALA-010 两处既有缺陷（待修）**。
 - **与冻结接口一致性**：`FrameProvider` 抽象（MEDIA-010）声明的虚函数全部实现；注意该冻结头
   **不含 `GetPosition`**（任务卡初始描述提到的 `GetPosition` 与实际冻结接口不符——以冻结头为准，
   未擅自修改 frozen 头）。
@@ -136,7 +176,12 @@ class FrameProvider {                 // 跨平台帧接口（抽象，MEDIA-020
 ### MEDIA-020 待解 / 后续
 - PALA-011（VideoToolbox `IFrameDecoder` 适配器）→ 端到端真实解码。
 - MEDIA-011 帧缓存 LRU（替换空 stub）、MEDIA-012 解码器池（替换空 stub）。
-- 真实 B 帧 GOP MP4（当前 golden 为全 I 帧 150 帧）→ 端到端精确 seek 真跑（替代 mock）。
+- **PALA-010 既有缺陷（已被真实 B 帧文件暴露，建议新任务修复）**：
+  - `IsKeyframe` 在 passthrough 下不可靠（缺 `DependsOnOthers` 附件退化为全关键帧）→ 改用
+    `kCMSampleAttachmentKey_NotSync` 或解析 H.264 NAL（IDR）判定关键帧。
+  - `Seek` 不回退/吸附到 <=target 关键帧（仅设 `timeRange.start`）→ 使 `kKeyframeBefore`
+    退化为「≈目标处帧」。需先有可靠关键帧位置才能正确吸附。
+  - 注：两处均属 PALA-010，不在本任务范围；真实 B 帧精确 seek（kExact 交付物）已不受影响地达成。
 
 ## 待评审 / 风险（已标出）
 
@@ -150,14 +195,16 @@ class FrameProvider {                 // 跨平台帧接口（抽象，MEDIA-020
 ```bash
 CMAKE_BIN=/Users/zhuning/.workbuddy/binaries/cmake/CMake.app/Contents/bin/cmake
 $CMAKE_BIN --build build -j4 && $(dirname $CMAKE_BIN)/ctest --test-dir build
-# 14 个用例全绿：cq_cxx20_smoke, core_time/status/log/alloc/concurrency,
+# 15 个用例全绿：cq_cxx20_smoke, core_time/status/log/alloc/concurrency,
 # pal_headers_compile, gfx_headers_compile, media_frame_provider_compile,
 # media_system_frame_provider(MEDIA-020 单测), pal_header_gate,
-# pala_metal_render, pala_demux(PALA-010), media_smoke_apple(MEDIA-020 真实冒烟)
+# pala_metal_render, pala_demux(PALA-010), media_smoke_apple(MEDIA-020 真实冒烟),
+# media_bframe_real(MEDIA-020 真实 B 帧文件精确 seek)
 ```
 - 门禁自测：`check_pal_headers.py` 对 `cq/media/` 零违规（EXIT=0）。
 - PALA-010：`pala_demux` 真实 MP4 全绿（150 帧 / 单调 / seek 中段）。
-- MEDIA-020：`media_system_frame_provider` 单测（B 帧 GOP）9/9；`media_smoke_apple` 真实链路 7/7。
+- MEDIA-020：`media_system_frame_provider` 单测（B 帧 GOP）9/9；`media_smoke_apple` 真实链路 7/7；
+  `media_bframe_real` 真实 B 帧文件精确 seek 10/10（kExact 取 B 帧展示帧正确）。
 
 ## 相关
 ADR-0003、ARCH-003 §3、PAL-接口契约 §4.2、BACKLOG MEDIA-010/011/012/020/021、ARCH-004

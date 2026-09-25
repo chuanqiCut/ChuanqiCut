@@ -81,6 +81,26 @@ cq_require_cxx20(cq_tests_pal_headers_compile)
 apply_cq_warnings(cq_tests_pal_headers_compile)
 add_test(NAME pal_headers_compile COMMAND cq_tests_pal_headers_compile)
 
+# ---- GFX-001：GFX 层头文件编译期自洽验证（零平台类型 / 分层边界 / base 类型契约）----
+# 仅包含 cq/gfx/*.h + static_assert，不链接实现（接口定义阶段无实现）。
+add_executable(cq_tests_gfx_headers_compile
+    unit/gfx_headers_compile.cpp)
+target_include_directories(cq_tests_gfx_headers_compile PRIVATE
+    ${CMAKE_SOURCE_DIR}/core/include)
+cq_require_cxx20(cq_tests_gfx_headers_compile)
+apply_cq_warnings(cq_tests_gfx_headers_compile)
+add_test(NAME gfx_headers_compile COMMAND cq_tests_gfx_headers_compile)
+
+# ---- MEDIA-010：跨平台 FrameProvider 头文件编译期自洽验证（零平台类型 / 精确 seek / 钩子）----
+# 仅包含 cq/media/frame_provider.h + static_assert，不链接实现（接口定义阶段无实现）。
+add_executable(cq_tests_media_frame_provider_compile
+    unit/media_frame_provider_compile.cpp)
+target_include_directories(cq_tests_media_frame_provider_compile PRIVATE
+    ${CMAKE_SOURCE_DIR}/core/include)
+cq_require_cxx20(cq_tests_media_frame_provider_compile)
+apply_cq_warnings(cq_tests_media_frame_provider_compile)
+add_test(NAME media_frame_provider_compile COMMAND cq_tests_media_frame_provider_compile)
+
 # ---- CORE-006：PAL 头文件「零平台类型 / 零 FFmpeg 类型」静态门禁 ----
 # 纯 stdlib python3 脚本：先剥离注释与字符串字面量（避免评论/字符串误报），
 # 再匹配平台类型 / 平台头文件 / FFmpeg 类型 / throw / 裸 double（time 统一用 RationalTime）。

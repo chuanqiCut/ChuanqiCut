@@ -1,0 +1,82 @@
+# 模块：core/pal — PAL 接口层（CORE-006 冻结）
+
+**边界**：`core/include/cq/pal/*.h`（仅接口定义，零实现）。
+**权威契约**：`docs/specs/PAL-接口契约.md`（本文件为模块运行记录 + 设计取舍摘要）。
+
+## 职责
+PAL 是**所有平台实现的契约**（iOS / macOS / Android / 鸿蒙四端照着实现）。
+在 CORE-006 冻结前，任何 PAL 实现（PALA-/PALD-/OHOS）不得开始（BACKLOG 第 327 行）。
+
+## 交付内容（8 领域 + 共用）
+
+| 文件 | 领域 | 核心接口 |
+|---|---|---|
+| `common.h` | 共用 | opaque 句柄（`DeviceHandle`/`TextureHandle`/`NativeImageHandle`…）、平台无关枚举（`PixelFormat`/`TextureFormat`/`TextureUsage` bitmask/`SampleFormat`/`ContainerFormat`/`CodecId`/`ColorSpace`/`InferenceDataType`）、`IPalResource` 基类、`PalPtr<T>` RAII |
+| `gfx.h` | GFX | `IGraphicsDevice`/`ICommandQueue`/`ICommandBuffer`/`ICommandEncoder`/`ITexture`/`IBuffer`/`IRenderTarget`/`IPipeline`/`IShaderModule`/`ISampler`/`IFence`（12 概念对齐 ARCH-003 §2.2）+ `INativeImageImporter`（ExternalImage） |
+| `media.h` | Media | `IMediaDemuxer`（demux）、`IFrameProvider`（精确 seek + 帧提供）、`MediaPacket`/`MediaFrame`/`VideoFrame`/`AudioFrame`/`StreamInfo` |
+| `audio.h` | Audio | `PcmBuffer`、`IAudioEngine`（播放/采集） |
+| `inference.h` | Inference | `IInferenceBackend`、`InferenceTensor`、`ModelAsset`、`InferenceBackendType` |
+| `fs.h` | FS | `IFile`（继承 `IPalResource`，`Read`/`Write`/`Destroy`）、`IFileSystem`、`Path`/`PathNamespace`、`FileStat` |
+| `clock.h` | Clock | `IMonotonicClock`（返回纳秒 `RationalTime`） |
+| `log.h` | Log | 平台 `ILogSink` 工厂契约（`CreatePlatformLogSink`/`DestroyPlatformLogSink`） |
+| `capabilities.h` | Capabilities | `Capability`/`CapabilityValue` 枚举、`ICapabilities`、`SetCapabilitiesBackend`/`QueryCapability` |
+| `pal.h` | 聚合 | 一次性 include 全部领域头 |
+
+## 硬约束满足方式（评审重点）
+
+1. **零 FFmpeg 类型**：Media 接口不使用任何 `AV*` 类型、不 include ffmpeg 头。
+   demux 产物是本项目自己的 `MediaPacket`/`MediaFrame`；`ContainerFormat`/`CodecId`
+   是与 `AVCodecID` 解耦的枚举（FFmpeg 后端在 PAL 实现内映射）。grep 仅注释中出现
+   "FFmpeg/AVPacket" 字样，代码中无任何 AV 类型引用。
+2. **零平台类型**：所有跨层资源用 `common.h` 的 opaque 指针句柄
+   （`struct CqXxx;` 不完整类型 + `using XxxHandle = CqXxx*;`）。头文件只见到指针，
+   永远看不到底层平台类型，也不需要 include 任何平台头。grep 无 `NSString`/`CVPixelBuffer`/
+   `jobject`/`JNIEnv`/`MTLDevice`/`ID3D11Device` 及 `<CoreFoundation>`/`<jni.h>`/`<android/>`。
+   注：AppleClang 下「出现平台类型反而能编译通过」，朴素 grep 又会把注释误报，故零平台类型由
+   （a）本设计 +（b）门禁脚本 `tools/pal/check_pal_headers.py`（剔除注释/字符串后匹配，
+   接 ctest `pal_header_gate`）+（c）评审共同兜底，不能只靠编译证明。
+3. **统一 base 类型**：时间一律 `RationalTime`（Clock 用纳秒 timescale=1e9，与项目 120000 网格
+   可 Rescale 对齐）；错误一律 `Status`；长任务（`Seek`/`Read`/`Run`/`Read`）接受 `CancelToken`；
+   需背压管线用 `BoundedQueue<T>`（后续 MEDIA/AUDIO 使用，本契约预留）。
+4. **`-Werror` 零警告**：编译验证 TU `tests/unit/pal_headers_compile.cpp` 在
+   `-Wall -Wextra -Wconversion -Wshadow -Wold-style-cast` 下干净编译。
+
+## 关键设计取舍（与契约文档一致）
+
+- **opaque 指针句柄 vs 整数句柄**：选指针——类型安全、天然零平台类型、无需平台头。
+- **`PalPtr<T>` RAII**：析构自动 `Destroy()`（跨模块不可 `delete`），工厂直接返回，防泄漏。
+- **Media 与 GFX 共享 `NativeImageHandle`**：视频帧、外部图片（含 HEIC）统一经
+  `INativeImageImporter` 转 `TextureHandle`，零拷贝/降级路径统一。
+- **图片解码与视频 demux 分离**：HEIC 不在 FFmpeg 支持范围，图片导入走 GFX 原生 API，
+  不塞进 `IMediaDemuxer`（直接响应「FFmpeg 选型可逆」硬约束）。
+- **Clock 用纳秒 `RationalTime`**：与项目时间轴同构，A/V 同步无需浮点。
+- **工厂返回 `Status` + `PalPtr<T>&` out 参数**：与 base 层一致，内核禁用异常。
+- **ExternalImage 去冗余**：`INativeImageImporter` 由 `IGraphicsDevice::CreateNativeImageImporter`
+  创建并绑定设备上下文，不在设备上另设 `ImportNativeImage` 方法（Metal/Vulkan 纹理必须属设备）。
+
+## 验证（2026-09-25 真跑，含评审后两处修正）
+```bash
+CMAKE_BIN=/Users/zhuning/.workbuddy/binaries/cmake/CMake.app/Contents/bin/cmake
+$CMAKE_BIN -S . -B build -DCMAKE_BUILD_TYPE=Debug
+$CMAKE_BIN --build build -j4        # 全目标 -Werror 零警告
+$(dirname $CMAKE_BIN)/ctest --test-dir build
+# 8/8 通过：原 6 + pal_headers_compile + pal_header_gate
+```
+- 门禁自测：临时往 `fs.h` 插入 `jobject self_test_placeholder_ = nullptr;`，
+  `check_pal_headers.py` 报 `fs.h:62 [platform_type] matched 'jobject'`（EXIT=1），
+  回退后恢复 `0 violation(s) / EXIT=0` —— 门禁确实会拦，非摆设。
+
+## 后续任务（依赖本接口）
+- GFX-001（GFX 抽象落地）、MEDIA-010（FrameProvider 语义）、AI-001（IInferenceBackend）、
+  AUDIO-001（音频图 + PCM 管理）、CORE-007（ICapabilities 实现）、PERF-001（性能套件）、
+  INFRA-008（OHOS 接口编译检查）、PALD-040（Scoped Storage）、全部 PALA-/PALD-/OHOS 实现。
+
+## 已知待决策 / 风险（已标出，待评审）
+- `PalPtr` 跨 C ABI：当前为 C++ 内部层；若后续 C ABI 暴露句柄需转 `uintptr_t`（BIND 层处理）。
+- `InferenceTensor` 维数固定 8 上限：>8 维待 AI-001 实测（hypothesis）。
+- `MediaFrame` 用 tagged struct 而非 `std::variant`：减少编译耦合，语义不变，MEDIA-010 可调整。
+- 音频图拓扑不在 `IAudioEngine` 内：混音/效果（AUDIO-004/010）在 core 基于 `PcmBuffer` 实现。
+- `ListDir` 签名偏底层（char* + stride），PALD-040 实现时可再润色。
+- 已闭环：原 `FileHandle` 裸指针（需显式 `Close`）已改为 `IFile : IPalResource` + `PalPtr<IFile>`，
+  与全接口生命周期约定统一（评审要求）。零平台类型门禁已由 `tools/pal/check_pal_headers.py`
+  + ctest `pal_header_gate` 落地，可抓未来违规（已自测 `jobject` 可被抓）。

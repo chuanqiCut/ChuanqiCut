@@ -175,4 +175,20 @@ if(APPLE)
     cq_require_cxx20(cq_tests_media_smoke_apple)
     apply_cq_warnings(cq_tests_media_smoke_apple)
     add_test(NAME media_smoke_apple COMMAND cq_tests_media_smoke_apple)
+
+    # ---- MEDIA-020 真实 B 帧文件精确 seek（mock 升级为真实文件）----
+    # 用真实 PALA-010 demuxer 读 gf_1080p_h264_long_gop_bframes.mp4（300 帧 / B 帧），
+    # 经「仅按 pts 网格重排」的 MockDecoder 驱动 SystemFrameProvider，验证 kExact 能在
+    # 真实「解码序≠显示序」分离下正确取到 t 处的展示帧（B 帧），而非关键帧/未重建包。
+    add_executable(cq_tests_media_bframe_real
+        unit/test_media_bframe_real_apple.cpp)
+    target_include_directories(cq_tests_media_bframe_real PRIVATE
+        ${CMAKE_SOURCE_DIR}/core/include)
+    target_compile_definitions(cq_tests_media_bframe_real PRIVATE
+        CQ_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
+    target_link_libraries(cq_tests_media_bframe_real PRIVATE
+        cq_core cq_pal_apple ${AVFOUNDATION_T_LIB} ${COREMEDIA_T_LIB})
+    cq_require_cxx20(cq_tests_media_bframe_real)
+    apply_cq_warnings(cq_tests_media_bframe_real)
+    add_test(NAME media_bframe_real COMMAND cq_tests_media_bframe_real)
 endif()

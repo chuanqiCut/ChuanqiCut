@@ -90,26 +90,159 @@ CodecId AudioCodecToCq(FourCharCode c) {
     }
 }
 
+// 码流关键帧判决（passthrough 下的可靠兜底）：解析 NAL 找 IDR(H.264)/IRAP(HEVC)。
+// 返回值：kKeyframe=判定为关键帧；kNonKey=判定为非关键帧；kUnknown=无法判定。
+enum class NalVerdict { kKeyframe = 0, kNonKey = 1, kUnknown = 2 };
+
+// 读取 CMSampleBuffer 的连续压缩数据指针（不拷贝，零拷贝）。passthrough 下 CMBlockBuffer
+// 通常为单段连续；非连续则本兜底路径直接判定为「无法判定」（退化为保守），避免越界。
+static bool GetSampleData(CMSampleBufferRef sbuf, const uint8_t*& out_data, size_t& out_len) {
+    out_data = nullptr;
+    out_len = 0;
+    if (sbuf == nullptr) return false;
+    CMBlockBufferRef block = CMSampleBufferGetDataBuffer(sbuf);
+    if (block == nullptr) return false;
+    size_t length = 0;
+    char* ptr = nullptr;
+    if (CMBlockBufferGetDataPointer(block, 0, &length, nullptr, &ptr) != kCMBlockBufferNoErr) {
+        return false;
+    }
+    if (ptr == nullptr || length == 0) return false;
+    if (!CMBlockBufferIsRangeContiguous(block, 0, length)) return false;  // 非连续→无法判定
+    out_data = reinterpret_cast<const uint8_t*>(ptr);
+    out_len = length;
+    return true;
+}
+
+// 取得 AVCC/HEVC 的 NAL 长度字节数（1/2/3/4）。失败返回默认 4（MP4 passthrough 最常见）。
+static size_t GetNalLengthSize(CMFormatDescriptionRef fmt, FourCharCode codec) {
+    size_t default_size = 4;
+    if (fmt == nullptr) return default_size;
+    CFDictionaryRef atoms = static_cast<CFDictionaryRef>(
+        CMFormatDescriptionGetExtension(fmt, kCMFormatDescriptionExtension_SampleDescriptionExtensionAtoms));
+    if (atoms == nullptr) return default_size;
+    if (codec == kCMVideoCodecType_H264) {
+        CFDataRef avcc = static_cast<CFDataRef>(CFDictionaryGetValue(atoms, CFSTR("avcC")));
+        if (avcc != nullptr) {
+            const uint8_t* a = CFDataGetBytePtr(avcc);
+            CFIndex n = CFDataGetLength(avcc);
+            // AVCConfigurationRecord：byte4 低 2 位 = lengthSizeMinusOne。
+            if (a != nullptr && n > 4) return static_cast<size_t>((a[4] & 0x03) + 1);
+        }
+    } else if (codec == kCMVideoCodecType_HEVC || codec == kCMVideoCodecType_HEVCWithAlpha) {
+        CFDataRef hvcc = static_cast<CFDataRef>(CFDictionaryGetValue(atoms, CFSTR("hvcC")));
+        if (hvcc != nullptr) {
+            const uint8_t* h = CFDataGetBytePtr(hvcc);
+            CFIndex n = CFDataGetLength(hvcc);
+            // HEVCDecoderConfigurationRecord：byte21 低 2 位 = lengthSizeMinusOne。
+            if (h != nullptr && n > 21) return static_cast<size_t>((h[21] & 0x03) + 1);
+        }
+    }
+    return default_size;
+}
+
+// 解析样本码流，用 VCL NAL 判定关键帧（IDR/IRAP）。
+static NalVerdict DetectKeyframeByNal(const uint8_t* data, size_t len,
+                                      FourCharCode codec, CMFormatDescriptionRef fmt) {
+    if (data == nullptr || len == 0) return NalVerdict::kUnknown;
+    // 检测 Annex-B（起始码 00 00 00 01 / 00 00 01）vs AVCC（长度前缀）。
+    bool annexb = (len >= 4 && data[0] == 0 && data[1] == 0 && data[2] == 0 && data[3] == 1);
+    size_t nal_len_size = annexb ? 0 : GetNalLengthSize(fmt, codec);
+
+    bool saw_vcl = false;
+    bool saw_key = false;
+    size_t pos = 0;
+    while (pos < len) {
+        size_t nal_start = 0;
+        size_t nal_size = 0;
+        if (annexb) {
+            if (pos + 3 < len && data[pos] == 0 && data[pos + 1] == 0 && data[pos + 2] == 1) {
+                pos += 3;
+            } else if (pos + 2 < len && data[pos] == 0 && data[pos + 1] == 1) {
+                pos += 2;
+            } else {
+                ++pos;
+                continue;
+            }
+            nal_start = pos;
+            size_t end = nal_start;
+            while (end + 3 <= len) {
+                if ((end + 2 < len && data[end] == 0 && data[end + 1] == 0 && data[end + 2] == 1) ||
+                    (end + 1 < len && data[end] == 0 && data[end + 1] == 1)) break;
+                ++end;
+            }
+            nal_size = end - nal_start;
+        } else {
+            if (pos + nal_len_size > len) break;
+            size_t l = 0;
+            for (size_t i = 0; i < nal_len_size; ++i) l = (l << 8) | data[pos + i];
+            nal_start = pos + nal_len_size;
+            if (nal_start + l > len) break;
+            nal_size = l;
+            pos = nal_start + l;
+        }
+        if (nal_size == 0) continue;
+        if (codec == kCMVideoCodecType_H264) {
+            int nal_type = data[nal_start] & 0x1F;
+            if (nal_type >= 1 && nal_type <= 5) {  // VCL（IDR=5）
+                saw_vcl = true;
+                if (nal_type == 5) saw_key = true;
+            }
+        } else {
+            if (nal_size < 2) continue;
+            int nal_type = (data[nal_start] >> 1) & 0x3F;  // HEVC 2 字节 NAL 头
+            bool is_vcl = (nal_type <= 9) || (nal_type >= 16 && nal_type <= 23);
+            if (is_vcl) {
+                saw_vcl = true;
+                if (nal_type >= 16 && nal_type <= 23) saw_key = true;  // IRAP
+            }
+        }
+    }
+    if (!saw_vcl) return NalVerdict::kUnknown;  // 仅 SPS/PPS/SEI 等非 VCL 样本
+    if (saw_key) return NalVerdict::kKeyframe;
+    return NalVerdict::kNonKey;
+}
+
 // 从 CMSampleBuffer 判断是否为关键帧（独立可解码 / sync sample）。
-// 依据 kCMSampleBufferAttachmentKey_DependsOnOthers：为 false（不依赖其它帧）
-// 即关键帧。无该附件时保守当作关键帧。
+//
+// 分层判定（团队要求，不要只换一个附件 key）：
+//   1) 附件信号：优先 kCMSampleAttachmentKey_NotSync（存在且 false→关键帧）；
+//      其次 kCMSampleAttachmentKey_DependsOnOthers（存在且 false→关键帧）。
+//      不创建附件数组（createIfNecessary=false），缺失即视为「无附件」走下一层。
+//   2) 附件缺失（passthrough 常见）→ 解析码流 NAL 判断 IDR(H.264 type5)/IRAP(HEVC 16..23)。
+//      这是 passthrough 下的可靠兜底，避免退化回「全当关键帧」。
+//   3) 仍无法判定（非连续缓冲 / 无 VCL / 未知 codec）→ 兜底策略：保守当作关键帧。
+//      后果：极少数无法判定样本被误标关键帧，可能让 kKeyframeBefore 略多选一帧，但**不会
+//      丢失真正关键帧**，seek 仍能自关键帧正确启动解码；相对地若激进当非关键帧则真正关键
+//      帧会被漏标、seek 回退失败。正常 MP4 passthrough 下每个样本都含 VCL NAL，第 3 层极
+//      罕见触发。
 bool IsKeyframe(CMSampleBufferRef sbuf) {
     if (sbuf == nullptr) return false;
-    CFArrayRef atts = CMSampleBufferGetSampleAttachmentsArray(sbuf, true);
-    if (atts == nullptr || CFArrayGetCount(atts) == 0) {
-        // 无附件：可能 passthrough 不提供依赖信息。保守当作关键帧。
-        return true;
+    CFArrayRef atts = CMSampleBufferGetSampleAttachmentsArray(sbuf, false);
+    if (atts != nullptr && CFArrayGetCount(atts) > 0) {
+        CFDictionaryRef d = static_cast<CFDictionaryRef>(CFArrayGetValueAtIndex(atts, 0));
+        if (d != nullptr) {
+            CFBooleanRef not_sync = static_cast<CFBooleanRef>(
+                CFDictionaryGetValue(d, kCMSampleAttachmentKey_NotSync));
+            if (not_sync != nullptr) return (not_sync == kCFBooleanFalse);
+            CFBooleanRef dep = static_cast<CFBooleanRef>(
+                CFDictionaryGetValue(d, kCMSampleAttachmentKey_DependsOnOthers));
+            if (dep != nullptr) return (dep == kCFBooleanFalse);
+        }
     }
-    CFDictionaryRef d = static_cast<CFDictionaryRef>(CFArrayGetValueAtIndex(atts, 0));
-    if (d == nullptr) return true;
-    CFBooleanRef dep = static_cast<CFBooleanRef>(
-        CFDictionaryGetValue(d, kCMSampleAttachmentKey_DependsOnOthers));
-    if (dep == nullptr) {
-        // passthrough 模式下该附件可能缺失；保守当作关键帧。
-        return true;
+    // 分层 2：码流 NAL 解析。
+    const uint8_t* data = nullptr;
+    size_t len = 0;
+    if (GetSampleData(sbuf, data, len)) {
+        CMFormatDescriptionRef fmt = CMSampleBufferGetFormatDescription(sbuf);
+        FourCharCode codec = (fmt != nullptr) ? CMVideoFormatDescriptionGetCodecType(fmt)
+                                             : static_cast<FourCharCode>(0);
+        NalVerdict v = DetectKeyframeByNal(data, len, codec, fmt);
+        if (v == NalVerdict::kKeyframe) return true;
+        if (v == NalVerdict::kNonKey) return false;
     }
-    // 不依赖其它帧（kCFBooleanFalse）=> 关键帧。
-    return (dep == kCFBooleanFalse);
+    // 分层 3：兜底（保守，见函数注释）。
+    return true;
 }
 
 // 单条轨的输出状态（实现内部，含 ObjC 平台类型，不出现在 core 头）。
@@ -206,6 +339,11 @@ public:
         CancelToken no_cancel;
         Status s = RebuildReader(kCMTimeZero, no_cancel);
         if (!s.IsOk()) return s;
+        // 一次性扫描视频轨关键帧 pts 集合（供 Seek 吸附到 <=target 关键帧）。
+        ScanKeyframes();
+        // 扫描已消费 reader，重置回干净起始态。
+        s = RebuildReader(kCMTimeZero, no_cancel);
+        if (!s.IsOk()) return s;
         return Status::Ok();
     }
 
@@ -235,14 +373,23 @@ public:
         return Status::Ok();
     }
 
-    // 精确 seek：重建 reader，把读取时间范围起点设为 target，后续 ReadPacket 从该处继续。
-    // 注：纯 demux 层只把容器读位置移到 target 附近的关键帧；真正的"重建到 t 帧"
-    // 由解码后端（PALA-011）完成。这里保证"seek 后再读 pts 从该处继续（非从头）"。
+    // 精确 seek：吸附到 <=target 的最近关键帧，重建 reader（timeRange.start = 该关键帧）。
+    // 关键帧位置来自 Open 时扫描的 keyframe_times_（依赖已修复的 IsKeyframe，与 ffprobe 吻合）。
+    // 精确 seek 必须自关键帧起解码：调用方（MEDIA-020）再从关键帧前向解码到 t 帧。
+    // 无关键帧（空集）时退化为从头，保证不崩溃。
     Status Seek(const RationalTime& target, const CancelToken& token) override {
         if (token.IsCancelled()) return token.Cancelled();
         if (asset_ == nil) return Status{StatusCode::kInvalidArgument};
 
-        CMTime start = CMTimeMake(target.value, target.timescale);
+        // 吸附：<=target 的最大关键帧。
+        RationalTime snap{0, kProjectTimeScale};
+        for (const RationalTime& kf : keyframe_times_) {
+            if (cq::CompareRational(kf, snap) >= 0 &&
+                cq::CompareRational(kf, target) <= 0) {
+                snap = kf;
+            }
+        }
+        CMTime start = CMTimeMake(snap.value, snap.timescale);
         return RebuildReader(start, token);
     }
 
@@ -341,6 +488,8 @@ private:
     // 并预取每条轨首个样本。start = kCMTimeZero 即从头/重置。
     Status RebuildReader(CMTime start, const CancelToken& token) {
         TearDownReader();
+        tracks_.clear();  // 幂等：Open 可能重复调用（如 CreateMediaDemuxer + SystemFrameProvider::Open），
+                          // 不清空会累积失效（output=nil）的旧轨，导致 ScanKeyframes 读到 0 样本。
         if (asset_ == nil) return Status{StatusCode::kInvalidArgument};
         if (token.IsCancelled()) return token.Cancelled();
 
@@ -414,11 +563,41 @@ private:
         return Status::Ok();
     }
 
+    // 一次性扫描视频轨关键帧 pts 集合（Seek 吸附到 <=target 关键帧用）。
+    // 注意：扫描会消费当前 reader；调用方需在之后 RebuildReader(kCMTimeZero) 重置。
+    void ScanKeyframes() {
+        keyframe_times_.clear();
+        for (auto& ts : tracks_) {
+            if (ts.media_type != MediaType::kVideo) continue;
+            while (true) {
+                CMSampleBufferRef sbuf = [ts.output copyNextSampleBuffer];
+                if (sbuf == nullptr) break;
+                // 零字节样本（参数集/priming）无帧数据，跳过。
+                CMBlockBufferRef block = CMSampleBufferGetDataBuffer(sbuf);
+                size_t length = 0;
+                if (block != nullptr) {
+                    CMBlockBufferGetDataPointer(block, 0, nullptr, &length, nullptr);
+                }
+                if (length == 0) {
+                    CFRelease(sbuf);
+                    continue;
+                }
+                if (IsKeyframe(sbuf)) {
+                    CMTime pts = CMSampleBufferGetPresentationTimeStamp(sbuf);
+                    keyframe_times_.push_back(ToRational(pts, RoundMode::kRound));
+                }
+                CFRelease(sbuf);
+            }
+            break;  // 仅扫描首个视频轨
+        }
+    }
+
     AVAsset* __strong asset_ = nil;
     AVAssetReader* __strong reader_ = nil;
     std::vector<TrackState> tracks_;
     RationalTime duration_{0, 1};
     std::vector<uint8_t> last_data_;  // 最近一个包的压缩数据（MediaPacket.data 指向它）
+    std::vector<RationalTime> keyframe_times_;  // 视频轨关键帧 pts 集合（Seek 吸附用）
 };
 
 // ---------------------------------------------------------------------------

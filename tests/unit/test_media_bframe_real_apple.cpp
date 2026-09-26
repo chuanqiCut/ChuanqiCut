@@ -4,20 +4,15 @@
 //   tests/golden/frames/gf_1080p_h264_long_gop_bframes.mp4
 //   （manifest: fps=30, frame_count=300, gop_size=60, bframes=3）。
 //
-// 背景：旧 mock 用小 GOP 且 dts/pts 同序，掩盖了「AVAssetReader passthrough 在 B 帧下
-// 输出是**解码序(dts)**而非显示序(pts)」这一真实分离。本测试用**真实 demuxer**（解码序
-// 喂包）+ 一个**仅依据 pts 网格重排**的 MockDecoder（不预知 GOP），驱动 SystemFrameProvider
-// 做 kExact，验证真实文件上仍能正确取到 t 处的**展示帧（B 帧）**，而非关键帧/未重建包。
+// 本测试验证的组件 = MEDIA-020 SystemFrameProvider 的 kExact 编排 + PALA-010 解封装/
+// 关键帧判定/Seek 吸附（修复后）。修复后「是否关键帧」与「kKeyframeBefore 是否回退关键帧」
+// 均改回用 **demuxer 自己的 is_keyframe 标志** 做断言（不再依赖 ffprobe 真值兜底）。
 //
-// ground truth（ffprobe 独立核对，仅当参考工具，不进产物）：
-//   300 帧；pict_type I=5,P=75,B=220；关键帧(I)在 0/2/4/6/8 s；B 帧如 0.066667/0.100000/2.066667 s。
-//
-// ★ 本测试聚焦验证的组件 = MEDIA-020 SystemFrameProvider 的 kExact 编排（核心交付物）。
-//   PALA-010 demuxer 的 is_keyframe 标志在 passthrough 下不可靠（见下方 DIAGNOSTIC A），
-//   属 PALA-010 既有缺陷，不在本任务范围内修复——故「不是关键帧」的判定改用 ffprobe
-//   真值关键帧集合核对，而非依赖 demuxer 自带（损坏的）is_keyframe。
-//
-// 无缓冲输出。
+// ground truth（ffprobe / AVFoundation 一致，仅当参考基准）：关键帧(I) 显示时间
+//   0.0667/2.0667/4.0667/6.0667/8.0667 s → 项目网格 ticks {8000, 248000, 488000, 728000, 968000}。
+// 注意：本 golden 文件首个 IDR 样本 native pts = 1024（15360 timebase）= 第 2 帧 = 0.0667s，
+//   即存在 2 帧(8000 ticks)起始偏移，关键帧落在 0.0667/2.0667/...s 而非 0/2/4/...s（"0/2/4" 是
+//   约数）。demuxer 解析 IDR/IRAP 后报出的集合应与下逐帧吻合。B 帧如 0.066667/0.100000/2.066667 s。
 
 #include <cstdint>
 #include <cstdio>
@@ -62,19 +57,20 @@ const char* Rt(const cq::RationalTime& t) {
 constexpr int64_t kTs = cq::kProjectTimeScale;  // 120000
 constexpr int64_t kFrameTicks = kTs / 30;        // 30fps → 4000 ticks/帧
 constexpr int64_t kExpectedFrames = 300;
-// ffprobe 关键帧（I）显示时间（秒）→ 项目网格 ticks：0/2/4/6/8 s。
-const int64_t kTruthKF[] = {0, 240000, 480000, 720000, 960000};
-// 选作目标的 B 帧（显示时间，秒）——均为 B 帧，其展示帧正是精确 seek 要取的。
-const double kBTargetSec[] = {0.066667, 0.100000, 2.066667};
+// 该 golden 文件真实关键帧（I）位置：0.0667/2.0667/4.0667/6.0667/8.0667 s（见上方说明的 2 帧起始偏移）。
+const int64_t kTruthKF[] = {8000, 248000, 488000, 728000, 968000};
+constexpr int kTruthKFCount = static_cast<int>(sizeof(kTruthKF) / sizeof(kTruthKF[0]));
+// 选作目标的 B 帧（显示时间，秒）——均为 B 帧（非关键帧），其展示帧正是精确 seek 要取的。
+// 注意：本文件关键帧落在 0.0667/2.0667/4.0667/…，故不能把 0.0667/2.0667 当 B 帧目标
+// （它们本身就是关键帧），这里取 GOP 内部的真实 B 帧：0.1000(f3)/2.1000(f63)/4.1000(f123)。
+const double kBTargetSec[] = {0.100000, 2.100000, 4.100000};
 
 // ---------------------------------------------------------------------------
 // ReorderingMockDecoder：仅依据「pts 网格」把解码序包重排为显示序，不预知 GOP。
 //   规则：缓冲已喂入的包；当最小 pts 的缓冲帧 X 满足「[min_pts, X] 之间按帧距 dt 的
-//   所有 pts 都已被喂入(received)」时才弹出 X（显示序）。这忠实建模 DPB：P 帧在它
-//   之前的 B 帧被喂入前不会越前显示；从而把真实 demuxer 的解码序包还原成显示序。
-//   这是本测试的关键——它刻意暴露并正确消化「解码序 ≠ 显示序」分离。
-//   注意：它不强制真实解码依赖（无需 I 帧即可弹出 B），因为本测试只验证「编排层
-//   是否能从喂入包流中挑出 t 处的展示帧」，真实重建由 PALA-011 负责。
+//   所有 pts 都已被喂入(received)」时才弹出 X（显示序）。忠实建模 DPB：P 帧在它之前的
+//   B 帧被喂入前不会越前显示；从而把真实 demuxer 的解码序包还原成显示序。刻意暴露并
+//   正确消化「解码序 ≠ 显示序」分离。
 // ---------------------------------------------------------------------------
 class ReorderingMockDecoder : public cq::IFrameDecoder {
 public:
@@ -92,13 +88,11 @@ public:
 
     cq::Status PopFrame(cq::MediaFrame& out) override {
         if (buf_.empty()) return cq::Status{cq::StatusCode::kIoNotFound};
-        // 找最小 pts 的缓冲帧
         size_t cand = 0;
         for (size_t i = 1; i < buf_.size(); ++i) {
             if (buf_[i].pts < buf_[cand].pts) cand = i;
         }
         const int64_t X = buf_[cand].pts;
-        // 连续区间 [min_pts_, X] 按 dt_ 步进的所有 pts 必须都已收到，否则等待。
         if (dt_ > 0 && min_pts_ != kUnset) {
             int64_t steps = (X - min_pts_) / dt_;
             for (int64_t k = 0; k <= steps; ++k) {
@@ -135,9 +129,13 @@ private:
 
 struct PktInfo { int64_t pts; bool kf; };
 
-bool IsTruthKeyframe(int64_t pts) {
-    for (int64_t k : kTruthKF) {
-        if (pts >= k - kFrameTicks && pts <= k + kFrameTicks) return true;
+// demuxer 报告的关键帧 pts 集合中是否含某 pts（用 demuxer 自己的 is_keyframe 标志）。
+// 关键帧 pts 是精确整数网格值，用「远小于一帧」的容差判定，避免与相邻 B 帧（同 GOP 内
+// 仅差一帧，如 0.0667s 关键帧与 0.1000s B 帧相差 4000 ticks）误判为关键帧。
+bool DemuxReportsKeyframe(const std::vector<int64_t>& demux_kf, int64_t pts) {
+    const int64_t tol = kFrameTicks / 4;  // 1000 ticks < 一帧(4000)，仅精确命中关键帧
+    for (int64_t k : demux_kf) {
+        if (k >= pts - tol && k <= pts + tol) return true;
     }
     return false;
 }
@@ -163,10 +161,10 @@ int main() {
         return 1;
     }
 
-    // ---- PASS 1：真实 demuxer 全读一遍，收集帧数/pts 集合/是否关键帧 ----
+    // ---- PASS 1：真实 demuxer 全读一遍，收集帧数/pts 集合/is_keyframe ----
     std::vector<PktInfo> all_pkts;
     std::set<int64_t> all_pts;
-    std::vector<int64_t> demux_kf_pts;   // demuxer 自带 is_keyframe 报告的关键帧
+    std::vector<int64_t> demux_kf_pts;   // demuxer 自带 is_keyframe 报告的关键帧 pts
     int64_t prev_raw_pts = -1;
     bool raw_monotonic = true;
     int total = 0;
@@ -213,43 +211,48 @@ int main() {
         for (size_t i = 1; i < out_pts.size(); ++i) {
             if (out_pts[i] <= out_pts[i - 1]) disp_mono = false;
         }
-        std::printf("  重排后显示序帧数 = %zu，显示序单调=%s\n", out_pts.size(),
-                    disp_mono ? "true" : "false");
         Check(out_pts.size() == static_cast<size_t>(kExpectedFrames),
               "重排后输出 300 帧（解码序→显示序无损）");
         Check(disp_mono, "重排后显示序严格单调递增（B 帧被正确重排到显示位）");
     }
 
-    // ===== DIAGNOSTIC A：PALA-010 demuxer 自带 is_keyframe vs ffprobe 真值 =====
-    // 结论（如实）：passthrough 下 kCMSampleAttachmentKey_DependsOnOthers 常被省略，
-    // IsKeyframe 退化为「保守当作关键帧」，导致近乎所有帧被误报为关键帧。这是 PALA-010
-    // 既有缺陷（非本任务范围），仅在此如实记录，不计入交付物成败。
+    // ===== 验收 1：demuxer 关键帧集合必须与 ffprobe key_frame=1 逐帧吻合 =====
     {
-        int truth_kf_flagged = 0;
-        for (int64_t k : kTruthKF) {
-            bool found = false;
-            for (int64_t dk : demux_kf_pts) {
-                if (dk >= k - kFrameTicks && dk <= k + kFrameTicks) { found = true; break; }
-            }
-            if (found) ++truth_kf_flagged;
-        }
-        // 误报关键帧 = demuxer 报告的关键帧中，不在 ffprobe 真值位置的个数。
-        int spurious = 0;
+        std::printf("\n[验收 1 — demuxer 关键帧 vs ffprobe key_frame=1]\n");
+        std::printf("  demuxer 报告关键帧数 = %zu；ffprobe 真值关键帧数 = %d\n",
+                    demux_kf_pts.size(), kTruthKFCount);
+        // 逐帧吻合：每个 demuxer 关键帧都能在真值里找到 ≤1 帧容差的位置，且计数一致。
+        int matched = 0;
         for (int64_t dk : demux_kf_pts) {
-            if (!IsTruthKeyframe(dk)) ++spurious;
+            bool ok = false;
+            for (int i = 0; i < kTruthKFCount; ++i) {
+                if (dk >= kTruthKF[i] - kFrameTicks && dk <= kTruthKF[i] + kFrameTicks) {
+                    ok = true; break;
+                }
+            }
+            if (ok) ++matched;
         }
-        std::printf("\n[DIAGNOSTIC A — PALA-010 is_keyframe 可靠性（passthrough 限制）]\n");
-        std::printf("  demuxer 报告关键帧数 = %zu；ffprobe 真值关键帧数 = %zu\n",
-                    demux_kf_pts.size(), sizeof(kTruthKF) / sizeof(kTruthKF[0]));
-        std::printf("  ffprobe 真值关键帧中被正确标记 = %d/%zu\n",
-                    truth_kf_flagged, sizeof(kTruthKF) / sizeof(kTruthKF[0]));
-        std::printf("  误报（非真值位置却报关键帧） = %d\n", spurious);
-        std::printf("  >>> 结论：is_keyframe 在 passthrough 下不可靠（已暴露）。\n");
-        std::printf("      MEDIA-020 「kExact 返回的不是关键帧」改用 ffprobe 真值核对，不依赖此标志。\n");
+        // 反向：每个真值关键帧都被 demuxer 命中
+        int truth_hit = 0;
+        for (int i = 0; i < kTruthKFCount; ++i) {
+            bool hit = false;
+            for (int64_t dk : demux_kf_pts) {
+                if (dk >= kTruthKF[i] - kFrameTicks && dk <= kTruthKF[i] + kFrameTicks) {
+                    hit = true; break;
+                }
+            }
+            if (hit) ++truth_hit;
+        }
+        std::printf("  demuxer 关键帧命中真值 = %d/%zu；真值关键帧被命中 = %d/%d\n",
+                    matched, demux_kf_pts.size(), truth_hit, kTruthKFCount);
+        Check(demux_kf_pts.size() == static_cast<size_t>(kTruthKFCount),
+              "关键帧数量与 ffprobe 真值一致（逐帧吻合前提：数量相等）");
+        Check(matched == static_cast<int>(demux_kf_pts.size()) && truth_hit == kTruthKFCount,
+              "关键帧集合与 ffprobe 逐帧吻合（双向命中，容差 1 帧）");
     }
 
-    // ---- 交付物：MEDIA-020 kExact 精确 seek 取真实 B 帧展示帧 ----
-    std::printf("\n[交付物 MEDIA-020 / kExact] 对 B 帧时间点取「真实展示帧」\n");
+    // ---- 验收 3（回归）：MEDIA-020 kExact 精确 seek 取真实 B 帧展示帧 ----
+    std::printf("\n[验收 3 — MEDIA-020 / kExact] 对 B 帧时间点取「真实展示帧」（回归）\n");
     ReorderingMockDecoder decode(kFrameTicks);
     auto provider = cq::CreateSystemFrameProvider(std::move(demuxer), &decode);
     s = provider->Open(src);
@@ -265,47 +268,48 @@ int main() {
         bool ok = s.IsOk() && f.type == cq::MediaType::kVideo;
         bool pts_ok = ok && (f.video.pts.value >= target - kFrameTicks &&
                              f.video.pts.value <= target + kFrameTicks);
-        // 「不是关键帧」用 ffprobe 真值核对（demuxer 自带标志不可靠，见 DIAGNOSTIC A）。
-        bool not_kf = ok && !IsTruthKeyframe(f.video.pts.value);
+        // 「不是关键帧」用 demuxer 自己的 is_keyframe 标志集合核对（修复后已可靠）。
+        bool not_kf = ok && !DemuxReportsKeyframe(demux_kf_pts, f.video.pts.value);
         std::printf("  t=%s B帧 → 取到帧 pts=%s（期望~%lld）\n",
                     Rt(req.at), Rt(f.video.pts), static_cast<long long>(target));
         char msg[96];
         std::snprintf(msg, sizeof(msg),
-                      "kExact t=%.4fs 返回展示帧(pts=%lld≈B帧) 且非关键帧(ffprobe 真值)",
+                      "kExact t=%.4fs 返回展示帧(pts=%lld≈B帧) 且 demuxer 标志为非关键帧",
                       bt, static_cast<long long>(target));
         Check(ok && pts_ok && not_kf, msg);
     }
 
-    // ===== DIAGNOSTIC B：kKeyframeBefore 行为（依赖 demuxer 关键帧定位）=====
-    // 因 PALA-010 Seek 不回退到关键帧 + is_keyframe 不可靠，kKeyframeBefore 当前
-    // 返回的不是 ffprobe 真值关键帧。如实记录，不计入交付物成败。
-    {
-        std::printf("\n[DIAGNOSTIC B — kKeyframeBefore 当前行为（PALA-010 限制）]\n");
-        // 用全新 provider（独立状态）分别对每个 t 取 kKeyframeBefore。
-        for (double bt : kBTargetSec) {
-            int64_t target = static_cast<int64_t>(bt * kTs + 0.5);
-            cq::PalPtr<cq::IMediaDemuxer> d2;
-            cq::CreateMediaDemuxer(src, d2);
-            ReorderingMockDecoder dec2(kFrameTicks);
-            auto p2 = cq::CreateSystemFrameProvider(std::move(d2), &dec2);
-            p2->Open(src);
-            // 期望（契约）关键帧 = <= target 的最大真值关键帧。
-            int64_t exp_kf = 0;
-            for (int64_t k : kTruthKF) if (k <= target && k > exp_kf) exp_kf = k;
-            cq::FrameRequest req;
-            req.at = cq::RationalTime{target, kTs};
-            req.policy = cq::SeekPolicy::kKeyframeBefore;
-            cq::MediaFrame fk{};
-            cq::Status sk = p2->AcquireFrame(req, fk, no_cancel);
-            bool match = sk.IsOk() && IsTruthKeyframe(fk.video.pts.value);
-            std::printf("  t=%.4fs 期望关键帧=%lld → 实际返回 pts=%s（命中真值关键帧=%s）\n",
-                        bt, static_cast<long long>(exp_kf), Rt(fk.video.pts),
-                        match ? "yes" : "no");
+    // ===== 验收 2：kKeyframeBefore 必须返回 ≤t 真值关键帧（修复 Seek 吸附后）=====
+    std::printf("\n[验收 2 — kKeyframeBefore 返回 demuxer 关键帧（修复后）]\n");
+    for (double bt : kBTargetSec) {
+        int64_t target = static_cast<int64_t>(bt * kTs + 0.5);
+        cq::PalPtr<cq::IMediaDemuxer> d2;
+        cq::CreateMediaDemuxer(src, d2);
+        ReorderingMockDecoder dec2(kFrameTicks);
+        auto p2 = cq::CreateSystemFrameProvider(std::move(d2), &dec2);
+        p2->Open(src);
+        // 期望 = demuxer 报告的关键帧中 <=target 的最大者（用 demuxer 自己的标志）。
+        int64_t exp_kf = 0;
+        for (int64_t k : demux_kf_pts) {
+            if (k <= target && k > exp_kf) exp_kf = k;
         }
-        std::printf("  >>> 结论：kKeyframeBefore 当前未回退到真值关键帧（PALA-010 Seek 不 snap）。\n");
+        cq::FrameRequest req;
+        req.at = cq::RationalTime{target, kTs};
+        req.policy = cq::SeekPolicy::kKeyframeBefore;
+        cq::MediaFrame fk{};
+        cq::Status sk = p2->AcquireFrame(req, fk, no_cancel);
+        bool match = sk.IsOk() && (fk.video.pts.value >= exp_kf - kFrameTicks &&
+                                   fk.video.pts.value <= exp_kf + kFrameTicks);
+        std::printf("  t=%.4fs 期望关键帧=%lld → 实际返回 pts=%s（命中=%s）\n",
+                    bt, static_cast<long long>(exp_kf), Rt(fk.video.pts),
+                    match ? "yes" : "no");
+        char msg[96];
+        std::snprintf(msg, sizeof(msg),
+                      "kKeyframeBefore t=%.4fs 返回 <=t 关键帧(pts=%lld)", bt,
+                      static_cast<long long>(exp_kf));
+        Check(match, msg);
     }
 
-    std::printf("\n== 交付物结果：%d 项检查，%d 项失败（DIAGNOSTIC A/B 不计入）==\n",
-                g_checks, g_failures);
+    std::printf("\n== 结果：%d 项检查，%d 项失败 ==\n", g_checks, g_failures);
     return g_failures == 0 ? 0 : 1;
 }

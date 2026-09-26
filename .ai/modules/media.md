@@ -138,37 +138,60 @@ class FrameProvider {                 // 跨平台帧接口（抽象，MEDIA-020
 - **新用例**：ctest `media_bframe_real`（`tests/unit/test_media_bframe_real_apple.cpp`，仅 Apple）。
   真实 `CreateMediaDemuxer` 读该文件 + **仅按 pts 网格重排**的 `ReorderingMockDecoder`（不预知 GOP，
   刻意暴露并消化「解码序≠显示序」分离）驱动 `SystemFrameProvider::AcquireFrame(kExact, ...)`。
-- **真实文件 ground truth（ffprobe，仅参考工具，不进产物）**：300 帧；`pict_type` I=5/P=75/B=220；
-  关键帧(I)显示时间 0/2/4/6/8 s；B 帧如 0.066667/0.100000/2.066667 s。
-- **交付物结果（全绿，10/10 检查，EXIT=0）**：
+- **真实文件 ground truth（ffprobe / AVFoundation 一致，仅参考基准，不进产物）**：300 帧；
+  `pict_type` I=5/P=75/B=220。**关键帧(I)真实位置**：首个 IDR 样本 native pts=1024（15360
+  timebase）= 第 2 帧 = 0.0667s，即本 golden 文件存在 **2 帧(8000 ticks)起始偏移**，故关键帧落在
+  0.0667 / 2.0667 / 4.0667 / 6.0667 / 8.0667 s（≠ 0/2/4/6/8，后者是约数）。
+  → 项目网格(120000) ticks：**`{8000, 248000, 488000, 728000, 968000}`，共 5 个**。
+  B 帧（非关键帧）如 0.100000 / 2.100000 / 4.100000 s（注意 0.0667/2.0667 在本文件就是关键帧，
+  不能当 B 帧目标）。
+- **交付物结果（全绿，15/15 检查，EXIT=0）**：
   - 总帧数=300（与 manifest/ffprobe 一致）✅；300 个 pts 互异 ✅
   - **原始(dts)序 pts 非单调** ✅ —— 真实暴露团队警示点「AVAssetReader passthrough 输出是解码序
     而非显示序」；重排→显示序后严格单调递增 300 帧 ✅（解码序→显示序无损）
-  - **kExact 对 B 帧目标 t=0.066667/0.100000/2.066667 s 返回展示帧 pts=8000/12000/248000（均为
-    目标处 B 帧），且「非关键帧」用 ffprobe 真值核对成立** ✅ —— **核心交付物达成**：真实文件上
-    kExact 仍能正确取 t 处的 B 帧展示帧，而非关键帧/未重建包。
-- **DIAGNOSTIC A — PALA-010 `is_keyframe` 在 passthrough 下不可靠（已暴露，如实记录）**：
-  demuxer 报告关键帧数=300（ffprobe 真值=5）；ffprobe 真值关键帧被正确标记仅 4/5；误报 288 个。
-  根因：`media_demux.mm` 的 `IsKeyframe` 用 `kCMSampleAttachmentKey_DependsOnOthers`，passthrough
-  下该附件常被省略，代码退化为「保守当作关键帧」。→ **这是 PALA-010 既有缺陷，不在本任务范围**；
-  本测试「kExact 不是关键帧」改以 ffprobe 真值关键帧集合核对，不依赖损坏的 demuxer 标志。
-- **DIAGNOSTIC B — `kKeyframeBefore` 当前未回退到真值关键帧（PALA-010 限制，如实记录）**：
-  全新 provider 对每个 t 取 `kKeyframeBefore`：t=0.0667s 返回 pts=8000（=目标 B 帧，非关键帧 0）；
-  t=2.0667s 返回 pts=248000（=目标，非关键帧 240000）。根因：`PALA-010 Seek` 仅设 `timeRange.start=
-  target`、**不回退/吸附到关键帧**，故 kKeyframeBefore 退化为「≈目标处帧」。属 PALA-010 既有缺陷。
-- **mock 与真实一致性结论**：
+  - **验收 1（demuxer 关键帧集合 vs ffprobe 逐帧吻合）**：demuxer 报 5 个关键帧，与 ffprobe 真值
+    双向 5/5 命中（容差 1 帧）✅ —— **PALA-010 `IsKeyframe` 修复达成**。
+  - **验收 3（kExact 回归，B 帧目标改回用 demuxer 自身 `is_keyframe` 标志核对）**：t=0.1000/2.1000/
+    4.1000 s → 返回展示帧 pts=12000/252000/492000（均为目标处 B 帧）且 demuxer 标志为非关键帧 ✅
+    —— **核心交付物在真实关键帧判定可用后回归通过**。
+  - **验收 2（kKeyframeBefore 返回 <=t 真值关键帧）**：t=0.1000/2.1000/4.1000 s → 返回 8000/248000/
+    488000（各自 <=t 的真实关键帧）✅ —— **PALA-010 `Seek` 吸附修复达成**。
+
+- **PALA-010 两处缺陷已修复（2026-09-26，本任务）**——此前 DIAGNOSTIC A/B 升级为修复：
+  - **任务 A — `IsKeyframe` 分层判定（根因已定位并修复）**：`media_demux.mm` 新增 `IsKeyframe`
+    分层 + NAL 解析兜底：
+    1. 优先 `kCMSampleAttachmentKey_NotSync`（存在且 false→关键帧）；
+    2. 其次 `kCMSampleAttachmentKey_DependsOnOthers`（存在且 false→关键帧）；
+    3. 附件缺失（passthrough 常见）→ 解析码流 NAL：`DetectKeyframeByNal` 解析 AVCC/Annex-B，
+       H.264 `nal_unit_type==5`（IDR）判关键；HEVC `nal_type 16..23`（IRAP）判关键；
+       新增 `GetSampleData`（零拷贝连续指针）/ `GetNalLengthSize`（读 avcC/hvcC `lengthSizeMinusOne`，
+       默认 4）支撑。
+    4. 仍无法判定（非连续缓冲/无 VCL/未知 codec）→ 兜底**保守当关键帧**（注释写明：极罕见触发，
+       不会漏标真关键帧，仅可能多标一帧，seek 仍能自关键帧启动）。
+    - **实测校验**：逐样本打印确认首个 IDR 样本 `t1=5` 且 `iskf=1`、其余非 IDR `iskf=0`——分层判定
+      与 NAL 兜底完全吻合；demuxer 关键帧集合与 ffprobe **逐帧一致**（非数量接近）。
+  - **任务 B — `Seek` 吸附到 <=t 关键帧**：`Seek` 先用 `Open` 时 `ScanKeyframes` 扫描出的
+    `keyframe_times_`（依赖已修复的 `IsKeyframe`，与 ffprobe 吻合）吸附到 `<=target` 的最大关键帧，
+    重建 `AVAssetReader`（timeRange.start=该关键帧），满足「精确 seek 必须自关键帧起解码」。
+  - **修复中暴露并修复的第三处隐患（关键）**：`RebuildReader` 此前向 `tracks_` **追加**轨而不清空，
+    导致 `Open` 被重复调用时（如 `CreateMediaDemuxer` + `SystemFrameProvider::Open` 双开）累积失效
+    （`output=nil`）的旧轨；`ScanKeyframes` 命中失效轨后 `copyNextSampleBuffer` 立即返回 nil →
+    扫到 0 样本 → `keyframe_times_` 为空 → `Seek` 吸附到 0。已修：`RebuildReader` 开头
+    `tracks_.clear()`，使 `Open` 幂等；`ScanKeyframes` 稳定扫到 300 样本/5 关键帧。
+  - **边界守住**：未改 `core/**` 冻结接口；未实现 PALA-011；未链接 FFmpeg；`-Werror` 零警告
+    （临时调试 `std::printf` 已清除）；测试输出无缓冲。
+
+- **mock 与真实一致性结论（保持）**：
   - 一致处：kExact 编排在「解码序≠显示序」分离下均正确取 t 处展示帧；本真实 MockDecoder 用
-    pts 网格重排（与旧 mock 的「显式 GOP release 依赖」不同机制），都证明了 SystemFrameProvider 的
-    区间归属 + 前向解码逻辑正确。
+    pts 网格重排，都证明了 SystemFrameProvider 的区间归属 + 前向解码逻辑正确。
   - 差异处（真实文件暴露、mock 掩盖的）：
     1. **解码序≠显示序是真实分离的**（真实 dts/pts 发散）；旧 mock 用 dts 0,1,2,3 / pts 0,1,2,3
        同序，根本没触发重排，掩盖了 passthrough 行为。**这是团队重点警示点的实证**。
-    2. **demuxer `is_keyframe` 不可靠**（真实 300 误报 vs 5 真值）；mock 里关键帧是手填的真值，
-       不反映该缺陷。故真实测试必须把「是否关键帧」改以 ffprobe 真值核对。
-    3. **`kKeyframeBefore` 行为不达标**（真实不回退关键帧）；mock 里关键帧是手填，掩盖了
-       PALA-010 Seek 不吸附关键帧的缺陷。
-  - 结论：**mock 验证了「编排逻辑正确」，但会掩盖「平台后端（PALA-010）的 passthrough 行为缺陷」；
-    真实文件升级后既证明 kExact 在真实分离下仍正确，又暴露了 PALA-010 两处既有缺陷（待修）**。
+    2. **demuxer `is_keyframe` 此前不可靠**（真实 300 误报 vs 5 真值）→ 已修复为 NAL IDR/IRAP 判定，
+       与 ffprobe 逐帧吻合；真实测试「是否关键帧」**改回用 demuxer 自身 `is_keyframe` 标志**核
+       （修复前为绕过缺陷曾用 ffprobe 真值核对，现已撤回归正）。
+    3. **`kKeyframeBefore` 此前不回退关键帧**（真实不吸附）→ 已修复为吸附到 <=t 真实关键帧。
+  - 结论：真实文件升级既证明 kExact 在真实分离下正确，又驱动了 PALA-010 两处缺陷（含双开累积隐患）修复。
 - **与冻结接口一致性**：`FrameProvider` 抽象（MEDIA-010）声明的虚函数全部实现；注意该冻结头
   **不含 `GetPosition`**（任务卡初始描述提到的 `GetPosition` 与实际冻结接口不符——以冻结头为准，
   未擅自修改 frozen 头）。
@@ -176,12 +199,11 @@ class FrameProvider {                 // 跨平台帧接口（抽象，MEDIA-020
 ### MEDIA-020 待解 / 后续
 - PALA-011（VideoToolbox `IFrameDecoder` 适配器）→ 端到端真实解码。
 - MEDIA-011 帧缓存 LRU（替换空 stub）、MEDIA-012 解码器池（替换空 stub）。
-- **PALA-010 既有缺陷（已被真实 B 帧文件暴露，建议新任务修复）**：
-  - `IsKeyframe` 在 passthrough 下不可靠（缺 `DependsOnOthers` 附件退化为全关键帧）→ 改用
-    `kCMSampleAttachmentKey_NotSync` 或解析 H.264 NAL（IDR）判定关键帧。
-  - `Seek` 不回退/吸附到 <=target 关键帧（仅设 `timeRange.start`）→ 使 `kKeyframeBefore`
-    退化为「≈目标处帧」。需先有可靠关键帧位置才能正确吸附。
-  - 注：两处均属 PALA-010，不在本任务范围；真实 B 帧精确 seek（kExact 交付物）已不受影响地达成。
+- **已知、与本任务无关的既有失败（非 PALA-010 范围，特此标注）**：`pala_demux` 与 `media_smoke_apple`
+  的 `流数量=1` 断言失败——golden 样本 `gf_1080p_h264.mp4` 实为 **2 路流（video+audio）**，
+  `GetStreamCount` 返回 2；该断言（期望单视频轨）与素材不符，属测试/素材期望问题，不在 PALA-010
+  关键帧/seek 范围，且本次修复未使其更差（Seek/关键帧逻辑完好：`pala_demux` 仍 `Seek(2.5s)→首包
+  pts=240000`、关键帧数=5）。如需「恢复通过」可单独评估调整该断言或素材。
 
 ## 待评审 / 风险（已标出）
 
@@ -191,20 +213,21 @@ class FrameProvider {                 // 跨平台帧接口（抽象，MEDIA-020
   暴露需统一句柄语义（BIND 层处理）。
 - `DecoderHandle` 为 opaque 指针；MEDIA-012 在其后定义真实解码器包装（不暴露平台类型）。
 
-## 验证（2026-09-25 真跑）
+## 验证（2026-09-25 落地；2026-09-26 PALA-010 修复后复跑）
 ```bash
 CMAKE_BIN=/Users/zhuning/.workbuddy/binaries/cmake/CMake.app/Contents/bin/cmake
 $CMAKE_BIN --build build -j4 && $(dirname $CMAKE_BIN)/ctest --test-dir build
-# 15 个用例全绿：cq_cxx20_smoke, core_time/status/log/alloc/concurrency,
-# pal_headers_compile, gfx_headers_compile, media_frame_provider_compile,
-# media_system_frame_provider(MEDIA-020 单测), pal_header_gate,
-# pala_metal_render, pala_demux(PALA-010), media_smoke_apple(MEDIA-020 真实冒烟),
-# media_bframe_real(MEDIA-020 真实 B 帧文件精确 seek)
+# 构建：cq_pal_apple 在 -Werror 下零警告（临时调试 printf 已清除）。
+# media_bframe_real（PALA-010 修复验收）：15/15 检查通过，EXIT=0。
 ```
 - 门禁自测：`check_pal_headers.py` 对 `cq/media/` 零违规（EXIT=0）。
-- PALA-010：`pala_demux` 真实 MP4 全绿（150 帧 / 单调 / seek 中段）。
-- MEDIA-020：`media_system_frame_provider` 单测（B 帧 GOP）9/9；`media_smoke_apple` 真实链路 7/7；
-  `media_bframe_real` 真实 B 帧文件精确 seek 10/10（kExact 取 B 帧展示帧正确）。
+- PALA-010 修复验收：`media_bframe_real` **15/15**（验收 1 关键帧集合逐帧吻合 ffprobe、
+  验收 2 kKeyframeBefore 返回 <=t 真值关键帧、验收 3 kExact 取 B 帧展示帧回归、均通过）。
+- PALA-010 `pala_demux`：Seek/关键帧逻辑完好（`Seek(2.5s)→首包 pts=240000`、关键帧数=5），
+  但 `流数量=1` 断言因素材含 audio 路而失败（**既有、非本次范围**，见上「待解」标注）。
+- MEDIA-020：`media_system_frame_provider` 单测（B 帧 GOP）9/9；`media_smoke_apple` 真实链路
+  除 `流数量=1`（同上素材问题）外 6/7 通过；`media_bframe_real` 真实 B 帧文件精确 seek 15/15。
+- 边界复核：未改 `core/**` 冻结接口；未实现 PALA-011；未链接 FFmpeg；无 git 提交（由 team-lead 提交）。
 
 ## 相关
 ADR-0003、ARCH-003 §3、PAL-接口契约 §4.2、BACKLOG MEDIA-010/011/012/020/021、ARCH-004

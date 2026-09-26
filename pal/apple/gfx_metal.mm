@@ -10,7 +10,8 @@
 //     Objective-C 对象，Destroy() 把成员置 nil 释放并 delete this。
 //   * ShaderModule 支持 Platform-Native 源码（MSL，`is_platform_native=true`）；SPIR-V 路径
 //     本期未实现（SHADER-001 的 MSL 生成尚未接入），返回 kInternal。
-//   * INativeImageImporter（PALA-002）本期不实现，CreateNativeImageImporter 返回 kInternal。
+//   * INativeImageImporter（PALA-002）已实现：CVMetalTextureCacheCreateTextureFromImage
+//     零拷贝；失败时退化为 CPU 拷贝（out_cpu_fallback=true）。
 //   * 错误一律 Status，无异常（内核禁用异常）。
 //
 // 编译：Objective-C++（.mm）+ ARC（-fobjc-arc）。警告集含 -Wconversion/-Wshadow/
@@ -18,13 +19,17 @@
 
 #import <Metal/Metal.h>
 #import <Foundation/Foundation.h>
+#import <CoreVideo/CoreVideo.h>
+#import <IOSurface/IOSurface.h>
 
 #include "cq/pal/gfx.h"
 #include "cq/base/status.h"
 #include "gfx_metal_internal.h"
+#include "media_decode.h"  // CqNativeImage / GetCvPixelBuffer：Apple 端 NativeImageHandle 的完整定义
 
 #include <cstdint>
 #include <cstring>
+#include <chrono>
 #include <mutex>
 #include <condition_variable>
 
@@ -78,8 +83,15 @@ struct CqTexture : public ITexture {
 public:
     id<MTLTexture> tex_ = nil;
     TextureDesc desc_{};
+    // 零拷贝导入时持有 CVMetalTextureRef（其底层 IOSurface 与源 CVPixelBuffer 共享），
+    // 使纹理在存活期内 IOSurface 不被回收。普通纹理此项为 nil。
+    CVMetalTextureRef cv_keepalive_ = nullptr;
 
     void Destroy() override {
+        if (cv_keepalive_ != nullptr) {
+            CFRelease(cv_keepalive_);
+            cv_keepalive_ = nullptr;
+        }
         tex_ = nil;
         desc_ = TextureDesc{};
         delete this;
@@ -350,6 +362,129 @@ public:
     }
 };
 
+// ---------------------------------------------------------------------------
+// PALA-002：CVPixelBuffer → CVMetalTexture 零拷贝导入器（ExternalImage 概念）
+//
+// 零拷贝关键：`CVMetalTextureCacheCreateTextureFromImage` 把 CVPixelBuffer 的
+// IOSurface **直接包装**成 id<MTLTexture>。全程**不调用 replaceRegion、不分配/拷贝
+// 像素缓冲**——纹理与源 buffer 共享同一块物理内存（IOSurface）。
+//
+// 退化路径（契约要求「导入失败仍可用」）：当零拷贝不成立（如 CVPixelBuffer 未设
+// kCVPixelBufferMetalCompatibilityKey、或格式非 32BGRA）时，锁定源基址、用
+// replaceRegion 把 BGRA 字节拷进一张 BGRA8Unorm 纹理，out_cpu_fallback=true。
+// 两条路径产出的纹理**物理格式均为 MTLPixelFormatBGRA8Unorm**（匹配 PALA-011 的 32BGRA
+// 输出，使 CVMetalTexture 能直接复用其 IOSurface）。Metal 对 BGRA8Unorm 的采样已按「逻辑 RGBA」
+// 返回（.r=红/.b=蓝，字节布局由格式内部吸收），故采样端着色器**无需**手动交换通道；
+// 对外逻辑格式仍报 kRGBA8。
+struct CqNativeImageImporter : public INativeImageImporter {
+public:
+    id<MTLDevice> device_ = nil;
+    CVMetalTextureCacheRef cache_ = nullptr;  // 按 device 持有并复用
+
+    void Destroy() override {
+        if (cache_ != nullptr) {
+            CFRelease(cache_);
+            cache_ = nullptr;
+        }
+        device_ = nil;
+        delete this;
+    }
+
+    Status Import(NativeImageHandle image, TextureUsage usage,
+                  TextureHandle& out_texture, bool& out_cpu_fallback) override {
+        out_texture = nullptr;
+        out_cpu_fallback = false;
+        if (device_ == nil || cache_ == nullptr) return Status(StatusCode::kInternal);
+        if (image == nullptr) return Status(StatusCode::kInvalidArgument);
+
+        auto* ni = static_cast<CqNativeImage*>(image);
+        CVPixelBufferRef pb = ni->pixel_buffer;
+        if (pb == nullptr) return Status(StatusCode::kInvalidArgument);
+
+        const size_t w = CVPixelBufferGetWidth(pb);
+        const size_t h = CVPixelBufferGetHeight(pb);
+        if (w == 0 || h == 0) return Status(StatusCode::kInvalidArgument);
+
+        // ---- 零拷贝路径：CVPixelBuffer -> CVMetalTexture（共享 IOSurface）----
+        // ⚠️ 这里**没有任何像素缓冲拷贝**：CVMetalTextureCacheCreateTextureFromImage
+        // 直接复用源 buffer 的 IOSurface 作为纹理存储。
+        CVMetalTextureRef cvtex = nullptr;
+        const CVReturn cvret = CVMetalTextureCacheCreateTextureFromImage(
+            kCFAllocatorDefault, cache_, pb, nullptr,
+            MTLPixelFormatBGRA8Unorm,
+            w, h, 0, &cvtex);
+        if (cvret == kCVReturnSuccess && cvtex != nullptr) {
+            id<MTLTexture> tex = CVMetalTextureGetTexture(cvtex);
+            if (tex != nil) {
+                auto* t = new CqTexture();
+                t->tex_ = tex;
+                t->desc_.format = TextureFormat::kRGBA8;  // 逻辑格式：管线按 RGBA 消费
+                t->desc_.width = static_cast<uint32_t>(w);
+                t->desc_.height = static_cast<uint32_t>(h);
+                t->desc_.usage = usage;
+                // 把 CreateTextureFromImage 的所有权转交给纹理包装（不再额外 retain）：
+                // cv_keepalive_ 在纹理存活期保持 CVMetalTextureRef（及其 IOSurface）有效。
+                t->cv_keepalive_ = cvtex;
+                out_texture = t;
+                out_cpu_fallback = false;
+                return Status::Ok();
+            }
+            CFRelease(cvtex);  // tex 为 nil 的异常分支
+        }
+
+        // ---- 退化路径：零拷贝失败 -> CPU 拷贝（仍返回可用纹理）----
+        // PALA-011 输出为 32BGRA，本路径仅支持该格式；其它格式如实返回 kUnsupported。
+        return ImportCpu(pb, usage, out_texture, out_cpu_fallback);
+    }
+
+private:
+    // 退化路径实现：锁定源基址 + replaceRegion 把 BGRA 字节拷进 BGRA8Unorm 纹理。
+    // ⚠️ 这是**唯一发生像素拷贝**的地方。零拷贝成立时 Import 不会调用它。
+    Status ImportCpu(CVPixelBufferRef pb, TextureUsage usage,
+                     TextureHandle& out_texture, bool& out_cpu_fallback) {
+        out_texture = nullptr;
+        out_cpu_fallback = true;
+        if (CVPixelBufferGetPixelFormatType(pb) != kCVPixelFormatType_32BGRA) {
+            return Status(StatusCode::kFormatUnsupported);
+        }
+        if (CVPixelBufferLockBaseAddress(pb, kCVPixelBufferLock_ReadOnly) != kCVReturnSuccess) {
+            return Status(StatusCode::kInternal);
+        }
+        const size_t w = CVPixelBufferGetWidth(pb);
+        const size_t h = CVPixelBufferGetHeight(pb);
+        const size_t bpr = CVPixelBufferGetBytesPerRow(pb);
+        const uint8_t* src = static_cast<const uint8_t*>(CVPixelBufferGetBaseAddress(pb));
+
+        MTLTextureDescriptor* td =
+            [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:MTLPixelFormatBGRA8Unorm
+                                                              width:static_cast<NSUInteger>(w)
+                                                             height:static_cast<NSUInteger>(h)
+                                                          mipmapped:NO];
+        td.storageMode = MTLStorageModeManaged;  // CPU 可 replaceRegion 上传
+        td.usage = MTLTextureUsageShaderRead;
+        id<MTLTexture> ctex = [device_ newTextureWithDescriptor:td];
+        if (ctex == nil) {
+            CVPixelBufferUnlockBaseAddress(pb, kCVPixelBufferLock_ReadOnly);
+            return Status(StatusCode::kInternal);
+        }
+        [ctex replaceRegion:MTLRegionMake2D(0, 0, static_cast<NSUInteger>(w),
+                                            static_cast<NSUInteger>(h))
+                mipmapLevel:0
+                  withBytes:src
+                bytesPerRow:static_cast<NSUInteger>(bpr)];
+        CVPixelBufferUnlockBaseAddress(pb, kCVPixelBufferLock_ReadOnly);
+
+        auto* t = new CqTexture();
+        t->tex_ = ctex;
+        t->desc_.format = TextureFormat::kRGBA8;
+        t->desc_.width = static_cast<uint32_t>(w);
+        t->desc_.height = static_cast<uint32_t>(h);
+        t->desc_.usage = usage;
+        out_texture = t;
+        return Status::Ok();
+    }
+};
+
 struct CqDevice : public IGraphicsDevice {
 public:
     id<MTLDevice> device_ = nil;
@@ -536,9 +671,19 @@ public:
         return Status::Ok();
     }
 
-    Status CreateNativeImageImporter(PalPtr<INativeImageImporter>& /*out*/) override {
-        // PALA-002 任务：CVPixelBuffer -> CVMetalTexture 零拷贝。本期不实现。
-        return Status(StatusCode::kInternal);
+    Status CreateNativeImageImporter(PalPtr<INativeImageImporter>& out) override {
+        if (device_ == nil) return Status(StatusCode::kInternal);
+        CVMetalTextureCacheRef cache = nullptr;
+        const CVReturn r = CVMetalTextureCacheCreate(kCFAllocatorDefault, nullptr, device_,
+                                                     nullptr, &cache);
+        if (r != kCVReturnSuccess || cache == nullptr) {
+            return Status(StatusCode::kInternal);
+        }
+        auto* imp = new CqNativeImageImporter();
+        imp->device_ = device_;      // ARC 自动 retain
+        imp->cache_ = cache;         // 所有权交给 imp，Destroy 时 CFRelease
+        out = PalPtr<INativeImageImporter>(imp);
+        return Status::Ok();
     }
 
     Status WaitFence(IFence* fence, uint64_t timeout_ms) override {
@@ -625,6 +770,61 @@ BufferHandle        ToBufferHandle(IBuffer* p)           { return static_cast<Cq
 TextureHandle       ToTextureHandle(ITexture* p)         { return static_cast<CqTexture*>(p); }
 SamplerHandle       ToSamplerHandle(ISampler* p)         { return static_cast<CqSampler*>(p); }
 RenderTargetHandle  ToRenderTargetHandle(IRenderTarget* p){ return static_cast<CqRenderTarget*>(p); }
+
+// 零拷贝验证辅助：返回导入纹理背后 IOSurface 的 ID。取不到（非 IOSurface 纹理 / 平台不支持）
+// 时返回 0，调用方据以降级到替代证据（如耗时实测）。用于证明「纹理与源 CVPixelBuffer 共享
+// 同一 IOSurface」——即物理上零拷贝。
+uint32_t GetImportedTextureIosurfaceId(TextureHandle tex) {
+    auto* mt = static_cast<CqTexture*>(tex);
+    if (mt == nullptr || mt->tex_ == nil) return 0;
+    IOSurfaceRef surf = mt->tex_.iosurface;  // MTLTexture.iosurface（macOS）：底层 IOSurface
+    if (surf == nullptr) return 0;
+    return static_cast<uint32_t>(IOSurfaceGetID(surf));
+}
+
+// 零拷贝耗时代差证明：对「Metal 兼容帧」走零拷贝（zero_handle）、对「非兼容帧」走 CPU 退化
+// （cpu_handle）各 iters 次，返回各自总耗时（毫秒）。零拷贝仅建纹理视图（µs 级），CPU 退化含
+// 整帧 BGRA memcpy；二者差距即为零拷贝收益的客观证据（取不到 IOSurface 时退化为该实测）。
+Status BenchmarkNativeImageImport(IGraphicsDevice* dev,
+                                 NativeImageHandle zero_handle,
+                                 NativeImageHandle cpu_handle,
+                                 int iters,
+                                 double& out_zero_ms, double& out_cpu_ms) {
+    out_zero_ms = 0.0;
+    out_cpu_ms = 0.0;
+    if (dev == nullptr || zero_handle == nullptr || cpu_handle == nullptr || iters <= 0) {
+        return Status(StatusCode::kInvalidArgument);
+    }
+    auto* cdev = static_cast<CqDevice*>(dev);
+    if (cdev == nullptr || cdev->device_ == nil) return Status(StatusCode::kInternal);
+    PalPtr<INativeImageImporter> imp;
+    if (!cdev->CreateNativeImageImporter(imp).IsOk()) return Status(StatusCode::kInternal);
+    auto* cimp = static_cast<CqNativeImageImporter*>(imp.get());
+
+    auto time_it = [&](NativeImageHandle h, double& out_ms) -> Status {
+        const auto t0 = std::chrono::steady_clock::now();
+        for (int i = 0; i < iters; ++i) {
+            TextureHandle th = nullptr;
+            bool fb = false;
+            if (!cimp->Import(h, TextureUsage::kSampled, th, fb).IsOk()) {
+                return Status(StatusCode::kInternal);
+            }
+            static_cast<ITexture*>(th)->Destroy();
+        }
+        const auto t1 = std::chrono::steady_clock::now();
+        out_ms = std::chrono::duration<double, std::milli>(t1 - t0).count();
+        return Status::Ok();
+    };
+    Status s = time_it(zero_handle, out_zero_ms);
+    if (!s.IsOk()) return s;
+    return time_it(cpu_handle, out_cpu_ms);
+}
+
+// 释放 importer 产出的纹理句柄（见 gfx_metal_internal.h 说明；CqTexture 在此 TU 为完整类型）。
+void DestroyTexture(TextureHandle tex) {
+    auto* t = static_cast<CqTexture*>(tex);
+    if (t != nullptr) t->Destroy();
+}
 
 }  // namespace apple
 }  // namespace cq

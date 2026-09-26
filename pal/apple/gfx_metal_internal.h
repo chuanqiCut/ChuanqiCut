@@ -38,5 +38,23 @@ TextureHandle     ToTextureHandle(ITexture* p);
 SamplerHandle     ToSamplerHandle(ISampler* p);
 RenderTargetHandle ToRenderTargetHandle(IRenderTarget* p);
 
+// 零拷贝验证辅助：返回导入纹理背后 IOSurface 的 ID；取不到（非 IOSurface 纹理 / 平台
+// 不支持）返回 0。调用方据以证明「纹理与源 CVPixelBuffer 共享同一 IOSurface」≡ 物理零拷贝，
+// 或在取不到时降级到耗时实测等替代证据。签名仅用 PAL 句柄类型，纯 C++ 测试 TU 可调用。
+uint32_t GetImportedTextureIosurfaceId(TextureHandle tex);
+
+// 零拷贝耗时代差证明：对「Metal 兼容帧」走零拷贝（zero_handle）、对「非兼容帧」走 CPU 退化
+// （cpu_handle）各 iters 次，返回各自总耗时（毫秒）。返回 Status::Ok 时 out_zero_ms /
+// out_cpu_ms 有效。签名仅用 PAL 头类型，纯 C++ 测试 TU 可调用。
+Status BenchmarkNativeImageImport(IGraphicsDevice* dev,
+                                 NativeImageHandle zero_handle,
+                                 NativeImageHandle cpu_handle,
+                                 int iters, double& out_zero_ms, double& out_cpu_ms);
+
+// 释放 importer 产出的纹理句柄：INativeImageImporter::Import 返回裸 TextureHandle，
+// 而 CqTexture 在 core 为不完整类型，调用方无法直接 Destroy，故经此 Apple 辅助释放
+// （内部下行转换后调 ITexture::Destroy）。签名仅用 PAL 头类型，纯 C++ 测试 TU 可调用。
+void DestroyTexture(TextureHandle tex);
+
 }  // namespace apple
 }  // namespace cq

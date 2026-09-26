@@ -191,4 +191,25 @@ if(APPLE)
     cq_require_cxx20(cq_tests_media_bframe_real)
     apply_cq_warnings(cq_tests_media_bframe_real)
     add_test(NAME media_bframe_real COMMAND cq_tests_media_bframe_real)
+
+    # ---- PALA-002：Apple 零拷贝导入验收（CVPixelBuffer -> CVMetalTexture）----
+    # 合成帧做 IOSurface 一致性 + 耗时代差证明零拷贝；并接 PALA-010+PALA-011 真实首帧
+    # 经本 importer + PALA-001 渲染读回，对照真值 (0,188,0,255) 并验证 UV 原点不颠倒。
+    # 测试 TU 直接调用 CoreVideo/IOSurface C API，需显式链接（避免链接期符号未定义）。
+    find_library(COREVIDEO_T2_LIB CoreVideo REQUIRED)
+    find_library(IOSURFACE_T2_LIB IOSurface REQUIRED)
+    add_executable(cq_tests_pala_native_image
+        unit/test_native_image_importer_apple.cpp)
+    target_include_directories(cq_tests_pala_native_image PRIVATE
+        ${CMAKE_SOURCE_DIR}/core/include
+        ${CMAKE_SOURCE_DIR}/pal/apple)
+    target_compile_definitions(cq_tests_pala_native_image PRIVATE
+        CQ_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
+    target_link_libraries(cq_tests_pala_native_image PRIVATE
+        cq_core cq_pal_apple
+        ${AVFOUNDATION_T_LIB} ${COREMEDIA_T_LIB}
+        ${COREVIDEO_T2_LIB} ${IOSURFACE_T2_LIB})
+    cq_require_cxx20(cq_tests_pala_native_image)
+    apply_cq_warnings(cq_tests_pala_native_image)
+    add_test(NAME pala_native_image COMMAND cq_tests_pala_native_image)
 endif()

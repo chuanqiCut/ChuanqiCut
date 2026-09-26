@@ -40,6 +40,9 @@ if(APPLE)
     find_library(COREVIDEO_LIB   CoreVideo    REQUIRED)
     find_library(QUARTZCORE_LIB  QuartzCore   REQUIRED)
     find_library(FOUNDATION_LIB  Foundation   REQUIRED)
+    # PALA-002 零拷贝路径用到 CVMetalTexture / IOSurface（IOSurface 在 macOS 为独立框架，
+    # 虽常被 CoreVideo/Metal 传递链接，这里显式登记避免「符号未定义」式链接陷阱）。
+    find_library(IOSURFACE_LIB   IOSurface    REQUIRED)
     # PALA-010 解封装用 AVFoundation/CoreMedia；PALA-011 硬解用 VideoToolbox。
     # ⚠️ 新增用到系统框架的 .mm 必须在此登记，否则链接期才报「符号未定义」，
     #    且报错只显示引用位置、不直接指出缺哪个框架——排查成本高。
@@ -52,6 +55,7 @@ if(APPLE)
         ${COREVIDEO_LIB}
         ${QUARTZCORE_LIB}
         ${FOUNDATION_LIB}
+        ${IOSURFACE_LIB}
         ${AVFOUNDATION_LIB}
         ${COREMEDIA_LIB}
         ${VIDEOTOOLBOX_LIB}

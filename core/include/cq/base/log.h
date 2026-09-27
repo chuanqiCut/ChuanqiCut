@@ -121,8 +121,15 @@ void LogFrameImpl(PipelineStage stage, const RationalTime& pts, const char* file
 // ============================================================================
 #ifdef NDEBUG
 // Release：Trace 与帧级 trace 完全编译掉（连格式化参数都不求值）。
-#define CQ_LOG_TRACE(...)   do {} while (0)
-#define CQ_LOG_FRAME(...)   do {} while (0)
+//
+// ⚠️ 注意这里**必须显式把参数转成 void 再丢弃**，不能写成 `do {} while (0)`。
+//    否则调用点里「只为这个宏而准备的变量」在 Release 下会变成未使用变量，
+//    在 -Werror（-Wunused-variable）下**直接把 Release 构建打断**——
+//    2026-09-26 实测：test_log.cpp 的 pts/pts2 就因此让 Release 编不过。
+//    （Release 是发布必经路径，红了等于发布路径是坏的，且平时 Debug 看不出来。）
+#define CQ_LOG_TRACE(...)   do { (void)0; } while (0)
+#define CQ_LOG_FRAME(stage, pts, ...) \
+    do { (void)(stage); (void)(pts); } while (0)
 #else
 #define CQ_LOG_TRACE(...) \
     ::cq::LogImpl(::cq::LogLevel::kTrace, __FILE__, __LINE__, __VA_ARGS__)

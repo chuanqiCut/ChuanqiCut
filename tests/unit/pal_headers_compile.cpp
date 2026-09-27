@@ -50,6 +50,7 @@ static_assert(std::is_base_of_v<IPalResource, IGraphicsDevice>, "");
 static_assert(std::is_base_of_v<IPalResource, ITexture>, "");
 static_assert(std::is_base_of_v<IPalResource, IAudioEngine>, "");
 static_assert(std::is_base_of_v<IPalResource, IMediaDemuxer>, "");
+static_assert(std::is_base_of_v<IPalResource, IMediaMuxer>, "");
 static_assert(std::is_base_of_v<IPalResource, IInferenceBackend>, "");
 static_assert(std::is_base_of_v<IPalResource, IFileSystem>, "");
 static_assert(std::is_base_of_v<IPalResource, IMonotonicClock>, "");
@@ -59,6 +60,9 @@ static_assert(!std::is_copy_constructible_v<PalPtr<IGraphicsDevice>>, "");
 static_assert(!std::is_copy_assignable_v<PalPtr<IGraphicsDevice>>, "");
 static_assert(std::is_move_constructible_v<PalPtr<IGraphicsDevice>>, "");
 static_assert(std::is_move_assignable_v<PalPtr<IGraphicsDevice>>, "");
+// muxer 同样走 PalPtr + Destroy() 生命周期（与 demuxer 对称）。
+static_assert(!std::is_copy_constructible_v<PalPtr<IMediaMuxer>>, "");
+static_assert(std::is_move_constructible_v<PalPtr<IMediaMuxer>>, "");
 
 // ---- 4. 时间一律 RationalTime（项目 timescale=120000），禁止浮点秒 ----
 static_assert(kProjectTimeScale == 120000, "PAL must align with ADR-0009 timescale 120000");
@@ -78,6 +82,34 @@ static_assert(std::is_same_v<Status, decltype(std::declval<IGraphicsDevice>().Cr
 static_assert(std::is_same_v<Status (IMediaDemuxer::*)(const RationalTime&, const CancelToken&),
                              decltype(&IMediaDemuxer::Seek)>,
               "Seek(RationalTime, CancelToken) signature must match");
+
+// ---- 6b. IMediaMuxer 对称契约：写帧/收尾接受 CancelToken，帧为 opaque 句柄 ----
+// WriteVideoFrame 必须以平台无关的 NativeImageHandle 传帧（零平台类型：绝不出现
+// CVPixelBufferRef / jobject 等），且 PTS 为 RationalTime、长任务接受 CancelToken。
+static_assert(
+    std::is_same_v<Status (IMediaMuxer::*)(NativeImageHandle, const RationalTime&, const CancelToken&),
+                   decltype(&IMediaMuxer::WriteVideoFrame)>,
+    "WriteVideoFrame(NativeImageHandle, RationalTime, CancelToken) signature must match");
+// Finish 接受 CancelToken（取消返回 kCancelled 非错误）。
+static_assert(std::is_same_v<Status (IMediaMuxer::*)(const CancelToken&),
+                             decltype(&IMediaMuxer::Finish)>,
+              "Finish(CancelToken) signature must match");
+// Open 以输出路径 + 容器枚举表达，不泄漏平台文件/容器类型。
+static_assert(std::is_same_v<Status (IMediaMuxer::*)(const char*, ContainerFormat),
+                             decltype(&IMediaMuxer::Open)>,
+              "Open(const char*, ContainerFormat) signature must match");
+// 工厂返回 Status + PalPtr<IMediaMuxer>&（与 CreateMediaDemuxer 对称）。
+static_assert(
+    std::is_same_v<Status (*)(PalPtr<IMediaMuxer>&), decltype(&CreateMediaMuxer)>,
+    "CreateMediaMuxer(PalPtr<IMediaMuxer>&) signature must match");
+// 码率以档位枚举表达（避免把平台特定 bps 暴露到 core）。
+static_assert(std::is_same_v<BitrateTier, decltype(VideoTrackConfig{}.bitrate)>,
+              "VideoTrackConfig.bitrate must be BitrateTier (not raw bps)");
+static_assert(sizeof(BitrateTier) == sizeof(int32_t), "BitrateTier must be int32_t stable");
+// muxer 与 demuxer 同属媒体领域，接口对称：都继承 IPalResource、都用 RationalTime。
+// FrameCount 返回帧计数（int64_t），不是时间，避免语义混淆。
+static_assert(!std::is_same_v<RationalTime, decltype(std::declval<IMediaMuxer>().FrameCount())>,
+              "FrameCount returns int64_t count, not RationalTime");
 
 // ---- 7. 枚举底层位宽稳定（跨端一致，不依赖编译器自动编号）----
 static_assert(sizeof(Capability) == sizeof(int32_t), "Capability must be int32_t stable");

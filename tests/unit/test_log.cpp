@@ -78,11 +78,18 @@ void TestLevelFiltering() {
     Check(sink.counts[static_cast<int>(cq::LogLevel::kError)] == 1, "Error 透传");
 
     // 提高到 Trace，全部应透传。
+    // ⚠️ 同 TestFrameTrace：Release（NDEBUG）下 CQ_LOG_TRACE 由宏层编译期剔除，
+    //    Trace 计数恒为 0，故按构建类型分别断言。
     cq::SetLogLevel(cq::LogLevel::kTrace);
     CQ_LOG_TRACE("t2");
     CQ_LOG_DEBUG("d2");
     CQ_LOG_INFO("i2");
+#ifdef NDEBUG
+    Check(sink.counts[static_cast<int>(cq::LogLevel::kTrace)] == 0,
+          "Release 下 Trace 被编译期剔除（零开销）");
+#else
     Check(sink.counts[static_cast<int>(cq::LogLevel::kTrace)] == 1, "Trace 在最低级别=kTrace 时透传");
+#endif
     Check(sink.counts[static_cast<int>(cq::LogLevel::kDebug)] == 1, "Debug 透传");
     Check(sink.counts[static_cast<int>(cq::LogLevel::kInfo)] == 1, "Info 透传");
     ResetGlobal();
@@ -120,6 +127,15 @@ void TestFrameTrace() {
     cq::RationalTime pts(100 * 1000, cq::kProjectTimeScale);
     CQ_LOG_FRAME(cq::PipelineStage::kDecode, pts, "got frame, size=%d", 1920 * 1080);
 
+// ⚠️ Release（NDEBUG）下 CQ_LOG_FRAME 由宏层编译期剔除（CORE-003 设计意图：
+//    发布产物零开销）。因此这里**不能无条件断言"捕获到 N 条"**——records 会是空的，
+//    而下面若继续访问 records[1]/records[2] 就是越界访问 → SEGFAULT。
+//    2026-09-26 实测：Release 构建下 core_log 因此崩溃，而 Debug 完全看不出来。
+//    故按构建类型分别断言：Debug 验"有记录且内容正确"，
+//    Release 验"零开销（无记录）"——后者同样是在验证设计意图，不是跳过测试。
+#ifdef NDEBUG
+    Check(sink.records.empty(), "Release 下帧级 trace 被编译期剔除（零开销）");
+#else
     Check(sink.records.size() == 1, "捕获到 1 条帧 trace");
     if (!sink.records.empty()) {
         Check(sink.records[0].level == cq::LogLevel::kTrace, "帧 trace 级别为 Trace");
@@ -134,14 +150,19 @@ void TestFrameTrace() {
               ("含 pts 有理数标识(" + want_pts + ")").c_str());
         Check(m.find("got frame, size=2073600") != std::string::npos, "含用户消息与参数");
     }
+#endif
 
     // demux 与 encode 不同阶段应能区分。
     cq::RationalTime pts2(50000, cq::kProjectTimeScale);
     CQ_LOG_FRAME(cq::PipelineStage::kDemux, pts2, "packet in");
     CQ_LOG_FRAME(cq::PipelineStage::kEncode, pts2, "packet out");
+#ifdef NDEBUG
+    Check(sink.records.empty(), "Release 下仍无记录（零开销）");
+#else
     Check(sink.records.size() == 3, "共 3 条帧 trace");
     Check(sink.records[1].message.find("[demux]") != std::string::npos, "第二帧为 demux");
     Check(sink.records[2].message.find("[encode]") != std::string::npos, "第三帧为 encode");
+#endif
     ResetGlobal();
 }
 
@@ -155,7 +176,11 @@ void TestFrameTagIsRationalTime() {
     cq::SetLogLevel(cq::LogLevel::kTrace);
     cq::RationalTime pts(12345, 60000);
     CQ_LOG_FRAME(cq::PipelineStage::kRender, pts, "render ok");
+#ifdef NDEBUG
+    Check(sink.records.empty(), "Release 下剔除（零开销），调用仍合法");
+#else
     Check(sink.records.size() == 1, "RationalTime 帧标识可正常调用");
+#endif
     ResetGlobal();
 }
 

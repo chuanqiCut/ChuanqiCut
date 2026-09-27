@@ -162,6 +162,94 @@ Platform-Native shader 层（不泄漏到 core，见 ADR-0002）。
   `Status CreateFrameProvider(const MediaSource&, PalPtr<IFrameProvider>&)`。
 - 长任务（打开/seek/读取）接受 `const CancelToken&`。
 
+### 4.2b Media Muxer（media.h）—— 封装（mux）/ 编码输出（与 demux 对称）
+
+下游 **EXPORT-001（导出控制器，core/src/export/*，本期未实现）** 落地时，将通过本契约的
+`IMediaMuxer` 消费「Apple 端已验证的 H.264 MP4 导出能力」（PALA-012 `AppleVideoEncoder`，
+已由 `pala_encode` 用例 ffprobe 验证 codec=H.264 / 1920×1080 / 60 帧 / 2.0s）。
+
+`IMediaMuxer` 与 `IMediaDemuxer` **对称**：`Open（开容器）→ AddVideoTrack（加轨）→
+WriteVideoFrame（写帧，PTS 非递减）→ Finish（收尾）`，外加 `Cancel`（中止删半成品）。
+音频轨仅留接口 `AddAudioTrack`（Apple 实现当前返回 `kEncodeUnsupported`，不产出音频轨）。
+
+| 接口 | 职责 |
+|---|---|
+| `IMediaMuxer` | 把解码/渲染产出的视频帧（opaque `NativeImageHandle`）封装进容器（MP4 等）并完成平台编码；上层（导出控制器）只持有 `IMediaMuxer`，不接触任何 Apple/Android 内部编码器类型 |
+
+- **零平台类型**：帧以 opaque `NativeImageHandle` 传入，**绝不**出现 `CVPixelBufferRef` /
+  `jobject` / `AHardwareBuffer` 等；Apple 实现在 PAL 内把 `NativeImageHandle` 经
+  `GetCvPixelBuffer` 转回 `CVPixelBufferRef` 后委托给 `AppleVideoEncoder`。零 FFmpeg 类型
+  （`AVAssetWriter`/`AVPacket` 等只在 PAL 内）。
+- **统一 base 类型**：时间一律 `RationalTime`（项目 timescale=120000，ADR-0009）；错误一律
+  `Status`；长任务（`WriteVideoFrame` / `Finish`）接受 `const CancelToken&`；内核禁用异常。
+- **时间约定（ADR-0009）**：每帧 PTS 必须是 `RationalTime`，timescale 须等于轨约定网格
+  （本期 = `kProjectTimeScale` = 120000）。非整除（如 1001/30000 的 NTSC 帧周期）在写入前
+  由调用方显式 `Rescale(..., kRound/kFloor)` 对齐，接口本身不做静默舍入。写入顺序须 PTS 非递减。
+- **取消语义**：取消返回 `kCancelled`，其 `IsError()` 为 false（取消不是错误）。
+- **工厂**：`Status CreateMediaMuxer(PalPtr<IMediaMuxer>&)`（与 `CreateMediaDemuxer` 对称）。
+
+#### 设计取舍（评审重点）
+
+1. **码率用「档位」而非精确 bps**：`VideoTrackConfig.bitrate` 为 `BitrateTier`
+   （kLow/kMedium/kHigh/kLossless），避免把平台特定的码率数值暴露到 core 冻结接口；
+   平台实现按分辨率/格式把档位映射到本机默认码率（kLossless → 交平台默认最高可达质量）。
+2. **`NativeImageHandle` 传帧而非像素缓冲**：与 `IFrameProvider` 的 `MediaFrame.video.image`
+   同源（opaque），导出侧直接复用解码/渲染产出的句柄，不引入新的平台像素类型；实现内部
+   按源格式 **1:1 拷贝**后 append（不做色彩空间转换，规避通道交换类 bug，PALA-002 教训）。
+3. **不修改冻结的 `IMediaDemuxer`/`IFrameProvider` 签名**：`IMediaMuxer` 以新增接口形式加入
+   `media.h`，既有 demux/provider 契约完全不变（CORE-006 冻结约束）。
+4. **音频轨只留接口不实现**：Apple 实现当前只有视频轨（与 `AppleVideoEncoder` 一致），
+   故 `AddAudioTrack` 返回 `kEncodeUnsupported`，预留扩展而不破坏接口形状。
+5. **Apple 适配层 `AppleMediaMuxer`（pal/apple/media_muxer.{h,mm}）**：组合
+   `AppleVideoEncoder` 并复用其已验证的 60 帧导出能力（AVAssetWriter +
+   PixelBufferAdaptor，每帧 PTS 用 RationalTime 同构 CMTime，movieTimeScale=120000），
+   仅新增「经 opaque 句柄的跨层转接」，不改编码/封装语义 → ffprobe 验证不回归。
+
+#### 4.2.1 Media 输出：`IMediaMuxer`（封装 + 编码，与 `IMediaDemuxer` 对称，PALA-012 补充）
+
+`IMediaMuxer` 是 `IMediaDemuxer` 的**结构逆操作**：demux 把容器拆成 `MediaPacket`（压缩块），
+muxer 把帧（已解码像素 / 已编码包）封装成容器文件。两者同处 `media.h`、都继承 `IPalResource`、
+都走 `RationalTime` / `Status` / `CancelToken` / `PalPtr` 生命周期契约，保持「PAL 媒体接口聚集」的
+结构对称（muxer 属 PAL 能力层，不塞进 `media/` 编排层的 `frame_provider.h`）。
+
+> 边界（本次授权）：本接口是 EXPORT-001 导出控制器的下游消费契约的**提前补充**；EXPORT-001 的
+> core 编排（`core/src/export/*`）本期不实现，仅落地 Apple 平台实现（`AppleMediaMuxer`）。
+
+| 方法 | 职责 |
+|---|---|
+| `Open(output_path, ContainerFormat)` | 打开输出容器（UTF-8 路径；本期仅 `kMp4`/`kMov` 被 Apple 接受，其余 `kFormatUnsupported`） |
+| `AddVideoTrack(const VideoTrackConfig&)` | 添加视频轨（须在任意 `WriteVideoFrame` 之前调用一次）；Apple 实现据此建立 `AVAssetWriter` |
+| `AddAudioTrack(const AudioTrackConfig&)` | 添加音频轨（**接口预留**：Apple 实现当前返回 `kEncodeUnsupported`，不伪造音频编码） |
+| `WriteVideoFrame(NativeImageHandle, RationalTime, CancelToken)` | 写入一帧视频：帧以 opaque `NativeImageHandle` 传入，实现内部按源格式 1:1 拷贝后 append，**不做色彩转换**（规避通道交换类 bug，PALA-002 教训）；PTS 非递减；长任务接受 `CancelToken` |
+| `Finish(CancelToken)` | 正常收尾：标记输入完成并阻塞等待封装完成；取消返回 `kCancelled`（非错误） |
+| `Cancel()` | 中止写入并删除半成品输出文件（独立停止信号，非错误；未 Open/已收尾时幂等返回 Ok） |
+| `FrameCount() const` / `IsHardwareAccelerated() const` | 诊断：已写帧数 / 本机是否真走硬件编码（运行时查询，诚实上报） |
+
+- **视频轨配置 `VideoTrackConfig`**（对应 demux 侧 `StreamInfo` 的「写」版本）：`CodecId codec`
+  （本期 `kH264`）、`width` / `height`、`RationalTime frame_rate{30,1}`（仅用于期望帧率/码率假设，
+  非 PTS 网格）、`BitrateTier bitrate`（码率**档位**而非精确 bps，见下）、
+  `int32_t max_keyframe_interval`（GOP；`=1` 全 I 帧）、`bool allow_hardware`（优先硬件、不可用软解回退）。
+- **`BitrateTier` 枚举**（项目级，file scope）：`kUnknown/kLow/kMedium/kHigh/kLossless`。
+  用档位而非裸 bps——避免把平台特定的码率数值暴露到 core 冻结接口；平台实现按分辨率/格式把档位
+  映射到本机默认码率（如 `kLossless` → 交平台默认最高可达质量）。
+- **音频轨配置 `AudioTrackConfig`**：`CodecId codec`（`kAac`）、`sample_rate`、`channels`、`bitrate`（档位）。
+  仅预留，Apple 实现不产出音频轨。
+- **零平台类型**：视频帧以 opaque `NativeImageHandle` 传入（与 `VideoFrame.image` 同款），
+  Audio 经 `AudioTrackConfig` 描述，绝不出现 `CVPixelBufferRef` / `AVPacket` 等；零 FFmpeg 类型。
+  由门禁脚本 `tools/pal/check_pal_headers.py`（ctest 用例 `pal_header_gate`）扫描
+  `core/include/cq/pal/media.h` 兜底——本接口已通过（无平台/FFmpeg 类型、无 `throw`、无裸 `double`）。
+- **编译期自洽验证**：`tests/unit/pal_headers_compile.cpp` 已扩展 `static_assert`，断言
+  `IMediaMuxer` 继承 `IPalResource`、`WriteVideoFrame` 以 `NativeImageHandle` 传帧、`Finish` 接受
+  `CancelToken`、`CreateMediaMuxer` 返回 `Status + PalPtr<IMediaMuxer>&`、`VideoTrackConfig.bitrate`
+  为 `BitrateTier`、`BitrateTier` 底层为 `int32_t`——固化「接口自洽 / 零平台类型 / 与 demuxer 对称」契约。
+- **平台无关调用证明**：`tests/unit/test_media_muxer_apple.cpp`（`pala_muxer` 用例）全程只通过
+  core 冻结接口 `IMediaMuxer` + 工厂 `CreateMediaMuxer` 完成一次真实导出（PALA-010 demux + PALA-011
+  硬解 → `WriteVideoFrame(NativeImageHandle, RationalTime, CancelToken)` 写 60 帧 → `Finish`），
+  **完全不碰 `AppleVideoEncoder` / `CVPixelBufferRef`**；产出经 ffprobe 验证（codec=h264 / 1920×1080 /
+  帧数==写入数 / 时长≈N/30）且首帧中心像素对照真值 `(0,188,0,255)`。
+- **实现状态**：Apple（`AppleMediaMuxer` 组合 `AppleVideoEncoder`，`AVAssetWriter`）已完成并验证；
+  Android / 鸿蒙实现待对应 PALA-/OHOS 任务；核心编排 EXPORT-001 待实现。
+
 ### 4.3 Audio（audio.h）—— PCM 缓冲与播放/采集
 
 下游 `AUDIO-001`（音频图与 PCM 缓冲管理）、`PALA-030`（AVAudioEngine）、

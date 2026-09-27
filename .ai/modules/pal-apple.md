@@ -64,5 +64,38 @@ xcodebuild -workspace apps/apple/ChuanqiCut.xcworkspace -scheme MacApp build
 - 多帧/实时管线：CVMetalTextureCache 在频繁 Import 时需 `CVMetalTextureCacheFlush` 控制膨胀（当前测试每次用完即 `Destroy`，已验证无泄漏；持续播放场景需评估）。
 - HEVC 硬解（PALA-011 范围）打通后，importer 对 32BGRA 同样适用，无需改动。
 
+## PALA-012：H.264 编码与 MP4 封装（AVAssetWriter + PixelBufferAdaptor）（已实现，2026-09-27）
+
+**状态**：已完成并通过 ctest（`pala_encode`，14 项检查全绿；全量 19/19 通过）。
+
+**⚠️ 接口缺口（已报告 team-lead）**：冻结契约 `docs/specs/PAL-接口契约.md` §4.2 **只定义了 `IMediaDemuxer` / `IFrameProvider`，没有 muxer/encoder 接口**；`core/**` 已冻结、本任务禁止改动。因此本期**未**新增 frozen `IMediaMuxer`，而是按 PALA-011 既定先例（`media_decode.h` 平台内部头）把编码能力做成平台内部类 `AppleVideoEncoder`。跨平台冻结接口 `IMediaMuxer` 待 EXPORT-001（core/src/export/*，本期未实现）落地时补齐，届时本能力作为 Apple 实现接入。验收要求是「能导出可被验证的 H.264 MP4」——已达成。
+
+**实现位置**：`pal/apple/media_encode.{h,mm}`
+- `AppleVideoEncoder`（平台内部头，仅 Apple TU 包含；pImpl 隔离 AVFoundation ObjC 对象，使 `media_encode.h` 保持纯 C++）。
+- 编码+封装：`AVAssetWriter`（`AVFileTypeMPEG4` → .mp4，`AVVideoCodecTypeH264`）+ `AVAssetWriterInputPixelBufferAdaptor`。
+- **无色彩转换**：输入 `CVPixelBuffer`（BGRA 或 NV12）按**源格式 1:1 拷入 encoder 自管 buffer** 再 `appendPixelBuffer:withPresentationTime:`。刻意不做 RGB↔YUV 转换，从根上规避「通道交换类 bug」（PALA-002 教训：绿条 R==B 会让此类 bug 被掩盖）。
+- **无时间漂移**：每帧 PTS = `RationalTime` 直接转 `CMTime`（`CMTimeMake(pts.value, pts.timescale)`），`writer.movieTimeScale` 设为同一网格（120000，ADR-0009），样本 PTS 与项目时间轴同构，杜绝累积漂移。`startSessionAtSourceTime:` 在首个样本 append 前用首帧 PTS 启动。
+- **收尾/取消**：`Finish()` 阻塞等待 `finishWritingWithCompletionHandler:`；`Cancel()` 调 `cancelWriting` 并删除半成品文件（取消是独立停止信号，非错误，与 `Status::kCancelled` 语义闭合）。
+- 错误路径：writer 非 Writing 态 / `append` 返回 NO 且 writer Failed / Open 创建失败 / `canAddInput` / `startWriting` 失败 → 均返回 `kEncodeError` 等明确 `Status`；轨道已结束、写入器状态不对均有对应分支。
+- **硬件编码探针**：Open 时用一次性 `VTCompressionSession`（带 `kVTVideoEncoderSpecification_EnableHardwareAcceleratedVideoEncoder`）查询本机是否真能硬件编码，`IsHardwareAccelerated()` 如实上报；不可用则 AVAssetWriter 走软件回退，仍能导出 H.264。
+- 接受 `const CancelToken&`：背压等待（`input.isReadyForMoreMediaData`）期间以 1ms 轮询响应取消，返回 `kCancelled`（非错误）。
+
+**CMake 登记（三处，防「符号未定义」链接陷阱）**：`pal/apple/CMakeLists.txt` 的 `add_library` 源列表、`set_source_files_properties(... -fobjc-arc)`、框架链接（AVFoundation/CoreMedia/VideoToolbox/CoreVideo 已在既有 `find_library`+`target_link_libraries` 中，AVAssetWriter 不需要新框架）。测试 `cq_tests_pala_encode` 在 `tests/CMakeLists.txt` 的 `if(APPLE)` 块登记。
+
+**端到端实测证据（本机 Intel Mac / macOS 15.4 / AppleClang 17 / i7-9750H）**：
+- 链路：`gf_1080p_h264.mp4`（150 帧 @30fps H.264 1920×1080）→ PALA-010 真实 demux → PALA-011 硬解（**硬解=YES**）→ `AppleVideoEncoder` 写前 60 帧 → 落盘 `/tmp/cq_pala_encode_out.mp4`。
+- **ffprobe 验证产出**：`codec_name=h264`、`width=1920 height=1080`、`nb_read_frames=60`（== 写入帧数 N）、`format_name=mov,mp4,m4a,3gp,3g2,mj2`、`duration=2.000000`（== N/30s，帧数/帧率吻合）。文件可被 ffprobe 正常解析（非损坏）。文件大小 ≈195 KB（SMPTE 彩条全 I 帧且内容平坦，压缩极好；码率上限 20 Mbps）。
+- **像素正确性**：重解码产出首帧中心像素 `(R,G,B,A)=(0,190,1,255)` ≈ 真值 `(0,188,0,255)`，且 `g > r+30 && g > b+30`（绿主导、通道顺序未颠倒）。**刻意选绿条而非底部紫条 (62,0,119)** 以暴露 RGB 交换类 bug。
+- **硬编是否真生效**：本机 H.264 硬件编码能力探针 = **YES（可用）**；AVAssetWriter 在可用时默认走 VT 硬件路径，故本次导出应为硬件编码。诚实边界：AVAssetWriter 未在 API 层面暴露「本次是否真硬件」的运行时回读，本 SDK 未强制，这是如实声明的限制。
+- 取消路径冒烟：`Open` 后 `Cancel` 安全中止并删除半成品文件（断言文件不存在）。
+- 全量 ctest：19/19 通过（含 `pal_header_gate` 零平台类型门禁、新增 `pala_encode`），无回归。
+
+**测试**：`tests/unit/test_media_encode_apple.cpp`（仅 `if(APPLE)` 构建），登记为 `pala_encode`。无缓冲输出（`setvbuf(stdout,nullptr,_IONBF,0)`）。
+
+**后续任务**：
+- EXPORT-001：定义 frozen `IMediaMuxer` 跨平台接口（core/src/export/*）与导出控制器（状态机/进度/取消），本 `AppleVideoEncoder` 作为 Apple 实现接入。
+- 精确码率/质量档位（目前 all-intra + 20 Mbps 上限仅作验收，生产档位需与导出控制器协商）。
+- 音频轨封装（本期仅视频；带音轨样本的 `gf_1080p_with_audio.mp4` 留待音频封装）。
+
 ## 相关
-ARCH-004 §3、`PALA-0xx` 任务
+ARCH-004 §3、`PALA-0xx` 任务、ADR-0009（RationalTime 网格）、EXPORT-001

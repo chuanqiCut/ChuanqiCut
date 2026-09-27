@@ -236,4 +236,23 @@ if(APPLE)
     cq_require_cxx20(cq_tests_pala_native_image)
     apply_cq_warnings(cq_tests_pala_native_image)
     add_test(NAME pala_native_image COMMAND cq_tests_pala_native_image)
+
+    # ---- PALA-012：Apple 编码与封装验收（AVAssetWriter + PixelBufferAdaptor）----
+    # 端到端：PALA-010 真实 demux + PALA-011 硬解 -> AppleVideoEncoder 写 H.264 MP4 ->
+    # 重解码输出首帧中心像素对照 (0,188,0,255) + popen ffprobe 验证 codec/分辨率/帧数/时长。
+    # 测试 TU 直接调用 CoreVideo C API 读像素，需显式链接 CoreVideo（经 cq_pal_apple PUBLIC 传递）。
+    find_library(COREVIDEO_T3_LIB CoreVideo REQUIRED)
+    add_executable(cq_tests_pala_encode
+        unit/test_media_encode_apple.cpp)
+    target_include_directories(cq_tests_pala_encode PRIVATE
+        ${CMAKE_SOURCE_DIR}/core/include
+        ${CMAKE_SOURCE_DIR}/pal/apple)
+    target_compile_definitions(cq_tests_pala_encode PRIVATE
+        CQ_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
+    target_link_libraries(cq_tests_pala_encode PRIVATE
+        cq_core cq_pal_apple
+        ${AVFOUNDATION_T_LIB} ${COREMEDIA_T_LIB} ${COREVIDEO_T3_LIB})
+    cq_require_cxx20(cq_tests_pala_encode)
+    apply_cq_warnings(cq_tests_pala_encode)
+    add_test(NAME pala_encode COMMAND cq_tests_pala_encode)
 endif()

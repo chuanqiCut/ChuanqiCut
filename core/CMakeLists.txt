@@ -21,6 +21,7 @@ add_library(cq_core STATIC
     src/base/log.cpp
     src/base/alloc.cpp
     src/base/concurrency.cpp
+    src/base/perf.cpp
     src/media/cache.cpp
     src/media/decoder_pool.cpp
     src/media/system_frame_provider.cpp)

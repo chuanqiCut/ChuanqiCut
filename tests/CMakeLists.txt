@@ -114,6 +114,30 @@ cq_require_cxx20(cq_tests_media_system_frame_provider)
 apply_cq_warnings(cq_tests_media_system_frame_provider)
 add_test(NAME media_system_frame_provider COMMAND cq_tests_media_system_frame_provider)
 
+# ---- MEDIA-011：LruFrameCache 帧缓存池（LRU + 内存上界 + lease 保护）----
+# 跨平台，无平台后端。实测：插入超上界后 UsedBytes() <= 上界、LRU 淘汰最久未用、
+# 借出的帧不被淘汰（move-out）、接入 SystemFrameProvider 命中缓存跳过解码。
+add_executable(cq_tests_media_cache
+    unit/test_cache.cpp)
+target_include_directories(cq_tests_media_cache PRIVATE
+    ${CMAKE_SOURCE_DIR}/core/include)
+target_link_libraries(cq_tests_media_cache PRIVATE cq_core)
+cq_require_cxx20(cq_tests_media_cache)
+apply_cq_warnings(cq_tests_media_cache)
+add_test(NAME media_cache COMMAND cq_tests_media_cache)
+
+# ---- MEDIA-012：DecoderPool 解码器池（硬解路数上限 + 超路数降级）----
+# 跨平台，无平台后端。实测：超路数返回 kResourceExhausted（不崩溃/不挂起）、释放后复用
+# （同一 handle）、ActiveCount/MaxHardwarePaths 符合预期、并发借/还无挂起、接入 provider。
+add_executable(cq_tests_media_decoder_pool
+    unit/test_decoder_pool.cpp)
+target_include_directories(cq_tests_media_decoder_pool PRIVATE
+    ${CMAKE_SOURCE_DIR}/core/include)
+target_link_libraries(cq_tests_media_decoder_pool PRIVATE cq_core)
+cq_require_cxx20(cq_tests_media_decoder_pool)
+apply_cq_warnings(cq_tests_media_decoder_pool)
+add_test(NAME media_decoder_pool COMMAND cq_tests_media_decoder_pool)
+
 # ---- CORE-006：PAL 头文件「零平台类型 / 零 FFmpeg 类型」静态门禁 ----
 # 纯 stdlib python3 脚本：先剥离注释与字符串字面量（避免评论/字符串误报），
 # 再匹配平台类型 / 平台头文件 / FFmpeg 类型 / throw / 裸 double（time 统一用 RationalTime）。

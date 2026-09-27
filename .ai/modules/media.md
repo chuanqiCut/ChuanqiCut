@@ -231,3 +231,86 @@ $CMAKE_BIN --build build -j4 && $(dirname $CMAKE_BIN)/ctest --test-dir build
 
 ## 相关
 ADR-0003、ARCH-003 §3、PAL-接口契约 §4.2、BACKLOG MEDIA-010/011/012/020/021、ARCH-004
+
+## MEDIA-011 / MEDIA-012 落地（2026-09-27，general-purpose-25）
+
+> 替换 MEDIA-020 中 `SetFrameCache` / `SetDecoderPool` 的两个空 stub，实现 `IFrameCache` /
+> `IDecoderPool` 并接入 `SystemFrameProvider`。全部 CTest 18/18 绿（含 `pal_header_gate`
+> 对新增 `core/include/cq/media/` 头零违规）。
+
+### Write Set（边界内）
+- 新增 `core/src/media/cache.cpp` + `core/include/cq/media/cache.h`（MEDIA-011）
+- 新增 `core/src/media/decoder_pool.cpp` + `core/include/cq/media/decoder_pool.h`（MEDIA-012）
+- 修改 `core/include/cq/media/system_frame_provider.h`：接入 `SetFrameCache` / `SetDecoderPool`
+  （仅用冻结接口，未改 `IFrameCache`/`IDecoderPool` 定义；未改 `core/pal/*`）
+- 新增 `tests/unit/test_cache.cpp`（`media_cache`）、`tests/unit/test_decoder_pool.cpp`（`media_decoder_pool`）
+- 修改 `core/CMakeLists.txt`、`tests/CMakeLists.txt`（注册源与用例）
+- **未做**：PALA-012、FFmpeg 链接、PALA-011 真实解码、`ICapabilities`（CORE-007）、`git` 提交
+
+### MEDIA-011 — LruFrameCache（帧缓存池 + LRU）
+- **实现要点**：
+  - `LruFrameCache : public IFrameCache`。`std::map<RationalTime, Entry>`（key=pts/请求时间）
+    + `std::list<RationalTime>`（front=MRU、back=LRU），Entry 持 `lru_it` 实现 O(1) 移动/淘汰。
+  - `UsedBytes()` 统计「若常驻需多少内存」= 按像素格式估算的解码尺寸（video: w*h*bpp；
+    YUV420/NV12=1.5bpp；audio: pcm.data_bytes）。上界由构造参数 / `SetMaxBytes` 给定。
+  - 插入超上界时按 LRU 从尾部淘汰，保证 `UsedBytes() <= 上界`（`SetMaxBytes` 缩小时立即淘汰）。
+  - **关键取舍：lease = move-out 模型**。`Find` 命中把帧**移出**缓存（move-out）交给调用方，
+    缓存中不再保留该条目 → 借出的帧物理不在 LRU 中，淘汰循环永远碰不到它，从根本上杜绝
+    use-after-free（即使将来改深拷贝也安全）。调用方用毕经 `FrameProvider::ReleaseFrame`
+    把帧交回（provider 调 `Insert` 重新入缓存，key = 借出时的请求时间）。
+  - 缓存只持 `MediaFrame` **浅拷贝句柄**（video.image / audio.pcm.data 归 provider 池所有），
+    evict 不释放底层像素缓冲，避免 double free（注释固定所有权）。
+- **实测数字（ctest `media_cache`，43 检查全绿）**：
+  - 上界：每帧 400B、上界 1000B，插入 10 帧后 `UsedBytes()==800`（保留最近 2 帧）且每步 ≤1000。
+  - LRU：插入 t0,t1,t2 后借出 t0，再插 t3,t4 → 淘汰最久未用 t1，t2/t3/t4 存活，`UsedBytes==1200`。
+  - **lease 保护**：借出 A(t0) 后疯狂插 t1..t9（反复淘汰），A 在调用方手中内容（pts=0,width=100）
+    完好、未被改写/重新入缓存 → 证明借出帧不被淘汰。
+  - 接入 provider：`AcquireFrame(t=0)` 二次请求经缓存命中，**feed/pop 计数不变**（跳过解码）。
+- **未覆盖场景**：单帧尺寸 > 上界时该帧无法被淘汰、上界被单帧击穿（属配置错误，已注释）；
+  多轨并发对同一 provider 借出多帧（单 loaned_key_ 仅跟踪一帧，旧借出帧会滞留缓存外直至
+  该 provider 重建）——单 playhead 预览无碍，多并发 lease 需冻结接口增 `Release(at)`。
+
+### MEDIA-012 — DecoderPool（解码器池 + 硬解路数降级）
+- **实现要点**：
+  - `DecoderPool : public IDecoderPool`。`AcquireDecoder` 优先复用池中「已释放的同 codec 解码器」
+    （避免新建硬解 session）；否则 `active < max_hardware_paths` 经 `IDecoderFactory` 新建一路；
+    否则返回 `kResourceExhausted`（**不崩溃、不挂起**）。
+  - `ReleaseDecoder` 仅置空闲（可复用，不销毁）；`ActiveCount()` / `MaxHardwarePaths()` 计数正确；
+    内部 `std::mutex` 加锁但**非阻塞**，并发借/还不挂起。
+  - `CqDecoder` 在 `decoder_pool.h` 完整定义（含 `IFrameDecoder* decoder` + 诊断 id）；提供
+    `DecoderOf(DecoderHandle)` 供 provider 把解码路由到池中的解码器。
+  - **硬解路数上限**：默认保守 `kDefaultMaxHardwarePaths = 1`，构造可配；**不写死 Apple 具体数字**
+    （VideoToolbox 并发数属 PAL 知识）。将来 CORE-007 `ICapabilities` 查到真值，调用方用
+    `SetMaxHardwarePaths` 覆盖即可。core 层只认可配置上限。
+  - **超路数降级策略选择**：返回 `kResourceExhausted` 让调用方背压/排队（不阻塞等待，规避
+    CORE-005 条件变量挂死）；**不抢占最旧一路**（硬解 session 中途抢占可能损坏解码态）；
+    **不在此静默降级软解**（软解路径属 PALA-011，core 层无此能力）。
+- **实测数字（ctest `media_decoder_pool`，22 检查全绿）**：
+  - 超路数：max=1，第 2 路 `AcquireDecoder` 返回 `kResourceExhausted`（非 crash、非挂起），
+    `out==nullptr`，`ActiveCount` 仍为 1（未偷偷多开）。
+  - 复用：释放后重新 Acquire **复用同一 handle**（池化生效）；`SetMaxHardwarePaths(3)` 后
+    可借到 3 路、第 4 路再返回 `kResourceExhausted`。
+  - 并发：8 线程 × 500 次借/还，10s 超时上界内全部完成（`future_status::ready`），无挂起，
+    `ActiveCount <= 2`。
+  - 接入 provider：Open 从池借 1 路并经其解码得 pts=0；池满时第二 provider `Open` 如实返回
+    `kResourceExhausted`（解码能力降级，非崩溃）；provider 析构归还路数 `ActiveCount→0`。
+- **未覆盖场景**：单帧/单 decoder 的「软解降级」路径未实现（需 PALA-011 提供软件解码 factory）；
+  真正多路并发硬解（画中画/多轨）的端到端功耗与路数真实性，待 PALA-011 落地 + CORE-007
+  查到真值后验证。
+
+### 验证命令（复跑）
+```bash
+CMAKE_BIN=/Users/zhuning/.workbuddy/binaries/cmake/CMake.app/Contents/bin/cmake
+$CMAKE_BIN --build build -j4
+$(dirname $CMAKE_BIN)/ctest --test-dir build        # 18/18 绿（含 pal_header_gate）
+$(dirname $CMAKE_BIN)/ctest --test-dir build -R media_cache        # MEDIA-011
+$(dirname $CMAKE_BIN)/ctest --test-dir build -R media_decoder_pool # MEDIA-012
+```
+- 门禁：`pal_header_gate` 对 `core/include/cq/media/{cache,decoder_pool}.h` 零违规（EXIT=0）。
+- 现有 16 用例（现 18，含新增 2）全绿，未引入回归。
+
+### 后续任务
+- MEDIA-013（TimeMap：恒速/曲线/倒放）、MEDIA-021（FFmpeg 后端）、MEDIA-030（音画同步）。
+- PALA-011（VideoToolbox `IFrameDecoder` 适配器）→ 端到端真实解码；落地后 `DecoderPool` 的
+  `IDecoderFactory` 由 PAL 实现，并接 CORE-007 `ICapabilities` 覆盖 `max_hardware_paths`。
+- 多并发 lease 需求明确时，向冻结接口 `IFrameCache` 增 `Release(at)`（需 MEDIA-010 评审）。

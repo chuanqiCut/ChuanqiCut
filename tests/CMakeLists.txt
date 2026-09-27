@@ -43,6 +43,14 @@ cq_require_cxx20(cq_tests_core_status)
 apply_cq_warnings(cq_tests_core_status)
 add_test(NAME core_status COMMAND cq_tests_core_status)
 
+# ---- 性能埋点（真机实测用；Release 下必须可用，见 test_perf.cpp 说明）----
+add_executable(cq_tests_core_perf
+    unit/test_perf.cpp)
+target_link_libraries(cq_tests_core_perf PRIVATE cq_core)
+cq_require_cxx20(cq_tests_core_perf)
+apply_cq_warnings(cq_tests_core_perf)
+add_test(NAME core_perf COMMAND cq_tests_core_perf)
+
 # ---- CORE-003：日志与帧级 trace ----
 add_executable(cq_tests_core_log
     unit/test_log.cpp)

@@ -24,6 +24,7 @@
 #include <memory>
 
 #include "cq/base/concurrency.h"  // CancelToken
+#include "cq/base/perf.h"        // 性能埋点（真机实测用）
 #include "cq/base/status.h"       // Status / StatusCode
 #include "cq/base/time.h"         // RationalTime
 #include "cq/media/frame_provider.h"  // FrameProvider（MEDIA-010 抽象）
@@ -150,6 +151,13 @@ public:
 
     Status AcquireFrame(const FrameRequest& req, MediaFrame& out_frame,
                         const CancelToken& token) override {
+        // 埋点：取帧总耗时（含缓存查询 / seek / 解码）。真机实测打开埋点后，
+        // 这是判断"取一帧够不够快"的主指标；pts 用于把耗时对齐到具体帧。
+        // 用显式 PerfScope 而非 CQ_PERF_SCOPE 宏：需要在命中分支上附加信息，
+        // 且宏生成的变量名依赖行号、不可靠。关闭时同样零开销（构造时查开关）。
+        cq::PerfScope perf_scope(cq::PerfStage::kCacheLookup, req.at);
+        (void)perf_scope;
+
         out_frame = MediaFrame{};
         if (!demuxer_ || !decoder_) return Status{StatusCode::kInvalidArgument};
         // 缓存命中（read-shortcut）：借出即返回，跳过解码（lease = move-out）。

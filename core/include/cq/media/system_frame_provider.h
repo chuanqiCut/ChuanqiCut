@@ -27,6 +27,7 @@
 #include "cq/base/status.h"       // Status / StatusCode
 #include "cq/base/time.h"         // RationalTime
 #include "cq/media/frame_provider.h"  // FrameProvider（MEDIA-010 抽象）
+#include "cq/media/decoder_pool.h"   // IDecoderPool / DecoderOf（MEDIA-012 接入）
 #include "cq/pal/common.h"        // NativeImageHandle / PalPtr
 #include "cq/pal/media.h"         // IMediaDemuxer / MediaPacket / MediaFrame / MediaSource
 
@@ -89,7 +90,13 @@ public:
     SystemFrameProvider(PalPtr<IMediaDemuxer> demuxer, IFrameDecoder* decoder)
         : demuxer_(std::move(demuxer)), decoder_(decoder) {}
 
-    ~SystemFrameProvider() override = default;
+    ~SystemFrameProvider() override {
+        // 若本实例经解码器池借过一路，归还（置空闲可复用，不销毁）。
+        if (pool_ != nullptr && pool_handle_ != nullptr) {
+            pool_->ReleaseDecoder(pool_handle_);
+            pool_handle_ = nullptr;
+        }
+    }
 
     Status Open(const MediaSource& src) override {
         if (!demuxer_) return Status{StatusCode::kInvalidArgument};
@@ -100,11 +107,29 @@ public:
             s = demuxer_->GetStreamInfo(0, info);
             if (!s.IsOk()) return s;
         }
+        s = AcquireDecoderFromPoolIfAny(info);
+        if (!s.IsOk()) return s;
         if (decoder_ == nullptr) return Status{StatusCode::kInvalidArgument};
         s = decoder_->Open(info);
         if (!s.IsOk()) return s;
         decoder_->Flush();
         seeked_ = false;
+        return Status::Ok();
+    }
+
+    // 若注入了解码器池，优先从池借一路（把解码路由到池中的解码器）；否则用构造注入的
+    // decoder。池满降级时如实返回 kResourceExhausted，不伪造、不崩溃。
+    Status AcquireDecoderFromPoolIfAny(const StreamInfo& info) {
+        if (pool_ == nullptr) return Status::Ok();
+        if (pool_handle_ != nullptr) {
+            pool_->ReleaseDecoder(pool_handle_);  // 重开时先还旧路
+            pool_handle_ = nullptr;
+        }
+        DecoderHandle h = nullptr;
+        Status s = pool_->AcquireDecoder(info.codec, h);
+        if (!s.IsOk()) return s;
+        pool_handle_ = h;
+        decoder_ = DecoderOf(h);
         return Status::Ok();
     }
 
@@ -127,6 +152,16 @@ public:
                         const CancelToken& token) override {
         out_frame = MediaFrame{};
         if (!demuxer_ || !decoder_) return Status{StatusCode::kInvalidArgument};
+        // 缓存命中（read-shortcut）：借出即返回，跳过解码（lease = move-out）。
+        if (cache_ != nullptr) {
+            MediaFrame cached{};
+            if (cache_->Find(req.at, cached)) {
+                loaned_ = true;
+                loaned_key_ = req.at;
+                out_frame = cached;
+                return Status::Ok();
+            }
+        }
         // 若调用方未先 Seek，或目标时间变化，则内部对齐到 req.at（幂等）。
         if (!seeked_ || CompareRational(seek_target_, req.at) != 0) {
             Status s = Seek(req.at, req.policy, token);
@@ -144,13 +179,32 @@ public:
                 s = AcquireNearest(req.at, token);
                 break;
         }
-        if (s.IsOk()) out_frame = result_;
+        if (s.IsOk()) {
+            if (cache_ != nullptr) {
+                // 先入缓存，再立即借出（move-out lease）：缓存只留一份，调用方独占。
+                cache_->Insert(req.at, result_);
+                MediaFrame loaned{};
+                if (cache_->Find(req.at, loaned)) {
+                    loaned_ = true;
+                    loaned_key_ = req.at;
+                    out_frame = loaned;
+                } else {
+                    out_frame = result_;  // 防御：理论上不会发生
+                }
+            } else {
+                out_frame = result_;
+            }
+        }
         return s;
     }
 
     void ReleaseFrame(MediaFrame& frame) override {
-        // lease 模型：帧内存归 provider/decoder 池所有。本期解码后端（PALA-011）
-        // 未实现，无真实池可回收；此处把句柄清零，防止调用方误用已归还帧。
+        // lease 模型：帧内存归 provider/decoder 池所有。若从帧缓存借出，交回缓存
+        // （重新入池，LRU 可再淘汰）；否则把句柄清零，防止调用方误用已归还帧。
+        if (cache_ != nullptr && loaned_) {
+            cache_->Insert(loaned_key_, frame);
+            loaned_ = false;
+        }
         frame = MediaFrame{};
     }
 
@@ -293,9 +347,12 @@ private:
     }
 
     PalPtr<IMediaDemuxer> demuxer_;
-    IFrameDecoder* decoder_ = nullptr;  // 不接管
-    IFrameCache* cache_ = nullptr;      // 空 stub 钩子（MEDIA-011）
-    IDecoderPool* pool_ = nullptr;      // 空 stub 钩子（MEDIA-012）
+    IFrameDecoder* decoder_ = nullptr;  // 不接管（Open 时可能被子解码器池覆盖）
+    IFrameCache* cache_ = nullptr;      // 帧缓存钩子（MEDIA-011）
+    IDecoderPool* pool_ = nullptr;      // 解码器池钩子（MEDIA-012）
+    DecoderHandle pool_handle_ = nullptr;  // 本实例从池借到的路（析构/重开时归还）
+    bool loaned_ = false;              // 当前 out_frame 是否来自帧缓存（move-out）
+    RationalTime loaned_key_{0, 1};    // 借出的缓存 key（ReleaseFrame 时交回）
     bool seeked_ = false;
     RationalTime seek_target_{0, 1};
     MediaFrame result_;  // 命中帧暂存（lease 移交前）

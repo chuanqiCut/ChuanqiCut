@@ -21,6 +21,8 @@ add_library(cq_core STATIC
     src/base/log.cpp
     src/base/alloc.cpp
     src/base/concurrency.cpp
+    src/media/cache.cpp
+    src/media/decoder_pool.cpp
     src/media/system_frame_provider.cpp)
 
 # 公共头目录：对外 C ABI 伞形头 core/include。

@@ -124,9 +124,98 @@ public:
     virtual void ReleaseFrame(MediaFrame& frame) = 0;
 };
 
+// ---------------------------------------------------------------------------
+// IMediaMuxer：封装（mux）与编码输出（与 IMediaDemuxer 对称）
+// ---------------------------------------------------------------------------
+// 职责：把解码/渲染产出的视频帧（opaque NativeImageHandle）封装进容器文件（MP4 等）
+// 并完成平台编码（H.264 等）。这是导出能力在 PAL 层的平台无关接缝——上层（导出控制器
+// EXPORT-001 等）只持有 IMediaMuxer，不接触任何 Apple/Android 内部编码器类型。
+//
+// 对称设计（与 IMediaDemuxer 呼应）：Open（开容器） → AddVideoTrack（加轨）
+//   → WriteVideoFrame（写帧，按 PTS 非递减） → Finish（收尾）。
+//
+// 硬约束（与 CORE-006 一致）：
+//   * 零平台类型：帧以 opaque `NativeImageHandle` 传入，绝不出现 CVPixelBufferRef /
+//     jobject / AHardwareBuffer 等；零 FFmpeg 类型（AVAssetWriter/AVPacket 等只在 PAL 内）。
+//   * 统一 base 类型：时间一律 `RationalTime`（项目 timescale = 120000，ADR-0009）；
+//     错误一律 `Status`；长任务（写帧/收尾）接受 `CancelToken`；内核禁用异常。
+//   * 取消语义：取消返回 `kCancelled`，其 `IsError()` 为 false（取消不是错误）。
+//
+// 时间约定（ADR-0009）：每一帧的呈现时间戳 pts 必须是 `RationalTime`，timescale 须等于
+// 轨约定网格（本期 = kProjectTimeScale = 120000）。非整除（如 1001/30000 的 NTSC 帧周期）
+// 在写入前由调用方显式 `Rescale(..., kRound/kFloor)` 对齐，接口本身不做静默舍入。
+//
+// 音频轨：本期仅留接口（`AddAudioTrack`）不实现——Apple 实现当前只有视频轨。
+// 预留 `AddAudioTrack` 以便后续补齐，不破坏接口形状。
+
+// 码率档位（而非精确 bps）：避免把平台特定的码率数值暴露到 core 冻结接口。
+// 平台实现按分辨率/格式把档位映射到本机默认码率（如 kLossless → 交平台默认）。
+enum class BitrateTier : int32_t {
+    kUnknown = 0,
+    kLow,     // 低码率（预览/草稿导出）
+    kMedium,  // 中等（默认）
+    kHigh,    // 高码率（高质量归档）
+    kLossless, // 高保真（像素正确性敏感的导出，交平台默认最高可达质量）
+};
+
+// 视频轨配置（muxer 侧描述，对应 demux 侧 StreamInfo 的「写」版本）。
+struct VideoTrackConfig {
+    CodecId codec = CodecId::kH264;   // 编码格式（本项目枚举，与 FFmpeg 解耦）
+    uint32_t width = 0;
+    uint32_t height = 0;
+    RationalTime frame_rate{30, 1};   // 名义帧率（仅用于期望帧率/码率假设，非 PTS 网格）
+    BitrateTier bitrate = BitrateTier::kMedium;  // 码率档位（非精确 bps）
+    int32_t max_keyframe_interval = 30;  // GOP 长度；=1 表示全 I 帧（all-intra）
+    bool allow_hardware = true;       // 优先硬件编码；不可用时软件回退（诚实，不伪造）
+};
+
+// 音频轨配置（仅预留，Apple 实现当前不产出音频轨）。
+struct AudioTrackConfig {
+    CodecId codec = CodecId::kAac;
+    uint32_t sample_rate = 48000;
+    uint32_t channels = 2;
+    BitrateTier bitrate = BitrateTier::kMedium;
+};
+
+class IMediaMuxer : public IPalResource {
+public:
+    // 打开容器准备向 output_path（UTF-8）写入。container 指定封装格式（MP4 等）。
+    // output_path 若存在由实现删除后重建（与 IMediaDemuxer::Open 对侧）。
+    virtual Status Open(const char* output_path, ContainerFormat container) = 0;
+
+    // 添加视频轨。cfg 携带 codec/分辨率/帧率/码率档位/GOP/硬编偏好。
+    // 必须在任何 WriteVideoFrame 之前调用一次（多视频轨本期不支持，仅首轨生效）。
+    virtual Status AddVideoTrack(const VideoTrackConfig& cfg) = 0;
+
+    // 添加音频轨（接口预留；Apple 实现当前返回 kEncodeUnsupported，不产出音频）。
+    virtual Status AddAudioTrack(const AudioTrackConfig& cfg) = 0;
+
+    // 写入一帧视频。image 为 opaque 原生图像句柄（零平台类型），实现内部按源格式
+    // 1:1 拷贝后 append（不得做色彩空间转换，规避通道交换类 bug，PALA-002 教训）。
+    // pts 为该帧展示时间戳（timescale 须等于轨约定网格，非整除须显式舍入）。
+    // 调用方必须按 PTS 非递减顺序喂帧（封装器要求样本按展示序）。
+    // 长任务，接受 CancelToken；背压等待期间若被取消返回 kCancelled（非错误）。
+    virtual Status WriteVideoFrame(NativeImageHandle image, const RationalTime& pts,
+                                  const CancelToken& token) = 0;
+
+    // 正常收尾：标记输入完成并阻塞等待封装完成。返回错误若写入失败。
+    virtual Status Finish(const CancelToken& token) = 0;
+
+    // 取消：中止写入并删除半成品输出文件（不 Finish）。取消是独立停止信号（非错误）。
+    // 已实现幂等：未 Open / 已收尾时调用安全返回 Ok。
+    virtual Status Cancel() = 0;
+
+    // 已成功写入的帧数（供诊断/测试）。
+    virtual int64_t FrameCount() const = 0;
+
+    // 本机是否支持硬件编码（运行时查询，诚实上报；不伪造）。
+    virtual bool IsHardwareAccelerated() const = 0;
+};
+
 // 工厂（由 PAL 平台实现）。返回 PalPtr。
 Status CreateMediaDemuxer(const MediaSource& src, PalPtr<IMediaDemuxer>& out_demuxer);
 Status CreateFrameProvider(const MediaSource& src, PalPtr<IFrameProvider>& out_provider);
+Status CreateMediaMuxer(PalPtr<IMediaMuxer>& out_muxer);
 
 }  // namespace cq
 

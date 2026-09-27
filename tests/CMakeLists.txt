@@ -255,4 +255,22 @@ if(APPLE)
     cq_require_cxx20(cq_tests_pala_encode)
     apply_cq_warnings(cq_tests_pala_encode)
     add_test(NAME pala_encode COMMAND cq_tests_pala_encode)
+
+    # ---- muxer 接缝：平台无关 IMediaMuxer 经工厂调用导出 H.264 MP4 ----
+    # 全程只通过 core 冻结接口 IMediaMuxer + CreateMediaMuxer 完成导出（不碰 AppleVideoEncoder），
+    # 证明导出能力可被上层平台无关调用；ffprobe 验证 codec/分辨率/帧数/时长 + 首帧像素。
+    find_library(COREVIDEO_T4_LIB CoreVideo REQUIRED)
+    add_executable(cq_tests_pala_muxer
+        unit/test_media_muxer_apple.cpp)
+    target_include_directories(cq_tests_pala_muxer PRIVATE
+        ${CMAKE_SOURCE_DIR}/core/include
+        ${CMAKE_SOURCE_DIR}/pal/apple)
+    target_compile_definitions(cq_tests_pala_muxer PRIVATE
+        CQ_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
+    target_link_libraries(cq_tests_pala_muxer PRIVATE
+        cq_core cq_pal_apple
+        ${AVFOUNDATION_T_LIB} ${COREMEDIA_T_LIB} ${COREVIDEO_T4_LIB})
+    cq_require_cxx20(cq_tests_pala_muxer)
+    apply_cq_warnings(cq_tests_pala_muxer)
+    add_test(NAME pala_muxer COMMAND cq_tests_pala_muxer)
 endif()

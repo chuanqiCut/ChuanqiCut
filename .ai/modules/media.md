@@ -309,6 +309,85 @@ $(dirname $CMAKE_BIN)/ctest --test-dir build -R media_decoder_pool # MEDIA-012
 - 门禁：`pal_header_gate` 对 `core/include/cq/media/{cache,decoder_pool}.h` 零违规（EXIT=0）。
 - 现有 16 用例（现 18，含新增 2）全绿，未引入回归。
 
+### PALA-012 muxer 接缝：IMediaMuxer 跨平台封装接口 + Apple 适配（2026-09-27，general-purpose-28）
+
+> 把「Apple 端已验证的 H.264 MP4 导出能力」从平台内部实现升级为可被上层平台无关调用的
+> 接口。不实现 EXPORT-001（导出控制器）；不接 FFmpeg；不改 `IMediaDemuxer`/`IFrameProvider` 签名。
+
+#### Write Set（边界内）
+- 修改 `core/include/cq/pal/media.h`：**新增** `IMediaMuxer` 接口、`VideoTrackConfig` /
+  `AudioTrackConfig` / `BitrateTier` 枚举、`CreateMediaMuxer` 工厂声明（**未改** 既有
+  `IMediaDemuxer`/`IFrameProvider` 任何签名，CO-006 冻结约束满足）。
+- 新增 `pal/apple/media_muxer.h` + `pal/apple/media_muxer.mm`：`AppleMediaMuxer : public IMediaMuxer`，
+  组合 `AppleVideoEncoder`，经 `GetCvPixelBuffer(NativeImageHandle)` 把 opaque 句柄转回
+  `CVPixelBufferRef` 委托编码；提供 `CreateMediaMuxer` 工厂。
+- 修改 `pal/apple/CMakeLists.txt`：把 `media_muxer.mm` 登记到 `add_library` 源列表 **与**
+  `set_source_files_properties(... PROPERTIES COMPILE_FLAGS "-fobjc-arc")` 的 ARC 列表（两处都已登记）。
+- 新增 `tests/unit/test_media_muxer_apple.cpp`：仅经 `CreateMediaMuxer` + `IMediaMuxer` 完成一次
+  导出（全程不碰 `AppleVideoEncoder` / 不 include `media_encode.h`），ffprobe 验证 +
+  首帧像素对照 + 取消路径；登记到 `tests/CMakeLists.txt`（仅 Apple）。
+- 修改 `tests/unit/pal_headers_compile.cpp`：新增 `IMediaMuxer` 的 `static_assert`
+  （继承 IPalResource、PalPtr move-only、WriteVideoFrame/ Finish/ Open 签名、码率档位枚举、
+  `CreateMediaMuxer` 工厂签名）。
+
+#### 接口完整签名（core/include/cq/pal/media.h）
+```cpp
+enum class BitrateTier : int32_t { kUnknown, kLow, kMedium, kHigh, kLossless };
+struct VideoTrackConfig {
+    CodecId codec = kH264; uint32_t width, height;
+    RationalTime frame_rate{30,1}; BitrateTier bitrate = kMedium;
+    int32_t max_keyframe_interval = 30; bool allow_hardware = true;
+};
+struct AudioTrackConfig { CodecId codec = kAac; uint32_t sample_rate=48000, channels=2;
+    BitrateTier bitrate = kMedium; };
+class IMediaMuxer : public IPalResource {
+    Status Open(const char* output_path, ContainerFormat container);
+    Status AddVideoTrack(const VideoTrackConfig&);
+    Status AddAudioTrack(const AudioTrackConfig&);          // 接口预留，Apple 返回 kEncodeUnsupported
+    Status WriteVideoFrame(NativeImageHandle, const RationalTime&, const CancelToken&);
+    Status Finish(const CancelToken&);
+    Status Cancel();
+    int64_t FrameCount() const;
+    bool IsHardwareAccelerated() const;
+};
+Status CreateMediaMuxer(PalPtr<IMediaMuxer>&);
+```
+
+#### 设计取舍
+- 码率用「档位」`BitrateTier` 而非精确 bps（避免把平台 bps 暴露到 core）；Apple 映射
+  kLow=5M / kMedium=10M / kHigh=20M / kLossless→0（交平台默认）。
+- 帧以 opaque `NativeImageHandle` 传入（与 `IFrameProvider` 同源），实现内部 1:1 拷贝后
+  append，不做色彩转换（规避 PALA-002 通道交换 bug）。
+- 时间一律 `RationalTime`（timescale=120000，ADR-0009）；取消返回 `kCancelled`（非错误）。
+- Apple 适配层只新增「opaque 句柄跨层转接」，复用 `AppleVideoEncoder` 已验证的 60 帧导出语义。
+
+#### 验证（真跑，Debug 构建；Release 下 test_log.cpp 有预存 NDEBUG 相关 -Wunused 问题，见下）
+```bash
+CMAKE_BIN=/Users/zhuning/.workbuddy/binaries/cmake/CMake.app/Contents/bin/cmake
+$CMAKE_BIN -S . -B build -DCMAKE_BUILD_TYPE=Debug   # 与前期「18/18 绿」同配置（无 NDEBUG）
+$CMAKE_BIN --build build -j4
+$(dirname $CMAKE_BIN)/ctest --test-dir build
+$(dirname $CMAKE_BIN)/ctest --test-dir build -R pal_header_gate   # 对新 media.h 零违规
+$(dirname $CMAKE_BIN)/ctest --test-dir build -R pala_muxer         # 平台无关调用证明
+$(dirname $CMAKE_BIN)/ctest --test-dir build -R pala_encode        # 原 60 帧 ffprobe 不回归
+```
+- **全绿 20/20**（原 19 + 新增 `pala_muxer`）。关键：
+  - `pala_encode`：仍 60 帧 / 2.0s / H.264 ffprobe 验证通过（**不回归**）。
+  - `pala_muxer`：仅经 `IMediaMuxer` 工厂完成导出；ffprobe 验证 codec=H.264 / 1920×1080 /
+    帧数=60 / 时长≈2.0s；首帧中心像素 ≈ (0,188,0,255) 且绿主导；取消经 `Cancel()` 删半成品文件。
+  - `pal_header_gate`：对 `core/include/cq/pal/media.h` 的 `IMediaMuxer` 新增内容零平台类型 / 零 FFmpeg 违规。
+  - `pal_headers_compile`：新增 `IMediaMuxer` 的 `static_assert` 全过。
+- **-Werror 零警告**：`cq_pal_apple`（含 `media_muxer.mm`）与全部测试在 `-Werror` 下零警告
+  （仅有 `ld: warning: ignoring duplicate libraries` 链接期提示，非编译警告、非 -Werror 范畴）。
+
+#### 已知风险 / 后续
+- **预存 Release 构建红**（非本次引入）：`build/` 被配置为 `CMAKE_BUILD_TYPE=Release`
+  （`-DNDEBUG`），`CQ_LOG_FRAME` 在 NDEBUG 下展开为 `do{}while(0)`，导致 `tests/unit/test_log.cpp`
+  中仅被宏使用的 `pts` 被判 `-Wunused-variable` 而 `-Werror` 失败。本任务未改 `test_log.cpp` /
+  `log.h` / 构建配置；验证在 Debug（与前期绿构建同配置）下完成。建议 `test_log.cpp` owner 在该
+  用例加 `#ifndef NDEBUG` 守卫或 `(void)pts;`，使 Release 亦绿。
+- 后续：EXPORT-001（导出控制器状态机/进度/编排）落地时消费 `IMediaMuxer`；`AddAudioTrack` 实现音频轨。
+
 ### 后续任务
 - MEDIA-013（TimeMap：恒速/曲线/倒放）、MEDIA-021（FFmpeg 后端）、MEDIA-030（音画同步）。
 - PALA-011（VideoToolbox `IFrameDecoder` 适配器）→ 端到端真实解码；落地后 `DecoderPool` 的

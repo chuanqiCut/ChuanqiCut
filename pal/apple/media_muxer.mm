@@ -46,6 +46,7 @@ Status AppleMediaMuxer::Open(const char* output_path, ContainerFormat container)
     container_ = container;
     opened_ = true;
     video_added_ = false;
+    audio_added_ = false;
     return Status::Ok();
 }
 
@@ -69,9 +70,23 @@ Status AppleMediaMuxer::AddVideoTrack(const VideoTrackConfig& cfg) {
     return s;
 }
 
-Status AppleMediaMuxer::AddAudioTrack(const AudioTrackConfig& /*cfg*/) {
-    // 接口预留：Apple 实现当前只有视频轨，如实返回「不支持」。
-    return Status{StatusCode::kEncodeUnsupported};
+Status AppleMediaMuxer::AddAudioTrack(const AudioTrackConfig& cfg) {
+    if (!opened_) return Status{StatusCode::kInvalidArgument};
+    // 约束（见 media.h 注释）：音频轨必须在视频轨（建立 writer）之后添加。
+    if (!video_added_) return Status{StatusCode::kInvalidArgument};
+    if (cfg.codec != CodecId::kAac) {
+        // 本期仅实现 AAC 封装；其它音频 codec 如实返回不支持，不伪造。
+        return Status{StatusCode::kEncodeUnsupported};
+    }
+    Status s = encoder_.AddAudioTrack(cfg);
+    if (s.IsOk()) audio_added_ = true;
+    return s;
+}
+
+Status AppleMediaMuxer::WriteAudioFrame(const PcmBuffer& pcm, const RationalTime& pts,
+                                     const CancelToken& token) {
+    if (!audio_added_) return Status{StatusCode::kEncodeError};
+    return encoder_.WriteAudioFrame(pcm, pts, token);
 }
 
 Status AppleMediaMuxer::WriteVideoFrame(NativeImageHandle image, const RationalTime& pts,

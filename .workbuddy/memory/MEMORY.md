@@ -62,3 +62,14 @@ relink 能力 / 目标文件归档 / 商业授权 / 动态链接 之一。
    改走平台原生）—— 需 + 法务。**已确认延后，不阻塞当前开发**（见上）。
 2. 性能基线尚未建立（PERF-001 未做），文档中所有性能数字仍是估算。
    注意：本机 Intel Mac **无 ANE、无 ProRes 硬编**，性能数字不得取自本机。
+
+## 交接（2026-09-28）：完整上下文已写入 docs/HANDOFF-002-编码阶段会话交接.md
+
+新会话接手前**先读 HANDOFF-002 + `.ai/source/AGENTS.root.md`**。
+其中包含：已完成清单（26 commit）、能力链路、未完成项（XCFramework 合并）、
+iOS 平台差异五处修复、门禁命令、红线摘录、下一步优先级、本轮教训。
+
+**传哲指示：bitcode 不要开** —— 不为打包便利开启 bitcode，也不用 `-fno-embed-bitcode`
+之类选项绕过（该 Xcode 的 clang 不识别，已撤销）。XCFramework 合并这最后一步待新会话处理，
+且接手时**先确认 .a 是否真的含 bitcode 段**——若未开 bitcode 却仍报 `Unknown header: 0xb17c0de`，
+说明根因不是 bitcode，需重新定位，不要沿用旧推测。

@@ -44,7 +44,15 @@ if(APPLE)
     find_library(FOUNDATION_LIB  Foundation   REQUIRED)
     # PALA-002 零拷贝路径用到 CVMetalTexture / IOSurface（IOSurface 在 macOS 为独立框架，
     # 虽常被 CoreVideo/Metal 传递链接，这里显式登记避免「符号未定义」式链接陷阱）。
-    find_library(IOSURFACE_LIB   IOSurface    REQUIRED)
+    #
+    # ⚠️ IOSurface 是 **macOS 专有**框架，iOS SDK 里不存在。交叉编译 iOS 时若仍 REQUIRED，
+    #    configure 阶段就会失败。故按 CMAKE_SYSTEM_NAME 区分：
+    #      - Darwin(macOS)：查找并链接
+    #      - iOS          ：不查找、不链接（gfx_metal.mm 内已用 TARGET_OS_IPHONE 条件编译
+    #                       把 IOSurface 用法隔离，见该文件的注释）
+    if(CMAKE_SYSTEM_NAME STREQUAL "Darwin")
+        find_library(IOSURFACE_LIB   IOSurface    REQUIRED)
+    endif()
     # PALA-010 解封装用 AVFoundation/CoreMedia；PALA-011 硬解用 VideoToolbox。
     # ⚠️ 新增用到系统框架的 .mm 必须在此登记，否则链接期才报「符号未定义」，
     #    且报错只显示引用位置、不直接指出缺哪个框架——排查成本高。
@@ -52,14 +60,19 @@ if(APPLE)
     find_library(COREMEDIA_LIB    CoreMedia    REQUIRED)
     find_library(VIDEOTOOLBOX_LIB VideoToolbox REQUIRED)
     find_library(COREGRAPHICS_LIB CoreGraphics REQUIRED)
+    find_library(AUDIOTOOLBOX_LIB AudioToolbox REQUIRED)
     target_link_libraries(cq_pal_apple PUBLIC
         ${METAL_LIB}
         ${COREVIDEO_LIB}
         ${QUARTZCORE_LIB}
         ${FOUNDATION_LIB}
-        ${IOSURFACE_LIB}
         ${AVFOUNDATION_LIB}
         ${COREMEDIA_LIB}
         ${VIDEOTOOLBOX_LIB}
-        ${COREGRAPHICS_LIB})
+        ${COREGRAPHICS_LIB}
+        ${AUDIOTOOLBOX_LIB})
+    # IOSurface 仅 macOS 有（见上面的条件查找），故单独追加，避免 iOS 下链接空变量。
+    if(CMAKE_SYSTEM_NAME STREQUAL "Darwin")
+        target_link_libraries(cq_pal_apple PUBLIC ${IOSURFACE_LIB})
+    endif()
 endif()

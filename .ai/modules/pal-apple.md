@@ -66,9 +66,9 @@ xcodebuild -workspace apps/apple/ChuanqiCut.xcworkspace -scheme MacApp build
 
 ## PALA-012：H.264 编码与 MP4 封装（AVAssetWriter + PixelBufferAdaptor）（已实现，2026-09-27）
 
-**状态**：已完成并通过 ctest（`pala_encode`，14 项检查全绿；全量 19/19 通过）。
+**状态**：已完成并通过 ctest（`pala_encode` 14 项 + `pala_muxer` 16 项 + `pala_muxer_audio` 17 项全绿；全量 22/22 通过）。
 
-**⚠️ 接口缺口（已报告 team-lead）**：冻结契约 `docs/specs/PAL-接口契约.md` §4.2 **只定义了 `IMediaDemuxer` / `IFrameProvider`，没有 muxer/encoder 接口**；`core/**` 已冻结、本任务禁止改动。因此本期**未**新增 frozen `IMediaMuxer`，而是按 PALA-011 既定先例（`media_decode.h` 平台内部头）把编码能力做成平台内部类 `AppleVideoEncoder`。跨平台冻结接口 `IMediaMuxer` 待 EXPORT-001（core/src/export/*，本期未实现）落地时补齐，届时本能力作为 Apple 实现接入。验收要求是「能导出可被验证的 H.264 MP4」——已达成。
+**跨平台接缝（已补齐）**：冻结契约 `core/include/cq/pal/media.h` 已定义 `IMediaMuxer`（含 `Open / AddVideoTrack / AddAudioTrack / WriteVideoFrame / WriteAudioFrame / Finish / Cancel`）。`AppleMediaMuxer`（`pal/apple/media_muxer.{h,mm}`）实现该接口，把 `NativeImageHandle` 经 `GetCvPixelBuffer` 转回 `CVPixelBufferRef` 委托给 `AppleVideoEncoder`；全程平台类型只出现在 `pal/apple/` 的 .mm，core 头零平台类型。`WriteAudioFrame` / `AddAudioTrack` 的 AAC 音频能力见下方「音频轨（AAC 封装）」小节。
 
 **实现位置**：`pal/apple/media_encode.{h,mm}`
 - `AppleVideoEncoder`（平台内部头，仅 Apple TU 包含；pImpl 隔离 AVFoundation ObjC 对象，使 `media_encode.h` 保持纯 C++）。
@@ -88,14 +88,43 @@ xcodebuild -workspace apps/apple/ChuanqiCut.xcworkspace -scheme MacApp build
 - **像素正确性**：重解码产出首帧中心像素 `(R,G,B,A)=(0,190,1,255)` ≈ 真值 `(0,188,0,255)`，且 `g > r+30 && g > b+30`（绿主导、通道顺序未颠倒）。**刻意选绿条而非底部紫条 (62,0,119)** 以暴露 RGB 交换类 bug。
 - **硬编是否真生效**：本机 H.264 硬件编码能力探针 = **YES（可用）**；AVAssetWriter 在可用时默认走 VT 硬件路径，故本次导出应为硬件编码。诚实边界：AVAssetWriter 未在 API 层面暴露「本次是否真硬件」的运行时回读，本 SDK 未强制，这是如实声明的限制。
 - 取消路径冒烟：`Open` 后 `Cancel` 安全中止并删除半成品文件（断言文件不存在）。
-- 全量 ctest：19/19 通过（含 `pal_header_gate` 零平台类型门禁、新增 `pala_encode`），无回归。
+- 全量 ctest：22/22 通过（含 `pal_header_gate` 零平台类型门禁、`pala_encode` / `pala_muxer` / `pala_muxer_audio`），无回归。
 
 **测试**：`tests/unit/test_media_encode_apple.cpp`（仅 `if(APPLE)` 构建），登记为 `pala_encode`。无缓冲输出（`setvbuf(stdout,nullptr,_IONBF,0)`）。
 
 **后续任务**：
-- EXPORT-001：定义 frozen `IMediaMuxer` 跨平台接口（core/src/export/*）与导出控制器（状态机/进度/取消），本 `AppleVideoEncoder` 作为 Apple 实现接入。
+- EXPORT-001：定义 frozen 导出控制器（状态机/进度/取消），本 `AppleMediaMuxer` 作为 Apple 实现接入。
 - 精确码率/质量档位（目前 all-intra + 20 Mbps 上限仅作验收，生产档位需与导出控制器协商）。
-- 音频轨封装（本期仅视频；带音轨样本的 `gf_1080p_with_audio.mp4` 留待音频封装）。
+
+## PALA-012 音频轨（AAC 封装）（已实现，2026-09-28）
+
+**状态**：已完成并通过 ctest（`pala_muxer_audio`，17 项检查全绿）。ffprobe 实测产出文件含 `codec=aac / sample_rate=48000 / channels=2`，时长与写入吻合，端到端真打通。
+
+**接口**：`IMediaMuxer::AddAudioTrack(const AudioTrackConfig&)` + `WriteAudioFrame(const PcmBuffer&, const RationalTime&, const CancelToken&)`（`media.h` 既有签名，本任务只做实现，未改接口）。
+
+**实现位置**：`pal/apple/media_encode.{h,mm}`（`AppleVideoEncoder` 扩展，与视频共用同一 `AVAssetWriter`）。
+- **共用 writer、惰性 startWriting**：AVAssetWriter 要求所有 `AVAssetWriterInput` 在 `startWriting` 之前 `addInput`。原 `Open()` 内即 `startWriting` 会让事后 `AddAudioTrack` 失效，故改为「首个样本（视频或音频）写入时惰性 `startWriting`」。视频轨 `AddVideoTrack` 先于音频轨 `AddAudioTrack`（契约要求，writer 由视频轨建立），两者都在首个 append 前完成 `addInput`，不破坏 AVFoundation 时序约束。
+- **AAC 音频输入**：`AddAudioTrack` 按 `AudioTrackConfig`（采样率/声道/码率档位 `BitrateTier`）建 `AVAssetWriterInput`（`kAudioFormatMPEG4AAC`，码率 64k/128k/192k/256k 映射低/中/高/无损）。非 AAC codec 如实返回 `kEncodeUnsupported`。
+- **PCM → AAC**：`WriteAudioFrame` 按 `PcmBuffer` 实际格式（本期 `kFloat32` / `kInt16`）构造线性 PCM 的 `CMFormatDescription`（`AudioStreamBasicDescription`）+ `CMBlockBuffer`，产出 `CMSampleBuffer` 喂给 AAC 输入；AVFoundation 内部编码为 AAC。每样本时长 `CMTimeMake(1, sample_rate)`，首样本 PTS 经 `startSessionAtSourceTime:` 设定会话起点（取视频/音频首个样本 PTS 的 min，正常导出两轨均从 0 起）。调用方按 PTS 非递减喂块，音频块 PTS 用项目网格 120000、非整除须显式舍入。
+- **背压/取消**：与视频一致，`audio_input.isReadyForMoreMediaData` 忙时 1ms 轮询，被取消返回 `kCancelled`（非错误）。`Finish` 同时 `markAsFinished` 视频与音频输入后 `finishWriting`。
+- 关键路径加 `CQ_PERF_SCOPE(PerfStage::kMux, pts)` 性能埋点。
+
+**CMake 登记**：`pal/apple/CMakeLists.txt` 新增 `AudioToolbox` 框架链接（`AudioStreamBasicDescription` / `CMAudioFormatDescriptionCreate`）；测试 `cq_tests_pala_muxer_audio` 在 `tests/CMakeLists.txt` 的 `if(APPLE)` 块登记，显式链接 CoreVideo。
+
+**端到端实测证据（本机 Intel Mac / macOS 15.4 / AppleClang 17）**：
+- 链路：合成 BGRA CVPixelBuffer（640×360 视频轨）+ 合成 float32 立体声 440 Hz 正弦 PCM（100 块 × 1024 样本 @48000 ≈ 2.133 s）→ `IMediaMuxer`（`AppleMediaMuxer` → `AppleVideoEncoder`）→ 落盘 `/tmp/cq_muxer_audio_out.mp4`。
+- **ffprobe 验证产出**：`index=1 codec_name=aac codec_type=audio sample_rate=48000 channels=2`；视频轨 `codec=h264` 同时存在；`stream duration=2.133333` 与写入时长吻合。
+- **契约验证**：`AddVideoTrack` 前 `AddAudioTrack` → 错误（writer 未建立）；`AddAudioTrack(kMp3)` → `kEncodeUnsupported`；`AddAudioTrack` 前 `WriteAudioFrame` → 错误。均如实返回，不伪造。
+
+**已知限制（诚实报告，非「源音轨已打通」）**：
+- **源音频回路未打通**：仓库 `tests/golden/frames/gf_1080p_with_audio.mp4`（aac / 44100 Hz / mono）虽可被 PALA-010 解封装出音频包（`MediaPacket{codec=kAac}`），但 PALA-010 是 **passthrough demux，不含解码**，没有 AAC→PCM 解码器把压缩包转成 `PcmBuffer` 喂入 `WriteAudioFrame`。因此「从源文件取音频写回」卡在**解码环节（AUDIO-001 本期未实现）**，本任务只验证了「合成 PCM 能写出 AAC 音轨」。
+- `WriteAudioFrame` 仅支持 `kFloat32` / `kInt16`；`kInt32` / `kFloat64` 返回 `kEncodeUnsupported`。
+
+**测试**：`tests/unit/test_media_muxer_audio_apple.cpp`（仅 `if(APPLE)` 构建），登记为 `pala_muxer_audio`。无缓冲输出。
+
+**后续任务**：
+- AUDIO-001：实现 AAC→PCM 解码，打通「源文件音频 → WriteAudioFrame」回路（届时需把 44100/mono 源映射为对应 `AudioTrackConfig`）。
+- 多语言/多音轨、`AVChannelLayoutKey` 显式布局、采样率/声道与 `AudioTrackConfig` 不一致时的重采样策略。
 
 ## 相关
 ARCH-004 §3、`PALA-0xx` 任务、ADR-0009（RationalTime 网格）、EXPORT-001

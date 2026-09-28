@@ -20,7 +20,27 @@
 #import <Metal/Metal.h>
 #import <Foundation/Foundation.h>
 #import <CoreVideo/CoreVideo.h>
+#include <TargetConditionals.h>
+// ⚠️ IOSurface 是 **macOS 专有**框架，iOS SDK 不暴露其头文件（iOS 上属私有 API）。
+//    2026-09-28 实测：iOS device 切片构建在此处 fatal error: 'IOSurface/IOSurface.h'
+//    file not found —— 脚本如实失败，未放宽编译选项。
+//    本文件只在「零拷贝验证辅助」里用到 IOSurface；产品代码的零拷贝走
+//    CVMetalTextureCache，本身并不需要它。故按平台条件编译：
+//    iOS 下该辅助函数退化为返回 0，调用方降级到耗时证据（BenchmarkNativeImageImport）。
+#if !TARGET_OS_IPHONE
 #import <IOSurface/IOSurface.h>
+#endif
+
+// CPU 可见（可 replaceRegion 上传）的 storage mode 因架构而异：
+//   - macOS：Managed（CPU/GPU 可有独立副本，需显式同步）
+//   - iOS  ：**统一内存**，Managed 不存在（API_UNAVAILABLE(ios)），CPU 可见即 Shared
+//     2026-09-28 实测：iOS device 切片构建在 MTLStorageModeManaged 处报
+//     "is unavailable: not available on iOS"（脚本如实失败，未放宽编译选项）
+#if TARGET_OS_IPHONE
+static const MTLStorageMode kCqCpuVisibleStorageMode = MTLStorageModeShared;
+#else
+static const MTLStorageMode kCqCpuVisibleStorageMode = MTLStorageModeManaged;
+#endif
 
 #include "cq/pal/gfx.h"
 #include "cq/base/status.h"
@@ -460,7 +480,7 @@ private:
                                                               width:static_cast<NSUInteger>(w)
                                                              height:static_cast<NSUInteger>(h)
                                                           mipmapped:NO];
-        td.storageMode = MTLStorageModeManaged;  // CPU 可 replaceRegion 上传
+        td.storageMode = kCqCpuVisibleStorageMode;  // CPU 可 replaceRegion 上传（iOS 下为 Shared）
         td.usage = MTLTextureUsageShaderRead;
         id<MTLTexture> ctex = [device_ newTextureWithDescriptor:td];
         if (ctex == nil) {
@@ -504,8 +524,8 @@ public:
                                                                 width:static_cast<NSUInteger>(desc.width)
                                                                height:static_cast<NSUInteger>(desc.height)
                                                             mipmapped:NO];
-        // 渲染目标用 Private（GPU 最优）；需要 CPU 上传（采样源）用 Managed。
-        td.storageMode = is_rt ? MTLStorageModePrivate : MTLStorageModeManaged;
+        // 渲染目标用 Private（GPU 最优）；需要 CPU 上传（采样源）用 CPU 可见模式（macOS=Managed / iOS=Shared）。
+        td.storageMode = is_rt ? MTLStorageModePrivate : kCqCpuVisibleStorageMode;
         MTLTextureUsage usage = 0;
         if (is_rt) usage |= MTLTextureUsageRenderTarget;
         if (is_sampled) usage |= MTLTextureUsageShaderRead;
@@ -777,9 +797,15 @@ RenderTargetHandle  ToRenderTargetHandle(IRenderTarget* p){ return static_cast<C
 uint32_t GetImportedTextureIosurfaceId(TextureHandle tex) {
     auto* mt = static_cast<CqTexture*>(tex);
     if (mt == nullptr || mt->tex_ == nil) return 0;
+#if TARGET_OS_IPHONE
+    // iOS：IOSurface 非公开 API，无法取 ID。返回 0，调用方降级到耗时证据。
+    // 零拷贝本身（CVMetalTextureCache）仍然成立，只是不能靠 IOSurface ID 证明。
+    return 0;
+#else
     IOSurfaceRef surf = mt->tex_.iosurface;  // MTLTexture.iosurface（macOS）：底层 IOSurface
     if (surf == nullptr) return 0;
     return static_cast<uint32_t>(IOSurfaceGetID(surf));
+#endif
 }
 
 // 零拷贝耗时代差证明：对「Metal 兼容帧」走零拷贝（zero_handle）、对「非兼容帧」走 CPU 退化

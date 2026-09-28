@@ -145,8 +145,11 @@ public:
 // 轨约定网格（本期 = kProjectTimeScale = 120000）。非整除（如 1001/30000 的 NTSC 帧周期）
 // 在写入前由调用方显式 `Rescale(..., kRound/kFloor)` 对齐，接口本身不做静默舍入。
 //
-// 音频轨：本期仅留接口（`AddAudioTrack`）不实现——Apple 实现当前只有视频轨。
-// 预留 `AddAudioTrack` 以便后续补齐，不破坏接口形状。
+// 音频轨：本期已实现 AAC 封装（Apple 端 `AppleMediaMuxer` → `AppleVideoEncoder`，
+// 走 AVAssetWriter 的 AAC `AVAssetWriterInput`，输入为线性 PCM）。`AddAudioTrack` 建立
+// 音频轨；`WriteAudioFrame` 按 `PcmBuffer` 实际格式生成线性 PCM 样本缓冲，交由封装器内部
+// 编码为 `AudioTrackConfig` 指定的 AAC。压缩 AAC 码流不能直接喂入（须先解码为 PCM，
+// AUDIO-001 本期未实现）——这是与视频「传 opaque 像素句柄」对称的「传 PCM 缓冲」设计。
 
 // 码率档位（而非精确 bps）：避免把平台特定的码率数值暴露到 core 冻结接口。
 // 平台实现按分辨率/格式把档位映射到本机默认码率（如 kLossless → 交平台默认）。
@@ -187,7 +190,9 @@ public:
     // 必须在任何 WriteVideoFrame 之前调用一次（多视频轨本期不支持，仅首轨生效）。
     virtual Status AddVideoTrack(const VideoTrackConfig& cfg) = 0;
 
-    // 添加音频轨（接口预留；Apple 实现当前返回 kEncodeUnsupported，不产出音频）。
+    // 添加音频轨：建立 AAC `AVAssetWriterInput`（采样率 / 声道 / 码率档位来自 cfg）。
+    // 必须在任意 `WriteAudioFrame` 之前调用一次；本期要求视频轨已先 `AddVideoTrack`
+    // （AVAssetWriter 由视频轨建立）。不支持的 codec 返回 `kEncodeUnsupported`（诚实，不伪造）。
     virtual Status AddAudioTrack(const AudioTrackConfig& cfg) = 0;
 
     // 写入一帧视频。image 为 opaque 原生图像句柄（零平台类型），实现内部按源格式
@@ -196,6 +201,15 @@ public:
     // 调用方必须按 PTS 非递减顺序喂帧（封装器要求样本按展示序）。
     // 长任务，接受 CancelToken；背压等待期间若被取消返回 kCancelled（非错误）。
     virtual Status WriteVideoFrame(NativeImageHandle image, const RationalTime& pts,
+                                  const CancelToken& token) = 0;
+
+    // 写入一块音频（线性 PCM）。pcm 携带样本（SampleFormat / channels / sample_rate /
+    // frame_count / data / data_bytes），pts 为该块首样本展示时间戳（timescale 须等于
+    // 轨约定网格 120000；非整除须显式舍入）。封装器按 pcm 实际格式生成线性 PCM 样本缓冲，
+    // 内部编码为 `AddAudioTrack` 指定的 AAC。当前支持 kFloat32 / kInt16；
+    // 调用方须按 PTS 非递减顺序喂块；长任务接受 CancelToken，背压等待期间若被取消
+    // 返回 kCancelled（非错误）。
+    virtual Status WriteAudioFrame(const PcmBuffer& pcm, const RationalTime& pts,
                                   const CancelToken& token) = 0;
 
     // 正常收尾：标记输入完成并阻塞等待封装完成。返回错误若写入失败。

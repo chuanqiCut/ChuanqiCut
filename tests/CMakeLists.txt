@@ -281,4 +281,22 @@ if(APPLE)
     cq_require_cxx20(cq_tests_pala_muxer)
     apply_cq_warnings(cq_tests_pala_muxer)
     add_test(NAME pala_muxer COMMAND cq_tests_pala_muxer)
+
+    # ---- muxer 接缝：AAC 音频轨封装验收（合成 PCM -> AAC 音轨，ffprobe 验证）----
+    # 端到端验证 IMediaMuxer::AddAudioTrack / WriteAudioFrame 真能产出含 aac 音轨的 MP4，
+    # 且 codec=aac / 采样率 / 声道与 AudioTrackConfig 一致。仅 Apple 平台。
+    find_library(COREVIDEO_T5_LIB CoreVideo REQUIRED)
+    add_executable(cq_tests_pala_muxer_audio
+        unit/test_media_muxer_audio_apple.cpp)
+    target_include_directories(cq_tests_pala_muxer_audio PRIVATE
+        ${CMAKE_SOURCE_DIR}/core/include
+        ${CMAKE_SOURCE_DIR}/pal/apple)
+    target_compile_definitions(cq_tests_pala_muxer_audio PRIVATE
+        CQ_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
+    target_link_libraries(cq_tests_pala_muxer_audio PRIVATE
+        cq_core cq_pal_apple
+        ${AVFOUNDATION_T_LIB} ${COREMEDIA_T_LIB} ${COREVIDEO_T5_LIB})
+    cq_require_cxx20(cq_tests_pala_muxer_audio)
+    apply_cq_warnings(cq_tests_pala_muxer_audio)
+    add_test(NAME pala_muxer_audio COMMAND cq_tests_pala_muxer_audio)
 endif()

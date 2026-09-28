@@ -23,6 +23,7 @@
 #include "cq/base/concurrency.h"  // CancelToken
 #include "cq/base/status.h"        // Status / StatusCode
 #include "cq/base/time.h"          // RationalTime
+#include "cq/pal/media.h"          // AudioTrackConfig / PcmBuffer（音频轨复用）
 
 // C 类型（CoreVideo），在纯 C++ 下也合法（与 media_decode.h 的 CVPixelBufferRef 一致）。
 typedef struct __CVBuffer* CVPixelBufferRef;
@@ -75,6 +76,18 @@ public:
     // 正常收尾：标记 input 完成并阻塞等待 finishWriting。返回错误若写入失败。
     Status Finish();
 
+    // 添加 AAC 音频轨：在已建立的 writer 上挂一个 AAC `AVAssetWriterInput`
+    // （采样率 / 声道 / 码率档位来自 cfg）。必须在 startWriting 之前调用
+    // （AVAssetWriter 要求所有 input 在 startWriting 前 addInput），故本方法在
+    // `AddVideoTrack` 之后、`Write*` 之前调用。不支持的 codec 返回 kEncodeUnsupported。
+    Status AddAudioTrack(const AudioTrackConfig& cfg);
+
+    // 写入一块线性 PCM 音频，内部喂给 AAC 输入经封装器编码为 AAC。
+    // pcm 携带样本（kFloat32 / kInt16）、声道、采样率、frame_count、data。
+    // pts 为首样本展示时间戳（timescale 须为轨约定网格 120000；非整除调用方已舍入）。
+    // 长任务：背压等待期间若被取消返回 kCancelled（非错误）。
+    Status WriteAudioFrame(const PcmBuffer& pcm, const RationalTime& pts, const CancelToken& token);
+
     // 取消：中止写入并删除半成品输出文件（不 finishWriting）。取消是独立停止信号（非错误）。
     Status Cancel();
 
@@ -88,6 +101,10 @@ private:
     // pImpl：持有 AVFoundation ObjC 对象（仅 .mm 可见），使本头保持纯 C++ 干净。
     struct State;
     State* state_ = nullptr;
+
+    // 惰性启动 writer：AVAssetWriter 要求所有 input 都 addInput 之后、首个样本 append 之前
+    // 调用 startWriting 一次；故在首个 WriteVideoFrame / WriteAudioFrame 时调用。
+    static Status EnsureStarted(State* state);
 
     bool hw_encode_ = false;
     int64_t frame_count_ = 0;

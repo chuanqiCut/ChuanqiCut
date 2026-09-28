@@ -183,9 +183,19 @@ Status VideoToolboxDecoder::Open(const StreamInfo& info) {
         (__bridge id)kCVPixelBufferPixelFormatTypeKey: @(kCVPixelFormatType_32BGRA),
         (__bridge id)kCVPixelBufferMetalCompatibilityKey: @YES,
     };
-    NSDictionary* spec = @{
-        (__bridge id)kVTVideoDecoderSpecification_EnableHardwareAcceleratedVideoDecoder: @YES,
-    };
+    // ⚠️ 这两个常量在 iOS 上要求 **iOS 17.0+**（macOS 为 10.9 起）。
+    //    项目最低部署目标是 **iOS 16**（ADR-0010），直接引用会被 -Werror
+    //    （-Wunguarded-availability-new）判为错误。
+    //    2026-09-28 实测：iOS device 切片构建在此处失败（脚本如实失败未放宽）。
+    //    处理：用 @available 守卫，iOS 16 下不指定/不查询（硬解仍由系统默认策略决定，
+    //    只是不显式开启、也不上报"是否硬件"）。**不为此抬高部署目标**——那违背 ADR-0010。
+    //    注：@available(iOS 17.0, *) 在非 iOS 平台（macOS）恒为真，故 macOS 行为不变。
+    NSDictionary* spec = nil;
+    if (@available(iOS 17.0, *)) {
+        spec = @{
+            (__bridge id)kVTVideoDecoderSpecification_EnableHardwareAcceleratedVideoDecoder: @YES,
+        };
+    }
     OSStatus st = VTDecompressionSessionCreate(
         kCFAllocatorDefault, format_desc_, (__bridge CFDictionaryRef)spec,
         (__bridge CFDictionaryRef)attrs, &cb, &session_);
@@ -194,13 +204,16 @@ Status VideoToolboxDecoder::Open(const StreamInfo& info) {
     }
 
     // 运行时查询：本次会话是否真的走了硬件解码（如实上报，不伪造）。
-    CFBooleanRef hw = nullptr;
-    if (VTSessionCopyProperty(
-            session_, kVTDecompressionPropertyKey_UsingHardwareAcceleratedVideoDecoder,
-            kCFAllocatorDefault, &hw) == noErr &&
-        hw != nullptr) {
-        session_hw_ = (hw == kCFBooleanTrue);
-        CFRelease(hw);
+    // iOS 16 下该属性不可用 → 保持默认（未知），绝不谎报"已硬解"。
+    if (@available(iOS 17.0, *)) {
+        CFBooleanRef hw = nullptr;
+        if (VTSessionCopyProperty(
+                session_, kVTDecompressionPropertyKey_UsingHardwareAcceleratedVideoDecoder,
+                kCFAllocatorDefault, &hw) == noErr &&
+            hw != nullptr) {
+            session_hw_ = (hw == kCFBooleanTrue);
+            CFRelease(hw);
+        }
     }
 
     return Status::Ok();

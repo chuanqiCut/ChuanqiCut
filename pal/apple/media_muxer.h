@@ -48,6 +48,8 @@ public:
     Status AddAudioTrack(const AudioTrackConfig& cfg) override;
     Status WriteVideoFrame(NativeImageHandle image, const RationalTime& pts,
                          const CancelToken& token) override;
+    Status WriteAudioFrame(const PcmBuffer& pcm, const RationalTime& pts,
+                         const CancelToken& token) override;
     Status Finish(const CancelToken& token) override;
     Status Cancel() override;
     int64_t FrameCount() const override;
@@ -62,6 +64,7 @@ private:
     ContainerFormat container_ = ContainerFormat::kMp4;
     bool opened_ = false;       // Open 已成功
     bool video_added_ = false;  // AddVideoTrack 已成功（writer 已建立）
+    bool audio_added_ = false;  // AddAudioTrack 已成功（AAC 音频轨已建立）
 };
 
 // 工厂：返回平台无关 IMediaMuxer（Apple 后端）。由 PALA 平台实现提供。

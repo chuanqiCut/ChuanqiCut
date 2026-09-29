@@ -22,6 +22,18 @@
 - 编码阶段：**一个任务一个新会话**，会话开场读真源 + 模块文档 + 任务单卡。见 `docs/ai/HANDOFF-001`。
 - 任务结束必须回写 `.ai/modules/`、`.ai/memory/pitfalls.md`、`.ai/memory/baselines.md`。
 
+## 产物打包约定（2026-09-29 定）
+- **分发的静态库一律不开 LTO**（`tools/build/build_core_apple.sh` 默认 `--lto=off`）。
+  Release + LTO 产出 bitcode-only `.o`，`xcodebuild -create-xcframework` 直接拒绝；
+  且带 LTO bitcode 的分发库会强制消费者 linker 版本匹配。Release 的 `-O3` 保留。
+- 主构建（日常开发 / CI / 单测）**仍开 LTO**，项目开关是 `CQ_ENABLE_LTO_RELEASE`。
+  不能直接 `-DCMAKE_INTERPROCEDURAL_OPTIMIZATION_RELEASE=OFF` —— 那个变量是
+  `set(... CACHE BOOL ... FORCE)` 写的，`FORCE` 会让命令行 `-D` **静默失效**。
+- **打包后必须做消费者侧链接冒烟**（`tools/build/smoke_link.cpp`）。
+  理由：`xcodebuild` 成功只说明是合法 Mach-O，"能被 App 链接并运行"是另一件事。
+- `.gitignore` 的目录规则必须写成 `/dir/` 锚定根。裸 `build/` 曾把 `tools/build/`
+  一并忽略，导致三个构建脚本建库以来从未入库，且 `git status` 完全看不出来。
+
 ## 依赖治理硬规则（ADR-0008）
 - FFmpeg upstream 用 **GitHub 官方镜像** `https://github.com/FFmpeg/FFmpeg.git`（ffmpeg.org 登记为官方 mirror），本地 git 管理。
 - **源码集成的 git 依赖一律 `pin="commit"` + 40 位 hash。禁止 `pin="tag"`。**

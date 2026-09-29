@@ -24,7 +24,11 @@ add_library(cq_core STATIC
     src/base/perf.cpp
     src/media/cache.cpp
     src/media/decoder_pool.cpp
-    src/media/system_frame_provider.cpp)
+    src/media/system_frame_provider.cpp
+    # CORE-007：能力查询内核侧实现（SetCapabilitiesBackend / QueryCapability）。
+    # CORE-006 只冻结了头文件，这两个函数长期只有声明无定义；单测里的 static_assert
+    # 是编译期检查、不链接，所以 CTest 全绿也看不出来。此处补上实现。
+    src/pal/capabilities.cpp)
 
 # 公共头目录：对外 C ABI 伞形头 core/include。
 target_include_directories(cq_core PUBLIC

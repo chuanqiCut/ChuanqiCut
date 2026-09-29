@@ -63,6 +63,23 @@
 - 日期 / 来源 / 验证状态：2026-09-29 / HANDOFF-002 遗留问题 / **verified**（三切片 `.o` 头已从
   `dec0170b` 变为 `cffaedfe`，`file` 报 `Mach-O 64-bit object arm64`，xcframework 三个切片生成成功）
 
+### P2 · 冻结接口只有头文件、实现缺失，编译期 `static_assert` 会把它掩盖成"全绿"
+- 现象：`core/include/cq/pal/capabilities.h` 冻结的 `SetCapabilitiesBackend` /
+  `QueryCapability` **长期只有声明、没有定义**。CTest 一直 22/22 全绿。
+- 根因：全仓库唯一引用是 `tests/unit/pal_headers_compile.cpp` 里的 `static_assert`
+  （校验返回类型）。**`static_assert` 是编译期检查、不链接** —— 只要声明对就能过，
+  实现存不存在它管不着。
+- 影响范围：任何「接口冻结」类任务都可能这样静默断掉。这是 CORE-006 当时
+  「编译验证 7/7 全绿但接口是断的」的**同型复发**，只是触发机制换成了 static_assert。
+- 排障步骤：对可疑符号 `grep -rn <符号>`，若**只出现在头文件与 static_assert 里**、
+  没有任何 `.cpp/.mm` 定义，即为断接口。
+- 修复：CORE-007 补上实现（`core/src/pal/capabilities.cpp` + `pal/apple/capabilities.mm`）。
+- 防复发规则：**冻结接口后必须补一个「链接并运行」的最小用例**，
+  `static_assert` / 头文件编译验证**不能**作为"接口可用"的证据。
+  本轮已落的样例：`tests/unit/test_capabilities.cpp`（注入后端后真查询）。
+- 日期 / 来源 / 验证状态：2026-09-29 / CORE-007 / **verified**（24/24，其中 2 个新用例
+  链接并运行了这两个函数；Apple 后端查询结果与本机已知硬件事实交叉吻合）
+
 ---
 
 ## 已修正的历史错误（供参考，避免重犯）

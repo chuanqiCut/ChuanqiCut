@@ -418,3 +418,41 @@ int64 上限 @120000 ≈ 243 万年。素材仍可保留原生 timescale，两�
   超时后 `pred()==false` 仍返回，对**空 deque 调 `front()`** → UBSan 抓到 `load of null pointer in
   deque::front`（SIGSEGV）。修复：显式 `while (cond && !cancelled) wait_for(lk,1ms);` 守护。
 - 配套：单测 stdout 改无缓冲 + 每用例 `WithTimeout` 护栏 + 全局 30s 看门狗，杜绝 CI 挂死。
+
+---
+
+## CORE-007：能力查询实测（2026-09-29）
+
+### ⚠️ 设备：Intel Mac（macOS 15.4，x86_64）—— **不代表 iPhone**
+
+本机**无 ANE、无 ProRes 硬件编解码、无 AV1 硬解**（见 ADR-0010 / pitfalls E5）。
+下表仅供「查询机制真的在工作」的对照，**任何 iPhone 结论必须由传哲在 iPhone 17 Pro 实测回填**。
+
+| 能力项 | 本机实测 | 判定依据 |
+|---|---|---|
+| hw_decode_h264 | **yes** | `VTIsHardwareDecodeSupported` |
+| hw_decode_hevc | **yes** | 同上 |
+| hw_decode_av1 | **no** | 同上（Intel Mac 无 AV1 硬解，符合预期） |
+| hw_decode_prores | **no** | 同上（本机无 ProRes 硬解，与既有记录交叉吻合 ✅） |
+| hw_encode_h264 | **yes** | VT 会话探针（macOS 10.9+ 常量可用） |
+| hw_encode_hevc | **yes** | 同上 |
+| hw_encode_prores | **no** | 同上（本机无 ProRes 硬编，交叉吻合 ✅） |
+| 10bit_pipeline | **degraded** | 无可靠公开 API，不猜（见 TASK-CORE-007 D2） |
+| hdr_display | **no** | SDK 未接入 HDR 色彩管理，如实上报 |
+| compute_shader | **yes** | Metal 设备存在 |
+| float_texture | **yes** | Metal 设备存在 |
+| external_memory_import | **yes** | PALA-002 已实测打通零拷贝 |
+| npu_inference | **yes** | CoreML 可用；**不代表实际跑在 ANE** |
+| gpu_metal | **yes** | `MTLCreateSystemDefaultDevice()` 非 nil |
+| gpu_gles | **no** | Apple 平台 GLES 已废弃 |
+| gpu_vulkan | **no** | Apple 无原生 Vulkan |
+
+**交叉验证价值**：`hw_decode_prores=no` 与 `hw_encode_prores=no` 与项目既有事实
+（Intel Mac 无 ProRes 硬编）一致 —— 证明查询是真的在问设备，而不是返回写死的常量。
+
+### iOS 上待真机回填的项
+
+- `hw_encode_*`：iOS 16 / 17.0~17.3 因常量要求 iOS 17.4+ 而**无法探测**，返回
+  `degraded`（未知，非"没有"）。iPhone 17 Pro 上应为 iOS 18+ → 走真实探针。
+- `hw_decode_av1`：iPhone 17 Pro（A19 Pro）预期支持，本机不支持，需真机确认。
+- `10bit_pipeline`：待确定可靠查询方式后回填。

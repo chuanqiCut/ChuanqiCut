@@ -66,10 +66,38 @@ $(dirname $CMAKE_BIN)/ctest --test-dir build
   `check_pal_headers.py` 报 `fs.h:62 [platform_type] matched 'jobject'`（EXIT=1），
   回退后恢复 `0 violation(s) / EXIT=0` —— 门禁确实会拦，非摆设。
 
+## CORE-007：能力查询已实现（2026-09-29）
+
+CORE-006 只冻结了 `core/include/cq/pal/capabilities.h` 的接口与枚举，
+`SetCapabilitiesBackend` / `QueryCapability` **长期只有声明无定义**。全仓库唯一引用是
+`tests/unit/pal_headers_compile.cpp` 的 `static_assert`（编译期检查、不链接），
+所以 CTest 全绿也看不出接口是断的 —— 与 CORE-006 当时的教训同型。
+
+现已补上实现，分散在两处（平台无关 / 平台专属）：
+
+| 位置 | 内容 |
+|---|---|
+| `core/src/pal/capabilities.cpp` | 内核侧注入与分发。`std::atomic<ICapabilities*>`，查询路径无锁（红线 #8） |
+| `pal/apple/capabilities.mm` + `capabilities_apple.h` | Apple 后端（Metal / VideoToolbox）。安装入口 `cq::apple::InstallCapabilities()` |
+
+关键约定（详见 `docs/tasks/TASK-CORE-007.md`）：
+- **未注入后端一律返回 `kNo`**（安全默认：上层走降级路径；谎报 `kYes` 会崩）
+- **查不到就诚实返回 `kNo` / `kDegraded`，不做乐观猜测**（不猜机型、不猜芯片）
+- 解码用 `VTIsHardwareDecodeSupported`（**iOS 11+ / macOS 10.13+**，无需守卫）。
+  比 PALA-011 的会话探针覆盖面更广 —— 后者依赖 iOS 17.0+ 常量，iOS 16 上无法探测
+- 编码无等价直接 API，只能建一次性 `VTCompressionSession` 查询
+  `kVTCompressionPropertyKey_UsingHardwareAcceleratedVideoEncoder`（**iOS 17.4+**）。
+  iOS 16 / 17.0~17.3 返回 **`kDegraded`**（未知，非"没有"），不抬高部署目标
+- `kNpuInference` 语义收窄为「CoreML 可用」，**不代表实际跑在 ANE**（无 API 可查）
+- `capabilities.mm` 的 switch **刻意不写 `default:`**，新增枚举项会先触发 `-Wswitch` 编译失败
+
+实测结果见 `.ai/memory/baselines.md`（Intel Mac，不代表 iPhone）。
+
 ## 后续任务（依赖本接口）
 - GFX-001（GFX 抽象落地）、MEDIA-010（FrameProvider 语义）、AI-001（IInferenceBackend）、
-  AUDIO-001（音频图 + PCM 管理）、CORE-007（ICapabilities 实现）、PERF-001（性能套件）、
-  INFRA-008（OHOS 接口编译检查）、PALD-040（Scoped Storage）、全部 PALA-/PALD-/OHOS 实现。
+  AUDIO-001（音频图 + PCM 管理）、CORE-008（线程模型）、CORE-009（EditorSession 门面）、
+  PERF-001（性能套件）、INFRA-008（OHOS 接口编译检查）、PALD-040（Scoped Storage）、
+  全部 PALA-/PALD-/OHOS 实现。
 
 ## 已知待决策 / 风险（已标出，待评审）
 - `PalPtr` 跨 C ABI：当前为 C++ 内部层；若后续 C ABI 暴露句柄需转 `uintptr_t`（BIND 层处理）。

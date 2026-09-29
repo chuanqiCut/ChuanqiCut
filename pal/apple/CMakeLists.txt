@@ -15,7 +15,9 @@ add_library(cq_pal_apple STATIC
     media_demux.mm
     media_decode.mm
     media_encode.mm
-    media_muxer.mm)
+    media_muxer.mm
+    capabilities.mm
+    capabilities_apple.h)
 
 target_include_directories(cq_pal_apple PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}
@@ -32,6 +34,7 @@ set_target_properties(cq_pal_apple PROPERTIES
 
 # Objective-C++ 启用 ARC（与项目警告集共存：-Werror -Wconversion -Wshadow -Wold-style-cast）。
 set_source_files_properties(gfx_metal.mm media_demux.mm media_decode.mm media_encode.mm media_muxer.mm
+    capabilities.mm
     PROPERTIES COMPILE_FLAGS "-fobjc-arc")
 
 # 项目统一警告集 + -Werror（apply_cq_warnings 已含）。

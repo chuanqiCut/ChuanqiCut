@@ -20,5 +20,24 @@ endfunction()
 # Release 侧要求。Debug 不开，保证本地迭代速度。
 # 注意：-Werror + LTO 组合可能让后续任务在“编译不过”上反复卡顿（见 TASK-INFRA-002 risk）。
 # 缓解手段就是 Warnings.cmake 里固定的显式警告集合 + “只能改代码”红线，不靠 -Wno-* 逃逸。
-set(CMAKE_INTERPROCEDURAL_OPTIMIZATION_RELEASE ON CACHE BOOL
-    "Enable LTO/IPO for Release builds (ChuanqiCut)" FORCE)
+#
+# ⚠️ 覆盖开关：CQ_ENABLE_LTO_RELEASE（默认 ON）
+#   原先直接 `set(... CACHE BOOL ... FORCE)`，FORCE 会在每次 configure 时把这个
+#   cache 变量写回 ON，**命令行 -DCMAKE_INTERPROCEDURAL_OPTIMIZATION_RELEASE=OFF 无效**
+#   （2026-09-29 实测：传了 OFF，cache 里仍是 ON，产出的 .o 还是 LTO bitcode）。
+#   所以需要能被外部关闭时，必须走本项目的显式开关，而不是直接覆盖 CMake 内建变量。
+#
+#   什么时候要关 LTO：打包 XCFramework 时。
+#   Release + LTO 产出的 .o 是 **bitcode-only**（头部 magic 0x0b17c0de + 'BC\xc0\xde'），
+#   不是 Mach-O，`xcodebuild -create-xcframework` 解析不了，报
+#   “unable to find any architecture information ... Unknown header: 0xb17c0de”。
+#   这与 ENABLE_BITCODE 无关，不要往 -fembed-bitcode 方向排查。
+#   分发的静态库带 LTO bitcode 也会强制消费者的 linker 版本匹配，属分发陷阱。
+option(CQ_ENABLE_LTO_RELEASE "Enable LTO/IPO for Release builds (ChuanqiCut)" ON)
+if(CQ_ENABLE_LTO_RELEASE)
+    set(CMAKE_INTERPROCEDURAL_OPTIMIZATION_RELEASE ON CACHE BOOL
+        "Enable LTO/IPO for Release builds (ChuanqiCut)" FORCE)
+else()
+    set(CMAKE_INTERPROCEDURAL_OPTIMIZATION_RELEASE OFF CACHE BOOL
+        "Enable LTO/IPO for Release builds (ChuanqiCut)" FORCE)
+endif()

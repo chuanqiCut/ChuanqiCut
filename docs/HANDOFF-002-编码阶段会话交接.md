@@ -8,10 +8,12 @@
 ChuanqiCut（跨平台视频编辑 SDK）**在 macOS 上已打通完整编辑闭环**：
 读 MP4 → 硬解 → 零拷贝渲染 → 导出 H.264+AAC MP4。
 代码**在 iOS SDK（部署目标 iOS 16）下也能编译产出静态库**。
-**未完成**：把三个切片合并成 `.xcframework` 的最后一步打包。
+2026-09-29 更新：**三个切片已合并成可用的 `ChuanqiCut.xcframework`**（根因是 LTO，
+不是当初推测的 bitcode，详见 §3）。**但 xcframework 暂无 C ABI，Swift App 接不上，
+需先做 BIND-001（见 §3b）**。
 
-仓库：`main`，26 个 commit，工作区干净，CTest **22/22** 全绿。
-最后 commit：`8c2f6d4`。
+仓库：`main`，26 个 commit，工作区干净，CTest **22/22** 全绿（Debug / Release 各跑通）。
+最后 commit：`8c2f6d4`。（本轮 XCFramework 修复尚未提交）
 
 ## 1. 已完成清单
 
@@ -49,31 +51,39 @@ ChuanqiCut（跨平台视频编辑 SDK）**在 macOS 上已打通完整编辑闭
   所以"从源视频取音频再写入"需 **AUDIO-001**（音频图）才能闭合。
   当前只能写**合成 PCM**（已验证）；不要把"合成 PCM 能写"说成"源音轨已打通"。
 
-## 3. ⚠️ 未完成：XCFramework 合并（最后一步打包）
+## 3. ✅ XCFramework 合并已修（2026-09-29 完成）
 
-**现象**：`tools/build/build_core_apple.sh --config=Release` 能编出三个切片
-（ios-device / ios-sim / macos 各自的 `ChuanqiCut.a`），但在
-`xcodebuild -create-xcframework` 处失败：
+**旧推测是错的**：不是 bitcode 嵌入，是 **LTO**。
 
-```
-error: unable to find any architecture information in the binary at
-       '.../ios-device/ChuanqiCut.a': Unknown header: 0xb17c0de
-```
+**真因**：`cmake/CompileOptions.cmake` 开了 `CMAKE_INTERPROCEDURAL_OPTIMIZATION_RELEASE=ON`。
+Release + LTO 时 clang 产出 **bitcode-only 目标文件**（头部 magic `0x0b17c0de`，紧跟
+`BC\xc0\xde` 的 LLVM IR），**不是 Mach-O**。`xcodebuild` 因此读不到架构信息。
+与 ENABLE_BITCODE / `-fembed-bitcode` **无关**——所以当初加 `-fno-embed-bitcode` 方向就错了。
 
-`0xb17c0de` 是 bitcode 的 magic（非 Mach-O）。
+**踩到的第二个坑**：原写法是 `set(... CACHE BOOL ... FORCE)`，**`FORCE` 会让命令行
+`-DCMAKE_INTERPROCEDURAL_OPTIMIZATION_RELEASE=OFF` 静默失效**（第一次修复传了 OFF，
+cache 里仍是 ON，`.o` 还是 bitcode，且产物字节数与之前完全相同才被察觉）。
+→ 已改为项目显式开关 `option(CQ_ENABLE_LTO_RELEASE ... ON)`，打包脚本传 OFF。
 
-**已试且已撤销**：加 `-fno-embed-bitcode` → 该 Xcode 的 clang 报
-`unknown argument`，已撤销。**不为绕过打包问题而破坏编译。**
+**验证（2026-09-29 实测）**：
+- 三切片 `.o` 头部由 `dec0170b` 变为 `cffaedfe`；`file` 报 `Mach-O 64-bit object arm64`
+- xcframework 三切片：`ios-arm64` / `ios-arm64_x86_64-simulator` / `macos-arm64_x86_64`
+- 消费者侧真实链接并运行 macOS 切片：输出 `StatusToString(kOk) = OK`
+- 主构建 Release **LTO 未退化**（`.o` 仍是 bitcode）；Debug/Release CTest 均 22/22
 
-**传哲指示（2026-09-28）**：**bitcode 不要开**。
-→ 因此接手时**先做一件事**：确认 `.a` 里到底有没有 bitcode 段
-（`otool -l` 看有无 `__LLVM,__bitcode`，或 `ar -t` / `nm` 辅助判断）。
-**若未开 bitcode 却仍报此错，说明根因不是 bitcode，需要重新定位**（不要沿用我的推测）。
+**新增两道门禁**（防复发）：
+1. 合并前预检：`otool -l` 断言切片不含 bitcode，否则带明确根因退出（不再丢原始报错）
+2. 合并后链接冒烟：`tools/build/smoke_link.cpp` 真链 macOS 切片并断言输出
+   ——理由：xcodebuild 成功只说明是合法 Mach-O，"能被 App 消费"必须试一次
 
-**备选方向**（供新会话判断，不要盲从）：
-1. 若确实含 bitcode：在 iOS 切片构建时用 `xcrun bitcode_strip ... -r -o` 剔除后再合并
-2. 或者不合并，直接以「各平台 `.a` + `core/include` 头文件」交付（XCFramework 只是分发便利）
-3. 或用 `-allow-internal-distribution` / 检查 `libtool` 是否应用 Apple 的 `libtool`（脚本已用 `xcrun libtool`）
+**当前状态**：`build/apple/ChuanqiCut.xcframework`（1.5MB，产物不入库，符合约定）。
+
+## 3b. ⚠️ xcframework 不是给 Swift 用的
+
+`core/include/cq/cq_sdk.h` 目前**只有注释里的示例函数名，没有任何真正的 C ABI 导出**。
+`nm -g` 看到的全是 C++ mangled 符号（`__ZN2cq...`）和 ObjC++ 实现符号。
+→ **Swift / Objective-C App 现在接不上**，必须先做 **BIND-001（C ABI 绑定层）**。
+不要把"xcframework 打包成功"说成"App 可以集成了"。
 
 ## 4. 当前 iOS 平台差异（已修，勿回退）
 
@@ -118,8 +128,8 @@ $PY tools/deps/selfcheck.py                                       # 期望 18/18
 
 ## 7. 建议下一步（按优先级）
 
-1. **修 XCFramework 合并**（真机路径最后一步）——先按第 3 节确认根因是否为 bitcode
-2. **AUDIO-001**（音频图/PCM 缓冲）→ 闭合源音频环
+1. **BIND-001（C ABI 绑定层）**——最高优先级，xcframework 要能被 Swift App 消费必须先过这关（§3b）
+2. **AUDIO-001**（音频图/PCM 缓冲）→ 闭合源音频环（当前只能写合成 PCM，源音轨未通）
 3. EXPORT-001（导出控制器：状态机/进度/取消/错误码）
 4. MEDIA-030（音画同步）
 5. BIND-002 → UIA-002 → UIA-003（App 壳：依赖链未到，**UIA-003 现在不能开始**）

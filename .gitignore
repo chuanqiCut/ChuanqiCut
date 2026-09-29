@@ -1,7 +1,11 @@
 # ChuanqiCut — 仓库忽略规则（INFRA-001 建立）
 # 构建目录：cmake -S . -B build 的产物不入库
+# ⚠️ 必须写成 `/build/` 锚定仓库根。
+#    2026-09-29 发现此处理曾有第二条裸 `build/`（匹配**任意层级**的 build 目录），
+#    导致 `tools/build/` 被连带忽略——三个构建脚本和一个 smoke_link.cpp 从未入库，
+#    clone 出来的人拿不到构建入口，而交接文档还在教人去跑它们。
+#    裸模式造成的误忽略是静默的：`git status` 干净，但文件实际不在版本库里。
 /build/
-build/
 cmake-build-*/
 out/
 

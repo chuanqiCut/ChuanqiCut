@@ -104,6 +104,27 @@ cache 里仍是 ON，`.o` 还是 bitcode，且产物字节数与之前完全相�
 详细设计与逐项依据：`docs/tasks/TASK-CORE-007.md`；实测数据：`.ai/memory/baselines.md`。
 CTest 22 → **24**。
 
+## 3d. ✅ CORE-008 线程模型与队列骨架已完成（2026-09-29）
+
+ARCH-001 §6 此前**只是一张 ASCII 图**：7 类线程角色定义好了，但 Session Thread
+不存在，"主线程零阻塞"无从执行也无从验证。
+
+已落地（详见 `.ai/modules/session.md` / `docs/tasks/TASK-CORE-008.md`）：
+- `core/include/cq/session/thread_model.h`：`ThreadRole` 枚举 + 运行时角色标记
+  （`thread_local`，默认 `kUnknown` —— 不把未标记线程猜成主线程）
+- `core/include/cq/session/task_runner.h`：`TaskRunner` 串行执行器，
+  `Post()` **非阻塞**（队列满返回 `kResourceExhausted`），复用 CORE-005 的
+  `BoundedQueue` + `CancelToken`，不重复发明原语
+
+验收「主线程零阻塞可测」：**实测 `Post()` 内含 100ms sleep 的任务，返回耗时 0.030ms**
+（16ms 预算的 1/533）。另测：任务跑在 worker 线程、FIFO 保序、满队列立即失败、
+Shutdown 保证 join。
+
+⚠️ 宿主必须记得在主线程调 `SetCurrentThreadRole(ThreadRole::kMain)`，否则守卫失效
+（SDK 无法自得知哪根是 UI 线程）——需在 BIND-002 Swift 侧兜住。
+
+CTest 24 → **25**。
+
 ## 4. 当前 iOS 平台差异（已修，勿回退）
 
 为让 iOS 切片可编，已按**平台条件编译 / 诚实降级**处理五处，
@@ -147,12 +168,10 @@ $PY tools/deps/selfcheck.py                                       # 期望 18/18
 
 ## 7. 建议下一步（按优先级）
 
-1. **CORE-008（线程模型与队列骨架）→ CORE-009（EditorSession 门面与快照）→ BIND-001**
-   —— 依赖链已核实：BIND-001 冻结的是 **EditorSession 门面**的 C ABI，而 EditorSession
-   （CORE-009）还不存在，它的前置 CORE-008 也没做。**在 EditorSession 落地前冻结
-   BIND-001，就是在设计一个没有实现支撑的接口**——正是 CORE-006 / CORE-007 两次踩到的
-   「断接口」陷阱。故先补 CORE-008 → CORE-009，再冻结 C ABI。
-   （CORE-007 能力查询已于 2026-09-29 完成，见 §3c）
+1. **CORE-009（EditorSession 门面与快照）→ 然后 BIND-001**
+   —— 依赖链：BIND-001 冻结的是 **EditorSession 门面**的 C ABI。CORE-008（线程模型）
+   已于 2026-09-29 完成，CORE-009 的前置全部就位，可以直接开工。
+   **不要跳过 CORE-009 直接冻结 BIND-001**——那会第三次踩「断接口」陷阱。
 2. **AUDIO-001**（音频图/PCM 缓冲）→ 闭合源音频环（当前只能写合成 PCM，源音轨未通）
 3. EXPORT-001（导出控制器：状态机/进度/取消/错误码）
 4. MEDIA-030（音画同步）

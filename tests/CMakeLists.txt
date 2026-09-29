@@ -75,6 +75,20 @@ cq_require_cxx20(cq_tests_core_concurrency)
 apply_cq_warnings(cq_tests_core_concurrency)
 add_test(NAME core_concurrency COMMAND cq_tests_core_concurrency)
 
+# ---- CORE-007：能力查询内核侧（注入 / 分发 / 未注入返回 kNo）----
+# ⚠️ 存在的理由：CORE-006 冻结头文件后，SetCapabilitiesBackend / QueryCapability
+#    长期只有声明无定义，而 pal_headers_compile.cpp 的 static_assert 是编译期检查、
+#    不链接 —— CTest 一直全绿也看不出接口是断的。本用例**链接并运行**这两个函数。
+#    平台无关：用 FixedBackend 注入固定值，不依赖任何真实设备能力。
+add_executable(cq_tests_core_capabilities
+    unit/test_capabilities.cpp)
+target_include_directories(cq_tests_core_capabilities PRIVATE
+    ${CMAKE_SOURCE_DIR}/core/include)
+target_link_libraries(cq_tests_core_capabilities PRIVATE cq_core)
+cq_require_cxx20(cq_tests_core_capabilities)
+apply_cq_warnings(cq_tests_core_capabilities)
+add_test(NAME core_capabilities COMMAND cq_tests_core_capabilities)
+
 # ---- CORE-006：PAL 头文件编译期自洽验证（零平台类型 / 零 FFmpeg 类型 / base 类型契约）----
 # 仅包含 PAL 头文件 + static_assert，不链接任何 PAL 实现（接口冻结阶段无实现）。
 # 证明：头文件自洽（include 顺序无关）、跨层资源均为 opaque 指针（零平台类型）、
@@ -299,4 +313,17 @@ if(APPLE)
     cq_require_cxx20(cq_tests_pala_muxer_audio)
     apply_cq_warnings(cq_tests_pala_muxer_audio)
     add_test(NAME pala_muxer_audio COMMAND cq_tests_pala_muxer_audio)
+
+    # ---- CORE-007：Apple 能力后端（Metal / VideoToolbox 真实查询）----
+    # 验证后端真的被装上、每项返回值合法，并打印全部结果供真机核对。
+    # ⚠️ 本机 Intel Mac 无 ANE / 无 ProRes 硬编，本机结果不代表 iPhone 17 Pro。
+    add_executable(cq_tests_pala_capabilities
+        unit/test_capabilities_apple.cpp)
+    target_include_directories(cq_tests_pala_capabilities PRIVATE
+        ${CMAKE_SOURCE_DIR}/core/include
+        ${CMAKE_SOURCE_DIR}/pal/apple)
+    target_link_libraries(cq_tests_pala_capabilities PRIVATE cq_core cq_pal_apple)
+    cq_require_cxx20(cq_tests_pala_capabilities)
+    apply_cq_warnings(cq_tests_pala_capabilities)
+    add_test(NAME pala_capabilities COMMAND cq_tests_pala_capabilities)
 endif()

@@ -59,6 +59,30 @@ runner.Shutdown();                 // 请求停止 + join（会阻塞调用线�
   `TaskRunner` 刻意不 try/catch —— 捕获等于默许异常流向内核
 - **析构无条件 RequestCancel + join**：`std::thread` 在 joinable 状态析构会 terminate
 
+## EditorSession（CORE-009，对外唯一门面）
+
+```cpp
+EditorSession session;                       // 或注入 ISessionState + Config
+session.SetSnapshotObserver(on_snapshot);    // 应在 Start 之前设置
+session.Start();
+session.Submit("add-clip", mutate_fn);       // 异步，不阻塞
+Snapshot s = session.CurrentSnapshot();      // {version, digest}，任意线程可读
+session.ChangesSince(last_seen, &out);       // UI 增量刷新
+```
+
+| 约束 | 说明 |
+|---|---|
+| 变更串行 | 复用 `TaskRunner`（kSession 线程）。这是 Undo/Redo 与三端一致性的前提（红线 #5） |
+| 版本推进 | **仅成功**推进；失败与取消都不推进（否则 UI 会以为状态变了而错刷） |
+| 不阻塞 | `Submit` 实测 0.005~0.010 ms；**刻意不提供 `SubmitAndWait`** |
+| 观察者线程 | 回调**在 session 线程**执行 —— BIND-002(Swift) 必须自己 dispatch 到主线程 |
+| 读路径安全 | digest 由 session 线程算好存入 atomic，读路径绝不跨线程调用 `state->Digest()` |
+| 背压 | 队列满返回 `kResourceExhausted`，不内置重试（重试属交互层语义） |
+
+**边界（不越界）**：不定义 `TimelineModel`（MODEL-001）、不定义
+`Command`/`CommandHistory`/Undo-Redo（MODEL-002）。状态内容通过 `ISessionState`
+扩展点注入 —— 本期用测试实现跑通机制，避免门面变成空壳（防"断接口"第三次复发）。
+
 ## 铁律落地情况
 
 | ARCH-001 §6 铁律 | 状态 |

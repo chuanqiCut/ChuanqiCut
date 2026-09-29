@@ -32,7 +32,9 @@ add_library(cq_core STATIC
     # CORE-008：线程角色体系 + 串行任务执行器（Session Thread 骨架，ARCH-001 §6）。
     # base 层的 concurrency.h 明确不提供线程池，这里接住。
     src/session/thread_model.cpp
-    src/session/task_runner.cpp)
+    src/session/task_runner.cpp
+    # CORE-009：EditorSession 门面与快照机制（对外唯一门面，BIND-001 要冻结的对象）。
+    src/session/editor_session.cpp)
 
 # 公共头目录：对外 C ABI 伞形头 core/include。
 target_include_directories(cq_core PUBLIC

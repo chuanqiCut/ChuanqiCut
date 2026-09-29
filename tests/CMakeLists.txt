@@ -116,6 +116,17 @@ cq_require_cxx20(cq_tests_core_editor_session)
 apply_cq_warnings(cq_tests_core_editor_session)
 add_test(NAME core_editor_session COMMAND cq_tests_core_editor_session)
 
+# ---- BIND-001：cq_sdk.h 纯 C ABI（用**真正的 C 编译器**编译）----
+# 硬证据：只要公共头混进任何 C++ 类型，这个 .c 就编译失败 —— 比人眼审查可靠。
+# 底层实现是 C++，故链接器显式指定 CXX（否则 C++ 运行时符号解析不全）。
+add_executable(cq_tests_c_abi
+    unit/test_c_abi.c)
+set_target_properties(cq_tests_c_abi PROPERTIES LINKER_LANGUAGE CXX)
+target_include_directories(cq_tests_c_abi PRIVATE
+    ${CMAKE_SOURCE_DIR}/core/include)
+target_link_libraries(cq_tests_c_abi PRIVATE cq_core)
+add_test(NAME c_abi COMMAND cq_tests_c_abi)
+
 # ---- CORE-006：PAL 头文件编译期自洽验证（零平台类型 / 零 FFmpeg 类型 / base 类型契约）----
 # 仅包含 PAL 头文件 + static_assert，不链接任何 PAL 实现（接口冻结阶段无实现）。
 # 证明：头文件自洽（include 顺序无关）、跨层资源均为 opaque 指针（零平台类型）、

@@ -34,7 +34,16 @@ add_library(cq_core STATIC
     src/session/thread_model.cpp
     src/session/task_runner.cpp
     # CORE-009：EditorSession 门面与快照机制（对外唯一门面，BIND-001 要冻结的对象）。
-    src/session/editor_session.cpp)
+    src/session/editor_session.cpp
+    # BIND-001：cq_sdk.h 的 C ABI 实现。注意 BACKLOG 原写集只有头文件 ——
+    # 但"只有声明无实现"是本项目踩过两次的坑，故一并补实现。
+    src/cq_sdk.cpp)
+
+# 版本号由 CMake 注入，不在 cq_sdk.h 里硬编码（否则必然与 project VERSION 漂移）。
+target_compile_definitions(cq_core PRIVATE
+    CQ_VERSION_MAJOR=${PROJECT_VERSION_MAJOR}
+    CQ_VERSION_MINOR=${PROJECT_VERSION_MINOR}
+    CQ_VERSION_PATCH=${PROJECT_VERSION_PATCH})
 
 # 公共头目录：对外 C ABI 伞形头 core/include。
 target_include_directories(cq_core PUBLIC

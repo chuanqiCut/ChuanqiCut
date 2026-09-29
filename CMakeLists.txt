@@ -10,7 +10,12 @@ cmake_minimum_required(VERSION 3.21)
 project(ChuanqiCut
     VERSION 0.1.0
     DESCRIPTION "Cross-platform video editing SDK + native app shells"
-    LANGUAGES CXX)
+    # ⚠️ 必须同时启用 C —— 不是为了用 C 写内核，而是为了**校验 C ABI**：
+    #    BIND-001 的 tests/unit/test_c_abi.c 是真正的 C 翻译单元，
+    #    只要 cq_sdk.h 混进 C++ 类型它就编译不过。此前只写 LANGUAGES CXX，
+    #    CMake 会**静默忽略** .c 源文件（不编译、不报错，只在链接时缺 main），
+    #    校验形同虚设 —— 与 .gitignore / 门禁目录白名单是同一种静默缺口。
+    LANGUAGES C CXX)
 
 # ---- 全局 C++ 标准：锁 C++20，禁用 GNU 扩展（红线：CMAKE_CXX_EXTENSIONS OFF）----
 set(CMAKE_CXX_STANDARD 20)

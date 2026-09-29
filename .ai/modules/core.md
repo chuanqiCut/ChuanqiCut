@@ -99,7 +99,12 @@ ADR-0006（有理数时间与版本模型）、ARCH-001 §5/§6
 > 由 `TASK-INFRA-001` 落盘的骨架路径，供后续 CORE 任务对齐存放位置（权威树以 ARCH-001 §8 为准）。
 
 - `core/CMakeLists.txt` — 内核 CMake 入口；`cq_core` 现为**真正的 STATIC 库**（含 `src/cq_build_anchor.cpp` 构建锚点，非业务逻辑）
-- `core/include/cq/cq_sdk.h` — 对外 C ABI 伞形头（占位；红线 #7：仅 C 类型 + opaque 句柄）
+- `core/include/cq/cq_sdk.h` — 对外 C ABI（**BIND-001 已冻结**，2026-09-29；红线 #7：
+仅 C 类型 + opaque 句柄）。实现在 `core/src/cq_sdk.cpp`。
+覆盖：版本 / 状态码 / 线程角色标记 / **能力查询** / EditorSession 会话门面。
+由 `tests/unit/test_c_abi.c`（**真正的 C 翻译单元**）机器校验"零 C++ 类型"——
+已反向验证：临时插入 `std::string` 后该 TU 立即 fatal error。
+⚠️ 观察者回调在 session 线程，Swift 侧（BIND-002）须自行 dispatch 到主线程。
 - `core/src/cq_build_anchor.cpp` — 构建锚点 TU（INFRA-002 新增，可链接、零业务逻辑、证明 -Werror 下可编译）
 - `core/src/` — 内核源码根，按模块分子目录：`base/ model/ gfx/ render/ media/ audio/ ai/ project/ export/ session/`（尚未创建，由对应 CORE 任务建）
 - `core/tests/` — 内核单测（实际落在 `tests/unit/`，见下）

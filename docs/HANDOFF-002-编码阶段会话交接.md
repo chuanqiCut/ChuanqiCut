@@ -125,6 +125,29 @@ Shutdown 保证 join。
 
 CTest 24 → **25**。
 
+## 3e. ✅ CORE-009 EditorSession 门面已完成（2026-09-29）—— 依赖链打通
+
+ARCH-001 §4.1 定义 `session` = 「串起各模块，**对外唯一门面**」。
+它是 BIND-001 要冻结成 C ABI 的对象，此前完全不存在，
+是整条 `BIND-001 → BIND-002 → 所有 UIA-*` 依赖链的最后缺口。
+
+已落地（详见 `.ai/modules/session.md` / `docs/tasks/TASK-CORE-009.md`）：
+- `core/include/cq/session/editor_session.h`：`EditorSession`
+  —— `Submit()` 异步不阻塞、`CurrentSnapshot()`、变更日志 `ChangesSince()`、观察者
+- `core/include/cq/session/snapshot.h`：`Snapshot{version,digest}` / `ChangeRecord` /
+  `ISessionState`（模型层扩展点）
+
+关键约定：
+- 版本号**只在变更成功时递增**；失败与取消都不推进（否则 UI 会以为状态变了而错刷）
+- 观察者在 **session 线程**回调 —— Swift 侧必须自行 dispatch 到主线程
+- 变更在 CORE-008 的 session 线程**串行**执行（Undo/Redo 与三端一致性的前提，红线 #5）
+
+**边界（未越界）**：不定义 `TimelineModel`（MODEL-001）、不定义
+`Command`/`CommandHistory`/Undo-Redo（MODEL-002）。状态内容通过 `ISessionState` 注入，
+本期用测试实现跑通机制 —— 避免门面变成第三个"断接口"。
+
+CTest 25 → **26**。至此 **BIND-001 的前置全部就位**。
+
 ## 4. 当前 iOS 平台差异（已修，勿回退）
 
 为让 iOS 切片可编，已按**平台条件编译 / 诚实降级**处理五处，
@@ -168,10 +191,13 @@ $PY tools/deps/selfcheck.py                                       # 期望 18/18
 
 ## 7. 建议下一步（按优先级）
 
-1. **CORE-009（EditorSession 门面与快照）→ 然后 BIND-001**
-   —— 依赖链：BIND-001 冻结的是 **EditorSession 门面**的 C ABI。CORE-008（线程模型）
-   已于 2026-09-29 完成，CORE-009 的前置全部就位，可以直接开工。
-   **不要跳过 CORE-009 直接冻结 BIND-001**——那会第三次踩「断接口」陷阱。
+1. **BIND-001（`cq_sdk.h` 纯 C ABI 冻结）** ✅ **前置已全部就位**
+   —— 依赖链 CORE-007 → CORE-008 → CORE-009 全部完成（2026-09-29）。
+   现在冻结的 C ABI 终于有 **EditorSession 这个真实门面**做支撑，
+   不会再是"接口冻结但实现是断的"（CORE-006 / CORE-007 两次教训）。
+   冻结范围建议：`EditorSession` 生命周期 + `Submit` + 快照查询 + `ChangesSince`。
+   ⚠️ 冻结前先确认：Swift 侧拿到的是 **session 线程**的观察者回调，
+   必须自行 dispatch 到主线程（BIND-002 处理）。
 2. **AUDIO-001**（音频图/PCM 缓冲）→ 闭合源音频环（当前只能写合成 PCM，源音轨未通）
 3. EXPORT-001（导出控制器：状态机/进度/取消/错误码）
 4. MEDIA-030（音画同步）

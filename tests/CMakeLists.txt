@@ -102,6 +102,20 @@ cq_require_cxx20(cq_tests_core_thread_model)
 apply_cq_warnings(cq_tests_core_thread_model)
 add_test(NAME core_thread_model COMMAND cq_tests_core_thread_model)
 
+# ---- CORE-009：EditorSession 门面与快照机制（ARCH-001 §4.1「对外唯一门面」）----
+# 验收「快照版本号递增，UI 可 diff」：
+#   成功变更 → 版本 +1；失败/取消 → 不推进（否则 UI 会错刷）；
+#   ChangesSince(v) 给出增量变更日志；主线程 Submit 实测 < 16ms；
+#   变更在 session 线程串行执行；观察者在 session 线程回调。
+add_executable(cq_tests_core_editor_session
+    unit/test_editor_session.cpp)
+target_include_directories(cq_tests_core_editor_session PRIVATE
+    ${CMAKE_SOURCE_DIR}/core/include)
+target_link_libraries(cq_tests_core_editor_session PRIVATE cq_core)
+cq_require_cxx20(cq_tests_core_editor_session)
+apply_cq_warnings(cq_tests_core_editor_session)
+add_test(NAME core_editor_session COMMAND cq_tests_core_editor_session)
+
 # ---- CORE-006：PAL 头文件编译期自洽验证（零平台类型 / 零 FFmpeg 类型 / base 类型契约）----
 # 仅包含 PAL 头文件 + static_assert，不链接任何 PAL 实现（接口冻结阶段无实现）。
 # 证明：头文件自洽（include 顺序无关）、跨层资源均为 opaque 指针（零平台类型）、

@@ -456,3 +456,20 @@ int64 上限 @120000 ≈ 243 万年。素材仍可保留原生 timescale，两�
   `degraded`（未知，非"没有"）。iPhone 17 Pro 上应为 iOS 18+ → 走真实探针。
 - `hw_decode_av1`：iPhone 17 Pro（A19 Pro）预期支持，本机不支持，需真机确认。
 - `10bit_pipeline`：待确定可靠查询方式后回填。
+
+---
+
+## CORE-008：线程模型实测（2026-09-29）
+
+设备：Intel Mac，macOS 15.4（x86_64）。**不代表 iPhone 17 Pro**，需真机回填。
+
+| 项 | 实测 | 说明 |
+|---|---:|---|
+| `TaskRunner::Post()` 返回耗时 | **0.030 ms** | 投递内含 100ms sleep 的任务；16ms 主线程预算的 **1/533** |
+| 满队列时 `Post()` 返回耗时 | **< 16 ms**（立即） | 返回 `kResourceExhausted`，不阻塞、不无限增长 |
+| FIFO 保序 | 10 个任务顺序与投递序一致 | Session Thread 串行语义成立 |
+| 任务执行线程 | `IsMainThread()==false`，角色 = 配置值 | worker 入口自动打角色标记 |
+| 角色未标记时 | `kUnknown` | 不猜成 main（误判会让守卫失效） |
+
+注：`Post()` 的 0.030ms 只证明"投递不阻塞"。真正的端到端延迟
+（投递 → worker 实际开始执行）取决于系统调度，尚未测量。

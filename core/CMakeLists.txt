@@ -28,7 +28,11 @@ add_library(cq_core STATIC
     # CORE-007：能力查询内核侧实现（SetCapabilitiesBackend / QueryCapability）。
     # CORE-006 只冻结了头文件，这两个函数长期只有声明无定义；单测里的 static_assert
     # 是编译期检查、不链接，所以 CTest 全绿也看不出来。此处补上实现。
-    src/pal/capabilities.cpp)
+    src/pal/capabilities.cpp
+    # CORE-008：线程角色体系 + 串行任务执行器（Session Thread 骨架，ARCH-001 §6）。
+    # base 层的 concurrency.h 明确不提供线程池，这里接住。
+    src/session/thread_model.cpp
+    src/session/task_runner.cpp)
 
 # 公共头目录：对外 C ABI 伞形头 core/include。
 target_include_directories(cq_core PUBLIC

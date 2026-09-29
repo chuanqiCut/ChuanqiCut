@@ -216,23 +216,22 @@ def main(argv):
     root = os.path.dirname(os.path.dirname(here))  # tools/pal -> repo root
     cq_inc = os.path.join(root, "core", "include", "cq")
 
-    # 默认扫描全部「跨平台接口目录」（CORE-006 已锁定 pal；GFX-001 / MEDIA-010 新增
-    # gfx / media，同样必须零平台类型。门禁统一兜底，不只为 pal 一目录设防）。
-    # 可用第一个参数覆盖为单个目录（直接手动调试时用）。
-    if len(argv) > 1:
-        scan_dirs = [argv[1]]
-    else:
-        scan_dirs = [os.path.join(cq_inc, d) for d in ("pal", "gfx", "media")]
-
+    # 扫描 cq 下**全部**跨平台接口目录（递归），而非硬编码目录列表。
+    #
+    # ⚠️ 早先这里写死 ("pal", "gfx", "media")：CORE-008 新增 session/ 时会被静默漏掉 ——
+    #    不报错、CTest 全绿、git status 也看不出来，纯靠人记得加。
+    #    这与 .gitignore 里裸 build/ 把 tools/build/ 一并忽略是同一种缺口
+    #    （见 .ai/memory/pitfalls.md）。故改为自动遍历，新增目录默认纳入设防。
+    #
+    # 唯一排除 base/：base/time.h 提供**显式** ToSeconds() 转换。CORE-001 禁止的是
+    # 隐式 operator double，显式命名方法是允许的，不该被本门禁的 double 规则误伤。
+    EXCLUDED_DIR_NAMES = {"base"}
     headers = []
-    for d in scan_dirs:
-        if not os.path.isdir(d):
-            print("include dir not found: %s" % d, file=sys.stderr)
-            return 2
-        for dirpath, _, filenames in os.walk(d):
-            for fn in filenames:
-                if fn.endswith(".h"):
-                    headers.append(os.path.join(dirpath, fn))
+    for dirpath, dirnames, filenames in os.walk(cq_inc):
+        dirnames[:] = [d for d in dirnames if d not in EXCLUDED_DIR_NAMES]
+        for fn in filenames:
+            if fn.endswith(".h"):
+                headers.append(os.path.join(dirpath, fn))
     headers.sort()
 
     total = 0
@@ -251,8 +250,10 @@ def main(argv):
                 print("  %s:%d: [%s] matched '%s'  |  %s" % (rel, ln, cat, tok, snippet))
 
     print("-" * 60)
-    print("scanned %d header(s) across %d dir(s), %d violation(s) in %d file(s)"
-          % (len(headers), len(scan_dirs), total, failed_files))
+    scanned_root = os.path.relpath(cq_inc, root)
+    print("scanned %d header(s) under %s/ (excluding %s/), %d violation(s) in %d file(s)"
+          % (len(headers), scanned_root, ", ".join(sorted(EXCLUDED_DIR_NAMES)),
+             total, failed_files))
 
     if total > 0:
         return 1

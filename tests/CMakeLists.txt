@@ -89,6 +89,19 @@ cq_require_cxx20(cq_tests_core_capabilities)
 apply_cq_warnings(cq_tests_core_capabilities)
 add_test(NAME core_capabilities COMMAND cq_tests_core_capabilities)
 
+# ---- CORE-008：线程模型与队列骨架（Session Thread 骨架，ARCH-001 §6）----
+# 验收核心是 ARCH-001 §6 铁律 1「主线程零阻塞」**可测**：
+# 投递 100ms 任务，实测 Post() 返回耗时须 < 16ms。
+# 另测：任务跑在 worker 线程、串行 FIFO、满队列返回 kResourceExhausted（背压）。
+add_executable(cq_tests_core_thread_model
+    unit/test_thread_model.cpp)
+target_include_directories(cq_tests_core_thread_model PRIVATE
+    ${CMAKE_SOURCE_DIR}/core/include)
+target_link_libraries(cq_tests_core_thread_model PRIVATE cq_core)
+cq_require_cxx20(cq_tests_core_thread_model)
+apply_cq_warnings(cq_tests_core_thread_model)
+add_test(NAME core_thread_model COMMAND cq_tests_core_thread_model)
+
 # ---- CORE-006：PAL 头文件编译期自洽验证（零平台类型 / 零 FFmpeg 类型 / base 类型契约）----
 # 仅包含 PAL 头文件 + static_assert，不链接任何 PAL 实现（接口冻结阶段无实现）。
 # 证明：头文件自洽（include 顺序无关）、跨层资源均为 opaque 指针（零平台类型）、

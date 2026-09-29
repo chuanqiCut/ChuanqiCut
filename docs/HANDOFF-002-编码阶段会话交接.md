@@ -85,6 +85,25 @@ cache 里仍是 ON，`.o` 还是 bitcode，且产物字节数与之前完全相�
 → **Swift / Objective-C App 现在接不上**，必须先做 **BIND-001（C ABI 绑定层）**。
 不要把"xcframework 打包成功"说成"App 可以集成了"。
 
+## 3c. ✅ CORE-007 能力查询已实现（2026-09-29）
+
+`capabilities.h` 在 CORE-006 里只冻结了接口，
+`SetCapabilitiesBackend` / `QueryCapability` **长期只有声明无定义**——唯一引用是
+`pal_headers_compile.cpp` 的 `static_assert`（编译期检查、**不链接**），所以 CTest 全绿
+看不出来。这是 CORE-006「编译 7/7 全绿但接口是断的」的**同型复发**（记为 pitfalls P2）。
+
+已补：`core/src/pal/capabilities.cpp`（内核注入/分发）+ `pal/apple/capabilities.mm`
+（Apple 后端）。要点：
+- 解码用 `VTIsHardwareDecodeSupported`（**iOS 11+/macOS 10.13+**，无需守卫）；
+  比 PALA-011 的会话探针（iOS 17.0+ 常量）覆盖面更广，iOS 16 上也能如实上报
+- 编码无等价直接 API，只能建一次性会话查 `kVTCompressionPropertyKey_...`（**iOS 17.4+**）；
+  iOS 16/17.0~17.3 返回 `kDegraded`（**未知，非"没有"**），不抬高部署目标
+- 查不到的一律 `kNo` / `kDegraded`，不猜机型、不猜芯片
+- 实测结果与本机已知事实交叉吻合（`hw_{de,en}code_prores=no`，Intel Mac 确无 ProRes 硬编）
+
+详细设计与逐项依据：`docs/tasks/TASK-CORE-007.md`；实测数据：`.ai/memory/baselines.md`。
+CTest 22 → **24**。
+
 ## 4. 当前 iOS 平台差异（已修，勿回退）
 
 为让 iOS 切片可编，已按**平台条件编译 / 诚实降级**处理五处，
@@ -128,7 +147,12 @@ $PY tools/deps/selfcheck.py                                       # 期望 18/18
 
 ## 7. 建议下一步（按优先级）
 
-1. **BIND-001（C ABI 绑定层）**——最高优先级，xcframework 要能被 Swift App 消费必须先过这关（§3b）
+1. **CORE-008（线程模型与队列骨架）→ CORE-009（EditorSession 门面与快照）→ BIND-001**
+   —— 依赖链已核实：BIND-001 冻结的是 **EditorSession 门面**的 C ABI，而 EditorSession
+   （CORE-009）还不存在，它的前置 CORE-008 也没做。**在 EditorSession 落地前冻结
+   BIND-001，就是在设计一个没有实现支撑的接口**——正是 CORE-006 / CORE-007 两次踩到的
+   「断接口」陷阱。故先补 CORE-008 → CORE-009，再冻结 C ABI。
+   （CORE-007 能力查询已于 2026-09-29 完成，见 §3c）
 2. **AUDIO-001**（音频图/PCM 缓冲）→ 闭合源音频环（当前只能写合成 PCM，源音轨未通）
 3. EXPORT-001（导出控制器：状态机/进度/取消/错误码）
 4. MEDIA-030（音画同步）

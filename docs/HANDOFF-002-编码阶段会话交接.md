@@ -148,6 +148,27 @@ ARCH-001 §4.1 定义 `session` = 「串起各模块，**对外唯一门面**」
 
 CTest 25 → **26**。至此 **BIND-001 的前置全部就位**。
 
+## 3f. ✅ BIND-001：`cq_sdk.h` 纯 C ABI 已冻结（2026-09-29）
+
+此前 `cq_sdk.h` 是 INFRA-001 占位（只有一个 `typedef struct CQSession`），
+`nm` 可见全是 C++ mangled 符号，**Swift / Kotlin 一个都接不上**（见 §3b）。
+现在依赖链 CORE-007→008→009 完成，门面存在了，C ABI 才有真实支撑。
+
+冻结内容（`core/include/cq/cq_sdk.h`，实现 `core/src/cq_sdk.cpp`）：
+- 版本（由 CMake 注入，头文件不硬编码）、状态码（复用内核数值，不复制枚举）
+- `cq_mark_main_thread()` / `cq_is_main_thread()` —— **CORE-008 守卫的执行入口**
+- `cq_query_capability()` —— **红线 #3 的执行入口**
+- `CQSession` 会话：create / destroy / submit / 快照 / 变更日志 / 观察者
+- 回调一律「函数指针 + `void*` 上下文」（`std::function` 无法跨 C ABI）
+
+**零 C++ 类型是机器校验的，不是人眼审的**：
+`tests/unit/test_c_abi.c` 是**真正的 C 翻译单元** —— 已反向验证：
+临时往头文件插入 `std::string` 后，该 TU 立即 `fatal error: 'string' file not found`。
+（过程中发现根 CMakeLists 只写了 `LANGUAGES CXX`，CMake **静默不编译** `.c`，
+只在链接期报"缺 main"—— 记为 pitfalls **P4**，是本项目第三次同类静默缺口。）
+
+CTest 26 → **27**。
+
 ## 4. 当前 iOS 平台差异（已修，勿回退）
 
 为让 iOS 切片可编，已按**平台条件编译 / 诚实降级**处理五处，
@@ -191,7 +212,9 @@ $PY tools/deps/selfcheck.py                                       # 期望 18/18
 
 ## 7. 建议下一步（按优先级）
 
-1. **BIND-001（`cq_sdk.h` 纯 C ABI 冻结）** ✅ **前置已全部就位**
+1. **BIND-002（Swift 绑定层 / SPM package）** ✅ **前置已完成**
+   —— `cq_sdk.h` 已于 2026-09-29 冻结（见 §3f），Swift 现在可以接上来。
+   开工前务必处理：**观察者回调在 session 线程**，Swift 侧须 dispatch 到 main queue。
    —— 依赖链 CORE-007 → CORE-008 → CORE-009 全部完成（2026-09-29）。
    现在冻结的 C ABI 终于有 **EditorSession 这个真实门面**做支撑，
    不会再是"接口冻结但实现是断的"（CORE-006 / CORE-007 两次教训）。

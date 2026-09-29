@@ -99,6 +99,28 @@
 - 日期 / 来源 / 验证状态：2026-09-29 / CORE-008 / **verified**（扫描数 16 → 19，
   新增两个 session 头自动纳入，仍 0 violation）
 
+### P4 · CMake `LANGUAGES` 没启用 C → `.c` 源文件被**静默忽略**
+- 现象：BIND-001 新增 `tests/unit/test_c_abi.c`（用于机器校验 cq_sdk.h 是纯 C），
+  根 `CMakeLists.txt` 写的是 `project(... LANGUAGES CXX)`。构建日志里
+  **没有任何 `Building C object` 行**，直接 `Linking CXX executable`，
+  报 `Undefined symbols: _main`。
+- 根因：CMake 未启用 C 语言时，**不会编译** `.c` 源文件，也**不报错**——
+  它只是把该文件排除在编译集之外，直到链接期才以"缺 main"的形式暴露。
+- 危害：这道校验会**假绿**。如果没有链接步骤（比如只做编译检查的 target），
+  它会彻底静默，让人以为"纯 C 校验一直在跑"，实际什么都没编译。
+- 修复：`LANGUAGES C CXX`。
+- 防复发规则：新增一种语言的源文件（`.c` / `.m` / `.mm` / `.S`）时，先确认
+  `project(LANGUAGES ...)` 里有它。**判据是构建日志里出现对应的
+  `Building <LANG> object` 行**，不是"没报错"。
+- 归类：这是本项目**第三次**同类静默缺口 ——
+  ① `.gitignore` 裸 `build/` 忽略 `tools/build/`；
+  ② 门禁硬编码目录列表漏掉 `session/`；
+  ③ 本次 `LANGUAGES CXX` 漏掉 `.c`。
+  共同模式：**"配置没覆盖新东西"不报错、不显示，纯靠人记得加。**
+- 日期 / 来源 / 验证状态：2026-09-29 / BIND-001 / **verified**
+  （改后日志出现 C 编译步骤，27/27 通过；并反向验证 —— 往 cq_sdk.h 插入
+  `std::string` 后 C TU 立即 `fatal error: 'string' file not found`）
+
 ---
 
 ## 已修正的历史错误（供参考，避免重犯）

@@ -1,0 +1,5 @@
+module CChuanqiCut {
+    header "cq_sdk.h"
+    link "c++"
+    export *
+}

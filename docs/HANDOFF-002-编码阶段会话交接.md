@@ -169,6 +169,31 @@ CTest 25 → **26**。至此 **BIND-001 的前置全部就位**。
 
 CTest 26 → **27**。
 
+## 3g. ✅ BIND-002：Swift 绑定层已完成（2026-09-30）
+
+`bindings/swift/` 从一个 `.gitkeep` 变成可用的 SPM package：
+
+```
+ChuanqiCutCore (binaryTarget: xcframework)
+   └─ CChuanqiCut (C target: shim.c + modulemap；头文件符号链接，不复制)
+        └─ ChuanqiCut (Swift target: Status / Snapshot / Capability / Session)
+```
+
+要点：
+- 观察者**默认转发主线程**（内核在 session 线程回调），队列可配置
+- `changeName` 是 `StaticString` —— 内核只存指针，用 `String` 会悬垂（刻意限制）
+- 库名改为 **`libChuanqiCut.a`**（原 `ChuanqiCut.a` 让所有 `-l` 失效，见 §3g 下方坑）
+
+验证：`swift build` 零告警；`swift test` **7/7**；`run_smoke.sh` **PASSED**。
+
+**踩到的三个坑（详见 `docs/tasks/TASK-BIND-002.md`）**：
+1. 静态库缺 `lib` 前缀 → `-lChuanqiCut` 找不到，且 `swift build` 只编译不链接所以全绿
+   （又是「绿灯 ≠ 可用」）
+2. SPM 的 C target **只有头文件不生成 module** → 报 `no such module`，加 `shim.c` 解决
+3. binaryTarget 的静态库**不会自动链接** → 需显式 `linkerSettings`
+
+本机跑 SPM 需 `--disable-sandbox`（要写 `~/.swiftpm/security`）。
+
 ## 4. 当前 iOS 平台差异（已修，勿回退）
 
 为让 iOS 切片可编，已按**平台条件编译 / 诚实降级**处理五处，
@@ -212,9 +237,12 @@ $PY tools/deps/selfcheck.py                                       # 期望 18/18
 
 ## 7. 建议下一步（按优先级）
 
-1. **BIND-002（Swift 绑定层 / SPM package）** ✅ **前置已完成**
-   —— `cq_sdk.h` 已于 2026-09-29 冻结（见 §3f），Swift 现在可以接上来。
-   开工前务必处理：**观察者回调在 session 线程**，Swift 侧须 dispatch 到 main queue。
+1. **UIA-002（编辑器主框架）或 UIA-001（项目列表页）** ✅ **依赖已就位**
+   —— BIND-002（Swift 绑定）已于 2026-09-30 完成（见 §3g），
+   `bindings/swift/` 是可直接被 App 工程引用的 SPM package。
+   开工前先跑：`tools/build/build_core_apple.sh --config=Release && bindings/swift/prepare.sh`。
+   ⚠️ App 启动时必须在 UI 线程调用 `ChuanqiCut.markMainThread()`，
+   否则「主线程零阻塞」守卫静默失效。
    —— 依赖链 CORE-007 → CORE-008 → CORE-009 全部完成（2026-09-29）。
    现在冻结的 C ABI 终于有 **EditorSession 这个真实门面**做支撑，
    不会再是"接口冻结但实现是断的"（CORE-006 / CORE-007 两次教训）。

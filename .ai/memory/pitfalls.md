@@ -99,6 +99,30 @@
 - 日期 / 来源 / 验证状态：2026-09-29 / CORE-008 / **verified**（扫描数 16 → 19，
   新增两个 session 头自动纳入，仍 0 violation）
 
+### P5 · 静态库名缺 `lib` 前缀 → 所有 `-lNAME` 工具链静默失效
+- 现象：SwiftPM `swift test` 链接报 `ld: library 'ChuanqiCut' not found`；
+  `swiftc -L <dir> -lChuanqiCut` 同样找不到。但 `swift build` **全绿**。
+- 真因：`-lNAME` 只匹配 `libNAME.a` / `libNAME.dylib`。本项目打包出的库叫
+  `ChuanqiCut.a`（Xcode 工程里直接拖文件所以没暴露问题），缺 `lib` 前缀。
+- 危害：`swift build` 对 library target **只编译不链接**，所以这一步是绿的；
+  要等 `swift test` 链接可执行宿主时才炸。又一次「绿灯 ≠ 可用」。
+- 修复：`tools/build/build_core_apple.sh` 输出改为 `libChuanqiCut.a`。
+- 防复发规则：**交付给外部工具链的静态库一律用 `lib<Name>.a` 命名**。
+  判断某个 `-l` 找不到时，先 `ls` 库文件是不是 lib 开头 —— 不要去调 -L 路径。
+- 日期 / 来源 / 验证状态：2026-09-30 / BIND-002 / **verified**（改名后
+  `swift test` 7/7 通过，`run_smoke.sh` PASSED）
+
+### P6 · SwiftPM 集成 C 静态库 XCFramework 的三道坎
+1. **C target 必须有源文件**：只有头文件 + modulemap 时 SPM 不生成 module，
+   消费方报 `no such module`。加一个 `shim.c` 即可。
+2. **binaryTarget 的静态库不会自动链接**：需在依赖它的 target 上写
+   `linkerSettings: [.linkedLibrary("ChuanqiCut")]`。
+3. **本机 SPM 沙箱**：要写 `~/.swiftpm/security`，被拦时报
+   `sandbox-exec: sandbox_apply: Operation not permitted`；加 `--disable-sandbox`。
+   另：`swiftc` 默认 target 是 macOS 15.0，链接 15.4 部署目标的库会对每个 .o
+   报 "built for newer macOS version"，用 `-target <arch>-apple-macosx15.4` 消除。
+- 日期 / 来源 / 验证状态：2026-09-30 / BIND-002 / **verified**
+
 ### P4 · CMake `LANGUAGES` 没启用 C → `.c` 源文件被**静默忽略**
 - 现象：BIND-001 新增 `tests/unit/test_c_abi.c`（用于机器校验 cq_sdk.h 是纯 C），
   根 `CMakeLists.txt` 写的是 `project(... LANGUAGES CXX)`。构建日志里

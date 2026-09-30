@@ -36,3 +36,8 @@ prebuilt/
 # （2026-09-24 因 worker 被 429 打断，实际泄漏过 5 个、共约 8.5MB PNG）。
 # golden manifest 有 "keep total <=10MB" 的提交策略，这类垃圾一旦入库直接超标，故显式防御。
 tmp*/
+
+# Swift 绑定：xcframework 副本与 SPM 构建目录（均为构建产物，clone 后自行生成）
+# 生成方式：tools/build/build_core_apple.sh --config=Release && bindings/swift/prepare.sh
+bindings/swift/Frameworks/
+bindings/swift/.build/

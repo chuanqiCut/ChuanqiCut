@@ -7,7 +7,7 @@
 #   - macOS        (arm64 + x86_64, SDK macosx)
 #
 # 每个切片先分别用 CMake 构建出 cq_core.a + cq_pal_apple.a，再用 libtool 合并成
-# 单一静态库 ChuanqiCut.a（保留各 .o 的 LC_BUILD_VERSION 平台标记），最后由
+# 单一静态库 libChuanqiCut.a（保留各 .o 的 LC_BUILD_VERSION 平台标记），最后由
 # `xcodebuild -create-xcframework` 合并成 .xcframework。
 #
 # 设计要点（沿用 build_core.sh 的约定）：
@@ -181,9 +181,9 @@ build_slice() {
         echo "error: [$label] cq_pal_apple.a not produced at $pal_a" >&2
         exit 6
     fi
-    echo "==> [$label] combine static libs -> $bdir/ChuanqiCut.a"
-    "$XCRUN_BIN" libtool -static -o "$bdir/ChuanqiCut.a" "$core_a" "$pal_a"
-    echo "    done: $(wc -c < "$bdir/ChuanqiCut.a") bytes"
+    echo "==> [$label] combine static libs -> $bdir/libChuanqiCut.a"
+    "$XCRUN_BIN" libtool -static -o "$bdir/libChuanqiCut.a" "$core_a" "$pal_a"
+    echo "    done: $(wc -c < "$bdir/libChuanqiCut.a") bytes"
 }
 
 # ---- iOS device（交叉编译，本机不可运行；架构基线 arm64，见 ADR-0010）----
@@ -210,7 +210,7 @@ echo
 echo "==> preflight: slices must contain Mach-O objects (not LTO bitcode)"
 PREFLIGHT_FAIL=0
 for slice_dir in "$IOS_DEVICE_DIR" "$IOS_SIM_DIR" "$MACOS_DIR"; do
-    slice_a="$slice_dir/ChuanqiCut.a"
+    slice_a="$slice_dir/libChuanqiCut.a"
     [ -f "$slice_a" ] || { echo "error: missing $slice_a" >&2; PREFLIGHT_FAIL=1; continue; }
     # otool 对 bitcode-only 的 .o 会输出 "is an LLVM bit-code file"
     if "$XCRUN_BIN" otool -l "$slice_a" 2>&1 | grep -q "is an LLVM bit-code file"; then
@@ -242,9 +242,9 @@ if [ -e "$OUTPUT_DIR" ]; then
     mv "$OUTPUT_DIR" "$TRASH_DEST"
 fi
 "$XCRUN_BIN" xcodebuild -create-xcframework \
-    -library "$IOS_DEVICE_DIR/ChuanqiCut.a" -headers "$HEADERS_DIR" \
-    -library "$IOS_SIM_DIR/ChuanqiCut.a"    -headers "$HEADERS_DIR" \
-    -library "$MACOS_DIR/ChuanqiCut.a"      -headers "$HEADERS_DIR" \
+    -library "$IOS_DEVICE_DIR/libChuanqiCut.a" -headers "$HEADERS_DIR" \
+    -library "$IOS_SIM_DIR/libChuanqiCut.a"    -headers "$HEADERS_DIR" \
+    -library "$MACOS_DIR/libChuanqiCut.a"      -headers "$HEADERS_DIR" \
     -output "$OUTPUT_DIR"
 
 # ---- 验证三切片存在且架构正确 ----
@@ -256,7 +256,7 @@ if [ ! -d "$OUTPUT_DIR" ]; then
 fi
 echo "---- xcframework tree ----"
 find "$OUTPUT_DIR" -maxdepth 2 -type d | sort
-for lib in "$OUTPUT_DIR"/*/ChuanqiCut.a; do
+for lib in "$OUTPUT_DIR"/*/libChuanqiCut.a; do
     [ -e "$lib" ] || continue
     echo "---- $lib ----"
     "$XCRUN_BIN" lipo -info "$lib"
@@ -264,6 +264,12 @@ for lib in "$OUTPUT_DIR"/*/ChuanqiCut.a; do
 done
 echo "---- Info.plist (AvailableLibraries) ----"
 "$XCRUN_BIN" plutil -p "$OUTPUT_DIR/Info.plist" 2>/dev/null || true
+
+# ⚠️ 不要往 XCFramework 里塞 Modules/module.modulemap。
+#    2026-09-30 实测：加了之后 SwiftPM 解析该 xcframework 时报
+#    “unexpected binary framework”，并进一步导致库搜索路径失效
+#    （ld: library 'ChuanqiCut' not found）。
+#    Swift 侧的 module 由 bindings/swift 的 C target 提供，不依赖这里。
 
 # ---- 消费者侧链接冒烟：证明「打得出来」也「能被消费」-----------------------
 # xcodebuild 成功只说明 .a 是合法 Mach-O；App 能不能真的 link 起来并跑通，必须试一次。
@@ -276,7 +282,7 @@ if [ "$SMOKE_LINK" -eq 1 ]; then
     if [ "$(uname -s)" != "Darwin" ]; then
         echo "    skip: host is not macOS"
     else
-        smoke_lib="$(find "$OUTPUT_DIR" -path "*macos*" -name "ChuanqiCut.a" | head -1)"
+        smoke_lib="$(find "$OUTPUT_DIR" -path "*macos*" -name "libChuanqiCut.a" | head -1)"
         if [ -z "$smoke_lib" ]; then
             echo "    skip: no macOS slice found"
         else

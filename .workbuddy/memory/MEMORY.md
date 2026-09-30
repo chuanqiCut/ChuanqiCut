@@ -34,6 +34,13 @@
 - `.gitignore` 的目录规则必须写成 `/dir/` 锚定根。裸 `build/` 曾把 `tools/build/`
   一并忽略，导致三个构建脚本建库以来从未入库，且 `git status` 完全看不出来。
 
+- **交付给外部工具链的静态库一律命名 `lib<Name>.a`**（2026-09-30 定）。
+  曾用名 `ChuanqiCut.a` 导致所有 `-lNAME` 失效（`-lNAME` 只匹配 `libNAME.a`），
+  表现为 `ld: library 'ChuanqiCut' not found`，且 `swift build` 因只编译不链接而全绿，
+  直到 `swift test` 链接可执行宿主才炸。
+- Swift 绑定验收有两条路径：`swift test`（SPM 集成）与 `run_smoke.sh`（swiftc 直编）。
+  后者不依赖 binaryTarget，SPM 出问题时仍能证明"Swift 能调内核"。
+
 ## 依赖治理硬规则（ADR-0008）
 - FFmpeg upstream 用 **GitHub 官方镜像** `https://github.com/FFmpeg/FFmpeg.git`（ffmpeg.org 登记为官方 mirror），本地 git 管理。
 - **源码集成的 git 依赖一律 `pin="commit"` + 40 位 hash。禁止 `pin="tag"`。**

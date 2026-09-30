@@ -61,12 +61,12 @@ bindings/swift/prepare.sh     # 把 xcframework 拷到 bindings/swift/Frameworks
 
 ## 4. 环境准备
 
-### 4.1 本机现状（2026-09-30 实测）
+### 4.1 本机现状（2026-09-30 实测，含一次结论修正）
 
 系统 Ruby 是 macOS 自带的 **2.6.10**（`/usr/bin/ruby`），没有 Homebrew / rbenv / rvm。
 
-尝试用用户级安装 `gem install --user-install cocoapods` **失败了 5 次**，
-全部卡在同一个点：
+**第一版结论（错的，保留以示警示）**：曾判断"环境不允许编译 gem 原生扩展"。
+依据是 `gem install --user-install cocoapods` 连续 5 次失败，全部卡在：
 
 ```
 ERROR: Failed to build gem native extension.
@@ -75,25 +75,81 @@ ERROR: Failed to build gem native extension.
     Operation not permitted @ apply2files - ./siteconf...rb
 ```
 
-- 试过最新版、1.15.2、1.11.3，以及单独装 nkf-0.2.0 —— 都在编译原生扩展这一步失败。
-- 根因是**当前执行环境不允许编译 gem 原生扩展**（`nkf` 的 C 扩展），
-  不是 CocoaPods 本身的问题。
-- 也因此：**本仓库的 podspec 尚未经过 `pod lib lint` 验证**，
-  只做了 `ruby -c` 语法检查。
+**修正后真因**：不是"不能编译原生扩展"，也不是 Ruby 2.6 太老 ——
+是 **`~/.gem` 这个安装路径下的权限限制**。把安装目录换掉就过了：
+
+```bash
+gem install --install-dir /tmp/cqgems cocoapods --no-document
+# → Successfully installed nkf-0.3.0   ← 同样的 gem、同样的 Ruby 2.6，编译成功
+```
+
+教训：现象（`Operation not permitted`）看起来像"能力被禁"，实际是**某个具体路径**被禁。
+排查时应先换路径做对照实验，不要直接上升到"环境不支持"。
+
+**但换路径只解决了第一层**。第二层是 **Ruby 2.6 确实太老**（这一条是传哲指出后
+才查实的，我上一版判断"Ruby 升级没必要"是错的）：
+
+```
+ERROR: Error installing cocoapods:
+    ffi requires Ruby version >= 3.0, < 4.1.dev. The current ruby version is 2.6.10.210.
+    drb requires ruby version >= 2.7.0
+```
+
+即：CocoaPods 依赖链上的 `ffi`（要 Ruby ≥ 3.0）与 `drb`（要 Ruby ≥ 2.7）都装不上。
+**结论：Ruby 升级是必要条件**（配合可用的安装路径）。
+
+### 4.1.1 Ruby 升级这条路也不通（本机 Intel Mac）
+
+- `brew` 官方安装脚本：**只支持 Apple Silicon**
+  （`Homebrew on macOS is only supported on Apple Silicon processors!`）
+- 手动 `git clone` brew 到 `~/.homebrew` 后再装 ruby，brew 自己给出结论：
+
+  ```
+  If the biggest companies in the world cannot support macOS Intel x86_64
+  any longer, sadly neither can we.
+  Homebrew no longer builds bottles for this configuration.
+  Consider MacPorts, which provides binary packages for this macOS version.
+  This is a Tier 3 configuration.
+  ```
+
+  即 Intel Mac 已无预编译包，只能源码编译（数十分钟），且本机再次撞上同样的
+  `Operation not permitted @ apply2files`（这次在 `~/.homebrew/var`）。
+
+**因此本仓库的 podspec 至今未经过 `pod lib lint` 验证**，只做了 `ruby -c` 语法检查。
+这是当前唯一的验证缺口，见 §6。
+
+另：rubygems.org 在本机访问不稳定（502 / FetchError），可换镜像源：
+
+```bash
+gem install --install-dir /tmp/cqgems cocoapods --no-document \
+    --clear-sources --source https://mirrors.tuna.tsinghua.edu.cn/rubygems/
+```
+
+装到自定义目录后需把 bin 加进 PATH：`export PATH="/tmp/cqgems/bin:$PATH"`
+（`/tmp` 会被系统清理，长期使用应换成稳定路径，如 `~/.local/cqgems`）。
 
 ### 4.2 建议的安装方式（在终端手动执行）
 
-优先选一条，不要混用：
+本机是 Intel Mac，Homebrew 已不再提供 Intel bottles（§4.1.1），所以：
 
 ```bash
-# 方案 A（推荐）：装 Homebrew + 独立 Ruby，绕开系统 Ruby 2.6
+# 方案 A（本机推荐）：MacPorts —— 仍为 Intel 提供二进制包
+#   从 https://www.macports.org/install.php 装 pkg 后：
+sudo port install ruby33        # 或 ruby32
+sudo port install rb-cocoapods  # 或直接：sudo gem install cocoapods
+
+# 方案 B：Apple Silicon 机器上用 Homebrew
 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
 brew install ruby
-echo 'export PATH="/opt/homebrew/opt/ruby/bin:$PATH"' >> ~/.zshrc   # Intel Mac 是 /usr/local/opt/ruby
 gem install cocoapods --no-document
+```
 
-# 方案 B：继续用系统 Ruby（不推荐，2.6 太老）
-sudo gem install cocoapods --no-document
+装好 Ruby（≥ 3.0）后，若仍走用户级 gem 安装，**避开 `~/.gem`**（§4.1 的路径问题）：
+
+```bash
+gem install --install-dir "$HOME/.local/cqgems" cocoapods --no-document
+echo 'export GEM_HOME="$HOME/.local/cqgems"' >> ~/.zshrc
+echo 'export PATH="$HOME/.local/cqgems/bin:$PATH"' >> ~/.zshrc
 ```
 
 若用用户级安装（`--user-install`），记得把 gem 的 bin 目录加进 PATH：
@@ -122,3 +178,22 @@ pod lib lint ChuanqiCut.podspec --allow-warnings --verbose
 | XCFramework 分发 | 产物不入库，需 CI 生成后随 pod 发布 | 与依赖治理一起定（ADR-0008） |
 
 ⚠️ 这几项都**故意没有编造**（版本号/URL 凭印象写是本项目踩过的坑，见 pitfalls E6）。
+
+## 6. 当前验证缺口（必须补上）
+
+| 项 | 状态 |
+|---|---|
+| `ruby -c ChuanqiCut.podspec` | ✅ 语法通过 |
+| `pod lib lint` | ❌ **未做** —— 本机 CocoaPods 装不上（§4） |
+| `pod install`（App 工程） | ❌ **未做** —— 还没有 Xcode 工程（UIA-001 才建） |
+| Swift 绑定（SPM） | ✅ `swift test` 7/7、`run_smoke.sh` PASSED |
+
+有 CocoaPods 环境后，第一件事应该跑：
+
+```bash
+pod lib lint ChuanqiCut.podspec --allow-warnings --verbose
+```
+
+`pod lib lint` 会临时建工程真编译，能暴露 podspec 里 subspec 路径、
+C++ 设置、框架声明的问题 —— 现在这些都只是"看着对"，没有机器验证。
+按项目纪律：**没过 lint 就不能说 CocoaPods 集成完成**。

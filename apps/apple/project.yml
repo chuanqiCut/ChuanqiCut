@@ -1,0 +1,67 @@
+# ChuanqiCut Apple App 工程（UIA-002）
+#
+# 生成：xcodegen generate  （产物 ChuanqiCut.xcodeproj 不入库，.gitignore 已排除）
+#
+# 结构说明（相对 ARCH-005 §6 的简化）：
+#   - iOS 与 macOS 两个 app target 放在**同一个 project** 里；不用 xcworkspace，
+#     因为当前无 CocoaPods 集成（SDK 走 SharedUI → ChuanqiCut SPM 本地包链），
+#     workspace 只有在 pod install 后才有必要。
+#   - Info.plist 由本文件生成（`info:` 段），仓库不保存手工副本。
+#
+# 依赖链：App → SharedUI（本地包）→ ChuanqiCut 绑定（bindings/swift）→ 内核 XCFramework
+# ⚠️ clone 后先跑 tools/build/build_core_apple.sh && bindings/swift/prepare.sh
+
+name: ChuanqiCut
+options:
+  bundleIdPrefix: com.chuanqi
+  deploymentTarget:
+    iOS: "16.0"
+    macOS: "15.4"
+  createIntermediateGroups: true
+
+packages:
+  SharedUI:
+    path: packages/SharedUI
+
+settings:
+  base:
+    SWIFT_VERSION: "6.1"
+    MARKETING_VERSION: 0.1.0
+    CURRENT_PROJECT_VERSION: 1
+
+targets:
+  ChuanqiCutApp:
+    type: application
+    platform: iOS
+    sources: [iOSApp]
+    dependencies:
+      - package: SharedUI
+    info:
+      path: iOSApp/Info.plist
+      properties:
+        CFBundleDisplayName: ChuanqiCut
+        UILaunchScreen: {}
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationPortrait
+          - UIInterfaceOrientationLandscapeLeft
+          - UIInterfaceOrientationLandscapeRight
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.chuanqi.cut
+        TARGETED_DEVICE_FAMILY: "1,2"
+
+  ChuanqiCutMacApp:
+    type: application
+    platform: macOS
+    sources: [MacApp]
+    dependencies:
+      - package: SharedUI
+    info:
+      path: MacApp/Info.plist
+      properties:
+        CFBundleDisplayName: ChuanqiCut
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.chuanqi.cutmac
+        # 本机开发用 ad-hoc 签名即可构建运行；分发签名后续任务处理
+        CODE_SIGN_IDENTITY: "-"

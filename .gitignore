@@ -41,3 +41,21 @@ tmp*/
 # 生成方式：tools/build/build_core_apple.sh --config=Release && bindings/swift/prepare.sh
 bindings/swift/Frameworks/
 bindings/swift/.build/
+
+# Apple App 工程（UIA-002）
+# Xcode 工程由 apps/apple/project.yml 经 xcodegen 生成，不入库。
+#   重新生成：cd apps/apple && xcodegen generate
+apps/apple/ChuanqiCut.xcodeproj/
+# SPM 构建目录（SharedUI 包，同 bindings/swift/.build）
+apps/apple/packages/SharedUI/.build/
+# Xcode 用户态状态与索引
+xcuserdata/
+DerivedData/
+# CocoaPods 本地环境：bundle 的 gems 缓存与配置（clone 后 bundle install 重建）
+# Gemfile 本身入库；vendor/ 与 .bundle/ 是本机缓存，不入库
+.bundle/
+vendor/
+# CocoaPods 产物目录（由 pod install 生成，clone 后自行重建）
+Pods/
+# ZCode 会话本地数据
+.zcode/

@@ -32,8 +32,14 @@ Pod::Spec.new do |s|
 
   # ⚠️ 仓库当前**没有** git remote（2026-09-30 核实），故这里用显式占位而非编造 URL。
   #    发布到远端 spec repo 之前必须替换成真实地址；本地 `:path =>` 引用不受影响。
+  #
+  # CQ_POD_SOURCE_GIT 是给 `pod lib lint` 用的逃生口：lint 会真的去 clone s.source，
+  #    占位地址必然失败。要跑完整 lint 时用本地仓库覆盖：
+  #      git tag v0.1.0
+  #      CQ_POD_SOURCE_GIT="$PWD" pod lib lint ChuanqiCut.podspec --allow-warnings
   s.homepage      = 'https://REPLACE_ME.invalid/ChuanqiCut'
-  s.source        = { :git => 'https://REPLACE_ME.invalid/ChuanqiCut.git',
+  s.source        = { :git => ENV.fetch('CQ_POD_SOURCE_GIT',
+                                        'https://REPLACE_ME.invalid/ChuanqiCut.git'),
                       :tag => s.version.to_s }
 
   # ⚠️ License **尚未最终确定**：FFmpeg LGPL 静态链接的处置（目标文件归档 / 商业授权 /
@@ -52,37 +58,28 @@ Pod::Spec.new do |s|
   s.default_subspecs = 'Binary'
 
   # =========================================================================
-  # CBridge — C ABI 的 Clang module（Swift 侧 import CChuanqiCut 的来源）
+  # 公共部分：C ABI 的 Clang module + Swift 绑定源码
   # =========================================================================
+  # ⚠️ module_map **必须写在根 spec**：CocoaPods 明确禁止在 subspec 上设该属性
+  #    （`pod lib lint` 实测报 "Can't set `module_map` attribute for subspecs"）。
+  #    所以 C 桥接不单独做成 subspec，而是与 Swift 绑定一起放在根，被各 subspec 继承。
+  s.module_map     = 'bindings/swift/Sources/CChuanqiCut/include/module.modulemap'
+  s.preserve_paths = 'bindings/swift/Sources/CChuanqiCut/include/module.modulemap',
+                     'bindings/swift/Sources/CChuanqiCut/include/cq_sdk.h'
+
   # shim.c 不是业务逻辑：SwiftPM/CocoaPods 都需要一个真实源文件才会为 C target
   # 生成 module（BIND-002 实测：只有头文件会报 "no such module"）。
-  s.subspec 'CBridge' do |ss|
-    ss.source_files      = 'bindings/swift/Sources/CChuanqiCut/shim.c'
-    ss.preserve_paths    = 'bindings/swift/Sources/CChuanqiCut/include/module.modulemap',
-                           'bindings/swift/Sources/CChuanqiCut/include/cq_sdk.h'
-    ss.module_map        = 'bindings/swift/Sources/CChuanqiCut/include/module.modulemap'
-    # 内核是 C++20，消费方必须链 C++ 运行时。
-    ss.libraries         = 'c++'
-    ss.pod_target_xcconfig = {
-      'HEADER_SEARCH_PATHS' => '$(inherited) "$(PODS_TARGET_SRCROOT)/bindings/swift/Sources/CChuanqiCut/include"'
-    }
-  end
+  # Swift 绑定源码与 SPM 共用同一份文件，不复制。
+  s.source_files = 'bindings/swift/Sources/CChuanqiCut/shim.c',
+                   'bindings/swift/Sources/ChuanqiCut/**/*.swift'
 
-  # =========================================================================
-  # Swift — 绑定层源码（与 SPM 共用同一份文件，不复制）
-  # =========================================================================
-  s.subspec 'Swift' do |ss|
-    ss.source_files = 'bindings/swift/Sources/ChuanqiCut/**/*.swift'
-    ss.dependency 'ChuanqiCut/CBridge'
-  end
+  # 内核是 C++20，消费方必须链 C++ 运行时。
+  s.libraries = 'c++'
 
   # =========================================================================
   # Binary — 链接预构建 XCFramework（默认）
   # =========================================================================
   s.subspec 'Binary' do |ss|
-    ss.dependency 'ChuanqiCut/Swift'
-    ss.dependency 'ChuanqiCut/CBridge'
-
     # XCFramework 内含三个切片（ios-arm64 / ios-simulator / macos），
     # 由 tools/build/build_core_apple.sh 产出，bindings/swift/prepare.sh 拷到此路径。
     # ⚠️ 该目录是**构建产物**（.gitignore 已忽略），远端分发时需要 CI 先生成再打包。
@@ -96,14 +93,13 @@ Pod::Spec.new do |s|
   # 注意：这条路径**不经过**项目的 CMake，编译设置在这里重建 —— 两者若漂移，
   #       以 cmake/CompileOptions.cmake 为准，回来同步本段。
   s.subspec 'Source' do |ss|
-    ss.dependency 'ChuanqiCut/Swift'
-    ss.dependency 'ChuanqiCut/CBridge'
-
     ss.source_files        = 'core/src/**/*.{cpp}',
                              'core/include/**/*.{h,hpp}',
                              'pal/apple/**/*.{mm,h}'
     ss.public_header_files = 'core/include/**/*.h'
-    ss.header_mappings_dir = 'core/include'
+    # ⚠️ 不设 header_mappings_dir：它会要求**所有** public header 都在该目录内，
+    #    而 pal/apple/*.h 是 PAL 内部头（本就不该对外暴露）。
+    #    Swift 侧通过根 spec 的 modulemap 访问 C ABI，不依赖 header mapping。
 
     ss.libraries    = 'c++'
     ss.frameworks   = 'Foundation', 'Metal', 'AVFoundation', 'CoreMedia',

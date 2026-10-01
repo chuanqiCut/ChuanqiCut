@@ -145,6 +145,39 @@
   （改后日志出现 C 编译步骤，27/27 通过；并反向验证 —— 往 cq_sdk.h 插入
   `std::string` 后 C TU 立即 `fatal error: 'string' file not found`）
 
+### P7 · SPM 本地包身份是**目录名**，不是 Package.swift 里的 `name`
+- 现象：UIA-002 在 SharedUI 包里写
+  `.product(name: "ChuanqiCut", package: "ChuanqiCut")` 引用
+  `bindings/swift` 本地包，报
+  `unknown package 'ChuanqiCut' in dependencies of target 'SharedUI';
+  valid packages are: 'swift' (at .../bindings/swift)`。
+- 根因：`.package(path:)` 的身份取**路径末段目录名**（`bindings/swift` →
+  `"swift"`），与包内 `Package.swift` 的 `name: "ChuanqiCut"` 无关。
+  且 tools-version ≥ 5.2 后 `.product(name:package:)` 的 `package` 参数
+  **必填**（省略写法在 5.2+ 直接不可用）。
+- 危害：报错信息会列出"valid packages"，照着写目录名即可解；但若包目录名
+  与产品名一致就不会暴露此坑，一旦有人重命名目录就会突然断链。
+- 修复：`.product(name: "ChuanqiCut", package: "swift")`。
+- 防复发规则：本地包引用一律以**目录名**为准写 `package:` 参数；给绑定包
+  目录改名 = 破坏性变更，须全仓同步（apps/apple/packages/SharedUI）。
+- 日期 / 来源 / 验证状态：2026-10-01 / UIA-002 / **verified**
+  （改后 `swift build` + `swift test` 4/4 通过）
+
+### P8 · `StateObject(wrappedValue:)` 是非 throwing 自动闭包，包不住 `try`
+- 现象：UIA-002 App 入口写
+  `do { _editor = StateObject(wrappedValue: try EditorViewModel()) } catch { fatalError(...) }`，
+  编译报 `call can throw, but it is executed in a non-throwing autoclosure`，
+  且 catch 块被警告 unreachable。
+- 根因：`StateObject.init(wrappedValue:)` 的参数是**非 throwing autoclosure**，
+  `try` 无法穿越；错误发生在 App init（`@MainActor` 上下文本可用），纯属
+  API 形态问题，与并发无关。
+- 修复：先把可抛调用落到局部变量，再包进 StateObject：
+  `let vm = try EditorViewModel(); _editor = StateObject(wrappedValue: vm)`。
+- 防复发规则：所有 `*State(wrappedValue:)`（StateObject/ObservedObject/
+  State 等）都一样——**自动闭包不抛错**，可抛构造一律"先建值、后包装"。
+- 日期 / 来源 / 验证状态：2026-10-01 / UIA-002 / **verified**
+  （改后 macOS target BUILD SUCCEEDED，真机启动冒烟 4s 存活）
+
 ---
 
 ## 已修正的历史错误（供参考，避免重犯）

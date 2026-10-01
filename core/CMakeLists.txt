@@ -37,7 +37,10 @@ add_library(cq_core STATIC
     src/session/editor_session.cpp
     # BIND-001：cq_sdk.h 的 C ABI 实现。注意 BACKLOG 原写集只有头文件 ——
     # 但"只有声明无实现"是本项目踩过两次的坑，故一并补实现。
-    src/cq_sdk.cpp)
+    src/cq_sdk.cpp
+    # MODEL-001：时间线数据模型（Timeline / Track / Clip / Transition）。
+    # 先于 UIA-003 落地：没有时间线模型，预览就没有"播放头在哪、该显示哪个片段"。
+    src/model/timeline.cpp)
 
 # 版本号由 CMake 注入，不在 cq_sdk.h 里硬编码（否则必然与 project VERSION 漂移）。
 target_compile_definitions(cq_core PRIVATE

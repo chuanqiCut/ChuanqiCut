@@ -365,3 +365,14 @@ if(APPLE)
     apply_cq_warnings(cq_tests_pala_capabilities)
     add_test(NAME pala_capabilities COMMAND cq_tests_pala_capabilities)
 endif()
+# ---- MODEL-001：时间线数据模型（Timeline / Track / Clip / Transition）----
+# 先于 UIA-003 落地：没有它，预览就不知道"播放头在哪、该显示哪个片段"。
+# 验收：多轨共存、跨轨重叠允许、同轨重叠拒绝、转场计入总时长。
+add_executable(cq_tests_model_timeline
+    unit/test_model_timeline.cpp)
+target_include_directories(cq_tests_model_timeline PRIVATE
+    ${CMAKE_SOURCE_DIR}/core/include)
+target_link_libraries(cq_tests_model_timeline PRIVATE cq_core)
+cq_require_cxx20(cq_tests_model_timeline)
+apply_cq_warnings(cq_tests_model_timeline)
+add_test(NAME model_timeline COMMAND cq_tests_model_timeline)

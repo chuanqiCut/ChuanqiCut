@@ -40,7 +40,11 @@ add_library(cq_core STATIC
     src/cq_sdk.cpp
     # MODEL-001：时间线数据模型（Timeline / Track / Clip / Transition）。
     # 先于 UIA-003 落地：没有时间线模型，预览就没有"播放头在哪、该显示哪个片段"。
-    src/model/timeline.cpp)
+    src/model/timeline.cpp
+    # GFX-002 最小落地：IGfxDevice / IGfxEncoder 直连 PAL。
+    # 不做 RenderGraph（RENDER-001）—— 预览只需要"渲染一帧"，
+    # 节点图/依赖分析/pass 调度等真有多 pass 合成需求时再补。
+    src/gfx/gfx_device.cpp)
 
 # 版本号由 CMake 注入，不在 cq_sdk.h 里硬编码（否则必然与 project VERSION 漂移）。
 target_compile_definitions(cq_core PRIVATE

@@ -227,6 +227,17 @@ if(APPLE)
     apply_cq_warnings(cq_tests_pala_metal)
     add_test(NAME pala_metal_render COMMAND cq_tests_pala_metal)
 
+    # ---- GFX-002：IGfxDevice 直连 PAL（渲染结果读回断言，不只查返回值）----
+    add_executable(cq_tests_gfx_device
+        unit/test_gfx_device.cpp)
+    target_include_directories(cq_tests_gfx_device PRIVATE
+        ${CMAKE_SOURCE_DIR}/core/include
+        ${CMAKE_SOURCE_DIR}/pal/apple)
+    target_link_libraries(cq_tests_gfx_device PRIVATE cq_core cq_pal_apple)
+    cq_require_cxx20(cq_tests_gfx_device)
+    apply_cq_warnings(cq_tests_gfx_device)
+    add_test(NAME gfx_device COMMAND cq_tests_gfx_device)
+
     # ---- PALA-010：Apple 解封装后端真实文件验证 ----
     add_executable(cq_tests_pala_demux
         unit/test_media_demux_apple.cpp)

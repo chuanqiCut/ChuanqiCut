@@ -398,3 +398,20 @@ target_link_libraries(cq_tests_asset_registry PRIVATE cq_core)
 cq_require_cxx20(cq_tests_asset_registry)
 apply_cq_warnings(cq_tests_asset_registry)
 add_test(NAME asset_registry COMMAND cq_tests_asset_registry)
+
+# ---- BIND-003 子步骤 2：取帧链路真实验证（PAL + 硬解）----
+# 用 golden 真实文件证明"给定素材+时间戳 → 真实解码帧"可用，
+# 并断言不同时刻 pts 不同（暴露"假 seek"：反复返回同一帧）。
+if(APPLE)
+    add_executable(cq_tests_frame_provider_apple
+        unit/test_frame_provider_apple.cpp)
+    target_include_directories(cq_tests_frame_provider_apple PRIVATE
+        ${CMAKE_SOURCE_DIR}/core/include
+        ${CMAKE_SOURCE_DIR}/pal/apple)
+    target_compile_definitions(cq_tests_frame_provider_apple PRIVATE
+        CQ_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
+    target_link_libraries(cq_tests_frame_provider_apple PRIVATE cq_core cq_pal_apple)
+    cq_require_cxx20(cq_tests_frame_provider_apple)
+    apply_cq_warnings(cq_tests_frame_provider_apple)
+    add_test(NAME frame_provider_apple COMMAND cq_tests_frame_provider_apple)
+endif()

@@ -81,3 +81,31 @@ $(dirname $CMAKE_BIN)/ctest --test-dir build   # 原 8 + gfx_headers_compile + m
 
 ## 相关
 ADR-0002、ARCH-003 §2/§3/§7、PAL-接口契约 §4.1、BACKLOG GFX-001/002/003 / PALA-001 / RENDER-001
+
+---
+
+# 2026-10-02 追加（BIND-003 子步骤 4/5 / GFX-002 之后）
+
+## `IGfxEncoder` 新增 `PalEncoder()`
+
+```cpp
+virtual ICommandEncoder* PalEncoder() = 0;   // 返回底层的 PAL 编码器
+```
+
+为什么需要：某些 pass（如 `IBlitPass`）**必然**由平台原生 shader 实现，按红线 #6
+只能落在 PAL 层；而 PAL 不能反向依赖本层的 `IGfxEncoder`。故这类 pass 收 PAL 的
+`ICommandEncoder`，由本方法取出后传入 —— 与既有的 `IGfxDevice::PalDevice()` 同一套路。
+
+⚠️ 这是**逃生口**，不是常规路径。日常 RenderNode 仍应只用 `IGfxEncoder` 的 GFX 方法
+（`SetPipeline` / `SetTexture` / `Draw` …），不要绕过。
+
+## `IBlitPass` 已移出本层
+
+原 `core/include/cq/gfx/blit_pass.h` 的 `IBlitPass` 已移入 **`pal/gfx.h`**，
+工厂改为 `cq::CreateBlitPass(IGraphicsDevice*, TextureFormat, PalPtr<IBlitPass>&)`。
+理由见 `.ai/modules/pal.md`（判断规则：抽象放哪层，看实现必然落在哪）。
+
+## 预览渲染器（新增 preview 层）
+
+`core/include/cq/preview/preview_renderer.h` —— 见新建的 `.ai/modules/preview.md`。
+它位于 GFX 之上、UI 之下，是「时间线在 pts 这一刻画面是什么」的收口。

@@ -387,3 +387,14 @@ target_link_libraries(cq_tests_model_timeline PRIVATE cq_core)
 cq_require_cxx20(cq_tests_model_timeline)
 apply_cq_warnings(cq_tests_model_timeline)
 add_test(NAME model_timeline COMMAND cq_tests_model_timeline)
+
+# ---- BIND-003 子步骤 1：素材表（asset_id → MediaSource）----
+# 重点：验证 unordered_map 重哈希后 MediaSource.path 裸指针仍然有效（SSO 陷阱）。
+add_executable(cq_tests_asset_registry
+    unit/test_asset_registry.cpp)
+target_include_directories(cq_tests_asset_registry PRIVATE
+    ${CMAKE_SOURCE_DIR}/core/include)
+target_link_libraries(cq_tests_asset_registry PRIVATE cq_core)
+cq_require_cxx20(cq_tests_asset_registry)
+apply_cq_warnings(cq_tests_asset_registry)
+add_test(NAME asset_registry COMMAND cq_tests_asset_registry)

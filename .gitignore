@@ -42,11 +42,16 @@ tmp*/
 bindings/swift/Frameworks/
 bindings/swift/.build/
 
-# Apple App 工程（UIA-002）
-# Xcode 工程由 apps/apple/project.yml 经 xcodegen 生成，不入库。
-#   重新生成：cd apps/apple && xcodegen generate
-apps/apple/ChuanqiCut.xcodeproj/
-# SPM 构建目录（SharedUI 包，同 bindings/swift/.build）
+# Apple App 工程（UIA-002 建，INFRA-009 拆为 ios/ 与 mac/ 两个独立工程）
+# Xcode 工程与 workspace 均为生成产物，不入库：
+#   cd apps/apple/ios && xcodegen generate && bundle install && bundle exec pod install
+#   cd apps/apple/mac && xcodegen generate && bundle install && bundle exec pod install
+# 注意：两个目录的 Gemfile.lock **必须入库**（钉住工具链，见 pitfalls P12）。
+apps/apple/ios/ChuanqiCut.xcodeproj/
+apps/apple/ios/ChuanqiCut.xcworkspace/
+apps/apple/mac/ChuanqiCut.xcodeproj/
+apps/apple/mac/ChuanqiCut.xcworkspace/
+# SPM 构建目录（SharedUI 包仅保留作 swift test 测试宿主，同 bindings/swift/.build）
 apps/apple/packages/SharedUI/.build/
 # Xcode 用户态状态与索引
 xcuserdata/
@@ -57,5 +62,9 @@ DerivedData/
 vendor/
 # CocoaPods 产物目录（由 pod install 生成，clone 后自行重建）
 Pods/
+# Xcode 构建产物（apps/apple/{ios,mac}/build/，xcodebuild 生成，76MB+ 量级）
+# ⚠️ 用 * 通配**而非裸 build/**：裸写会匹配任意层级，历史上曾因此把
+#    tools/build/ 一并忽略，导致三个构建脚本与 smoke_link.cpp 从未入库。
+apps/apple/*/build/
 # ZCode 会话本地数据
 .zcode/

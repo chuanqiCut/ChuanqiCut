@@ -41,6 +41,10 @@ Pod::Spec.new do |s|
 
   s.source_files = 'Sources/SharedUI/**/*.swift'
 
+  # UIA-003：预览视图用 MTKView 直绘（SwiftUI 系统框架会被 Swift 自动链接，
+  # 但 MetalKit 属显式 import，声明出来不依赖自动链接行为）。
+  s.frameworks = 'Metal', 'MetalKit'
+
   # ⚠️ ChuanqiCut 的 Swift 公开 API 引用了 CChuanqiCut（C module）里的类型，
   #    SharedUI `import ChuanqiCut` 时 Swift 要求该 module 可见。App target 由
   #    ChuanqiCut.podspec 的 user_target_xcconfig 提供路径；pod 形态的消费方

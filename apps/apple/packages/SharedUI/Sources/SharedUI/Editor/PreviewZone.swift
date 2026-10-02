@@ -1,26 +1,32 @@
-// SharedUI — 预览区桩视图（UIA-002）
+// SharedUI — 预览区（UIA-003）
 //
-// ⚠️ 本文件是**桩**：UIA-003 将用 MTKView 直接嵌入替换（预览画面不经 UI 合成路径，
-// 见 ARCH-005 §4.3）。布局尺寸即未来 MTKView 的宿主区域。
+// MTKView 直绘（ARCH-005 §4.3）：画面不经 UI 合成路径，内核渲染的离屏纹理
+// 经一次 GPU 拷贝进 drawable。见 MetalPreviewView.swift。
 
 import SwiftUI
 import ChuanqiCut
 
 struct PreviewZone: View {
-    let snapshot: Snapshot
+    let preview: Previewer?
+    let playhead: RationalTime
 
     var body: some View {
-        ZStack {
-            Theme.previewBackground
+        if let preview {
+            MetalPreviewView(preview: preview, pts: playhead)
+        } else {
+            // 预览后端缺失（如该平台 PAL 未实现预览能力）：如实降级展示，不伪装可用。
+            ZStack {
+                Theme.previewBackground
 
-            VStack(spacing: 8) {
-                Text("Preview")
-                    .font(.title2.weight(.medium))
-                    .foregroundStyle(Theme.secondaryText)
+                VStack(spacing: 8) {
+                    Text("预览不可用")
+                        .font(.title2.weight(.medium))
+                        .foregroundStyle(Theme.secondaryText)
 
-                Text("快照 v\(snapshot.version)")
-                    .font(.caption.monospaced())
-                    .foregroundStyle(Theme.tertiaryText)
+                    Text("当前平台缺少预览后端")
+                        .font(.caption.monospaced())
+                        .foregroundStyle(Theme.tertiaryText)
+                }
             }
         }
     }

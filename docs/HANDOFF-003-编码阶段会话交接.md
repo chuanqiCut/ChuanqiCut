@@ -25,10 +25,12 @@
 | 预览 | 子步骤 3 纹理导入（零拷贝） | ✅ **PALA-002 已覆盖**（2026-09-26） |
 | 预览 | 子步骤 4 预览渲染器 | ✅ |
 | 预览 | 子步骤 5 C ABI 封装 | ✅ |
-| **UI** | **子步骤 6 / UIA-003 MTKView 嵌入** | ⏭️ **下一步** |
-| 预留 | Swift 绑定（bindings/swift 补 cq_preview_*） | 待做 |
-
-**门禁**：`Debug 34/34`、`Release 34/34` 全绿。
+| UI | 子步骤 6 / UIA-003 MTKView 嵌入 | ✅（2026-10-03，像素级验收） |
+| 预览 | Swift 绑定（Previewer + RationalTime） | ✅（2026-10-03） |
+| **下一步** | **UIA-005 素材导入 / 播放头驱动（异步）** | ⏭️ **下一步** |
+| **下一步** | **UIA-005 素材导入 / 播放头驱动（异步）** | ⏭️ **下一步** |
+**门禁**：`Debug 34/34`、`Release 34/34` 全绿；Swift 绑定 13/13；SharedUI 测试全绿（含像素级）；
+macOS App 编译 SUCCEEDED（Swift 告警 0）+ 启动冒烟通过；iOS `-sdk iphoneos` 编译 SUCCEEDED。
 
 **本轮新增的架构决策**：
 - **ADR-0011**（core 调用 PAL 工厂的隔离规则）—— core 从不调 PAL 工厂的惯例被开口子，
@@ -45,16 +47,23 @@
 
 ---
 
-## 2. 下一步：BIND-003 子步骤 6（UIA-003）
+## 2. 下一步：UIA-005（素材导入 / 播放驱动）
 
-**开工前必读**：`docs/tasks/TASK-BIND-003.md`（完整设计 + 6 个子步骤拆分）
+子步骤 6 / UIA-003 已完成（2026-10-03）：
+- Swift 绑定 `Previewer`（`bindings/swift/Sources/ChuanqiCut/Previewer.swift`；
+  ⚠️ 不叫 `Preview`，与 SwiftUI 撞名，pitfalls P22）+ `RationalTime`（Time.swift）。
+- SharedUI `MetalPreviewView`（MTKView 直绘，单帧按需渲染）+ `PreviewFrameRenderer`
+  （恒等映射 blit，MSL 与 PAL blit 几何逐值一致，**两侧不得单独改**）+ `PreviewZone` 接入。
+- 接口缺陷修复：`IRenderTarget::GetColorTexture` 曾返回 CqTexture* 包装而非裸
+  id<MTLTexture>，契约承诺 reinterpret 但首用即崩（pitfalls P20）。
+- 调试演示：DEBUG 构建设 `CQ_DEMO_VIDEO=<视频>` 环境变量启动即有画面。
 
-| # | 内容 | 要点 |
-|---|---|---|
-| 6 | UIA-003 | SharedUI 内 `UIViewRepresentable`/`NSViewRepresentable` 包 MTKView |
-| 余 | Swift 绑定 | `bindings/swift` 补 `cq_preview_*` 的 Swift 封装，跑 `swift test` + `run_smoke.sh` |
-
-子步骤 4/5 已落地（2026-10-02），装配形状见下方 §3b / §3c。
+接下来（按优先级）：
+1. **UIA-005 素材导入**：文件选择 → `registerAsset` + `addClip` 的 UI 流程
+   （预览装配视图与 Session 模型的同步仍是 BIND-003 阶段性形状，MODEL 接入后收口）。
+2. **播放驱动**：异步任务推进 playhead（当前主线程同步解码只适用于单帧按需；
+   连续播放**不得**逐帧阻塞主线程）。
+3. letterbox / fit（当前拉伸铺满）、多轨合成（等 RENDER-001）。
 
 ⚠️ Swift 侧**绝不要**「读回像素再上传」：每帧一次 CPU 往返会直接毁掉预览帧率。
    直接把 `void*` 句柄 reinterpret 成 `MTLTexture` 交给 MTKView 绘制。
@@ -189,8 +198,12 @@ SDK 默认 `Source` subspec（现场编译 C++20 + ObjC++ PAL，免除"先打包
 cd bindings/swift && swift test --disable-sandbox
 ./bindings/swift/run_smoke.sh
 
-# SharedUI（测试宿主）
+# SharedUI（测试宿主，含预览像素级验收）
 cd apps/apple/packages/SharedUI && swift test --disable-sandbox
+
+# macOS App 启动冒烟（DEBUG 演示素材；先 xcodebuild build）
+APP=$(find ~/Library/Developer/Xcode/DerivedData -name ChuanqiCutMacApp.app -path "*Debug*" | head -1)
+CQ_DEMO_VIDEO="$PWD/tests/golden/frames/gf_1080p_h264.mp4" "$APP/Contents/MacOS/ChuanqiCutMacApp"
 
 # App 工程（macOS 可编译；iOS 需真机或用 -sdk iphoneos）
 cd apps/apple/mac && xcodegen generate && bundle install && bundle exec pod install

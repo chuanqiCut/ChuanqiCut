@@ -14,7 +14,7 @@ public struct EditorView: View {
     public var body: some View {
         EditorLayoutContainer(
             preview: {
-                PreviewZone(snapshot: viewModel.snapshot)
+                PreviewZone(preview: viewModel.preview, playhead: viewModel.playhead)
             },
             timeline: {
                 TimelineZone(snapshot: viewModel.snapshot)

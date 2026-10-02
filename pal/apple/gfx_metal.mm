@@ -150,30 +150,21 @@ struct CqRenderTarget : public IRenderTarget {
 public:
     id<MTLDevice> device_ = nil;
     id<MTLTexture> color_tex_ = nil;
-    CqTexture* color_wrapper_ = nullptr;  // 由 GetColorTexture 惰性创建；Destroy 时一并释放
     uint32_t w_ = 0;
     uint32_t h_ = 0;
     TextureFormat fmt_ = TextureFormat::kRGBA8;
 
     void Destroy() override {
-        if (color_wrapper_ != nullptr) {
-            color_wrapper_->Destroy();
-            color_wrapper_ = nullptr;
-        }
         color_tex_ = nil;
         device_ = nil;
         delete this;
     }
+    // 契约（pal/gfx.h）：返回**可显示原生纹理**（id<MTLTexture>）本身，
+    // 不是 CqTexture* 包装 —— UI 侧按 cq_sdk.h 约定 reinterpret 为 MTLTexture。
+    // 2026-10-03 修复：原实现返回惰性包装对象，Swift 侧 reinterpret 直接崩溃
+    // （首次真实消费暴露，与 PALA-001 的 Handle() 修复同一模式）。
     TextureHandle GetColorTexture() override {
-        if (color_wrapper_ == nullptr) {
-            color_wrapper_ = new CqTexture();
-            color_wrapper_->tex_ = color_tex_;  // 与 RT 共享同一 MTLTexture（ARC 各自保留引用）
-            color_wrapper_->desc_.format = fmt_;
-            color_wrapper_->desc_.width = w_;
-            color_wrapper_->desc_.height = h_;
-            color_wrapper_->desc_.usage = TextureUsage::kRenderTarget;
-        }
-        return color_wrapper_;
+        return (__bridge TextureHandle)color_tex_;
     }
     uint32_t GetWidth() const override { return w_; }
     uint32_t GetHeight() const override { return h_; }

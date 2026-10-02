@@ -97,12 +97,43 @@ PreviewRenderer(gfx, blit.get(), &factory, &timeline, &assets, cfg)
 ./tools/build/build_core.sh --platform=apple --config=Debug --test
 ctest --test-dir build -R preview_renderer   # 35 项：像素真值 / 方向 / 零拷贝 / 空隙 / Resize
 ctest --test-dir build -R c_abi_preview      # 32 项：真正的 C TU，契约与诊断量
+
+cd bindings/swift && swift test --disable-sandbox          # Previewer 契约 + golden 帧
+./bindings/swift/run_smoke.sh                              # 链接级 + 空隙语义
+cd apps/apple/packages/SharedUI && swift test --disable-sandbox
+#   MetalPreviewViewTests：恒等映射逐字节 + golden 帧上屏链路非黑（像素级）
+#   ⚠️ 读回必须 blit→Shared Buffer→contents；本机 getBytes 读不到 GPU 写入（P21）
 ```
 
 实测（2026-10-02）：中心像素 `0,190,0,255` ≈ smptebars 真值 `0,188,0,255`；
 t=1.0s 实际帧 pts = `120000/120000`（偏差 0）；连续 12 帧全部零拷贝。
 
-## 10. 相关
+## 10. Swift 侧装配（UIA-003，2026-10-03）
+
+```
+SwiftUI PreviewZone
+  → MetalPreviewView（UIView/NSViewRepresentable，SharedUI/Editor/）
+      → PreviewMTKView（MTKView，isPaused + enableSetNeedsDisplay，按需单帧）
+          draw(in:):
+            1. previewer.renderFrame(pts)            # 内核 seek+解码+导入+离屏绘制
+            2. unsafeBitCast(handle, MTLTexture)     # 中性句柄 → 原生纹理（不 retain）
+            3. PreviewFrameRenderer.blit(drawable)   # 恒等映射 GPU 拷贝 + present
+```
+
+要点：
+- **Swift 绑定类型名是 `Previewer`**（不是 `Preview`，与 SwiftUI 撞名，见 pitfalls P22）。
+- MSL 几何与 `pal/apple/shaders/blit_fullscreen_msl.h` **逐值一致**（uv(0,0)=左上），
+  两侧必须同步改（SharedUI 像素级用例锁定）。
+- 视图是「单帧按需渲染」；连续播放须由上层异步推进 pts，**不得**在视图内加渲染循环。
+- `GetColorTexture` 现在返回**裸原生纹理**（id<MTLTexture>），不是 CqTexture* 包装
+  （接口缺陷修复，见 pitfalls P20）；「导出用」与「SetTexture 用」两种句柄语义已
+  在 pal/gfx.h 写清。
+- 设备一致性（hypothesis，2026-10-02 本机实测）：内核与 MTKView 的设备同为
+  `MTLCreateSystemDefaultDevice()` 的进程内缓存实例。
+- 调试演示：`CQ_DEMO_VIDEO=<视频路径>` 环境变量（DEBUG 构建）启动即载入 5s 片段。
+
+## 11. 验证（UIA-003 之后）
+## 12. 相关
 
 ADR-0011（core 调 PAL 工厂的隔离规则）、`docs/tasks/TASK-BIND-003.md`、
 `.ai/modules/pal.md`、`.ai/modules/gfx.md`

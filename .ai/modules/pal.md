@@ -151,3 +151,22 @@ PAL 实现它就要反向 include GFX 头 —— 依赖方向直接冲突。
 Android / HarmonyOS 均无 `CreateBlitPass` / `CreateFrameProvider` 实现。
 调用预览 ABI 会在**链接期**失败 —— 这是「该端暂无预览能力」的如实暴露，
 与红线 #3 一致（缺失能力不伪造空实现）。将来若要支持可选编译，走 CMake option。
+
+
+---
+
+# 2026-10-03 追加（UIA-003）
+
+## 接口缺陷修复：`IRenderTarget::GetColorTexture` 的返回语义
+
+原 Apple 实现惰性创建 `CqTexture*` 包装返回；但该方法的用途是「把 RT 背后的
+可显示纹理导出给 UI」（`cq_sdk.h` 契约：reinterpret 为 id<MTLTexture>），
+包装对象被 Swift 首次真实消费即崩（objc_msgSend 打在 C++ 对象上）。
+
+- 修复：返回 `(__bridge TextureHandle)color_tex_` —— **裸原生纹理**。
+- `pal/gfx.h` 已把两种句柄语义写清：
+  - `INativeImageImporter::Import` / `CreateTexture` 产出的 `TextureHandle`
+    = `CqTexture*` 包装（可送 `ICommandEncoder::SetTexture`）；
+  - `GetColorTexture` 产出的 = 裸原生纹理（**只用于 UI 导出**，不可送 SetTexture）。
+- 验证：Debug/Release 34/34 + SharedUI 像素级用例（旧实现下必崩）。详见
+  `pitfalls.md` P20。

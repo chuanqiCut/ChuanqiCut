@@ -10,31 +10,43 @@
                                                           └→ 渲染请求 → RenderGraph
 ```
 
-## 工程结构（UIA-002 落地版，2026-10-01）
+## 工程结构（INFRA-009 拆分版，2026-10-02；替代 UIA-002 单工程形态）
 
 ```
 apps/apple/
-├── project.yml                    # xcodegen 工程定义（真源，入库）
-├── ChuanqiCut.xcodeproj           # 生成产物（不入库）
 ├── packages/SharedUI/             # SwiftUI 共享包
+│   ├── SharedUI.podspec           # App 集成真源（pod）
+│   ├── Package.swift              # 仅 swift test 测试宿主，不在 App 依赖链
 │   ├── Sources/SharedUI/
 │   │   ├── AppEntry.swift         # EditorViewModel（Session 唯一持有者）
 │   │   ├── Editor/                # EditorView / EditorLayout / 三区桩视图
 │   │   └── Common/Theme.swift
 │   └── Tests/SharedUITests/
-├── iOSApp/                        # ChuanqiCutApp（iOS 16+）
-└── MacApp/                        # ChuanqiCutMacApp（macOS 15.4+，窗口 1280×720 / 最小 960×540）
+├── ios/                           # iOS 独立工程
+│   ├── project.yml                # xcodegen 真源（ChuanqiCutApp，iOS 16+）
+│   ├── Podfile / Gemfile(.lock)   # 本目录独立维护
+│   └── iOSApp/
+└── mac/                           # macOS 独立工程
+    ├── project.yml                # xcodegen 真源（ChuanqiCutMacApp，macOS 15.4+）
+    ├── Podfile / Gemfile(.lock)   # 本目录独立维护
+    └── MacApp/                    # 窗口 1280×720 / 最小 960×540
 ```
 
-**依赖链**：App → SharedUI（本地 SPM 包）→ ChuanqiCut 绑定（`bindings/swift`，
-本地包身份是目录名 `swift`，见 pitfalls P7）→ 内核 XCFramework（构建产物，
-`tools/build/build_core_apple.sh && bindings/swift/prepare.sh`）。
+**依赖链**（INFRA-009 起，全部走 CocoaPods，App 不用 SPM）：
+App → SharedUI (pod) → ChuanqiCut (pod，**默认 Source 模式**：现场编译
+C++20 内核 + ObjC++ PAL + Swift 绑定) → CChuanqiCut (clang module，
+经 SWIFT_INCLUDE_PATHS 共用 `bindings/swift/Sources/CChuanqiCut/include/`)。
+`bindings/swift/Package.swift` 仅作绑定层 `swift test` 测试宿主。
+集成细节与红线见 `docs/COCOAPODS.md` 与 pitfalls P9~P12。
 
-**工程生成**：`cd apps/apple && xcodegen generate`（本机未装 brew 时可从
-GitHub Releases 下 xcodegen artifactbundle；当前装在 `~/tools/xcodegen/`）。
+**工程生成**（clone 后 / project.yml 或 Podfile 变更后，在 ios/ 或 mac/ 下）：
+```bash
+xcodegen generate            # 本机装在 ~/tools/xcodegen/xcodegen/bin/
+bundle install               # Gemfile.lock 钉住 CocoaPods 1.17.0（lock 必须入库）
+bundle exec pod install      # 生成 .xcworkspace；打开 workspace 而非 xcodeproj
+```
 Info.plist 由 project.yml 的 `info:` 段生成，仓库不存手工副本。
-**CocoaPods 未启用**：Podfile 仍是模板；SDK 经 SharedUI→ChuanqiCut SPM 链消费，
-出现真正需要的第三方 Pod 时再激活（届时需要 xcworkspace）。
+ChuanqiCut.xcodeproj / .xcworkspace 均为生成产物（.gitignore 已排除）。
 
 ## 硬约束
 1. **UI 不得直接改模型**，一切变更走 `EditorViewModel.submit()`（Command）
@@ -63,15 +75,26 @@ Info.plist 由 project.yml 的 `info:` 段生成，仓库不存手工副本。
 
 ## 验证
 ```bash
-# SharedUI 包（macOS 宿主）
+# SharedUI 包（macOS 宿主，需先产出 xcframework：build_core_apple.sh && prepare.sh）
 cd apps/apple/packages/SharedUI && swift test --disable-sandbox
 
-# macOS target
-cd apps/apple && xcodegen generate
-xcodebuild build -project ChuanqiCut.xcodeproj -scheme ChuanqiCutMacApp \
+# macOS App（INFRA-009 起，workspace 编译）
+cd apps/apple/mac && xcodegen generate && bundle install && bundle exec pod install
+xcodebuild build -workspace ChuanqiCut.xcworkspace -scheme ChuanqiCutMacApp \
     -destination 'platform=macOS' CODE_SIGNING_ALLOWED=NO
 
-# iOS target：仅在真机可用时构建运行（xcodebuild -destination 'platform=iOS'）
+# iOS App：编译用 -sdk iphoneos18.4（platform runtime 缺失时 destination 解析不了；
+# legacy -target 模式绕过 destination，需把 pod 目标与 app 目标建到同一 BUILD_DIR）
+cd apps/apple/ios && xcodegen generate && bundle install && bundle exec pod install
+xcodebuild build -workspace ChuanqiCut.xcworkspace -scheme ChuanqiCutApp \
+    -sdk iphoneos18.4 CODE_SIGNING_ALLOWED=NO
+# 上式 destination 报"not installed"时的等价 legacy 链（BUILD_DIR 三者一致）：
+#   for T in ChuanqiCut SharedUI Pods-ChuanqiCutApp; do \
+#     SYMROOT="$PWD/build" BUILD_DIR="$PWD/build" xcodebuild build \
+#       -project Pods/Pods.xcodeproj -target $T -sdk iphoneos18.4; done
+#   xcodebuild build -project ChuanqiCut.xcodeproj -target ChuanqiCutApp \
+#     -sdk iphoneos18.4 CODE_SIGNING_ALLOWED=NO
+# 运行仅在真机可用时（xcodebuild -destination 'platform=iOS'）
 ```
 
 ## 相关

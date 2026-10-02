@@ -47,6 +47,10 @@ struct EditorLayoutContainer<Preview: View, Timeline: View, Panel: View>: View {
     // MARK: - iOS
 
     #if os(iOS)
+    // ⚠️ 必须 @ViewBuilder：if/else 两分支的 opaque 类型不同（vertical vs
+    //    horizontal），裸 `some View` 下 Swift 6 报 mismatching types。
+    //    该 iOS 分支此前从未被编译过（真机不可用），INFRA-009 首次暴露。
+    @ViewBuilder
     private var iosLayout: some View {
         if hSizeClass == .compact {
             // 竖屏：上中下

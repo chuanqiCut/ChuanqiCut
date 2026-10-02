@@ -1,0 +1,24 @@
+PODS:
+  - ChuanqiCut (0.1.0):
+    - ChuanqiCut/Source (= 0.1.0)
+  - ChuanqiCut/Source (0.1.0)
+  - SharedUI (0.1.0):
+    - ChuanqiCut
+
+DEPENDENCIES:
+  - ChuanqiCut/Source (from `../../..`)
+  - SharedUI (from `../packages/SharedUI`)
+
+EXTERNAL SOURCES:
+  ChuanqiCut:
+    :path: "../../.."
+  SharedUI:
+    :path: "../packages/SharedUI"
+
+SPEC CHECKSUMS:
+  ChuanqiCut: 5502b412fe987a24fb0107e94bbfee8c60366cee
+  SharedUI: f87dfac65c542c0f316288efddd28230f287d749
+
+PODFILE CHECKSUM: 5f1f35ca3e15c34ef7a4afc8fd1dba7114cf0eaa
+
+COCOAPODS: 1.17.0

@@ -108,3 +108,46 @@ CORE-006 只冻结了 `core/include/cq/pal/capabilities.h` 的接口与枚举，
 - 已闭环：原 `FileHandle` 裸指针（需显式 `Close`）已改为 `IFile : IPalResource` + `PalPtr<IFile>`，
   与全接口生命周期约定统一（评审要求）。零平台类型门禁已由 `tools/pal/check_pal_headers.py`
   + ctest `pal_header_gate` 落地，可抓未来违规（已自测 `jobject` 可被抓）。
+
+---
+
+# 2026-10-02 追加（BIND-003 子步骤 4/5）
+
+## 新增 / 变更的 PAL 契约
+
+| 位置 | 变更 | 说明 |
+|---|---|---|
+| `pal/gfx.h` | 新增 `IBlitPass` + 工厂 `CreateBlitPass` | 全屏纹理拷贝。从 `core/include/cq/gfx/blit_pass.h` **移入** —— 见下 |
+| `pal/gfx.h` | `INativeImageImporter` 新增 `ReleaseTexture` | 补生命周期闭环，`Import` 返回裸句柄而 core 侧无法释放（pitfalls P14） |
+| `pal/media.h` | `CreateFrameProvider` **实现落地** | 自 CORE-006（2026-09-25）悬空 7 天从未实现（pitfalls P19） |
+| `pal/media.h` | `IFrameProvider` 新增 `GetDuration` | core 的 `FrameProvider` 要求此项，PAL 原本没有，适配时无处可取 |
+
+## 为什么 `IBlitPass` 从 GFX 层移到 PAL 层
+
+判断规则：**抽象放哪层，看实现必然落在哪。**
+
+`IBlitPass` 必然由**平台原生 shader** 实现（MSL / GLSL ES），而红线 #6 规定
+平台原生 shader 只允许出现在 `pal/<platform>/`。抽象若留在 GFX 层（PAL 之上），
+PAL 实现它就要反向 include GFX 头 —— 依赖方向直接冲突。
+
+上层需要用这类 PAL pass 时走逃生口，把底层句柄传下去：
+- `IGfxDevice::PalDevice()`（既有）
+- `IGfxEncoder::PalEncoder()`（本次新增：GFX 的 `IGfxEncoder` 暴露其包装的 PAL
+  `ICommandEncoder`，供 PAL 层 pass 接收）
+
+## Apple 侧实现
+
+| 文件 | 实现的契约 |
+|---|---|
+| `pal/apple/blit_pass.mm` | `CreateBlitPass`（MSL 源在 `pal/apple/shaders/blit_fullscreen_msl.h`） |
+| `pal/apple/frame_provider_apple.mm` | `CreateFrameProvider` = PALA-010 demux + PALA-011 VideoToolbox → MEDIA-020 `SystemFrameProvider` |
+
+⚠️ `CreateFrameProvider` 的 Apple 实现**不含新的编排逻辑**：取帧的跨平台编排
+（精确 seek / B 帧）仍在 core（MEDIA-020 `SystemFrameProvider`），PAL 侧只是
+「core 编排 + 平台解码器」的装配外观。
+
+## 未实现（诚实暴露，不伪造）
+
+Android / HarmonyOS 均无 `CreateBlitPass` / `CreateFrameProvider` 实现。
+调用预览 ABI 会在**链接期**失败 —— 这是「该端暂无预览能力」的如实暴露，
+与红线 #3 一致（缺失能力不伪造空实现）。将来若要支持可选编译，走 CMake option。

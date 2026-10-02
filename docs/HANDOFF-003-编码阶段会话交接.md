@@ -29,6 +29,13 @@
 | 预留 | Swift 绑定（bindings/swift 补 cq_preview_*） | 待做 |
 
 **门禁**：`Debug 34/34`、`Release 34/34` 全绿。
+
+**本轮新增的架构决策**：
+- **ADR-0011**（core 调用 PAL 工厂的隔离规则）—— core 从不调 PAL 工厂的惯例被开口子，
+  条件是**隔离在独立 TU**（静态库按 archive member 拉符号）。
+  实证守卫：`cq_tests_c_abi` 只链 cq_core、不链 cq_pal_apple 必须通过。
+- **判断抽象放哪层的规则**：看实现必然落在哪。只能用平台原生能力实现的
+  （shader 源码 / 平台 SDK）→ 抽象放 PAL（如 `IBlitPass` 已从 GFX 层移到 `pal/gfx.h`）。
 命令：`./tools/build/build_core.sh --platform=apple --config=Debug --test`
 
 > ⚠️ 旧版 HANDOFF 把「子步骤 3 纹理导入」标为下一步，是**错的**：

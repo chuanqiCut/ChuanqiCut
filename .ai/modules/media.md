@@ -393,3 +393,40 @@ $(dirname $CMAKE_BIN)/ctest --test-dir build -R pala_encode        # 原 60 帧 
 - PALA-011（VideoToolbox `IFrameDecoder` 适配器）→ 端到端真实解码；落地后 `DecoderPool` 的
   `IDecoderFactory` 由 PAL 实现，并接 CORE-007 `ICapabilities` 覆盖 `max_hardware_paths`。
 - 多并发 lease 需求明确时，向冻结接口 `IFrameCache` 增 `Release(at)`（需 MEDIA-010 评审）。
+
+---
+
+# 2026-10-02 追加（BIND-003 子步骤 5）
+
+## `PalFrameProvider` / `PalFrameProviderFactory`（新增）
+
+- 头：`core/include/cq/media/pal_frame_provider.h`
+- 实现：`core/src/media/pal_frame_provider.cpp`（**独立 TU**，见 ADR-0011）
+
+作用：把 **PAL 的 `IFrameProvider`**（平台能力）适配成 **core 的 `FrameProvider`**
+（编辑侧抽象），使 core 的预览渲染器与 C ABI 门面能在不引用任何平台符号的前提下
+拿到取帧能力。
+
+⚠️ 这是**形状适配**，不引入第二套取帧逻辑：PAL 侧实现内部仍用
+MEDIA-020 `SystemFrameProvider` 做编排（精确 seek / B 帧），
+Apple 侧 = PALA-010 demux + PALA-011 VideoToolbox。
+
+### 适配不完美之处（写明，不要假装等价）
+
+- PAL 契约只承诺「精确 seek」，无 `SeekPolicy` 概念 → **非 `kExact` 策略一律拒绝**
+  （返回 `kInvalidArgument`），不静默降级。真需要 `kKeyframeBefore`/`kNearest`
+  （缩略图 / 快速 scrub）时，应先扩展 PAL 接口携带策略。
+- PAL `IFrameProvider` 未暴露帧缓存 / 解码器池注入点 → `SetFrameCache` /
+  `SetDecoderPool` 在此**不生效**。预览若要接 MEDIA-011 缓存需先扩展 PAL 契约。
+
+## `SystemFrameProvider` 新增 `AdoptDecoder`
+
+原构造签名收裸 `IFrameDecoder*` 且明确**不接管**。单测里 decoder 是栈对象没问题，
+但 PAL 装配时它是 `new` 出来的 —— 没有接管能力，装配方就得自己想办法让二者
+同生命周期，容易漏（pitfalls P15）。
+
+新增：
+- `void AdoptDecoder(std::unique_ptr<IFrameDecoder>)`
+- 工厂重载 `CreateSystemFrameProvider(PalPtr<IMediaDemuxer>, std::unique_ptr<IFrameDecoder>)`
+
+PAL 装配走重载版本即可。

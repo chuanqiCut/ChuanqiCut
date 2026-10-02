@@ -327,6 +327,23 @@ if(APPLE)
     apply_cq_warnings(cq_tests_preview_renderer)
     add_test(NAME preview_renderer COMMAND cq_tests_preview_renderer)
 
+    # ---- BIND-003 子步骤 5：预览 C ABI（**真正的 C 翻译单元**）----
+    # 与 core 侧 test_c_abi.c 同性质：只要 cq_sdk.h 混进 C++ 类型，本 TU 就编译失败。
+    # 分工：本用例验证 C ABI 契约（句柄/状态码/诊断量）；像素正确性由
+    # preview_renderer（C++）用例覆盖——读回像素要用 Apple 内部辅助，C 侧做不到。
+    add_executable(cq_tests_c_abi_preview
+        unit/test_c_abi_preview.c)
+    set_target_properties(cq_tests_c_abi_preview PROPERTIES LINKER_LANGUAGE CXX)
+    target_include_directories(cq_tests_c_abi_preview PRIVATE
+        ${CMAKE_SOURCE_DIR}/core/include)
+    target_compile_definitions(cq_tests_c_abi_preview PRIVATE
+        CQ_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
+    # 链 cq_pal_apple：预览 ABI 的创建路径要经 PAL 的图形设备 / blit pass / 帧提供器。
+    target_link_libraries(cq_tests_c_abi_preview PRIVATE
+        cq_core cq_pal_apple
+        ${AVFOUNDATION_T_LIB} ${COREMEDIA_T_LIB})
+    add_test(NAME c_abi_preview COMMAND cq_tests_c_abi_preview)
+
     # ---- PALA-012：Apple 编码与封装验收（AVAssetWriter + PixelBufferAdaptor）----
     # 端到端：PALA-010 真实 demux + PALA-011 硬解 -> AppleVideoEncoder 写 H.264 MP4 ->
     # 重解码输出首帧中心像素对照 (0,188,0,255) + popen ffprobe 验证 codec/分辨率/帧数/时长。

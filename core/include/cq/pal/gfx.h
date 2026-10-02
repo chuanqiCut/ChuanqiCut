@@ -194,6 +194,31 @@ public:
     virtual void ReleaseTexture(TextureHandle texture) = 0;
 };
 
+// ===========================================================================
+// 全屏纹理拷贝 pass（ExternalImage 的下游消费者）
+// ===========================================================================
+// 为什么定义在 **PAL** 而不是 GFX 层（core/include/cq/gfx/）：
+//   它必然由**平台原生 shader** 实现（MSL / GLSL ES），而平台原生 shader 按红线 #6
+//   只允许出现在 pal/<platform>/。GFX 层在 PAL 之上，若在此定义抽象、再由 PAL 实现，
+//   就会出现 PAL 反向 include GFX 头，破坏分层。故放在 PAL 层，GFX/预览层持有即可。
+//
+// ⚠️ SPIR-V 链（Portable 层 shaders/src/*.glsl）尚未落地，MSL 是**唯一可用路径**。
+//    这属「能力缺失降级」（无 Portable 可用 → 走平台原生），不是「平台特化优化」
+//    ——后者必须先有 Portable 实现且收益 ≥ 20% 才允许合入。
+//
+// uv 约定（不得上下颠倒）：uv(0,0) = 图像左上，uv(1,1) = 图像右下。
+// 该约定由 test_preview_renderer.cpp 的「RT 顶红 / 底蓝」两项断言锁定。
+class IBlitPass : public IPalResource {
+public:
+    // 在给定编码器上编码一次全屏绘制。调用前调用方须已 BeginRenderPass。
+    // src 可以是零拷贝导入的解码帧纹理，也可以是普通纹理。
+    //
+    // 收 **PAL 的** ICommandEncoder（不是 GFX 的 IGfxEncoder）：本类在 PAL 层，
+    // 不能反向依赖 GFX。GFX 侧经 `IGfxEncoder::PalEncoder()` 取到底层编码器再传入
+    // （与既有的 `IGfxDevice::PalDevice()` 同一套路）。
+    virtual Status Encode(ICommandEncoder& encoder, TextureHandle src) = 0;
+};
+
 class IGraphicsDevice : public IPalResource {
 public:
     virtual Status CreateTexture(const TextureDesc& desc, PalPtr<ITexture>& out) = 0;
@@ -215,6 +240,13 @@ public:
 
 // 工厂（由 pal/apple / pal/android / pal/ohos 实现）。返回 PalPtr，RAII 安全。
 Status CreateGraphicsDevice(const GraphicsDeviceDesc& desc, PalPtr<IGraphicsDevice>& out_device);
+
+// 创建全屏拷贝 pass（见 IBlitPass）。target_format 必须与渲染目标格式一致——
+// Metal 的管线在创建时即绑定目标像素格式，故它是**创建期**参数，不是每次编码的参数。
+// ⚠️ 由各平台用**平台原生 shader** 实现；未实现的平台会在此符号上链接失败
+//    （诚实暴露「该端暂无预览能力」，不伪造空实现）。
+Status CreateBlitPass(IGraphicsDevice* device, TextureFormat target_format,
+                      PalPtr<IBlitPass>& out_pass);
 
 }  // namespace cq
 

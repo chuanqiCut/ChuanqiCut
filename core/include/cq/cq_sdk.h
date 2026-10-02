@@ -132,6 +132,80 @@ typedef void (*CQSnapshotObserver)(CQSnapshot snapshot, void* ctx);
 
 void cq_session_set_observer(CQSession* session, CQSnapshotObserver observer, void* ctx);
 
+/* ==========================================================================
+ * 预览（BIND-003）
+ * ==========================================================================
+ * CQPreview = 「时间线 + 素材表 + 取帧 + 渲染」的会话级预览器。
+ * 典型用法：create → register_asset(若干) → add_clip(若干) → 每帧 render_frame。
+ *
+ * 时间一律 RationalTime{value, timescale}（红线 #4，禁止浮点秒）。
+ * 本项目网格 timescale = 120000（ADR-0009）。
+ *
+ * ⚠️ 平台能力依赖：预览需要 PAL 的图形设备 / 全屏拷贝 pass / 帧提供器三项后端。
+ *    缺失任一后端时 cq_preview_create 返回 NULL —— 这是**运行时**失败，上层据此
+ *    走「预览不可用」路径。**不要**用编译期宏判断平台能力（红线 #3）。
+ */
+
+typedef struct CQPreview CQPreview;
+
+/* 创建预览器。width/height 为离屏渲染目标尺寸；失败返回 NULL。
+ * 注意：当前为「拉伸铺满」，不做宽高比适配（letterbox 待 UI 需求明确后加）。 */
+CQPreview* cq_preview_create(uint32_t width, uint32_t height);
+
+/* 释放；传 NULL 安全（幂等）。 */
+void cq_preview_destroy(CQPreview* preview);
+
+/* 注册素材（asset_id → 文件路径）。path 会被**拷贝**进内核，调用方可立即释放。
+ * 重复注册同一 id 会整体替换。 */
+int32_t cq_preview_register_asset(CQPreview* preview, uint64_t asset_id, const char* path);
+
+/* 添加片段到视频轨。
+ *   track_id  —— 轨道 id；不存在时**自动创建**一条视频轨
+ *   asset_id  —— 必须先 register_asset
+ *   start     —— 时间线起点
+ *   duration  —— 时间线占时
+ *   source_in —— 素材内入点
+ * 同轨片段不得重叠（MODEL-001 语义），重叠返回 kInvalidArgument(7000)。
+ *
+ * ⚠️ 本期**只渲染第一条命中的视频轨** —— 多轨叠加/转场合成要等 RenderGraph
+ *    （RENDER-001）落地。这里不假装支持多轨合成。 */
+int32_t cq_preview_add_clip(CQPreview* preview, uint64_t track_id, uint64_t asset_id,
+                            int64_t start_value, int32_t start_timescale,
+                            int64_t duration_value, int32_t duration_timescale,
+                            int64_t source_in_value, int32_t source_in_timescale);
+
+/* 渲染 pts 处一帧到离屏目标，out_texture 返回**可显示的平台纹理句柄**
+ * （中性句柄：iOS/macOS 上 reinterpret 为 id<MTLTexture>）。
+ *
+ * ⚠️ 绝不要在 Swift 侧「读回像素再上传」—— 每帧一次 CPU 往返会直接毁掉预览帧率。
+ *
+ * 返回：
+ *   0     —— 成功
+ *   1001  —— kIoNotFound：pts 处是空隙（无片段覆盖），已清屏为黑，out_texture 仍有效
+ *   7000  —— kInvalidArgument：素材未注册 / 时间参数非法
+ *   其它  —— 解码 / 导入 / 渲染失败原样透传
+ *
+ * out_texture 在下次 render_frame 或 resize 之前保持有效。 */
+int32_t cq_preview_render_frame(CQPreview* preview, int64_t pts_value, int32_t pts_timescale,
+                                void** out_texture);
+
+/* 改变离屏目标尺寸。会丢弃当前目标纹理（此前返回的 out_texture 失效）。 */
+int32_t cq_preview_resize(CQPreview* preview, uint32_t width, uint32_t height);
+
+/* ---- 诊断量（不是渲染结果，供日志/埋点与自测使用）----
+ * 静态素材（如彩条）的像素相同，无法区分「取到了 t 时刻的帧」与「复用旧帧」，
+ * 故必须能取到实际帧 pts。 */
+
+/* 上一帧是否命中片段（0/1）。 */
+int32_t cq_preview_last_hit_clip(const CQPreview* preview);
+
+/* 上一帧导入是否退化为 CPU 拷贝（0/1）。稳定态应为 0；持续为 1 说明零拷贝链路断了。 */
+int32_t cq_preview_last_cpu_fallback(const CQPreview* preview);
+
+/* 上一帧**实际取到的**解码帧 pts。out 可为 NULL（仅查询不取回）。 */
+int32_t cq_preview_last_frame_pts(const CQPreview* preview, int64_t* out_value,
+                                  int32_t* out_timescale);
+
 #ifdef __cplusplus
 } /* extern "C" */
 #endif

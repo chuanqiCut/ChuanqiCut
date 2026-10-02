@@ -41,6 +41,19 @@
 - Swift 绑定验收有两条路径：`swift test`（SPM 集成）与 `run_smoke.sh`（swiftc 直编）。
   后者不依赖 binaryTarget，SPM 出问题时仍能证明"Swift 能调内核"。
 
+## 分层与链接硬规则（2026-10-02 定）
+
+- **core 不调 PAL 工厂**（既有惯例，全库 grep 可核：调用只发生在 tests/ 与 pal/）。
+  理由：cq_core 若引用 PAL 符号，没有 PAL 后端的平台（Android / ohos）会链接失败。
+- **确需调时，必须隔离在独立 TU**。静态库按 archive member 粒度拉符号，
+  独立 TU 才能保证「不用该能力的目标」不被牵出 PAL 依赖。
+  现有两个：`core/src/media/pal_frame_provider.cpp`、`core/src/preview/cq_sdk_preview.cpp`。
+  回归验证：`cq_tests_c_abi` 只链 `cq_core`、不链 `cq_pal_apple`，必须保持通过。
+- **抽象放哪层，看实现必然落在哪**。只能用平台原生能力实现的（shader 源码 /
+  平台 SDK），抽象放 PAL（如 `IBlitPass` 在 `pal/gfx.h`）；放上层会导致 PAL
+  反向依赖上层。上层要用时走逃生口（`IGfxDevice::PalDevice()` /
+  `IGfxEncoder::PalEncoder()`）。
+
 ## 依赖治理硬规则（ADR-0008）
 - FFmpeg upstream 用 **GitHub 官方镜像** `https://github.com/FFmpeg/FFmpeg.git`（ffmpeg.org 登记为官方 mirror），本地 git 管理。
 - **源码集成的 git 依赖一律 `pin="commit"` + 40 位 hash。禁止 `pin="tag"`。**

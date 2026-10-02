@@ -82,6 +82,13 @@ public:
     virtual void Draw(uint32_t vertex_count) = 0;
     virtual void DrawIndexed(uint32_t index_count) = 0;
     virtual void End() = 0;
+
+    // 底层 PAL 编码器（逃生口）。
+    // 为什么需要：某些 pass（如 IBlitPass）**必然**由平台原生 shader 实现，按红线 #6
+    // 只能落在 PAL 层；而 PAL 不能反向依赖本层的 IGfxEncoder。故这类 pass 收 PAL 的
+    // ICommandEncoder，由本方法取出后传入（与 IGfxDevice::PalDevice() 同一套路）。
+    // 日常 RenderNode 仍应只用上面的 GFX 方法，不要绕过。
+    virtual ICommandEncoder* PalEncoder() = 0;
 };
 
 // ===========================================================================

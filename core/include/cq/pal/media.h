@@ -122,6 +122,13 @@ public:
 
     // 归还帧（image / pcm 内存回到 provider 池）。
     virtual void ReleaseFrame(MediaFrame& frame) = 0;
+
+    // 查询媒体时长。
+    // ⚠️ 这是 2026-10-02 补的**接口缺陷**（预览首次经 PAL 取帧时暴露）：
+    //    core 的 `FrameProvider`（MEDIA-010）要求 GetDuration，而本接口原本没有，
+    //    适配器无处可取——只能返回错误，上层就拿不到素材时长（比如无法把 clip
+    //    长度限制在素材时长内）。时长是帧提供器的基本属性，故补在此处。
+    virtual Status GetDuration(RationalTime& out) const = 0;
 };
 
 // ---------------------------------------------------------------------------

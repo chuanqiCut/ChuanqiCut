@@ -27,8 +27,8 @@
 #include "cq/base/concurrency.h"                 // CancelToken
 #include "cq/base/status.h"
 #include "cq/base/time.h"                        // RationalTime
-#include "cq/gfx/blit_pass.h"                    // IBlitPass
-#include "cq/gfx/gfx_device.h"                   // IGfxDevice
+#include "cq/gfx/gfx_device.h"                   // IGfxDevice / IGfxEncoder
+#include "cq/pal/gfx.h"                          // IBlitPass（PAL 层，平台原生 shader 实现）
 #include "cq/media/asset_registry.h"             // AssetRegistry
 #include "cq/media/frame_provider.h"             // FrameProvider
 #include "cq/media/frame_provider_factory.h"     // IFrameProviderFactory

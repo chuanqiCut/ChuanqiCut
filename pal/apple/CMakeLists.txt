@@ -18,12 +18,12 @@ add_library(cq_pal_apple STATIC
     media_muxer.mm
     capabilities.mm
     capabilities_apple.h
-    # BIND-003 子步骤 4：预览链路的两个 Apple 装配点。
-    # blit_pass.mm     —— 全屏拷贝 pass（MSL 源在 shaders/blit_fullscreen_msl.h）
-    # frame_provider_apple.mm —— PALA-010 + PALA-011 → MEDIA-020 的装配
-    blit_pass.h
+    # BIND-003 子步骤 4/5：预览链路的两个 Apple 装配点。
+    # 两者都实现 **PAL 契约**（工厂声明在 core/include/cq/pal/{gfx,media}.h），
+    # 故这里没有对应的 .h —— 声明在 PAL，实现在各平台。
+    #   blit_pass.mm            —— CreateBlitPass（MSL 源在 shaders/blit_fullscreen_msl.h）
+    #   frame_provider_apple.mm —— CreateFrameProvider（PALA-010 + PALA-011 → MEDIA-020）
     blit_pass.mm
-    frame_provider_apple.h
     frame_provider_apple.mm)
 
 target_include_directories(cq_pal_apple PUBLIC

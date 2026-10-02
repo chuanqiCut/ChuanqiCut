@@ -24,10 +24,11 @@
 | 媒体 | BIND-003 子步骤 2 取帧链路验证 | ✅ |
 | 预览 | 子步骤 3 纹理导入（零拷贝） | ✅ **PALA-002 已覆盖**（2026-09-26） |
 | 预览 | 子步骤 4 预览渲染器 | ✅ |
-| **预览** | **子步骤 5 C ABI 封装** | ⏭️ **下一步** |
-| UI | 子步骤 6 / UIA-003 MTKView 嵌入 | 待做 |
+| 预览 | 子步骤 5 C ABI 封装 | ✅ |
+| **UI** | **子步骤 6 / UIA-003 MTKView 嵌入** | ⏭️ **下一步** |
+| 预留 | Swift 绑定（bindings/swift 补 cq_preview_*） | 待做 |
 
-**门禁**：`Debug 33/33`、`Release 33/33` 全绿。
+**门禁**：`Debug 34/34`、`Release 34/34` 全绿。
 命令：`./tools/build/build_core.sh --platform=apple --config=Debug --test`
 
 > ⚠️ 旧版 HANDOFF 把「子步骤 3 纹理导入」标为下一步，是**错的**：
@@ -37,16 +38,19 @@
 
 ---
 
-## 2. 下一步：BIND-003 子步骤 5~6
+## 2. 下一步：BIND-003 子步骤 6（UIA-003）
 
 **开工前必读**：`docs/tasks/TASK-BIND-003.md`（完整设计 + 6 个子步骤拆分）
 
 | # | 内容 | 要点 |
 |---|---|---|
-| 5 | C ABI 封装 | `cq_preview_*`；导出**中性句柄**（`void*`），Swift 侧 reinterpret 为 MTLTexture |
 | 6 | UIA-003 | SharedUI 内 `UIViewRepresentable`/`NSViewRepresentable` 包 MTKView |
+| 余 | Swift 绑定 | `bindings/swift` 补 `cq_preview_*` 的 Swift 封装，跑 `swift test` + `run_smoke.sh` |
 
-子步骤 4 已落地（2026-10-02），装配形状见下方 §3b —— 做子步骤 5 时直接复用。
+子步骤 4/5 已落地（2026-10-02），装配形状见下方 §3b / §3c。
+
+⚠️ Swift 侧**绝不要**「读回像素再上传」：每帧一次 CPU 往返会直接毁掉预览帧率。
+   直接把 `void*` 句柄 reinterpret 成 `MTLTexture` 交给 MTKView 绘制。
 
 ⚠️ **绝不要**走"读回像素 → Swift 再上传"：CPU 往返每帧一次会直接毁掉预览帧率。
     `gfx_metal_internal.h` 的 `ReadRenderTargetPixels` 只该出现在测试里。
@@ -95,6 +99,26 @@ asset_id→provider 映射 / 上一帧导入的纹理（逐帧 `ReleaseTexture`�
 `LastSourceTime()` / `LastFramePts()`。
 ⚠️ `LastFramePts()` 是**唯一**能证明「渲染的确实是 t 时刻那一帧」的量——
 彩条这类静态素材的像素相同，无法区分「取对了帧」与「复用旧帧」。
+
+## 3c. C ABI 预览（子步骤 5）为什么放 core、以及隔离手段
+
+矛盾：C ABI 门面要装配预览就得拿平台能力，但 **core 从不调 PAL 工厂**
+（全库 grep 确认：调用只发生在 tests/ 与 pal/）。若按平台分裂实现 C ABI，
+`cq_sdk.h` 作为「唯一对外边界」就废了。
+
+解法：
+- `IBlitPass` + `CreateBlitPass` 移入 **`pal/gfx.h`**（它必然是平台原生 shader，
+  本就属 PAL；且 PAL 不能反向依赖 GFX，故 `IGfxEncoder` 补 `PalEncoder()` 逃生口）。
+- 落地 `pal/media.h` 里**悬空 7 天**的 `CreateFrameProvider`；core 侧
+  `PalFrameProvider` 把 PAL `IFrameProvider` 适配成 core `FrameProvider`。
+- 调 PAL 工厂的 TU（`pal_frame_provider.cpp` / `cq_sdk_preview.cpp`）**必须独立**：
+  静态库按 archive member 粒度拉符号，独立 TU 才能保证「不用预览的目标」
+  不被牵出 PAL 依赖。实证：`cq_tests_c_abi` 只链 `cq_core`、不链 `cq_pal_apple`，
+  仍链接通过并运行成功。
+
+诊断量（C 侧可查）：`cq_preview_last_hit_clip` / `last_cpu_fallback` / `last_frame_pts`。
+⚠️ `last_frame_pts` 是**唯一**能证明「渲染的确实是 t 时刻那一帧」的量——
+静态彩条像素相同，无法区分「取对了帧」与「复用旧帧」。
 
 ## 4. 本机环境（已配置完成）
 

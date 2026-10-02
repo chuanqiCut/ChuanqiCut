@@ -52,6 +52,8 @@ public:
         }
     }
 
+    ICommandEncoder* PalEncoder() override { return enc_; }
+
     void Destroy() override {}
 
 private:

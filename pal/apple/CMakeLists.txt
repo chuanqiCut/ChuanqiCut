@@ -17,7 +17,14 @@ add_library(cq_pal_apple STATIC
     media_encode.mm
     media_muxer.mm
     capabilities.mm
-    capabilities_apple.h)
+    capabilities_apple.h
+    # BIND-003 子步骤 4：预览链路的两个 Apple 装配点。
+    # blit_pass.mm     —— 全屏拷贝 pass（MSL 源在 shaders/blit_fullscreen_msl.h）
+    # frame_provider_apple.mm —— PALA-010 + PALA-011 → MEDIA-020 的装配
+    blit_pass.h
+    blit_pass.mm
+    frame_provider_apple.h
+    frame_provider_apple.mm)
 
 target_include_directories(cq_pal_apple PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}
@@ -34,7 +41,7 @@ set_target_properties(cq_pal_apple PROPERTIES
 
 # Objective-C++ 启用 ARC（与项目警告集共存：-Werror -Wconversion -Wshadow -Wold-style-cast）。
 set_source_files_properties(gfx_metal.mm media_demux.mm media_decode.mm media_encode.mm media_muxer.mm
-    capabilities.mm
+    capabilities.mm blit_pass.mm frame_provider_apple.mm
     PROPERTIES COMPILE_FLAGS "-fobjc-arc")
 
 # 项目统一警告集 + -Werror（apply_cq_warnings 已含）。

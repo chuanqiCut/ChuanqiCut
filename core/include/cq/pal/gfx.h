@@ -184,6 +184,14 @@ public:
     //   out_cpu_fallback=true 表示未能零拷贝，已退化为 CPU 拷贝路径（仍可用，性能降级）。
     virtual Status Import(NativeImageHandle image, TextureUsage usage,
                           TextureHandle& out_texture, bool& out_cpu_fallback) = 0;
+
+    // 释放 Import 产出的纹理句柄。
+    // ⚠️ 这是 2026-10-02 补的**接口缺陷修复**（预览渲染器首次真实使用时暴露）：
+    //    Import 返回裸 `TextureHandle`（`CqTexture*`），而该类型在 core 是不完整类型，
+    //    core 侧**没有任何途径**释放它——每帧导入一张就泄漏一张（还额外锁住解码帧的
+    //    IOSurface）。原先只有 Apple 内部辅助 `cq::apple::DestroyTexture` 能释放，
+    //    但 core 调它就会引入平台依赖。故由「谁产出谁回收」：释放能力并入本接口。
+    virtual void ReleaseTexture(TextureHandle texture) = 0;
 };
 
 class IGraphicsDevice : public IPalResource {

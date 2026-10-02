@@ -1,7 +1,8 @@
 # TASK-UIA-003：MTKView 预览视图嵌入
 
-> 日期：2026-10-01
-> 状态：**阻塞 —— 前置依赖未就绪，已调研清楚，待传哲决策**
+> 日期：2026-10-01（完成：2026-10-03）
+> 状态：**已完成（首里程碑：MTKView 嵌入 + 真实帧上屏链路）**
+> 前置（MODEL-001 / GFX-002 / BIND-003 子步骤 1~5）均已就绪，走方案 A2。
 > 依赖：UIA-002 ✅、PALA-001 ✅、PALA-002 ✅
 > 验收：预览画面不经 UI 合成路径（MTKView 直接绘制）
 
@@ -85,19 +86,37 @@ A2 不破坏 PAL 冻结接口，代价更小，**建议走 A2**。
 
 ---
 
-## 四、验收方式（待实现后填）
+## 四、验收方式（2026-10-03 实测回填）
 
-- CTest：离屏渲染一帧并读回像素断言颜色（同 PALA-001 测试手法）
-- macOS：`xcodebuild build` + 启动冒烟，预览区确认非黑屏
-- iOS：真机（iPhone 17 Pro）验证；本机无模拟器运行时，只能出代码
+- **像素级（SharedUI 测试，macOS 实跑）**：
+  - `testIdentityBlitPreservesOrientationAndChannels` —— 已知源纹理（顶红底蓝）
+    blit 后逐字节断言：不上下颠倒、通道不错位（锁定与 PAL blit 同源的几何约定）。
+  - `testGoldenFrameRendersThroughDisplayPath` —— Previewer 渲染 golden 素材
+    0.5s → 中性句柄 reinterpret → blit 到可读纹理 → 非黑像素断言（预览区
+    非黑屏的像素级证据，替代 GUI 截图：XCTest 无窗口宿主，drawable 机制不可靠）。
+- **内核门禁**：Debug 34/34、Release 34/34（含 `GetColorTexture` 接口缺陷修复）。
+- **绑定层**：`swift test` 13/13（Previewer 契约 6 用例，含 `lastFramePts` 语义）；
+  `run_smoke.sh` PASSED。
+- **macOS**：`xcodebuild build` SUCCEEDED（Swift 告警 0）；带
+  `CQ_DEMO_VIDEO` 启动冒烟：进程存活、干净退出。
+- **iOS**：`-sdk iphoneos` 编译 SUCCEEDED；真机验证待设备（本机无模拟器运行时）。
+
+> 诚实说明：App 级「预览区非黑屏」由 SharedUI 像素级用例证明（同一代码路径）；
+> GUI 冒烟只验证「启动 + 渲染不崩溃」，不做截图断言。
 
 ---
 
-## 五、写集（预分配，待启动）
+## 五、写集（实际落地）
 
 | 文件 | 层 |
 |---|---|
-| `core/include/cq/cq_sdk.h` + `core/src/cq_sdk.cpp` | BIND（C ABI 扩展） |
-| `core/src/gfx/preview.cpp`（或并入 cq_sdk.cpp） | 内核 |
+| `bindings/swift/Sources/ChuanqiCut/Previewer.swift` + `Time.swift` | BIND（Swift 投影） |
+| `bindings/swift/Package.swift` / `run_smoke.sh`（链接清单，P23） | BIND |
+| `core/include/cq/pal/gfx.h` + `pal/apple/gfx_metal.mm`（GetColorTexture 缺陷修复，P20） | PAL |
+| `apps/apple/packages/SharedUI/Sources/SharedUI/Editor/PreviewFrameRenderer.swift` | UIA |
 | `apps/apple/packages/SharedUI/Sources/SharedUI/Editor/MetalPreviewView.swift` | UIA |
-| `apps/apple/packages/SharedUI/Tests/SharedUITests/` | UIA 测试 |
+| `apps/apple/packages/SharedUI/Sources/SharedUI/Editor/PreviewZone.swift` / `EditorView.swift` / `AppEntry.swift` | UIA |
+| `apps/apple/{mac,ios}` App 入口（DEBUG 冒烟钩子） | App |
+| `bindings/swift/Tests/` + `apps/apple/packages/SharedUI/Tests/` | 测试 |
+
+> C ABI 本体（`cq_sdk.h`）在子步骤 5 已就绪，本任务**未改动**。

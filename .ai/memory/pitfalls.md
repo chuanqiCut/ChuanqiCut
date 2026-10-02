@@ -342,6 +342,73 @@
   留着的下场是某天有人按声明去调，撞链接错误才被发现。
 - 日期 / 来源 / 验证状态：2026-10-02 / BIND-003 子步骤 5 / **verified**
 
+### P20 · C ABI 承诺「reinterpret 为 id<MTLTexture>」，PAL 却返回 CqTexture* 包装 —— 首个真实消费方即崩
+- 现象：UIA-003 Swift 侧首次把 `cq_preview_render_frame` 的 out_texture
+  reinterpret 成 MTLTexture，`objc_msgSend` 打在 C++ 对象（`CqTexture`）上，
+  段错误。绑定层测试只断言句柄非空，**没有消费句柄**，所以是绿的。
+- 根因：`CqRenderTarget::GetColorTexture()` 惰性创建 `CqTexture*` 包装返回，
+  而 `cq_sdk.h` / `preview_renderer.h` 的契约写明「中性句柄，UI 侧 reinterpret
+  为 MTLTexture」。**契约与实现不符**，且没有任何跨层测试消费过这个句柄。
+- 修复：Apple 实现改为返回 `(__bridge TextureHandle)color_tex_`（裸
+  MTLTexture），删除包装；`pal/gfx.h` 把「导出给 UI 显示」与「可送
+  SetTexture 的包装」两种句柄语义写清（与 PALA-001 的 `Handle()` 修复同一
+  「首次真实使用暴露」模式）。
+- 防复发规则：**凡契约里写了 reinterpret 的句柄，必须有跨层测试真的
+  reinterpret 并消费它**（本任务已补 SharedUI 像素级用例）。
+- 日期 / 来源 / 验证状态：2026-10-03 / UIA-003 / **verified**（Debug 34/34 +
+  SharedUI 像素级用例全绿；旧实现下该用例必崩）
+
+### P21 · 本机（Intel Mac + AMD GPU / macOS 15.4）`MTLTexture.getBytes` 读不到 GPU 写入内容
+- 现象：渲染 pass（哪怕只有 clear）写入纹理后，`getBytes` 返回**全零**
+  （覆盖测试预填的非零值 —— 说明读到了内存、只是内容是旧的/空的）。
+  `.shared` 与 `.managed` 存储一致复现；`waitUntilCompleted` + `error==nil`。
+- 已知可行路径：**blit 到 Shared MTLBuffer → 读 `contents()`**
+  （C++ 侧 `ReadRenderTargetPixels` 从一开始就是这个形状——原因当时没写明，
+  现在补上：这就是它存在的理由之一）。Swift 测试已改用同一路径。
+- 防复发规则：读回 GPU 产物**只走 blit→Buffer→contents**，不要用
+  `getBytes` 直读渲染目标；跨驱动行为不可假设。
+- 日期 / 来源 / 验证状态：2026-10-03 / UIA-003 SharedUI 测试 / **verified**
+  （三种存储/读回组合对照实验，getBytes 三路全零、Buffer 路径正确）
+
+### P22 · 新 SDK 的 SwiftUI 也导出 `Preview` 类型 —— 无前缀 Swift 类型名会撞车
+- 现象：绑定层类型名 `Preview` 在任何同时 import SwiftUI 的模块里报
+  "'Preview' is ambiguous for type lookup"（SwiftUI 有自己的 `Preview`）。
+  SharedUI 全部 UI 文件都同时 import 两者，必然撞。
+- 修复：绑定类型改名 **`Previewer`**（对应 CQPreview 的「预览器」语义），
+  并在 Preview.swift 头注明原因。
+- 防复发规则：绑定层「不带 CQ 前缀」的命名惯例要过一遍**消费方会 import
+  的系统模块**（SwiftUI/UIKit/AppKit/SwiftData…）做撞名检查。
+- 日期 / 来源 / 验证状态：2026-10-03 / UIA-003 / **verified**
+
+### P23 · xcframework 静态库拉入媒体/预览 TU 后，Swift 侧必须显式链接系统框架 + libc++
+- 现象：`swift test` 链接测试包报 `VTDecompressionSession*` /
+  `kCMTimeInvalid` 等 undefined symbols。此前一直绿，因为**没有任何 Swift
+  测试引用过预览 TU**；新增 Previewer 测试后 `cq_sdk_preview.o` 被拉入 →
+  传递拉入 PAL 媒体/图形 TU → 需要 VideoToolbox / CoreMedia / Metal /
+  AVFoundation / CoreVideo / CoreGraphics / AudioToolbox / QuartzCore /
+  IOSurface(macOS only) + libc++。
+- 修复：`bindings/swift/Package.swift` 两个 target 的 linkerSettings 与
+  `run_smoke.sh` 链接清单都补齐（与 `ChuanqiCut.podspec` 的 ss.frameworks
+  对齐；IOSurface 用 `.when(platforms: [.macOS])`）。
+- 防复发规则：内核静态库的**系统框架依赖清单只有一处真源**（podspec），
+  SPM 与 smoke 脚本的链接清单必须与之同步改；「编译绿 ≠ 能链接」。
+- 日期 / 来源 / 验证状态：2026-10-03 / UIA-003 / **verified**
+
+### P24 · 预览诊断量 `last_frame_pts` 的初值语义（空隙帧后也是 kOk）
+- 现象：空时间线渲染（kIoNotFound）后查 `cq_preview_last_frame_pts` 返回
+  kOk + 内核初值 `{0, 1}`——Swift 侧把它包成 Optional（无帧时 nil）是
+  **错误抽象**：内核没有「无记录」信号。
+- 约定：`lastFramePts` 返回非 Optional；「有没有帧」一律看
+  `lastHitClip`。
+- 日期 / 来源 / 验证状态：2026-10-03 / UIA-003 / **verified**
+
+### P25 · macOS 的 `NSView.setNeedsDisplay` 要传 rect，iOS 无参 —— MTKView 跨平台重绘要封装
+- 现象：Swift 6 下在共享的 MTKView 子类里直接调 `setNeedsDisplay()`，
+  macOS 分支报 missing argument（NSView 版本要 `NSRect`）。
+- 修复：封装 `requestRedraw()`（macOS: `needsDisplay = true`；iOS:
+  `setNeedsDisplay()`），`enableSetNeedsDisplay=YES` 时即触发一次 draw。
+- 日期 / 来源 / 验证状态：2026-10-03 / UIA-003 / **verified**
+
 ---
 
 ## 已修正的历史错误（供参考，避免重犯）

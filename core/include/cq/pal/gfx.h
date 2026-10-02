@@ -124,6 +124,12 @@ public:
 
 class IRenderTarget : public IPalResource {
 public:
+    // RT 背后的**可显示原生纹理**（Apple: id<MTLTexture>，Android: 平台纹理对象）。
+    // 归 RT 所有，RT 重建前有效。用途仅限「导出给 UI 显示」（预览路径）——
+    // UI 侧对中性句柄做平台 reinterpret，**不可**送回 ICommandEncoder::SetTexture
+    // （那是 INativeImageImporter::Import / CreateTexture 产出的 CqTexture* 包装，
+    // 两种句柄底层指向可以相同、但类型语义不同 —— 2026-10-03 UIA-003 修复：
+    // Apple 实现曾返回包装对象，Swift 侧按 cq_sdk.h 契约 reinterpret 直接崩溃）。
     virtual TextureHandle GetColorTexture() = 0;
     virtual uint32_t GetWidth() const = 0;
     virtual uint32_t GetHeight() const = 0;

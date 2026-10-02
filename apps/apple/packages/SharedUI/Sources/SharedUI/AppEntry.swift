@@ -36,6 +36,14 @@ public final class EditorViewModel: ObservableObject {
     /// 内核能力（预览区 / 导出 UI 可据此决定降级展示）。
     @Published public private(set) var capabilities: [Capability: CapabilityValue] = [:]
 
+    /// 预览门面（BIND-003 子步骤 6）。nil = 内核预览后端缺失（链接不到 PAL
+    /// 图形 / 解码后端），预览区据此**运行时**降级展示（红线 #3，不用编译期判断）。
+    public private(set) var preview: Previewer?
+
+    /// 播放头。预览视图按需渲染该时刻的画面（有理数时间，红线 #4）。
+    @Published public private(set) var playhead: RationalTime = RationalTime(
+        value: 0, timescale: RationalTime.projectTimescale)
+
     // MARK: 内核会话
 
     private let session: Session
@@ -48,6 +56,7 @@ public final class EditorViewModel: ObservableObject {
         self.session = session
         self.snapshot = session.currentSnapshot
         self.knownVersion = session.currentSnapshot.version
+        self.preview = Previewer(width: 1280, height: 720)
 
         // 订阅快照变更：内核 session 线程 → 绑定层 main queue → 本处 MainActor。
         session.setSnapshotObserver { [weak self] snap in
@@ -75,6 +84,43 @@ public final class EditorViewModel: ObservableObject {
         }
         capabilities = result
     }
+
+    // MARK: 预览（BIND-003 子步骤 6）
+
+    /// 推进播放头（预览视图按需重绘该时刻）。时间值由调用方以整数给出。
+    public func setPlayhead(_ t: RationalTime) {
+        playhead = t
+    }
+
+#if DEBUG
+    /// UIA-003 启动冒烟辅助：从环境变量 `CQ_DEMO_VIDEO` 载入演示素材，
+    /// 在轨道 1 铺一条 5 秒片段并把播放头放到 0.5s（120000 timescale 的 60000）。
+    ///
+    /// 变量未设置或文件不存在时不做任何事（返回 false）—— 预览保持黑屏，
+    /// 等真实素材导入（UIA-005）。App 正式路径**不依赖**本方法。
+    ///
+    /// ⚠️ 直接装配的是预览本地的装配视图（cq_preview_* 的 staging 时间线），
+    ///    不走 Session Command —— 这是 BIND-003 阶段性形状（预览与 Session
+    ///    模型的同步等 RENDER-001 / MODEL 接入后收口），不是 UI 绕过模型的先例。
+    @discardableResult
+    public func installDemoClipFromEnvironment() -> Bool {
+        guard let path = ProcessInfo.processInfo.environment["CQ_DEMO_VIDEO"],
+              FileManager.default.fileExists(atPath: path),
+              let preview else {
+            return false
+        }
+        let ts = RationalTime.projectTimescale
+        let ok = preview.registerAsset(id: 1, path: path).isOK
+            && preview.addClip(
+                trackId: 1, assetId: 1,
+                start: RationalTime(value: 0, timescale: ts),
+                duration: RationalTime(value: 5 * Int64(ts), timescale: ts),
+                sourceIn: RationalTime(value: 0, timescale: ts)).isOK
+        guard ok else { return false }
+        setPlayhead(RationalTime(value: 60000, timescale: ts))
+        return true
+    }
+#endif
 
     // MARK: 快照回流
 

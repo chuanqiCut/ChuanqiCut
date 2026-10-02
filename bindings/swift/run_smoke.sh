@@ -52,13 +52,23 @@ DEPLOY="15.4"
 # 库名已改为 Unix 标准的 libChuanqiCut.a（2026-09-30），故 -L/-l 可用：
 # 此前叫 ChuanqiCut.a 时 `-lChuanqiCut` 找不到 —— `-lNAME` 只匹配 `libNAME.a`。
 # -lc++ 仍然需要：内核是 C++20。
+# 系统框架同样要显式列出（与 ChuanqiCut.podspec 的 ss.frameworks 一致）：
+# smoke 现在会创建 Preview → 拉入 cq_sdk_preview.o → 传递拉入 PAL 图形/解码
+# TU → VideoToolbox / CoreMedia / Metal 等符号必须有归属（2026-10-02 实测）。
+FRAMEWORKS="Foundation Metal AVFoundation CoreMedia VideoToolbox CoreVideo \
+CoreGraphics AudioToolbox QuartzCore IOSurface"
+FW_FLAGS=()
+for fw in $FRAMEWORKS; do FW_FLAGS+=(-framework "$fw"); done
+
 xcrun swiftc -O \
     -target "${HOST_ARCH}-apple-macosx${DEPLOY}" \
     -I "$SCRIPT_DIR/Sources/CChuanqiCut/include" \
     "$SCRIPT_DIR/Sources/ChuanqiCut/ChuanqiCut.swift" \
+    "$SCRIPT_DIR/Sources/ChuanqiCut/Time.swift" \
+    "$SCRIPT_DIR/Sources/ChuanqiCut/Preview.swift" \
     "$SCRIPT_DIR/Sources/ChuanqiCut/Session.swift" \
     "$SCRIPT_DIR/Tests/SwiftSmoke/main.swift" \
-    -L "$LIB_DIR" -lChuanqiCut -lc++ \
+    -L "$LIB_DIR" -lChuanqiCut -lc++ "${FW_FLAGS[@]}" \
     -o "$OUT"
 
 echo "==> run"

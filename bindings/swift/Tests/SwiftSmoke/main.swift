@@ -77,6 +77,22 @@ session.submit("second") { .ok }
 _ = sem.wait(timeout: .now() + 5)
 check(box.version == 2, "观察者收到递增后的版本 2")
 
+// ---- 预览（BIND-003 子步骤 6）----
+// 链接级 + 契约级证明：cq_preview_* 在库内且可调用；空隙帧语义正确
+// （kIoNotFound + 仍返回清屏黑的可显示句柄）。像素级验证在 SharedUI 测试
+// （离屏 RT 是 private 存储，读回要走 blit，由 PreviewFrameRenderer 的测试做）。
+guard let preview = Previewer(width: 64, height: 64) else {
+    print("FAIL: Preview 创建失败（PAL 预览后端缺失或设备创建失败）")
+    exit(1)
+}
+check(preview.renderFrame(pts: RationalTime(value: 60000, timescale: 120000)) == .ioNotFound,
+      "空时间线渲染返回 ioNotFound")
+check(preview.textureHandle != nil, "空隙帧仍返回可显示句柄（清屏黑）")
+check(!preview.lastHitClip, "空时间线未命中片段")
+check(preview.lastFramePts == RationalTime(value: 0, timescale: 1),
+      "无帧记录时 last_frame_pts 为内核初值 0/1")
+check(preview.lastCpuFallback == false, "无导入即无 CPU 退化")
+
 print(failures == 0 ? "PASSED" : "FAILED (\(failures) failures)")
 exit(failures == 0 ? 0 : 1)
 

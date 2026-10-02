@@ -43,13 +43,45 @@ let package = Package(
             //    不写这一行时 `swift build` 仍然成功（library target 只编译不链接），
             //    直到 `swift test` 要链接可执行宿主时才报 "symbol(s) not found" ——
             //    即：编译绿 ≠ 能链接（又一次"绿灯≠可用"）。
-            linkerSettings: [.linkedLibrary("ChuanqiCut")]
+            //
+            // ⚠️ 系统框架清单与 ChuanqiCut.podspec 的 ss.frameworks 一致：一旦链接
+            //    拉入预览 / 媒体 TU（cq_sdk_preview.o → PAL 图形 + 解码），VideoToolbox /
+            //    CoreMedia / Metal 等符号就必须有归属（2026-10-02 UIA-003 实测）。
+            //    libc++ 同理 —— 内核是 C++20，之前测试碰不到 C++ TU 所以没暴露。
+            linkerSettings: [
+                .linkedLibrary("ChuanqiCut"),
+                .linkedLibrary("c++"),
+                .linkedFramework("Foundation"),
+                .linkedFramework("Metal"),
+                .linkedFramework("AVFoundation"),
+                .linkedFramework("CoreMedia"),
+                .linkedFramework("VideoToolbox"),
+                .linkedFramework("CoreVideo"),
+                .linkedFramework("CoreGraphics"),
+                .linkedFramework("AudioToolbox"),
+                .linkedFramework("QuartzCore"),
+                // IOSurface 是 macOS 专有框架（iOS SDK 无此框架，PALA-002 已踩过）。
+                .linkedFramework("IOSurface", .when(platforms: [.macOS])),
+            ]
         ),
         .target(
             name: "ChuanqiCut",
             dependencies: ["CChuanqiCut"],
             path: "Sources/ChuanqiCut",
-            linkerSettings: [.linkedLibrary("ChuanqiCut")]
+            linkerSettings: [
+                .linkedLibrary("ChuanqiCut"),
+                .linkedLibrary("c++"),
+                .linkedFramework("Foundation"),
+                .linkedFramework("Metal"),
+                .linkedFramework("AVFoundation"),
+                .linkedFramework("CoreMedia"),
+                .linkedFramework("VideoToolbox"),
+                .linkedFramework("CoreVideo"),
+                .linkedFramework("CoreGraphics"),
+                .linkedFramework("AudioToolbox"),
+                .linkedFramework("QuartzCore"),
+                .linkedFramework("IOSurface", .when(platforms: [.macOS])),
+            ]
         ),
         .testTarget(
             name: "ChuanqiCutTests",

@@ -1,7 +1,7 @@
 # TASK-BIND-003：C ABI 预览接口（含取帧接入 session）
 
 > 日期：2026-10-02
-> 状态：**子步骤 1~4 已完成**，5（C ABI 封装）/ 6（UIA-003）待做
+> 状态：**子步骤 1~5 完成**；6（UIA-003）已于 2026-10-03 完成（详见该文件）
 > 依赖：MODEL-001 ✅、GFX-002 ✅、PALA-011 ✅、PALA-002 ✅、MEDIA-020 ✅
 > 验收：`cq_preview_render_frame(pts)` 能按时间线解出该时刻的帧并显示
 
@@ -14,7 +14,7 @@
 | 3 | 纹理导入（零拷贝） | ✅ | **PALA-002 已覆盖**（2026-09-26，`pala_native_image` 含 IOSurface ID 断言 + 真实解码帧渲染读回）→ 本任务无需再做 |
 | 4 | 预览渲染器 | ✅ | `preview_renderer`（35 项检查） |
 | 5 | C ABI 封装 | ✅ | `c_abi_preview`（32 项检查，真正的 C TU） |
-| 6 | UIA-003 MTKView 嵌入 | ⏭️ 下一步 | |
+| 6 | UIA-003 MTKView 嵌入 | ✅ | SharedUI 像素级用例 + macOS/iOS 编译 + 启动冒烟（见 TASK-UIA-003） |
 
 子步骤 4/5 新增文件与接缝见「六、写集」。
 
@@ -175,6 +175,27 @@ void    cq_preview_release_texture(CQPreview*, void* texture);
 - `INativeImageImporter::ReleaseTexture`：`Import` 返回裸 `TextureHandle`，
   而 `CqTexture` 在 core 是不完整类型 → **core 侧无法释放**，每帧泄漏一张
   （还额外锁住解码帧的 IOSurface）。原先只有 Apple 内部辅助能释放。
+### 子步骤 6 新增（2026-10-03，与 TASK-UIA-003 同步）
+
+- `bindings/swift/Sources/ChuanqiCut/Previewer.swift` —— `cq_preview_*` 的 Swift
+  投影（薄封装）。类型名 `Previewer` 而非 `Preview`：与 SwiftUI 撞名（P22）。
+- `bindings/swift/Sources/ChuanqiCut/Time.swift` —— `RationalTime`（整数，红线 #4）。
+- `bindings/swift/Package.swift` / `run_smoke.sh` —— 补系统框架 + libc++ 链接
+  （媒体/预览 TU 被拉入后必需，P23）。
+- `apps/apple/packages/SharedUI/Sources/SharedUI/Editor/PreviewFrameRenderer.swift`
+  —— 预览纹理 → drawable 的恒等映射 blit（MSL 与 PAL blit 几何逐值一致）。
+- `apps/apple/packages/SharedUI/Sources/SharedUI/Editor/MetalPreviewView.swift`
+  —— MTKView 子类 + 双平台 representable；单帧按需渲染。
+- `PreviewZone` / `EditorView` / `AppEntry(EditorViewModel)` —— 预览区接入
+  （preview + playhead；`installDemoClipFromEnvironment` 仅 DEBUG 冒烟）。
+- 测试：`ChuanqiCutTests/PreviewTests.swift`（6 用例）、
+  `SharedUITests/MetalPreviewViewTests.swift`（像素级 2 用例）。
+
+**顺带修的接口缺陷**（首次真实消费暴露，P20）：`IRenderTarget::GetColorTexture`
+的 Apple 实现原返回惰性 `CqTexture*` 包装，与 `cq_sdk.h`「reinterpret 为
+id<MTLTexture>」的契约不符，Swift 侧首用即崩；改为返回裸原生纹理，
+两种句柄语义已在 `pal/gfx.h` 写清。
+
 - `CreateSystemFrameProvider` 增加**接管解码器所有权**的重载
   （内部转调新增的 `SystemFrameProvider::AdoptDecoder`）：
   原签名只收裸指针且不接管，PAL 装配堆对象时没有同生命周期的持有方。

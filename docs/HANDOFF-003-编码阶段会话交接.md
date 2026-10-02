@@ -22,26 +22,31 @@
 | 渲染 | GFX-002 `IGfxDevice` 直连 PAL | ✅ |
 | 媒体 | BIND-003 子步骤 1 素材表 | ✅ |
 | 媒体 | BIND-003 子步骤 2 取帧链路验证 | ✅ |
-| **预览** | 子步骤 3 纹理导入（零拷贝） | ⏭️ **下一步** |
-| 预览 | 子步骤 4 预览渲染器 | 待做 |
-| 预览 | 子步骤 5 C ABI 封装 | 待做 |
+| 预览 | 子步骤 3 纹理导入（零拷贝） | ✅ **PALA-002 已覆盖**（2026-09-26） |
+| 预览 | 子步骤 4 预览渲染器 | ✅ |
+| **预览** | **子步骤 5 C ABI 封装** | ⏭️ **下一步** |
 | UI | 子步骤 6 / UIA-003 MTKView 嵌入 | 待做 |
 
-**门禁**：`Debug 32/32`、`Release 32/32` 全绿。
+**门禁**：`Debug 33/33`、`Release 33/33` 全绿。
 命令：`./tools/build/build_core.sh --platform=apple --config=Debug --test`
+
+> ⚠️ 旧版 HANDOFF 把「子步骤 3 纹理导入」标为下一步，是**错的**：
+> PALA-002（2026-09-26，commit 76fce6b）已做完零拷贝导入，
+> `pala_native_image` 用例含 IOSurface ID 一致性 + 真实解码帧渲染读回 +
+> 零拷贝/CPU 退化耗时代差（≈1400×）。子步骤 3 无需再做，直接进 4。
 
 ---
 
-## 2. 下一步：BIND-003 子步骤 3~6
+## 2. 下一步：BIND-003 子步骤 5~6
 
 **开工前必读**：`docs/tasks/TASK-BIND-003.md`（完整设计 + 6 个子步骤拆分）
 
 | # | 内容 | 要点 |
 |---|---|---|
-| 3 | 纹理导入 | `VideoFrame.image` 已是 `NativeImageHandle`(CVPixelBuffer)，接 PALA-002 零拷贝导入；断言 IOSurface ID 与源一致，证明没有偷偷 CPU 拷贝 |
-| 4 | 预览渲染器 | 新建 `core/src/preview/`：Timeline + AssetRegistry + GFX + 离屏 RT |
 | 5 | C ABI 封装 | `cq_preview_*`；导出**中性句柄**（`void*`），Swift 侧 reinterpret 为 MTLTexture |
 | 6 | UIA-003 | SharedUI 内 `UIViewRepresentable`/`NSViewRepresentable` 包 MTKView |
+
+子步骤 4 已落地（2026-10-02），装配形状见下方 §3b —— 做子步骤 5 时直接复用。
 
 ⚠️ **绝不要**走"读回像素 → Swift 再上传"：CPU 往返每帧一次会直接毁掉预览帧率。
     `gfx_metal_internal.h` 的 `ReadRenderTargetPixels` 只该出现在测试里。
@@ -70,6 +75,26 @@ GFX 渲染同样有像素级证据：
 ```
 
 ---
+
+## 3b. 预览渲染器（子步骤 4）装配形状
+
+```
+cq::CreateGraphicsDevice(PAL) → cq::CreateGfxDevice(pal, gfx)   // GFX 接管 PAL 所有权
+cq::apple::CreateBlitPass(gfx, kRGBA8)                          // 全屏拷贝（MSL）
+cq::apple::CreateAppleFrameProviderFactory()                    // PALA-010+011 装配
+        ↓
+PreviewRenderer(gfx, blit, factory, &timeline, &assets, cfg{256,256,kRGBA8})
+        ↓
+RenderFrame(pts) → out_texture（中性句柄）
+```
+
+`PreviewRenderer` 依赖全是**注入的非拥有指针**；它自己持有 importer / 离屏 RT /
+asset_id→provider 映射 / 上一帧导入的纹理（逐帧 `ReleaseTexture`）。
+
+可观测量（诊断用，不是渲染结果）：`LastHitClip()` / `LastImportCpuFallback()` /
+`LastSourceTime()` / `LastFramePts()`。
+⚠️ `LastFramePts()` 是**唯一**能证明「渲染的确实是 t 时刻那一帧」的量——
+彩条这类静态素材的像素相同，无法区分「取对了帧」与「复用旧帧」。
 
 ## 4. 本机环境（已配置完成）
 

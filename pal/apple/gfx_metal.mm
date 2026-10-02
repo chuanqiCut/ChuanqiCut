@@ -457,6 +457,13 @@ public:
         return ImportCpu(pb, usage, out_texture, out_cpu_fallback);
     }
 
+    // 释放 Import 产出的纹理（见 pal/gfx.h 中该方法的缺陷修复说明）。
+    // CqTexture 在本 TU 为完整类型，可直接下行转换后 Destroy；core 侧做不到这件事。
+    void ReleaseTexture(TextureHandle texture) override {
+        auto* t = static_cast<CqTexture*>(texture);
+        if (t != nullptr) t->Destroy();
+    }
+
 private:
     // 退化路径实现：锁定源基址 + replaceRegion 把 BGRA 字节拷进 BGRA8Unorm 纹理。
     // ⚠️ 这是**唯一发生像素拷贝**的地方。零拷贝成立时 Import 不会调用它。

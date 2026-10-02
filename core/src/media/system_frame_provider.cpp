@@ -15,4 +15,13 @@ std::unique_ptr<FrameProvider> CreateSystemFrameProvider(
         new SystemFrameProvider(std::move(demuxer), decoder));
 }
 
+std::unique_ptr<FrameProvider> CreateSystemFrameProvider(
+    PalPtr<IMediaDemuxer> demuxer, std::unique_ptr<IFrameDecoder> owned_decoder) {
+    IFrameDecoder* raw = owned_decoder.get();
+    auto provider = std::unique_ptr<FrameProvider>(
+        new SystemFrameProvider(std::move(demuxer), raw));
+    static_cast<SystemFrameProvider*>(provider.get())->AdoptDecoder(std::move(owned_decoder));
+    return provider;
+}
+
 }  // namespace cq

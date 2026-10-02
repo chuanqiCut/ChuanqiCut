@@ -308,6 +308,25 @@ if(APPLE)
     apply_cq_warnings(cq_tests_pala_native_image)
     add_test(NAME pala_native_image COMMAND cq_tests_pala_native_image)
 
+    # ---- BIND-003 子步骤 4：预览渲染器端到端（Timeline+素材表 → 取帧 → 零拷贝 → 离屏 RT）----
+    # 验收不是「返回 kOk」而是「画面真的是时间线在该时刻的内容」：
+    #   blit pass 方向（RT 顶红/底蓝）+ 真值像素 (0,188,0,255) + 零拷贝未退化 +
+    #   空隙 kIoNotFound + 素材未注册 kInvalidArgument + 连续多帧导入/释放 + Resize。
+    find_library(COREVIDEO_T6_LIB CoreVideo REQUIRED)
+    add_executable(cq_tests_preview_renderer
+        unit/test_preview_renderer.cpp)
+    target_include_directories(cq_tests_preview_renderer PRIVATE
+        ${CMAKE_SOURCE_DIR}/core/include
+        ${CMAKE_SOURCE_DIR}/pal/apple)
+    target_compile_definitions(cq_tests_preview_renderer PRIVATE
+        CQ_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
+    target_link_libraries(cq_tests_preview_renderer PRIVATE
+        cq_core cq_pal_apple
+        ${AVFOUNDATION_T_LIB} ${COREMEDIA_T_LIB} ${COREVIDEO_T6_LIB})
+    cq_require_cxx20(cq_tests_preview_renderer)
+    apply_cq_warnings(cq_tests_preview_renderer)
+    add_test(NAME preview_renderer COMMAND cq_tests_preview_renderer)
+
     # ---- PALA-012：Apple 编码与封装验收（AVAssetWriter + PixelBufferAdaptor）----
     # 端到端：PALA-010 真实 demux + PALA-011 硬解 -> AppleVideoEncoder 写 H.264 MP4 ->
     # 重解码输出首帧中心像素对照 (0,188,0,255) + popen ffprobe 验证 codec/分辨率/帧数/时长。

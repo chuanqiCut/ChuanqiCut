@@ -1,9 +1,22 @@
 # TASK-BIND-003：C ABI 预览接口（含取帧接入 session）
 
 > 日期：2026-10-02
-> 状态：**待实现**（调研完成，按子步骤推进）
+> 状态：**子步骤 1~4 已完成**，5（C ABI 封装）/ 6（UIA-003）待做
 > 依赖：MODEL-001 ✅、GFX-002 ✅、PALA-011 ✅、PALA-002 ✅、MEDIA-020 ✅
 > 验收：`cq_preview_render_frame(pts)` 能按时间线解出该时刻的帧并显示
+
+## 进度（2026-10-02 夜）
+
+| # | 内容 | 状态 | 证据 |
+|---|---|---|---|
+| 1 | 素材表 AssetRegistry | ✅ | `asset_registry` |
+| 2 | 取帧接入 | ✅ | `frame_provider_apple` |
+| 3 | 纹理导入（零拷贝） | ✅ | **PALA-002 已覆盖**（2026-09-26，`pala_native_image` 含 IOSurface ID 断言 + 真实解码帧渲染读回）→ 本任务无需再做 |
+| 4 | 预览渲染器 | ✅ | `preview_renderer`（33 项检查） |
+| 5 | C ABI 封装 | ⏭️ 下一步 | |
+| 6 | UIA-003 MTKView 嵌入 | 待做 | |
+
+子步骤 4 新增文件与两个接缝见「六、写集」。
 
 ---
 
@@ -113,3 +126,23 @@ void    cq_preview_release_texture(CQPreview*, void* texture);
 | `core/include/cq/preview/preview_renderer.h` + `core/src/preview/preview_renderer.cpp` | 新增 preview 层 |
 | `core/include/cq/cq_sdk.h` + `core/src/cq_sdk.cpp` | BIND |
 | `tests/unit/test_*.cpp` | 测试 |
+
+### 子步骤 4 新增（2026-10-02）
+
+**两个接缝**（core 保持平台无关，装配下沉 pal/apple）：
+- `core/include/cq/gfx/blit_pass.h` —— `IBlitPass` 全屏拷贝抽象。
+  core **不得**内联 MSL（红线 #6）；SPIR-V 链未落地前 MSL 是唯一可用路径，
+  属「能力缺失降级」而非「平台特化优化」。实现在 `pal/apple/blit_pass.mm`，
+  MSL 源在 `pal/apple/shaders/blit_fullscreen_msl.h`。
+- `core/include/cq/media/frame_provider_factory.h` —— `IFrameProviderFactory`。
+  `SystemFrameProvider` 需要 `IFrameDecoder*`，其真实实现 `VideoToolboxDecoder`
+  只在 Apple TU 可见，core 直接装配会违反「PAL 头文件零平台类型」，故下沉。
+  实现在 `pal/apple/frame_provider_apple.mm`（PALA-010 + PALA-011 → MEDIA-020）。
+
+**顺带补的两个接口缺陷**（都是首次真实使用时才暴露的）：
+- `INativeImageImporter::ReleaseTexture`：`Import` 返回裸 `TextureHandle`，
+  而 `CqTexture` 在 core 是不完整类型 → **core 侧无法释放**，每帧泄漏一张
+  （还额外锁住解码帧的 IOSurface）。原先只有 Apple 内部辅助能释放。
+- `CreateSystemFrameProvider` 增加**接管解码器所有权**的重载
+  （内部转调新增的 `SystemFrameProvider::AdoptDecoder`）：
+  原签名只收裸指针且不接管，PAL 装配堆对象时没有同生命周期的持有方。

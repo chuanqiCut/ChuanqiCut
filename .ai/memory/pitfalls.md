@@ -268,6 +268,43 @@
 - 日期 / 来源 / 验证状态：2026-10-02 / INFRA-009 / **verified**
   （改后 ChuanqiCut + SharedUI + ChuanqiCutApp arm64 全链 BUILD SUCCEEDED）
 
+### P14 · 产出裸 opaque 句柄却没给释放途径 = core 侧必然泄漏（预览首次真实使用暴露）
+- 现象：`INativeImageImporter::Import` 返回裸 `TextureHandle`（`CqTexture*`），
+  而 `CqTexture` 在 core 是**不完整类型**，core 侧既不能 `delete` 也不能
+  `Destroy()`。唯一能释放的是 Apple 内部辅助 `cq::apple::DestroyTexture`，
+  但 core 调它就引入平台依赖 → 预览每帧导入一张纹理，**每帧泄漏一张**
+  （还额外锁住解码帧的 IOSurface）。
+- 根因：接口设计时只考虑了「产出」，没考虑「谁回收」。这与 P2 同源——
+  **头文件能编译、接口能跑通 ≠ 生命周期闭环**。
+- 修复：按「谁产出谁回收」给 `INativeImageImporter` 加 `ReleaseTexture(TextureHandle)`；
+  core 的 `PreviewRenderer` 逐帧释放上一帧的导入纹理。
+- 防复发规则：**任何返回裸 opaque 句柄的工厂 / 导入接口，必须同时提供配对的
+  释放入口**，且释放入口要在**同一抽象层**（不能只在平台内部辅助里）。
+- 日期 / 来源 / 验证状态：2026-10-02 / BIND-003 子步骤 4 / **verified**
+  （`preview_renderer` 用例连续 12 帧渲染，导入/释放循环无错无崩）
+
+### P15 · 「所有权没人接」的注入式接缝：裸指针注入 + 堆对象装配 = 悬垂隐患
+- 现象：`SystemFrameProvider(PalPtr<IMediaDemuxer>, IFrameDecoder*)` 明确
+  **不接管** decoder。单测里 decoder 是栈对象没问题；但 PAL 装配时
+  `VideoToolboxDecoder` 是 `new` 出来的，装配方必须自己想办法让它与 provider
+  同生命周期——很容易漏，且漏了不一定立刻崩。
+- 修复：给 `SystemFrameProvider` 加 `AdoptDecoder(unique_ptr<IFrameDecoder>)`，
+  并给 `CreateSystemFrameProvider` 加一个接管所有权的重载；PAL 装配走重载版本。
+- 防复发规则：注入式接缝若真实使用场景下被注入者是**堆对象**，就要提供
+  所有权接管入口，不能只留裸指针版本。
+- 日期 / 来源 / 验证状态：2026-10-02 / BIND-003 子步骤 4 / **verified**
+
+### P16 · 静态素材下「像素正确」不能证明「取对了帧」，必须断言帧 pts
+- 现象：golden `gf_1080p_h264.mp4` 是 smptebars **静态**彩条，t=0.5s 与 t=2.0s
+  渲染出的像素完全相同 → 「中心像素 == 真值」这条断言**无法**区分
+  「精确 seek 生效」与「反复复用同一帧」。
+- 修复：`PreviewRenderer` 暴露 `LastFramePts()`（实际解码帧 pts），
+  单测断言帧 pts ≈ 请求时间（容差 40ms）且两次请求的 pts 不同。
+  实测 t=1.0s → pts=120000（偏差 0 ticks）。
+- 防复发规则：**验收断言要能证伪**。用静态素材做时间相关验证时，必须额外断言
+  一个随时间变化的量（pts / 帧序号），不能只靠像素。
+- 日期 / 来源 / 验证状态：2026-10-02 / BIND-003 子步骤 4 / **verified**
+
 ---
 
 ## 已修正的历史错误（供参考，避免重犯）
@@ -282,4 +319,5 @@
 | E6 | manifest 中多个依赖版本号为编造值（signalsmith-stretch "1.0"、SPIRV-Cross "1.3.296.0"、oboe "1.9.2"） | 上游根本不存在这些 tag；signalsmith-stretch 与 SPIRV-Cross 上游 0 个 tag，oboe 只有 1.9.0/1.9.3。**版本号必须 `git ls-remote` 核对，不得凭印象写**，否则清单看着可审计实则不可信 | 2026-09-24 |
 | E7 | `parser.py::_validate_artifact()` 引用未定义常量 `E_BAD_VALUE` | 非法 artifact.platform 会抛 NameError 而非给出校验错误；已改为 `E_INVALID_VALUE` | 2026-09-24 |
 | E8 | 「CVPixelBuffer(32BGRA) → `MTLPixelFormatBGRA8Unorm` 纹理，采样后需手动把 R/B 交换成 RGBA」 | **错误**。`BGRA8Unorm` 在 Metal 中是「按 BGRA 字节序存储、但逻辑通道仍是 .r=红/.b=蓝」的格式；采样返回的已经是逻辑 RGBA，无需交换。错误地写成 `float4(c.b,c.g,c.r,c.a)` 会让 R/B 反掉——绿条等 R==B 区域看不出，但彩条其余通道会暴露（PALA-002 初版即被底部采样检查抓出）。PALA-011 解码输出为 32BGRA，importer 必须用 BGRA8Unorm 才能直接复用其 IOSurface，且着色器直接 `return c` | 2026-09-26 / PALA-002 / verified |
+| E10 | HANDOFF-003 §1 把「BIND-003 子步骤 3 纹理导入（零拷贝）」标为**下一步** | **已做过**：PALA-002（2026-09-26，commit 76fce6b）已完成零拷贝导入，`pala_native_image` 用例含 IOSurface ID 一致性（源 193==纹理 193）、零拷贝/CPU 退化耗时代差（0.0033ms vs 4.5788ms ≈ 1407×）、真实解码帧渲染读回。**交接文档的任务状态要对着 commit 历史核，不能照抄上一版** | 2026-10-02 / BIND-003 / verified |
 | E9 | 「XCFramework 合并失败是 bitcode 段导致，加 `-fno-embed-bitcode` 可解」（HANDOFF-002 §3 的遗留推测） | **根因判错**：是 Release **LTO/IPO** 产出 bitcode-only `.o`，与 ENABLE_BITCODE 无关；`-fno-embed-bitcode` 该 clang 不识别且方向错误。教训：`0xb17c0de` 这个 magic 既可能来自 embed-bitcode 也可能来自 `-flto`，**必须抽 `.o` 看实际内容再定论**，不能靠 magic 字面猜。另：那次尝试的脏 flag 残留在 `build/apple/ios-device/CMakeCache.txt` 里未被发现，CMake 会持续复用——**CMakeCache 是隐式状态，撤销改动时不要只撤销源码** | 2026-09-29 / PALA XCFramework 打包 / verified |

@@ -47,7 +47,11 @@ add_library(cq_core STATIC
     # GFX-002 最小落地：IGfxDevice / IGfxEncoder 直连 PAL。
     # 不做 RenderGraph（RENDER-001）—— 预览只需要"渲染一帧"，
     # 节点图/依赖分析/pass 调度等真有多 pass 合成需求时再补。
-    src/gfx/gfx_device.cpp)
+    src/gfx/gfx_device.cpp
+    # BIND-003 子步骤 4：预览渲染器（Timeline + AssetRegistry + 取帧 + 零拷贝导入 → 离屏 RT）。
+    # 平台无关：取帧走 IFrameProviderFactory 接缝、绘制走 IBlitPass 接缝，
+    # 两者的 Apple 实现在 pal/apple/。
+    src/preview/preview_renderer.cpp)
 
 # 版本号由 CMake 注入，不在 cq_sdk.h 里硬编码（否则必然与 project VERSION 漂移）。
 target_compile_definitions(cq_core PRIVATE

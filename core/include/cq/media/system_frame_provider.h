@@ -224,6 +224,16 @@ public:
     void SetFrameCache(IFrameCache* cache) override { cache_ = cache; }
     void SetDecoderPool(IDecoderPool* pool) override { pool_ = pool; }
 
+    // 接管解码器所有权（可选）。
+    // 为什么需要：本类的构造签名收的是裸 `IFrameDecoder*` 且明确「不接管」，这在单测里
+    // 没问题（decoder 是栈对象），但 PAL 装配时解码器是 new 出来的——没有接管能力，
+    // 装配方就得自己想办法让 provider 与 decoder 同生命周期，容易漏。
+    // 装配方（pal/<platform>/）用带 `unique_ptr<IFrameDecoder>` 的工厂重载即可。
+    void AdoptDecoder(std::unique_ptr<IFrameDecoder> decoder) {
+        owned_decoder_ = std::move(decoder);
+        decoder_ = owned_decoder_.get();
+    }
+
 private:
     // 显示区间归属：t 落在 [frame.pts, frame.pts + frame.duration) 内。
     static bool FrameContains(const MediaFrame& f, const RationalTime& t) {
@@ -356,6 +366,7 @@ private:
 
     PalPtr<IMediaDemuxer> demuxer_;
     IFrameDecoder* decoder_ = nullptr;  // 不接管（Open 时可能被子解码器池覆盖）
+    std::unique_ptr<IFrameDecoder> owned_decoder_;  // AdoptDecoder 后持有，保证同生命周期
     IFrameCache* cache_ = nullptr;      // 帧缓存钩子（MEDIA-011）
     IDecoderPool* pool_ = nullptr;      // 解码器池钩子（MEDIA-012）
     DecoderHandle pool_handle_ = nullptr;  // 本实例从池借到的路（析构/重开时归还）
@@ -370,6 +381,12 @@ private:
 // 定义在 system_frame_provider.cpp（out-of-line），使 cq_core 携带真实符号。
 std::unique_ptr<FrameProvider> CreateSystemFrameProvider(
     PalPtr<IMediaDemuxer> demuxer, IFrameDecoder* decoder);
+
+// 工厂重载：**接管解码器所有权**（内部转调 AdoptDecoder）。
+// PAL 装配用这条——真实解码器（PALA-011 VideoToolboxDecoder 等）是堆对象，
+// 交给 provider 持有即可保证二者同生命周期，装配方无需另设持有结构。
+std::unique_ptr<FrameProvider> CreateSystemFrameProvider(
+    PalPtr<IMediaDemuxer> demuxer, std::unique_ptr<IFrameDecoder> owned_decoder);
 
 }  // namespace cq
 

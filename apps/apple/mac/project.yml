@@ -1,0 +1,37 @@
+# ChuanqiCut macOS App 工程（UIA-002 建立，INFRA-009 拆分为独立工程）
+#
+# 生成流程（clone 后 / 修改本文件后，在 apps/apple/mac/ 下执行）：
+#   xcodegen generate
+#   bundle install && bundle exec pod install
+#   open ChuanqiCut.xcworkspace      # 注意开 workspace，不是 xcodeproj
+#
+# ChuanqiCut.xcodeproj 与 .xcworkspace 均为生成产物，不入库。
+# 依赖（SDK + SharedUI）全部走 CocoaPods，见同目录 Podfile；本工程不含 SPM 包。
+
+name: ChuanqiCut
+options:
+  bundleIdPrefix: com.chuanqi
+  deploymentTarget:
+    macOS: "15.4"
+  createIntermediateGroups: true
+
+settings:
+  base:
+    SWIFT_VERSION: "6.1"
+    MARKETING_VERSION: 0.1.0
+    CURRENT_PROJECT_VERSION: 1
+
+targets:
+  ChuanqiCutMacApp:
+    type: application
+    platform: macOS
+    sources: [MacApp]
+    info:
+      path: MacApp/Info.plist
+      properties:
+        CFBundleDisplayName: ChuanqiCut
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.chuanqi.cutmac
+        # 本机开发用 ad-hoc 签名即可构建运行；分发签名后续任务处理
+        CODE_SIGN_IDENTITY: "-"

@@ -1,199 +1,120 @@
-# CocoaPods 集成（SDK 层）与 SwiftPM 共存策略
+# CocoaPods 集成（SDK 层）与 App 依赖策略
 
-> 建立日期：2026-09-30
-> 范围：`ChuanqiCut.podspec`（SDK 层）、`apps/apple/Podfile`（App 依赖）、
-> 与 `bindings/swift/Package.swift`（SPM）的边界划分。
+> 建立日期：2026-09-30；**重构日期：2026-10-02（INFRA-009，owner 决策落地）**
+> 范围：`ChuanqiCut.podspec`、`apps/apple/packages/SharedUI/SharedUI.podspec`、
+> `apps/apple/{ios,mac}/` 双工程（Podfile + Gemfile 各自独立）。
 
-## 1. 为什么 SDK 层走 CocoaPods，而不是 SPM
+## 1. 现行架构（INFRA-009 起）
 
-| 需求 | CocoaPods | SwiftPM |
-|---|---|---|
-| vendored 二进制（XCFramework） | `vendored_frameworks`，成熟 | `binaryTarget` 可用，但静态库链接要显式 `linkerSettings`（BIND-002 踩过） |
-| C++ 编译设置（C++20、禁异常、禁 RTTI） | `pod_target_xcconfig` 直接写 | 需要 `cSettings`/`cxxSettings`，表达力弱 |
-| 按平台分框架（如 IOSurface 仅 macOS） | `ss.osx.frameworks` | 需要手写条件 |
-| 系统框架依赖声明 | `frameworks` | `linkerSettings.linkedFramework` |
+**Owner 决策（2026-10-02）**：iOS 与 macOS 项目单独维护 Gemfile + Podfile；
+SDK 默认**源码导入**（便于调试和分析问题）；SPM 无法依赖 pod，Swift 代码
+（SharedUI）一并 podspec 化。
 
-结论：**SDK 层用 CocoaPods，UI 层用 SPM**。二者在 Xcode 里可共存。
+```
+仓库根
+├── ChuanqiCut.podspec                  # SDK 层：C++20 内核 + ObjC++ PAL + Swift 绑定
+└── apps/apple/
+    ├── packages/SharedUI/
+    │   ├── SharedUI.podspec            # SwiftUI 编辑器组件（App 集成真源）
+    │   └── Package.swift               # 仅保留作 swift test 测试宿主，不在 App 依赖链
+    ├── ios/                            # iOS 独立工程
+    │   ├── project.yml                 # xcodegen（单 target ChuanqiCutApp）
+    │   ├── Podfile / Gemfile(.lock)    # 本目录独立维护
+    │   └── iOSApp/
+    └── mac/                            # macOS 独立工程
+        ├── project.yml                 # xcodegen（单 target ChuanqiCutMacApp）
+        ├── Podfile / Gemfile(.lock)    # 本目录独立维护
+        └── MacApp/
+```
+
+依赖链：`App → SharedUI (pod) → ChuanqiCut (pod) → CChuanqiCut (clang module)`
+App **不使用 SPM**；`bindings/swift/Package.swift` 仅作绑定层 `swift test`
+测试宿主。
+
+**硬规矩**：ChuanqiCut 不要同时在 pod 与 SPM 两侧引入——同一份 Swift 绑定
+源码被各编一次会重复符号。
 
 ## 2. 两种集成模式（subspec）
 
 ```ruby
-pod 'ChuanqiCut', :path => '../..'          # 默认 Binary
-pod 'ChuanqiCut/Source', :path => '../..'   # 源码模式
+pod 'ChuanqiCut/Source', :path => '../../..'   # 源码模式（**默认**）
+pod 'ChuanqiCut/Binary', :path => '../../..'   # 二进制模式（发布期/提速）
 ```
 
 | subspec | 内容 | 适用场景 |
 |---|---|---|
-| `Binary`（默认） | `bindings/swift/Frameworks/ChuanqiCut.xcframework` + Swift 绑定源码 | 日常开发；不编译 C++ |
-| `Source` | 现场编译 `core/src/**/*.cpp` + `pal/apple/**/*.mm` | 调试内核 / 无预构建产物 |
-| `Swift` / `CBridge` | 绑定层与 C module 桥接 | 由上面两者依赖，一般不直接引 |
+| `Source`（默认） | 现场编译 `core/src/**/*.cpp` + `pal/apple/**/*.mm` + Swift 绑定 | 日常开发、调试内核、分析问题；**无 xcframework 前置** |
+| `Binary` | `bindings/swift/Frameworks/ChuanqiCut.xcframework` + Swift 绑定 | 发布期；不编译 C++ |
 
-### Binary 模式前置
+Source 模式的编译设置在 podspec 内**手工重建**（不经 CMake）：
+- C++20 / 禁异常 / 禁 RTTI / 系统框架列表（IOSurface 仅 macOS）
+- 版本宏 `CQ_VERSION_*` 从 `s.version` 注入（cq_sdk.cpp 裸用，正常由 CMake
+  注入；两处以 podspec 派生保持一致）
+- **门禁仍只在 CMake 路径**：-Werror 警告集不进 pod 编译，pod 构建是调试
+  便利不是门禁。漂移时以 `cmake/CompileOptions.cmake` 为准，回来同步 podspec。
 
+Binary 模式前置（需要分发产物时）：
 ```bash
 tools/build/build_core_apple.sh --config=Release
 bindings/swift/prepare.sh     # 把 xcframework 拷到 bindings/swift/Frameworks/
 ```
 
-⚠️ `bindings/swift/Frameworks/` 是**构建产物**（`.gitignore` 已忽略），
-远端分发时需 CI 先生成再打包。
+## 3. Swift 绑定的 C module（CChuanqiCut）如何暴露
 
-## 3. SPM 与 CocoaPods 共存
+一个 pod target 只能有一个 module；pod 自身的 module 由 CocoaPods 生成
+（名 `ChuanqiCut`），**不要**设 `s.module_map`（会整体替换，见 pitfalls P10）。
+CChuanqiCut clang module 靠三处 `SWIFT_INCLUDE_PATHS` 指向与 SPM 共用的
+`bindings/swift/Sources/CChuanqiCut/include/`（module.modulemap + cq_sdk.h
+符号链接，零复制）：
 
-**可以共存**：Xcode 工程同时支持 Swift Package Dependencies 和 CocoaPods。
-
-**但有一条硬规矩**：
-
-> ⚠️ **ChuanqiCut 不要同时在两边引入**。
-> 同一份 `Sources/ChuanqiCut/**/*.swift` 会被各编一次，出现重复符号
-> （`duplicate symbol ... in ChuanqiCut(Session.o)` 之类）。
-
-推荐组合：
-
-| 层 | 方式 |
+| 谁 | 在哪声明 |
 |---|---|
-| ChuanqiCut SDK（内核 + Swift 绑定） | **CocoaPods**（本 podspec） |
-| UI 层纯 Swift 三方库 | **SPM**（Xcode → Package Dependencies） |
-| UI 层含二进制/OC 的库 | CocoaPods（与 SDK 同一 Podfile） |
+| ChuanqiCut pod 自身编译 | `ChuanqiCut.podspec` `pod_target_xcconfig` |
+| App target（ios/mac） | `ChuanqiCut.podspec` `user_target_xcconfig` |
+| pod 消费方（SharedUI） | `SharedUI.podspec` `pod_target_xcconfig` |
 
-如果某个团队坚持 SDK 也走 SPM，那就**不要**在 Podfile 里引 `ChuanqiCut`，
-改用 `bindings/swift` 的 Package.swift —— 二选一，不要并存。
+另两条实测红线（详见 pitfalls P9/P11）：
+- **头文件一律不声明**进 podspec 文件集——headermap 按基名映射会让
+  `time.h` 劫持系统 `<time.h>`；C++ 头靠 `-I` 搜索路径即可。
+- SDK 的 Swift 公开 API 触及 CChuanqiCut 类型时，消费方必须能看到该 module。
 
-## 4. 环境准备
-
-### 4.1 本机现状（2026-09-30 实测，含一次结论修正）
-
-系统 Ruby 是 macOS 自带的 **2.6.10**（`/usr/bin/ruby`），没有 Homebrew / rbenv / rvm。
-
-**第一版结论（错的，保留以示警示）**：曾判断"环境不允许编译 gem 原生扩展"。
-依据是 `gem install --user-install cocoapods` 连续 5 次失败，全部卡在：
-
-```
-ERROR: Failed to build gem native extension.
-    current directory: ~/.gem/ruby/2.6.0/gems/nkf-0.3.0/ext/nkf
-    creating Makefile
-    Operation not permitted @ apply2files - ./siteconf...rb
-```
-
-**修正后真因**：不是"不能编译原生扩展"，也不是 Ruby 2.6 太老 ——
-是 **`~/.gem` 这个安装路径下的权限限制**。把安装目录换掉就过了：
+## 4. 环境与日常工作流
 
 ```bash
-gem install --install-dir /tmp/cqgems cocoapods --no-document
-# → Successfully installed nkf-0.3.0   ← 同样的 gem、同样的 Ruby 2.6，编译成功
+# clone 后 / project.yml 或 Podfile 变更后（在 ios/ 或 mac/ 下）：
+cd apps/apple/ios
+xcodegen generate            # 生成 ChuanqiCut.xcodeproj（~/tools/xcodegen/bin/xcodegen）
+bundle install               # 按 Gemfile.lock 装工具链（CocoaPods 版本钉死）
+bundle exec pod install      # 生成 ChuanqiCut.xcworkspace 并集成
+open ChuanqiCut.xcworkspace  # ⚠️ 开 workspace，不是 xcodeproj
 ```
 
-教训：现象（`Operation not permitted`）看起来像"能力被禁"，实际是**某个具体路径**被禁。
-排查时应先换路径做对照实验，不要直接上升到"环境不支持"。
+- Ruby 工具链：本机 `~/.rubies/ruby-3.4.11`（源码编译安装，见
+  ios-dev-setup skill）。**Gemfile.lock 必须入库**——无 lock 时 bundler 会
+  解析到不兼容的 CFPropertyList 3.0.9（pitfalls P12）。
+- gem 源用清华镜像（本机直连 rubygems.org 502），网络可直连可改回官方源。
+- 历史（2026-09-30，当时 CocoaPods 装不上）：系统 Ruby 2.6 过老（ffi 要
+  ≥3.0）+ `~/.gem` 路径权限问题叠加；Intel Mac 无 Homebrew bottles。
+  Ruby 3.4 源码编译到 `~/.rubies` 后解决。教训：`Operation not permitted`
+  先换路径做对照实验，不要直接断言"环境不支持"。
 
-**但换路径只解决了第一层**。第二层是 **Ruby 2.6 确实太老**（这一条是传哲指出后
-才查实的，我上一版判断"Ruby 升级没必要"是错的）：
-
-```
-ERROR: Error installing cocoapods:
-    ffi requires Ruby version >= 3.0, < 4.1.dev. The current ruby version is 2.6.10.210.
-    drb requires ruby version >= 2.7.0
-```
-
-即：CocoaPods 依赖链上的 `ffi`（要 Ruby ≥ 3.0）与 `drb`（要 Ruby ≥ 2.7）都装不上。
-**结论：Ruby 升级是必要条件**（配合可用的安装路径）。
-
-### 4.1.1 Ruby 升级这条路也不通（本机 Intel Mac）
-
-- `brew` 官方安装脚本：**只支持 Apple Silicon**
-  （`Homebrew on macOS is only supported on Apple Silicon processors!`）
-- 手动 `git clone` brew 到 `~/.homebrew` 后再装 ruby，brew 自己给出结论：
-
-  ```
-  If the biggest companies in the world cannot support macOS Intel x86_64
-  any longer, sadly neither can we.
-  Homebrew no longer builds bottles for this configuration.
-  Consider MacPorts, which provides binary packages for this macOS version.
-  This is a Tier 3 configuration.
-  ```
-
-  即 Intel Mac 已无预编译包，只能源码编译（数十分钟），且本机再次撞上同样的
-  `Operation not permitted @ apply2files`（这次在 `~/.homebrew/var`）。
-
-**因此本仓库的 podspec 至今未经过 `pod lib lint` 验证**，只做了 `ruby -c` 语法检查。
-这是当前唯一的验证缺口，见 §6。
-
-另：rubygems.org 在本机访问不稳定（502 / FetchError），可换镜像源：
-
-```bash
-gem install --install-dir /tmp/cqgems cocoapods --no-document \
-    --clear-sources --source https://mirrors.tuna.tsinghua.edu.cn/rubygems/
-```
-
-装到自定义目录后需把 bin 加进 PATH：`export PATH="/tmp/cqgems/bin:$PATH"`
-（`/tmp` 会被系统清理，长期使用应换成稳定路径，如 `~/.local/cqgems`）。
-
-### 4.2 建议的安装方式（在终端手动执行）
-
-本机是 Intel Mac，Homebrew 已不再提供 Intel bottles（§4.1.1），所以：
-
-```bash
-# 方案 A（本机推荐）：MacPorts —— 仍为 Intel 提供二进制包
-#   从 https://www.macports.org/install.php 装 pkg 后：
-sudo port install ruby33        # 或 ruby32
-sudo port install rb-cocoapods  # 或直接：sudo gem install cocoapods
-
-# 方案 B：Apple Silicon 机器上用 Homebrew
-/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
-brew install ruby
-gem install cocoapods --no-document
-```
-
-装好 Ruby（≥ 3.0）后，若仍走用户级 gem 安装，**避开 `~/.gem`**（§4.1 的路径问题）：
-
-```bash
-gem install --install-dir "$HOME/.local/cqgems" cocoapods --no-document
-echo 'export GEM_HOME="$HOME/.local/cqgems"' >> ~/.zshrc
-echo 'export PATH="$HOME/.local/cqgems/bin:$PATH"' >> ~/.zshrc
-```
-
-若用用户级安装（`--user-install`），记得把 gem 的 bin 目录加进 PATH：
-
-```bash
-echo 'export PATH="$HOME/.gem/ruby/2.6.0/bin:$PATH"' >> ~/.zshrc
-```
-
-### 4.3 装好之后的验证
-
-```bash
-pod --version
-pod lib lint ChuanqiCut.podspec --allow-warnings --verbose
-```
-
-`pod lib lint` 会临时建一个工程编译验证，能真正检验 podspec 是否正确
-（当前环境跑不了，见 4.1）。
-
-## 5. 待定项（发布前必须落实）
-
-| 项 | 现状 | 谁拍板 |
-|---|---|---|
-| **License** | podspec 里是 `Proprietary` 占位。FFmpeg LGPL 静态链接处置未定（目标文件归档 / 商业授权 / 动态链接 / 不接入 FFmpeg） | owner + 法务（见 ADR-0010） |
-| `s.homepage` / `s.source` | 仓库**没有 git remote**，用 `REPLACE_ME.invalid` 占位 | owner |
-| `s.author` | 占位 | owner |
-| XCFramework 分发 | 产物不入库，需 CI 生成后随 pod 发布 | 与依赖治理一起定（ADR-0008） |
-
-⚠️ 这几项都**故意没有编造**（版本号/URL 凭印象写是本项目踩过的坑，见 pitfalls E6）。
-
-## 6. 当前验证缺口（必须补上）
+## 5. 验证状态
 
 | 项 | 状态 |
 |---|---|
-| `ruby -c ChuanqiCut.podspec` | ✅ 语法通过 |
-| `pod lib lint` | ❌ **未做** —— 本机 CocoaPods 装不上（§4） |
-| `pod install`（App 工程） | ❌ **未做** —— 还没有 Xcode 工程（UIA-001 才建） |
-| Swift 绑定（SPM） | ✅ `swift test` 7/7、`run_smoke.sh` PASSED |
+| `ruby -c` 两份 podspec + 双 Podfile + Gemfile | ✅ 语法通过 |
+| `bundle install`（ios / mac） | ✅ CocoaPods 1.17.0 |
+| `pod install`（ios / mac） | ✅ 2 pods（Source 模式，现场编译内核） |
+| macOS App 全量编译 | ✅ `xcodebuild -workspace … ChuanqiCutMacApp` BUILD SUCCEEDED（2026-10-02，含 core 17 cpp + pal 6 mm + Swift 绑定 + SharedUI）；4s 启动冒烟存活（内核 Session 初始化成功） |
+| iOS App 编译 | ✅ BUILD SUCCEEDED（2026-10-02，arm64 `-sdk iphoneos18.4 CODE_SIGNING_ALLOWED=NO`，ChuanqiCut + SharedUI + Pods-ChuanqiCutApp + App 四目标全链编译链接；destination 模式需 `xcodebuild -downloadPlatform iOS` 补装 runtime 包，本机网络受限未完成）。顺带修复 UIA-002 遗留：EditorLayout iOS 分支 opaque 类型不匹配（pitfalls P13） |
+| `pod lib lint` | ⬜ 未做——双 podspec 有 `:path` 互相依赖，lint 需 `--include-podspecs`；App 真编译已覆盖同等路径，lint 补做见 TASK-INFRA-009 验收外项 |
+| SharedUI `swift test`（SPM 宿主） | ⬜ 依赖 xcframework 构建产物，本任务未重跑（测试代码未动） |
 
-有 CocoaPods 环境后，第一件事应该跑：
+## 6. 待定项（发布前必须落实，与 2026-09-30 版一致）
 
-```bash
-pod lib lint ChuanqiCut.podspec --allow-warnings --verbose
-```
-
-`pod lib lint` 会临时建工程真编译，能暴露 podspec 里 subspec 路径、
-C++ 设置、框架声明的问题 —— 现在这些都只是"看着对"，没有机器验证。
-按项目纪律：**没过 lint 就不能说 CocoaPods 集成完成**。
+| 项 | 现状 | 谁拍板 |
+|---|---|---|
+| **License** | 两份 podspec 均为 `Proprietary` 占位；FFmpeg LGPL 静态链接处置未定 | owner + 法务（ADR-0010） |
+| `s.homepage` / `s.source` | 无 git remote，`REPLACE_ME.invalid` 占位（提供 `CQ_POD_SOURCE_GIT` lint 逃生口） | owner |
+| XCFramework 分发 | 产物不入库，需 CI 生成后随 pod 发布 | 依赖治理（ADR-0008） |
+| Source subspec 接入 FFmpeg | core 尚未引用 FFmpeg 符号；demux 落地时 Source subspec 需补 prebuilt 库链接 | MEDIA 系列任务 |

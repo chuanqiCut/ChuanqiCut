@@ -1,0 +1,41 @@
+# ChuanqiCut iOS App 工程（UIA-002 建立，INFRA-009 拆分为独立工程）
+#
+# 生成流程（clone 后 / 修改本文件后，在 apps/apple/ios/ 下执行）：
+#   xcodegen generate
+#   bundle install && bundle exec pod install
+#   open ChuanqiCut.xcworkspace      # 注意开 workspace，不是 xcodeproj
+#
+# ChuanqiCut.xcodeproj 与 .xcworkspace 均为生成产物，不入库。
+# 依赖（SDK + SharedUI）全部走 CocoaPods，见同目录 Podfile；本工程不含 SPM 包。
+
+name: ChuanqiCut
+options:
+  bundleIdPrefix: com.chuanqi
+  deploymentTarget:
+    iOS: "16.0"
+  createIntermediateGroups: true
+
+settings:
+  base:
+    SWIFT_VERSION: "6.1"
+    MARKETING_VERSION: 0.1.0
+    CURRENT_PROJECT_VERSION: 1
+
+targets:
+  ChuanqiCutApp:
+    type: application
+    platform: iOS
+    sources: [iOSApp]
+    info:
+      path: iOSApp/Info.plist
+      properties:
+        CFBundleDisplayName: ChuanqiCut
+        UILaunchScreen: {}
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationPortrait
+          - UIInterfaceOrientationLandscapeLeft
+          - UIInterfaceOrientationLandscapeRight
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.chuanqi.cut
+        TARGETED_DEVICE_FAMILY: "1,2"

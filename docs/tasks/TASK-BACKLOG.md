@@ -79,6 +79,7 @@ parallel:    false          # 是否与同批次其他任务并行
 | INFRA-006 | 基建 | CI：编译 + 单测 + 门禁（三平台） | INFRA-002/3/4 | `.github/workflows/` | PR 触发全门禁 |
 | INFRA-007 | 基建 | 警告即错误（-Werror）与静态检查接入 | INFRA-002 | CI | 新代码零警告 |
 | INFRA-008 | 基建 | `pal/ohos/` 接口编译检查 target（ADR-0007） | CORE-006 | `pal/ohos/` | 接口签名变更时该 target 失败 |
+| INFRA-009 | 基建 | Apple 双工程拆分 + CocoaPods 源码集成（owner 决策 2026-10-02，替代 INFRA-005 的单工程形态） | UIA-002 | `apps/apple/**`, `ChuanqiCut.podspec` | 双工程 `pod install` 成功且 macOS/iOS 均编译通过 |
 
 ### 2.2 内核基础（跨平台层）
 

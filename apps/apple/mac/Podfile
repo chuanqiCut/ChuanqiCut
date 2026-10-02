@@ -1,0 +1,34 @@
+# ChuanqiCut macOS App — CocoaPods 依赖（INFRA-009）
+#
+# ⚠️ macOS 项目独立维护本 Podfile（owner 决策 2026-10-02）：apps/apple/mac 与
+#    apps/apple/ios 各自一份 Podfile + Gemfile，两端可独立升级 CocoaPods。
+#    工具链版本由同目录 Gemfile.lock 钉住，一律 `bundle exec pod ...`，
+#    不要裸跑 `pod`（会绕过锁定）。
+#
+# 分工（详见 docs/COCOAPODS.md）：SDK 层 + SharedUI 都走 pod，App 不使用 SPM。
+# 同一库不要既引 pod 又引 SPM（会重复符号）。
+#
+# 默认源码模式（/Source subspec）：现场编译 C++20 内核 + ObjC++ PAL + Swift
+# 绑定，便于调试内核和分析问题；无需预构建 xcframework。
+# 需要发布级二进制集成时改用：pod 'ChuanqiCut/Binary', :path => '../../..'
+# （前置：tools/build/build_core_apple.sh --config=Release && bindings/swift/prepare.sh）
+
+platform :osx, '15.4'
+
+# Swift pod 以静态库集成需要 modular headers（否则 App 侧 import 不到模块）。
+use_modular_headers!
+
+target 'ChuanqiCutMacApp' do
+  pod 'ChuanqiCut/Source', :path => '../../..'
+  pod 'SharedUI', :path => '../packages/SharedUI'
+end
+
+post_install do |installer|
+  installer.pods_project.targets.each do |target|
+    target.build_configurations.each do |config|
+      # 与项目门禁一致：SDK 层的编译设置以 cmake/CompileOptions.cmake 为准，
+      # 这里只兜底 C++20。
+      config.build_settings['CLANG_CXX_LANGUAGE_STANDARD'] ||= 'c++20'
+    end
+  end
+end

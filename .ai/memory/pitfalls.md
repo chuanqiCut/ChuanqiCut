@@ -180,6 +180,96 @@
 
 ---
 
+### P9 · pod 声明 `time.h` 同名头 → headermap 按基名劫持系统 `<time.h>`
+- 现象：pod 化 ChuanqiCut（INFRA-009）后 macOS 构建报
+  `core/include/cq/base/time.h:31: 'cstdint' file not found`，且
+  CoreFoundation/Foundation/Darwin 等系统模块全体级联
+  `could not build module`。错误链显示 `CoreFoundation.h:37: #include <time.h>`
+  落到了**我们自己的 C++ 头**上。
+- 根因：CocoaPods 为 target 生成 headermap（hmap），把**所有声明过的头按文件
+  基名**映射到路径（public/private/project 三档都进 own-target-headers.hmap）。
+  `core/include/cq/base/time.h` 一旦进 `source_files` 或任何 `*_header_files`，
+  pod 内所有编译（含 Swift 的 clang 模块构建）的 `#include <time.h>` 就先命中
+  它 → ObjC module 上下文里没有 C++ 标准库 → `<cstdint>` 不可见 → 崩。
+  `-I` 搜索路径**没有**这个问题：只按路径前缀匹配，`#include <time.h>` 不会
+  命中 `cq/base/` 子目录里的同名文件。
+- 修复：Source subspec 的 `source_files` 只声明 `*.cpp` / `*.mm`，**头文件一律
+  不声明**（不进任何 build phase），C++ 编译靠 `HEADER_SEARCH_PATHS` 的 -I 发现。
+- 防复发规则：给 pod 加任何名字与系统头相同的头（time/log/string/…）之前，
+  确认它**没有被声明**进 podspec 的任何文件集；C++ 库 pod 的头默认全部走
+  搜索路径，不走 CocoaPods 头管理。
+- 日期 / 来源 / 验证状态：2026-10-02 / INFRA-009 / **verified**
+  （移除声明后 macOS BUILD SUCCEEDED）
+
+### P10 · 在含 Swift 源码的 podspec 上设 `s.module_map` → 消费方 `import` 断裂
+- 现象：2026-09-30 的 podspec 在根 spec 设了
+  `s.module_map = .../CChuanqiCut/include/module.modulemap`（内容是
+  `module CChuanqiCut`），当时未验证。INFRA-009 实测发现：CocoaPods 会把
+  自定义 modulemap **当作 pod 自身的 module**（残留产物
+  `ChuanqiCut-iOS.modulemap` 即 `module CChuanqiCut`），App 侧
+  `import ChuanqiCut` 将无 module 可导。
+- 根因：一个 pod target 只有一个 modulemap；`s.module_map` 是整体替换不是
+  追加。Swift 源码 `import CChuanqiCut` 与消费方 `import ChuanqiCut` 需要
+  **两个** module，一个 podspec 的 module_map 只能满足其一。
+- 修复：不设 `s.module_map`（让 CocoaPods 生成名为 ChuanqiCut 的 pod module），
+  CChuanqiCut module 经 `pod_target_xcconfig.SWIFT_INCLUDE_PATHS` 指向与 SPM
+  共用的 `bindings/swift/Sources/CChuanqiCut/include/` 暴露给 Swift 编译期。
+- 防复发规则：pod 内需要「C module + Swift 包装 module」双 module 时，C module
+  一律走 SWIFT_INCLUDE_PATHS + 独立 modulemap 文件，不碰 `s.module_map`。
+- 日期 / 来源 / 验证状态：2026-10-02 / INFRA-009 / **verified**
+
+### P11 · pod 的 Swift 公开 API 引用 C module 类型时，**消费方**也要能看到该 module
+- 现象：ChuanqiCut pod 编译通过后，SharedUI（pod 消费方）报
+  `AppEntry.swift:14: missing required module 'CChuanqiCut'`；App target
+  `import ChuanqiCut` 同理会报。
+- 根因：ChuanqiCut 的 Swift 公开 API 签名里含 `CChuanqiCut` 的 C 类型，
+  Swift 在消费方 import 该 module 时要求其依赖的 clang module 同样可见。
+  `pod_target_xcconfig` 只作用于 pod 自身；`user_target_xcconfig` 只作用于
+  App target，**两者互不覆盖对方的覆盖面**。
+- 修复：三处显式声明同一路径——ChuanqiCut.podspec 的
+  `pod_target_xcconfig`（自身编译）+ `user_target_xcconfig`（App target，
+  锚定 `$(SRCROOT)/../../../`）；SharedUI.podspec 的
+  `pod_target_xcconfig`（pod 消费方，锚定 `$(PODS_TARGET_SRCROOT)/../../../../`）。
+- 防复发规则：SDK pod 的公开 API 触及非 umbrella C module 时，必须同时给
+  pod 自身、pod 消费方、App target 三类编译者提供 SWIFT_INCLUDE_PATHS；
+  新增 pod 消费方时同步检查。
+- 日期 / 来源 / 验证状态：2026-10-02 / INFRA-009 / **verified**
+  （SharedUI + MacApp 改后 BUILD SUCCEEDED）
+
+### P12 · 无 lock 时 bundler 解析到 CFPropertyList 3.0.9 → Ruby 3.4 不兼容
+- 现象：新建 Gemfile（无 Gemfile.lock）跑 `bundle install`，报
+  `CFPropertyList-3.0.9 requires ruby version < 3.2, which is incompatible
+  with the current version, 3.4.11`。
+- 根因：镜像上 CFPropertyList 最新版 3.0.9 声明了 `required_ruby_version < 3.2`；
+  之前根目录 Gemfile.lock 钉住的 3.0.8 无此约束。lock 一旦缺席，bundler 就
+  重新解析"最新可用集"，锁文件的保护即刻失效。
+- 修复：从 git HEAD 恢复已知良好的 Gemfile.lock 作为起始 lock，bundler 按
+  lock 安装、不重解析。
+- 防复发规则：**Gemfile.lock 必须与 Gemfile 同步入库**（INFRA-009 起
+  apps/apple/{ios,mac}/ 各持一份）；新建项目目录时先复制已知 lock 再
+  bundle install，不要裸解析。
+- 日期 / 来源 / 验证状态：2026-10-02 / INFRA-009 / **verified**
+
+### P13 · 平台差异分支从未编译过 = 带病潜伏；iOS 分支 opaque 类型不匹配首爆
+- 现象：INFRA-009 首次对 iOS SDK 编译 SharedUI，报
+  `EditorLayout.swift:53: branches have mismatching types 'some View'`
+  （`iosLayout` 的 if/else 返回 verticalLayout / horizontalLayout 两个不同的
+  opaque 类型）。macOS 侧一直编译绿，因为 macOS 分支走的是 `macLayout`。
+- 根因：裸 `some View` 计算属性里 if/else 两分支必须是**同一个**具体类型；
+  `#if os(iOS)` 分支自 UIA-002 以来从未被编译过（真机不可用即跳过 iOS 验证），
+  潜伏 1 天即被首次 iOS 构建抓出。
+- 修复：属性加 `@ViewBuilder`（if/else 变 `_ConditionalContent<A,B>`，两分支
+  可为不同类型），行为不变。
+- 防复发规则：① 平台差异分支（`#if os` / sizeClass if-else）涉及**不同布局
+  类型**时一律 `@ViewBuilder`；② 「真机不可用」不等于「iOS 不验」——Swift
+  侧改动至少要用 `-sdk iphoneos18.4` legacy target 模式跑一次编译
+  （destination 需要 platform runtime 包，legacy `-sdk` 不需要，见
+  ui-apple.md 验证节）。
+- 日期 / 来源 / 验证状态：2026-10-02 / INFRA-009 / **verified**
+  （改后 ChuanqiCut + SharedUI + ChuanqiCutApp arm64 全链 BUILD SUCCEEDED）
+
+---
+
 ## 已修正的历史错误（供参考，避免重犯）
 
 | # | 错误 | 事实 | 日期 |

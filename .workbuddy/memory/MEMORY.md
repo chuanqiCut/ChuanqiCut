@@ -54,6 +54,20 @@
   反向依赖上层。上层要用时走逃生口（`IGfxDevice::PalDevice()` /
   `IGfxEncoder::PalEncoder()`）。
 
+## 跨层句柄与链接硬规则（2026-10-03 定，UIA-003）
+
+- **凡契约里写了「reinterpret 为平台对象」的句柄，必须有跨层测试真的
+  reinterpret 并消费它**（pitfalls P20）。`GetColorTexture` 曾返回 CqTexture*
+  包装却承诺可 reinterpret 为 id<MTLTexture>，绑定测试只查非空是绿的，
+  Swift 首用即崩。导出用（裸原生纹理）与 SetTexture 用（CqTexture* 包装）
+  两种句柄语义已在 `pal/gfx.h` 写清，不得混用。
+- **内核静态库的系统框架依赖清单单一真源 = `ChuanqiCut.podspec` 的
+  ss.frameworks**；`bindings/swift/Package.swift` linkerSettings 与
+  `run_smoke.sh` 链接清单必须与之同步（pitfalls P23）。静态库新拉入 TU
+  （如预览/媒体）会引入新的系统框架依赖，三处清单一起改。
+- 本机（Intel Mac + AMD GPU / macOS 15.4）`MTLTexture.getBytes` 读不到 GPU
+  写入内容：读回一律 blit→Shared Buffer→contents（pitfalls P21）。
+
 ## 依赖治理硬规则（ADR-0008）
 - FFmpeg upstream 用 **GitHub 官方镜像** `https://github.com/FFmpeg/FFmpeg.git`（ffmpeg.org 登记为官方 mirror），本地 git 管理。
 - **源码集成的 git 依赖一律 `pin="commit"` + 40 位 hash。禁止 `pin="tag"`。**

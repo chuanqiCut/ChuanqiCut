@@ -12,11 +12,31 @@
 | 1 | 素材表 AssetRegistry | ✅ | `asset_registry` |
 | 2 | 取帧接入 | ✅ | `frame_provider_apple` |
 | 3 | 纹理导入（零拷贝） | ✅ | **PALA-002 已覆盖**（2026-09-26，`pala_native_image` 含 IOSurface ID 断言 + 真实解码帧渲染读回）→ 本任务无需再做 |
-| 4 | 预览渲染器 | ✅ | `preview_renderer`（33 项检查） |
-| 5 | C ABI 封装 | ⏭️ 下一步 | |
-| 6 | UIA-003 MTKView 嵌入 | 待做 | |
+| 4 | 预览渲染器 | ✅ | `preview_renderer`（35 项检查） |
+| 5 | C ABI 封装 | ✅ | `c_abi_preview`（32 项检查，真正的 C TU） |
+| 6 | UIA-003 MTKView 嵌入 | ⏭️ 下一步 | |
 
-子步骤 4 新增文件与两个接缝见「六、写集」。
+子步骤 4/5 新增文件与接缝见「六、写集」。
+
+### 子步骤 5 的关键决策：C ABI 放 core，不按平台分裂
+
+矛盾：C ABI 门面要装配预览，就得拿平台能力（图形设备 / blit pass / 帧提供器）；
+但**core 从不调用 PAL 工厂**（全库 grep 确认：调用只发生在 tests/ 与 pal/），
+若 C ABI 按平台分裂实现，`cq_sdk.h` 作为「唯一对外边界」就废了。
+
+解法：**PAL 工厂 + 独立 TU**
+- blit pass 提升为 PAL 契约（`IBlitPass` + `CreateBlitPass` 移入 `pal/gfx.h`）。
+  它必然由平台原生 shader 实现（红线 #6），本就该在 PAL；且 PAL 不能反向依赖
+  GFX，故 `IGfxEncoder` 补 `PalEncoder()` 逃生口（与 `PalDevice()` 同套路）。
+- 落地 `pal/media.h` 里**悬空 7 天**的 `CreateFrameProvider` 声明；
+  core 侧用 `PalFrameProvider` 把 PAL 的 `IFrameProvider` 适配成 core 的
+  `FrameProvider`（形状适配，不引入第二套取帧逻辑）。
+- 两个调 PAL 工厂的 TU（`pal_frame_provider.cpp` / `cq_sdk_preview.cpp`）**必须
+  各自独立**：静态库按 archive member 粒度拉符号，独立 TU 才能保证「不用预览的
+  目标」不被牵出 PAL 依赖。
+
+实证：`cq_tests_c_abi` 只链 `cq_core`、**不链** `cq_pal_apple`，仍然链接通过并运行成功
+→ 隔离成立。若把这段代码并进 `cq_sdk.cpp`，该测试会立刻链接失败。
 
 ---
 
@@ -138,6 +158,18 @@ void    cq_preview_release_texture(CQPreview*, void* texture);
   `SystemFrameProvider` 需要 `IFrameDecoder*`，其真实实现 `VideoToolboxDecoder`
   只在 Apple TU 可见，core 直接装配会违反「PAL 头文件零平台类型」，故下沉。
   实现在 `pal/apple/frame_provider_apple.mm`（PALA-010 + PALA-011 → MEDIA-020）。
+
+### 子步骤 5 新增
+
+- `core/include/cq/cq_sdk.h` —— 预览 ABI 段（`cq_preview_create/destroy/register_asset/
+  add_clip/render_frame/resize` + 诊断量 `last_hit_clip/last_cpu_fallback/last_frame_pts`）
+- `core/src/preview/cq_sdk_preview.cpp` —— 实现（**独立 TU**，原因见上）
+- `core/include/cq/media/pal_frame_provider.h` + `core/src/media/pal_frame_provider.cpp`
+  —— `PalFrameProvider`（PAL→core 适配器）+ `PalFrameProviderFactory`（core 默认工厂）
+- `tests/unit/test_c_abi_preview.c` —— 真正的 C 翻译单元
+
+**顺带补的接口缺陷**：PAL `IFrameProvider::GetDuration` —— core 的 `FrameProvider`
+要求此项，PAL 接口原本没有，适配时无处可取（会让上层拿不到素材时长）。
 
 **顺带补的两个接口缺陷**（都是首次真实使用时才暴露的）：
 - `INativeImageImporter::ReleaseTexture`：`Import` 返回裸 `TextureHandle`，

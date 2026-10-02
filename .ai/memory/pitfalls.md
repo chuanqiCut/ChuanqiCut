@@ -305,6 +305,43 @@
   一个随时间变化的量（pts / 帧序号），不能只靠像素。
 - 日期 / 来源 / 验证状态：2026-10-02 / BIND-003 子步骤 4 / **verified**
 
+### P17 · core 要调 PAL 工厂时，**必须隔离在独立 TU**（否则污染所有下游链接）
+- 现象：BIND-003 子步骤 5 要做预览的 C ABI，装配需要平台能力（图形设备 /
+  blit pass / 帧提供器）。但既有惯例是 **core 从不调 PAL 工厂**（全库 grep：
+  调用只发生在 tests/ 与 pal/），因为 cq_core 若引用 PAL 符号，没有 PAL 后端的
+  平台（当前 Android / ohos）就会链接失败。
+- 解法：① 需要平台能力的实现**单独成 TU**（`pal_frame_provider.cpp` /
+  `cq_sdk_preview.cpp`）；② 静态库按 **archive member 粒度**拉符号，
+  只有真正引用了该 TU 符号的目标才会把它链进来 —— 隔离成立。
+- 实证：`cq_tests_c_abi` 只链 `cq_core`、**不链** `cq_pal_apple`，
+  仍链接通过并运行成功。若把预览代码并进 `cq_sdk.cpp`，该测试会立刻链接失败。
+- 防复发规则：新增「core 调 PAL 工厂」的代码前，先确认它在**专属 TU** 里，
+  并留一个不链 PAL 的目标做回归验证。
+- 日期 / 来源 / 验证状态：2026-10-02 / BIND-003 子步骤 5 / **verified**
+
+### P18 · 「必然由平台原生实现」的抽象，定义层要放对（放错会被依赖方向反噬）
+- 现象：`IBlitPass` 初版定义在 `core/include/cq/gfx/`（GFX 层），实现在
+  pal/apple。可它由**平台原生 shader**（MSL）实现，按红线 #6 只能落在
+  pal/<platform>/；而 PAL 不能反向 include GFX 头 —— 依赖方向直接冲突。
+- 修复：`IBlitPass` + `CreateBlitPass` 移到 **`pal/gfx.h`**；GFX 侧需要把
+  PAL 编码器传给 PAL 层 pass，故给 `IGfxEncoder` 补 `PalEncoder()` 逃生口
+  （与既有的 `IGfxDevice::PalDevice()` 同一套路）。
+- 防复发规则：判断抽象该放哪层，看**实现必然落在哪**。若实现只能用平台原生
+  能力（shader 源码 / 平台 SDK），抽象就该在 PAL；放上层会导致反向依赖。
+- 日期 / 来源 / 验证状态：2026-10-02 / BIND-003 子步骤 5 / **verified**
+  （`preview_renderer` 35 项 + `c_abi_preview` 32 项全绿）
+
+### P19 · PAL `CreateFrameProvider` 悬空 7 天（第 5 次「只有声明无实现」）
+- 现象：`pal/media.h:231` 的 `CreateFrameProvider` 自 CORE-006（2026-09-25）
+  起只有声明，从未实现。上一轮我已把它标为风险但未处理。
+- 同类问题已发生 5 次：`cq_build_anchor` / 能力查询实现 / BIND-001 实现 /
+  `test_media_decode_apple.cpp`（在磁盘但没接入 CMake）/ 本次。
+- 修复：BIND-003 子步骤 5 落地（pal/apple/frame_provider_apple.mm，
+  内部用 MEDIA-020 SystemFrameProvider + PALA-011 VideoToolboxDecoder）。
+- 防复发规则：**看到「只有声明」的工厂，要么实现、要么删掉**，不要留着。
+  留着的下场是某天有人按声明去调，撞链接错误才被发现。
+- 日期 / 来源 / 验证状态：2026-10-02 / BIND-003 子步骤 5 / **verified**
+
 ---
 
 ## 已修正的历史错误（供参考，避免重犯）

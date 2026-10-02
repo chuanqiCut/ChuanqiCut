@@ -49,9 +49,14 @@ add_library(cq_core STATIC
     # 节点图/依赖分析/pass 调度等真有多 pass 合成需求时再补。
     src/gfx/gfx_device.cpp
     # BIND-003 子步骤 4：预览渲染器（Timeline + AssetRegistry + 取帧 + 零拷贝导入 → 离屏 RT）。
-    # 平台无关：取帧走 IFrameProviderFactory 接缝、绘制走 IBlitPass 接缝，
-    # 两者的 Apple 实现在 pal/apple/。
-    src/preview/preview_renderer.cpp)
+    # 平台无关：取帧走 IFrameProviderFactory 接缝、绘制走 IBlitPass 接缝。
+    src/preview/preview_renderer.cpp
+    # BIND-003 子步骤 5：把 PAL 的 IFrameProvider 适配成 core 的 FrameProvider。
+    # ⚠️ 本 TU 是 core 中首个调用 PAL 工厂者，**必须单独成 TU**：静态库按 archive
+    #    member 粒度拉符号，独立 TU 才能保证「不用预览的目标」不牵出 PAL 依赖。
+    src/media/pal_frame_provider.cpp
+    # BIND-003 子步骤 5：预览的 C ABI 实现。同理必须单独成 TU（同上）。
+    src/preview/cq_sdk_preview.cpp)
 
 # 版本号由 CMake 注入，不在 cq_sdk.h 里硬编码（否则必然与 project VERSION 漂移）。
 target_compile_definitions(cq_core PRIVATE

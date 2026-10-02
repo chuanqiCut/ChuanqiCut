@@ -31,12 +31,11 @@
 #include "cq/gfx/gfx_device.h"
 #include "cq/media/asset_registry.h"
 #include "cq/model/timeline.h"
-#include "cq/pal/gfx.h"
+#include "cq/media/pal_frame_provider.h"  // PalFrameProviderFactory（经 PAL 工厂取帧）
+#include "cq/pal/gfx.h"                   // IBlitPass / CreateBlitPass
 #include "cq/preview/preview_renderer.h"
-#include "blit_pass.h"             // cq::apple::CreateBlitPass
-#include "frame_provider_apple.h"  // cq::apple::CreateAppleFrameProviderFactory
-#include "gfx_metal_internal.h"    // ReadRenderTargetPixels
-#include "media_decode.h"          // cq::CqNativeImage（合成帧包装，仅 Apple TU 可见）
+#include "gfx_metal_internal.h"  // ReadRenderTargetPixels
+#include "media_decode.h"        // cq::CqNativeImage（合成帧包装，仅 Apple TU 可见）
 
 #ifndef CQ_SOURCE_DIR
 #define CQ_SOURCE_DIR "."
@@ -142,11 +141,14 @@ int main() {
           "CreateGfxDevice（GFX-002 门面）");
     if (gfx == nullptr) return 1;
 
-    auto blit = cq::apple::CreateBlitPass(gfx, cq::TextureFormat::kRGBA8);
-    Check(blit != nullptr, "CreateBlitPass（Apple MSL 全屏拷贝）");
-    auto factory = cq::apple::CreateAppleFrameProviderFactory();
-    Check(factory != nullptr, "CreateAppleFrameProviderFactory（PALA-010+011 装配）");
-    if (!blit || !factory) return 1;
+    // blit pass 走 **PAL 工厂**：它必然由平台原生 shader 实现，属于平台能力。
+    cq::PalPtr<cq::IBlitPass> blit;
+    Check(cq::CreateBlitPass(gfx->PalDevice(), cq::TextureFormat::kRGBA8, blit).IsOk() && blit,
+          "CreateBlitPass（PAL 工厂 → Apple MSL 全屏拷贝）");
+    // 取帧工厂走 core 默认实现：内部经 PAL 的 CreateFrameProvider，
+    // 再适配成 core 的 FrameProvider（不引用任何 Apple 符号）。
+    cq::PalFrameProviderFactory factory;
+    if (!blit) return 1;
 
     // =========================================================================
     // 1. blit pass 方向约定（合成帧：上半红 / 下半蓝）
@@ -182,7 +184,10 @@ int main() {
                         cq::TextureHandle src = nullptr;
                         cq::Status Encode(cq::IGfxEncoder& enc, const cq::FrameContext&,
                                           const cq::CancelToken&) override {
-                            return blit_pass->Encode(enc, src);
+                            // IBlitPass 在 PAL 层，收 PAL 的 ICommandEncoder。
+                            cq::ICommandEncoder* pal_enc = enc.PalEncoder();
+                            if (pal_enc == nullptr) return cq::Status(cq::StatusCode::kInternal);
+                            return blit_pass->Encode(*pal_enc, src);
                         }
                     } client;
                     client.blit_pass = blit.get();
@@ -232,7 +237,7 @@ int main() {
     cfg.width = 256;
     cfg.height = 256;
     cfg.format = cq::TextureFormat::kRGBA8;
-    cq::PreviewRenderer renderer(gfx, blit.get(), factory.get(), &timeline, &assets, cfg);
+    cq::PreviewRenderer renderer(gfx, blit.get(), &factory, &timeline, &assets, cfg);
 
     cq::CancelToken token;
     cq::TextureHandle out = nullptr;
@@ -289,7 +294,7 @@ int main() {
     {
         cq::Timeline tl_unknown;
         BuildSingleClipTimeline(tl_unknown, 999, 3000);
-        cq::PreviewRenderer r_unknown(gfx, blit.get(), factory.get(), &tl_unknown, &assets, cfg);
+        cq::PreviewRenderer r_unknown(gfx, blit.get(), &factory, &tl_unknown, &assets, cfg);
         cq::TextureHandle out_u = nullptr;
         cq::Status su = r_unknown.RenderFrame(Ms(500), out_u, token);
         std::printf("  RenderFrame(asset_id=999) code=%d\n", static_cast<int>(su.code));

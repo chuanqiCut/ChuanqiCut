@@ -23,7 +23,10 @@ public:
 
     Status Encode(IGfxEncoder& encoder, const FrameContext&, const CancelToken&) override {
         if (blit_ == nullptr) return Status(StatusCode::kInvalidArgument);
-        return blit_->Encode(encoder, tex_);
+        // IBlitPass 在 PAL 层，收的是 PAL 的 ICommandEncoder（PAL 不能反向依赖 GFX）。
+        ICommandEncoder* pal_encoder = encoder.PalEncoder();
+        if (pal_encoder == nullptr) return Status(StatusCode::kInternal);
+        return blit_->Encode(*pal_encoder, tex_);
     }
 
 private:

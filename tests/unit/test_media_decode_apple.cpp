@@ -111,8 +111,10 @@ bool VerifySmpteBars(CVPixelBufferRef pb, uint32_t w, uint32_t h) {
 
     (void)expect;
     std::printf("    彩条采样(R,G,B) @y=%u: ", y);
-    for (int i = 0; i < 7; ++i) {
-        std::printf("(%3d,%3d,%3d)%s", std::get<0>(s[i]), std::get<1>(s[i]), std::get<2>(s[i]),
+    // i 用 std::size_t：容器下标是 size_type，用 int 会触发 -Wsign-conversion
+    // （本项目 -Werror，会直接编译失败）。
+    for (std::size_t i = 0; i < 7; ++i) {
+        std::printf("(%3d,%3d,%3d)%s", static_cast<int>(std::get<0>(s[i])), static_cast<int>(std::get<1>(s[i])), static_cast<int>(std::get<2>(s[i])),
                     i < 6 ? " " : "");
     }
     std::printf("\n    非全黑=%d  alpha=255=%d  去重颜色数=%zu  hue主序=%d\n", !all_black, alpha_ok,
@@ -277,7 +279,12 @@ int main() {
             if (pb != nullptr) {
                 CVPixelBufferLockBaseAddress(pb, 0);
                 uint8_t b, g, r, a;
-                ReadPixelBgra(pb, CVPixelBufferGetWidth(pb) / 2, CVPixelBufferGetHeight(pb) / 2, b,
+                // CVPixelBufferGetWidth/Height 返回 size_t，ReadPixelBgra 收 uint32_t。
+                // 必须显式转换：本项目开 -Werror（含 -Wshorten-64-to-32），
+                // 隐式收窄会直接编译失败。
+                ReadPixelBgra(pb,
+                              static_cast<uint32_t>(CVPixelBufferGetWidth(pb) / 2),
+                              static_cast<uint32_t>(CVPixelBufferGetHeight(pb) / 2), b,
                               g, r, a);
                 CVPixelBufferUnlockBaseAddress(pb, 0);
                 std::printf("    中心像素(R,G,B,A)=(%d,%d,%d,%d)\n", r, g, b, a);

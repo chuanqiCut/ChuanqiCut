@@ -415,3 +415,21 @@ if(APPLE)
     apply_cq_warnings(cq_tests_frame_provider_apple)
     add_test(NAME frame_provider_apple COMMAND cq_tests_frame_provider_apple)
 endif()
+
+# ---- PALA-011：Apple 硬解后端（VideoToolbox）----
+# ⚠️ 本文件此前**只存在于磁盘、从未接入 CMake** —— 即它从来没被执行过，
+#    属于"只声明未接入"的老毛病（等同 cq_build_anchor / 能力查询 / BIND-001 实现那几次）。
+#    此处补齐注册，让它真正跑起来。
+if(APPLE)
+    add_executable(cq_tests_pala_decode
+        unit/test_media_decode_apple.cpp)
+    target_include_directories(cq_tests_pala_decode PRIVATE
+        ${CMAKE_SOURCE_DIR}/core/include
+        ${CMAKE_SOURCE_DIR}/pal/apple)
+    target_compile_definitions(cq_tests_pala_decode PRIVATE
+        CQ_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
+    target_link_libraries(cq_tests_pala_decode PRIVATE cq_core cq_pal_apple)
+    cq_require_cxx20(cq_tests_pala_decode)
+    apply_cq_warnings(cq_tests_pala_decode)
+    add_test(NAME pala_decode COMMAND cq_tests_pala_decode)
+endif()

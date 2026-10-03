@@ -29,8 +29,7 @@
 | 预览 | Swift 绑定（Previewer + RationalTime） | ✅（2026-10-03） |
 | 模型 | MODEL-002 Command/CommandHistory（Undo/Redo） | ✅（2026-10-03，门禁 35/35） |
 | **下一步** | **UIA-004 时间线自绘视图**（UIA-005 拖拽/裁剪依赖它 + MODEL-002 已就绪） | ⏭️ **下一步** |
-| **下一步** | **UIA-005 素材导入 / 播放头驱动（异步）** | ⏭️ **下一步** |
-**门禁**：`Debug 34/34`、`Release 34/34` 全绿；Swift 绑定 13/13；SharedUI 测试全绿（含像素级）；
+**门禁**：`Debug 35/35`、`Release 35/35` 全绿（含 model_command）；Swift 绑定 13/13；SharedUI 测试全绿（含像素级）；
 macOS App 编译 SUCCEEDED（Swift 告警 0）+ 启动冒烟通过；iOS `-sdk iphoneos` 编译 SUCCEEDED。
 
 **本轮新增的架构决策**：
@@ -48,7 +47,7 @@ macOS App 编译 SUCCEEDED（Swift 告警 0）+ 启动冒烟通过；iOS `-sdk i
 
 ---
 
-## 2. 下一步：UIA-005（素材导入 / 播放驱动）
+## 2. 下一步：UIA-004（时间线自绘）→ UIA-009（素材导入）
 
 子步骤 6 / UIA-003 已完成（2026-10-03）：
 - Swift 绑定 `Previewer`（`bindings/swift/Sources/ChuanqiCut/Previewer.swift`；
@@ -70,8 +69,12 @@ macOS App 编译 SUCCEEDED（Swift 告警 0）+ 启动冒烟通过；iOS `-sdk i
    数百片段拖拽不掉帧。
 2. **UIA-005 拖拽/裁剪交互**：拖拽预览层 + 结束时经 MODEL-002 提交 Command
    （Move/Trim 命令已就绪）；连续拖拽的命令合并（coalescing）届时设计。
-3. **播放驱动**：异步任务推进 playhead（当前主线程同步解码只适用于单帧按需）。
-4. 素材导入 UI（文件选择 → registerAsset + addClip）、letterbox/fit。
+3. **UIA-009 素材导入流程**（任务卡已建 2026-10-03，含 Session 级素材表收口 +
+   决策 D1~D3）：文件选择 → 入表（Session 级）→ Command 建片段 → 时间线/预览可见。
+   子步骤 1（契约，改 cq_sdk.h）不依赖 UIA-004 可先行；子步骤 3 依赖 UIA-004。
+4. **播放驱动**：异步任务推进 playhead（当前主线程同步解码只适用于单帧按需；
+   连续播放**不得**逐帧阻塞主线程）。
+5. letterbox / fit（当前拉伸铺满）、多轨合成（等 RENDER-001）。
 
 ⚠️ Swift 侧**绝不要**「读回像素再上传」：每帧一次 CPU 往返会直接毁掉预览帧率。
    直接把 `void*` 句柄 reinterpret 成 `MTLTexture` 交给 MTKView 绘制。

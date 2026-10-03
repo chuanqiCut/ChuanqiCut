@@ -190,6 +190,7 @@ parallel:    false          # 是否与同批次其他任务并行
 | UIA-006 | UI | 属性面板（变换/调色/滤镜参数） | UIA-002, MODEL-003 | SharedUI | 参数变更走 Command |
 | UIA-007 | UI | 导出界面与进度/取消 | EXPORT-001 | SharedUI | 可取消，进度准确 |
 | UIA-008 | UI | Undo/Redo 入口（含 Mac 快捷键） | MODEL-002 | SharedUI | iOS 摇一摇 + Mac Cmd+Z |
+| UIA-009 | UI | 素材导入流程（含 Session 级素材表收口：文件选择 → 入表 → Command 建片段 → 时间线/预览可见） | UIA-004, MODEL-002 ✅ | `SharedUI` + `cq_sdk.h` + `core/session` | 导入的片段重启前可见；素材表 Session 级共享 |
 
 ### 3.6 导出
 

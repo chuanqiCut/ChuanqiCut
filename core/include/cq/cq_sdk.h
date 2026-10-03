@@ -206,46 +206,34 @@ int32_t cq_session_query_clips(const CQSession* session, uint64_t track_id, CQCl
                                int32_t capacity, int32_t* out_count);
 
 /* ==========================================================================
- * 预览（BIND-003）
+ * 预览（BIND-003 建立；UIA-009 子步骤 2 收口，2026-10-03）
  * ==========================================================================
- * CQPreview = 「时间线 + 素材表 + 取帧 + 渲染」的会话级预览器。
- * 典型用法：create → register_asset(若干) → add_clip(若干) → 每帧 render_frame。
+ * CQPreview = 「取帧 + 渲染」的会话级预览器。**时间线与素材表不在预览里**：
+ * 渲染输入是 CQSession 发布的不可变模型快照（每次 render_frame 入口加载），
+ * 模型的唯一真源是 CQSession（cq_session_register_asset / add_track / add_clip）。
+ * 典型用法：session 装配模型 → cq_preview_create(session) → 每帧 render_frame。
  *
  * 时间一律 RationalTime{value, timescale}（红线 #4，禁止浮点秒）。
  * 本项目网格 timescale = 120000（ADR-0009）。
  *
+ * ⚠️ 生命周期：CQPreview **不拥有** CQSession —— 必须 session 先活后死
+ *    （Swift 绑定由对象图保证：Previewer 强持有 Session）。
+ *
  * ⚠️ 平台能力依赖：预览需要 PAL 的图形设备 / 全屏拷贝 pass / 帧提供器三项后端。
- *    缺失任一后端时 cq_preview_create 返回 NULL —— 这是**运行时**失败，上层据此
- *    走「预览不可用」路径。**不要**用编译期宏判断平台能力（红线 #3）。
+ *    缺失任一后端、或 session 未内建模型时 cq_preview_create 返回 NULL ——
+ *    这是**运行时**失败，上层据此走「预览不可用」路径。
+ *    **不要**用编译期宏判断平台能力（红线 #3）。
  */
 
 typedef struct CQPreview CQPreview;
 
-/* 创建预览器。width/height 为离屏渲染目标尺寸；失败返回 NULL。
- * 注意：当前为「拉伸铺满」，不做宽高比适配（letterbox 待 UI 需求明确后加）。 */
-CQPreview* cq_preview_create(uint32_t width, uint32_t height);
+/* 创建预览器（挂到 session 的模型快照上）。width/height 为离屏渲染目标尺寸；
+ * 失败返回 NULL。注意：当前为「拉伸铺满」，不做宽高比适配（letterbox 待 UI
+ * 需求明确后加）。 */
+CQPreview* cq_preview_create(CQSession* session, uint32_t width, uint32_t height);
 
-/* 释放；传 NULL 安全（幂等）。 */
+/* 释放；传 NULL 安全（幂等）。调用方保证 session 存活于此调用之前。 */
 void cq_preview_destroy(CQPreview* preview);
-
-/* 注册素材（asset_id → 文件路径）。path 会被**拷贝**进内核，调用方可立即释放。
- * 重复注册同一 id 会整体替换。 */
-int32_t cq_preview_register_asset(CQPreview* preview, uint64_t asset_id, const char* path);
-
-/* 添加片段到视频轨。
- *   track_id  —— 轨道 id；不存在时**自动创建**一条视频轨
- *   asset_id  —— 必须先 register_asset
- *   start     —— 时间线起点
- *   duration  —— 时间线占时
- *   source_in —— 素材内入点
- * 同轨片段不得重叠（MODEL-001 语义），重叠返回 kInvalidArgument(7000)。
- *
- * ⚠️ 本期**只渲染第一条命中的视频轨** —— 多轨叠加/转场合成要等 RenderGraph
- *    （RENDER-001）落地。这里不假装支持多轨合成。 */
-int32_t cq_preview_add_clip(CQPreview* preview, uint64_t track_id, uint64_t asset_id,
-                            int64_t start_value, int32_t start_timescale,
-                            int64_t duration_value, int32_t duration_timescale,
-                            int64_t source_in_value, int32_t source_in_timescale);
 
 /* 渲染 pts 处一帧到离屏目标，out_texture 返回**可显示的平台纹理句柄**
  * （中性句柄：iOS/macOS 上 reinterpret 为 id<MTLTexture>）。

@@ -28,6 +28,7 @@
 #include "cq/base/status.h"
 // session → model：模型层（MODEL-001/002）落地后，类型化模型接口进入门面。
 // CORE-009 当初用 ISessionState 解耦是为了不被 MODEL-001 阻塞，不是永久边界。
+#include "cq/model/model_snapshot.h"
 #include "cq/model/timeline.h"
 #include "cq/session/snapshot.h"
 #include "cq/session/task_runner.h"
@@ -94,8 +95,12 @@ public:
     // 读路径只碰 atomic：绝不跨线程调用 state->Digest()（D4）。
     Snapshot CurrentSnapshot() const;
 
-    // 内建模型的时间线快照（不可变，任意线程无锁读；UIA-004 视图与预览共用）。
-    // 注入自定义状态时返回 nullptr。指针指向「最近一次成功变更之后」的完整状态。
+    // 内建模型的**配对快照**（Timeline + AssetRegistry，不可变，任意线程读；
+    // 预览渲染的唯一输入 —— UIA-009 子步骤 2 收口后 CQPreview 不再有本地模型）。
+    // 注入自定义状态时返回 nullptr（cq_preview_create 据此返回 NULL）。
+    std::shared_ptr<const ModelSnapshot> CurrentModelSnapshot() const;
+
+    // 便捷取时间线部分（同一份快照）。
     std::shared_ptr<const Timeline> CurrentTimeline() const;
 
     // ---- 变更日志（UI 可 diff）----

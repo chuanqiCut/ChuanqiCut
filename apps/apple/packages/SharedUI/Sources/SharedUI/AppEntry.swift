@@ -60,7 +60,8 @@ public final class EditorViewModel: ObservableObject {
         self.session = session
         self.snapshot = session.currentSnapshot
         self.knownVersion = session.currentSnapshot.version
-        self.preview = Previewer(width: 1280, height: 720)
+        // UIA-009 子步骤 2 收口后预览挂 session 快照（单一真源），并强持有 session。
+        self.preview = Previewer(session: session, width: 1280, height: 720)
         // 版本 0 不触发 observer 回流，初始时间线状态主动查一次。
         refreshTimeline()
 
@@ -103,11 +104,12 @@ public final class EditorViewModel: ObservableObject {
     /// 在轨道 1 铺一条 5 秒片段并把播放头放到 0.5s（120000 timescale 的 60000）。
     ///
     /// 变量未设置或文件不存在时不做任何事（返回 false）—— 预览保持黑屏，
-    /// 等真实素材导入（UIA-009）。App 正式路径**不依赖**本方法。
+    /// 等真实素材导入（UIA-009 子步骤 3）。App 正式路径**不依赖**本方法。
     ///
-    /// ⚠️ 双写是收口前的**过渡形状**：预览本地装配（cq_preview_*，BIND-003 阶段
-    ///    形状，UIA-009 子步骤 2 收口）+ 会话级模型（UIA-009 子步骤 1 落地的
-    ///    真路径，时间线视图读这里）。会话提交是异步的，时间线经 observer 回流刷新。
+    /// 装配走 Session（唯一真源）：预览渲染读其快照，时间线视图经 observer 回流刷新。
+    /// ⚠️ 提交是异步的：addTrack 的真实轨道 id 要等内核分配 —— 先注册素材 +
+    ///    建轨道，轮询版本推进后查询 id，再提交 addClip（DEBUG 冒烟用
+    ///    RunLoop 泵主队列等待，正式 UI 走 observer 回流，不这样等）。
     @discardableResult
     public func installDemoClipFromEnvironment() -> Bool {
         guard let path = ProcessInfo.processInfo.environment["CQ_DEMO_VIDEO"],
@@ -119,10 +121,6 @@ public final class EditorViewModel: ObservableObject {
         let duration = RationalTime(value: 5 * Int64(ts), timescale: ts)
         let sourceIn = RationalTime(value: 0, timescale: ts)
 
-        // 会话级（真路径）：时间线视图显示这里。
-        // ⚠️ 提交是异步的：addTrack 的真实轨道 id 要等内核分配 —— 先注册素材 +
-        //    建轨道，轮询版本推进后查询 id，再提交 addClip（DEBUG 冒烟用
-        //    RunLoop 泵主队列等待，正式 UI 走 observer 回流，不这样等）。
         let versionAtStart = session.currentSnapshot.version
         guard session.registerAsset(id: 1, path: path).isOK,
               session.addTrack(kind: 0).isOK else { return false }
@@ -134,13 +132,6 @@ public final class EditorViewModel: ObservableObject {
         guard session.addClip(trackId: track.trackId, assetId: 1,
                               start: start, duration: duration,
                               sourceIn: sourceIn).isOK else { return false }
-
-        // 预览本地（过渡）：画面出这里
-        let previewOK = preview?.registerAsset(id: 1, path: path).isOK ?? false
-            && preview?.addClip(trackId: 1, assetId: 1,
-                                start: start, duration: duration,
-                                sourceIn: sourceIn).isOK ?? false
-        guard previewOK else { return false }
         setPlayhead(RationalTime(value: 60000, timescale: ts))
         return true
     }

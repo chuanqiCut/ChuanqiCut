@@ -8,6 +8,11 @@
 // 本文件仍是**薄封装**：语义一律以 cq_sdk.h 的注释为准（那份注释是契约，
 // 本文件是它的 Swift 投影）。
 //
+// 收口后（UIA-009 子步骤 2，2026-10-03）：CQPreview 不再有本地时间线/素材表
+// —— 渲染输入是 Session 发布的不可变模型快照。装配走 Session.registerAsset /
+// addTrack / addClip（异步），本类只负责渲染与诊断。**强持有 Session**：
+// CQPreview 不拥有 session，对象图保证 session 先活后死。
+//
 // 线程约定：CQPreview 内部无锁。本类**非 Sendable**，请在单一线程（约定为主
 // 线程）使用。MTKView 的 draw 回调默认就在主线程，与此约定吻合。
 //
@@ -27,51 +32,29 @@ import Foundation
 public final class Previewer {
 
     private var handle: OpaquePointer?
+    /// 强持有：CQPreview 不拥有 session（生命周期由对象图保证，见文件头）。
+    private let session: Session
 
     /// 最近一次 renderFrame 产出的可显示纹理句柄（中性句柄）。
     /// 无帧 / 渲染失败时为 nil。
     public private(set) var textureHandle: UnsafeMutableRawPointer?
 
-    /// 创建预览器。width/height 为离屏渲染目标像素尺寸；内核后端缺失时返回 nil
-    /// （运行时失败，上层据此走「预览不可用」降级 —— **不要**用编译期宏判断）。
-    public init?(width: Int, height: Int) {
+    /// 创建预览器（挂到 session 的模型快照上）。width/height 为离屏渲染目标
+    /// 像素尺寸；内核后端缺失时返回 nil（运行时失败，上层据此走「预览不可用」
+    /// 降级 —— **不要**用编译期宏判断）。
+    public init?(session: Session, width: Int, height: Int) {
         guard width > 0, height > 0 else { return nil }
-        guard let h = cq_preview_create(UInt32(width), UInt32(height)) else {
+        guard let h = cq_preview_create(session.handle, UInt32(width), UInt32(height)) else {
             return nil
         }
-        handle = h
+        self.handle = h
+        self.session = session
     }
 
     deinit {
         cq_preview_destroy(handle)
         handle = nil
         textureHandle = nil
-    }
-
-    // MARK: 时间线装配（预览本地的装配视图，非 Session 模型）
-
-    /// 注册素材（asset_id → 文件路径）。内核会拷贝路径。重复注册同一 id 整体替换。
-    @discardableResult
-    public func registerAsset(id: UInt64, path: String) -> Status {
-        guard let h = handle else { return .invalidArgument }
-        let code = path.withCString { cq_preview_register_asset(h, id, $0) }
-        return Status(rawValue: code)
-    }
-
-    /// 添加视频片段。轨道不存在时自动创建（实际 track id 以内核分配为准）。
-    /// 同轨重叠返回 `.invalidArgument`。
-    ///
-    /// ⚠️ 本期只渲染第一条命中的视频轨（多轨合成等 RENDER-001）。
-    @discardableResult
-    public func addClip(trackId: UInt64, assetId: UInt64,
-                        start: RationalTime, duration: RationalTime,
-                        sourceIn: RationalTime) -> Status {
-        guard let h = handle else { return .invalidArgument }
-        let code = cq_preview_add_clip(h, trackId, assetId,
-                                       start.value, start.timescale,
-                                       duration.value, duration.timescale,
-                                       sourceIn.value, sourceIn.timescale)
-        return Status(rawValue: code)
     }
 
     // MARK: 渲染

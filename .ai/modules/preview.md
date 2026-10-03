@@ -133,12 +133,34 @@ SwiftUI PreviewZone
 - 调试演示：`CQ_DEMO_VIDEO=<视频路径>` 环境变量（DEBUG 构建）启动即载入 5s 片段。
 
 ## 11. 验证（UIA-003 之后）
-## 12. 读路径收口（UIA-009 子步骤 2 预告，2026-10-03）
+## 12. 读路径收口（UIA-009 子步骤 2，2026-10-03 完成）
 
-会话级模型已落地（UIA-009 子步骤 1）：`EditorModelState::CurrentTimeline()`
-每次成功命令后发布不可变 Timeline 快照。预览收口时，PreviewRenderer 的输入
-从 CQPreview 本地 Timeline 切换到该快照（渲染时原子加载，D2 方案），
-CQPreview 本地 Timeline/AssetRegistry 退役。本节实现时更新。
+**CQPreview 本地 Timeline/AssetRegistry 已退役。** 渲染输入 =
+`IModelSnapshotProvider`（preview_renderer.h 定义的接口），生产实现
+`SessionSnapshotProvider` 包装 `EditorSession::CurrentModelSnapshot()`。
+
+- **装配**：`cq_preview_create(CQSession*, w, h)` —— 挂 session；session 无内建
+  模型（注入自定义 ISessionState）返回 NULL。CQPreview **不拥有** session
+  （Swift 侧 Previewer 强持有 Session，对象图保证顺序）。
+- **一致性**：每次 RenderFrame 入口加载一次配对快照（Timeline+AssetRegistry
+  同版本），本帧全程用同一快照渲染；session 线程再变更不影响本帧，下帧自然
+  切新快照（最终一致）。
+- **provider 缓存失效**：`asset_id → (FrameProvider, opened_path)`；素材重注册
+  为新路径时关闭旧解码会话重建（防旧 demux/decoder 滞留）。
+- **已删除的 ABI**：`cq_preview_register_asset` / `cq_preview_add_clip`
+  （Swift Previewer 同步删除；装配唯一入口 = cq_session_*）。
+- **生命周期**：preview 必须先于 session 销毁（C TU 用例有断言路径）。
+
+### 媒体管线六问（cq-media-pipeline，2026-10-03）
+
+1. **线程**：渲染仍在调用方线程（主线程同步单帧，既有取舍）；新增快照读取
+   mutex 持锁 = 指针拷贝（纳秒级）；session 线程变更 + 发布（拷贝量线性于实体数）。
+2. **时序**：RationalTime 全程不变；快照配对发布，无版本撕裂。
+3. **内存**：快照最多存活 2~3 份（渲染即取即用）；导入纹理逐帧释放不变；
+   provider 缓存上界 = 素材数，路径变更即重建。
+4. **取消**：CancelToken 语义不变（本任务未触解码路径）。
+5. **错误码**：素材缺失 kInvalidArgument、快照缺失 create 返回 NULL（诚实暴露）。
+6. **一致性**：同 seek 请求结果不变；Android/ohos 无后端仍为 create 返回 NULL。
 
 ## 12. 相关
 

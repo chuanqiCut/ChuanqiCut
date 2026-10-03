@@ -41,6 +41,7 @@
 #define CQ_SOURCE_DIR "."
 #endif
 
+
 namespace {
 
 int g_failures = 0;
@@ -123,7 +124,24 @@ bool ReadPixels(cq::IRenderTarget* rt, uint32_t w, uint32_t h, std::vector<uint8
     return cq::apple::ReadRenderTargetPixels(rt, 0, 0, w, h, out.data(), out.size()).IsOk();
 }
 
+// ---- UIA-009 子步骤 2：渲染输入改为模型快照提供者 ----
+// 测试用固定快照：把本地构造的 timeline/assets 拷进一份不可变快照。
+class FixedSnapshotProvider final : public cq::IModelSnapshotProvider {
+public:
+    FixedSnapshotProvider(const cq::Timeline& tl, const cq::AssetRegistry& assets)
+        : snap_(std::make_shared<const cq::ModelSnapshot>(cq::ModelSnapshot{
+              std::make_shared<const cq::Timeline>(tl),
+              std::make_shared<const cq::AssetRegistry>(assets)})) {}
+    std::shared_ptr<const cq::ModelSnapshot> CurrentSnapshot() const override {
+        return snap_;
+    }
+
+private:
+    std::shared_ptr<const cq::ModelSnapshot> snap_;
+};
+
 }  // namespace
+
 
 int main() {
     std::setvbuf(stdout, nullptr, _IONBF, 0);
@@ -237,7 +255,8 @@ int main() {
     cfg.width = 256;
     cfg.height = 256;
     cfg.format = cq::TextureFormat::kRGBA8;
-    cq::PreviewRenderer renderer(gfx, blit.get(), &factory, &timeline, &assets, cfg);
+    FixedSnapshotProvider snapshot_provider(timeline, assets);
+    cq::PreviewRenderer renderer(gfx, blit.get(), &factory, &snapshot_provider, cfg);
 
     cq::CancelToken token;
     cq::TextureHandle out = nullptr;
@@ -294,7 +313,8 @@ int main() {
     {
         cq::Timeline tl_unknown;
         BuildSingleClipTimeline(tl_unknown, 999, 3000);
-        cq::PreviewRenderer r_unknown(gfx, blit.get(), &factory, &tl_unknown, &assets, cfg);
+        FixedSnapshotProvider snap_unknown(tl_unknown, assets);
+        cq::PreviewRenderer r_unknown(gfx, blit.get(), &factory, &snap_unknown, cfg);
         cq::TextureHandle out_u = nullptr;
         cq::Status su = r_unknown.RenderFrame(Ms(500), out_u, token);
         std::printf("  RenderFrame(asset_id=999) code=%d\n", static_cast<int>(su.code));

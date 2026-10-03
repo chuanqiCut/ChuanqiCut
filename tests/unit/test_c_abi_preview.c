@@ -52,27 +52,40 @@ int main(void) {
     Check(cq_status_is_cancelled(6000) == 1, "cq_status_is_cancelled(6000)");
     Check(cq_status_to_string(1001) != NULL, "cq_status_to_string 返回非空静态串");
 
+    /* ---- 装配会话模型（UIA-009 子步骤 2：预览挂 session，模型真源在 session）---- */
+    CQSession* session = cq_session_create();
+    Check(session != NULL, "cq_session_create");
+    Check(cq_session_register_asset(session, 1, path) == 0, "register_asset 入队");
+    Check(cq_session_add_track(session, 0) == 0, "add_track 入队");
+    /* 提交异步：轮询版本等 add_track 生效，查询真实轨道 id */
+    for (int i = 0; i < 5000 && cq_session_current_snapshot(session).version < 2; ++i) {
+        for (volatile int j = 0; j < 20000; ++j) {
+        }
+    }
+    CQTrackInfo tracks[4];
+    int32_t n_tracks = 0;
+    Check(cq_session_query_tracks(session, tracks, 4, &n_tracks) == 0 && n_tracks == 1,
+          "轨道已生效");
+    Check(cq_session_add_clip(session, tracks[0].track_id, 1,
+                              0, TS, 3 * TS, TS, 0, TS) == 0, "add_clip 入队");
+    for (int i = 0; i < 5000 && cq_session_current_snapshot(session).version < 3; ++i) {
+        for (volatile int j = 0; j < 20000; ++j) {
+        }
+    }
+
     /* ---- 创建 ---- */
-    CQPreview* p = cq_preview_create(256, 256);
-    Check(p != NULL, "cq_preview_create(256,256) 返回非 NULL（PAL 三项后端齐备）");
-    Check(cq_preview_create(0, 0) == NULL, "cq_preview_create(0,0) 返回 NULL（尺寸非法）");
+    CQPreview* p = cq_preview_create(session, 256, 256);
+    Check(p != NULL, "cq_preview_create(session,256,256) 返回非 NULL（PAL 后端齐备）");
+    Check(cq_preview_create(NULL, 256, 256) == NULL,
+          "cq_preview_create(NULL,...) 返回 NULL");
+    Check(cq_preview_create(session, 0, 0) == NULL, "cq_preview_create(0,0) 返回 NULL（尺寸非法）");
     if (p == NULL) {
         printf("\n无法创建预览器（PAL 后端缺失），用例终止。\n");
         return 1;
     }
 
-    /* ---- 素材与片段 ---- */
-    rc = cq_preview_register_asset(p, 1, path);
-    printf("  register_asset -> %d\n", rc);
-    Check(rc == 0, "cq_preview_register_asset 成功");
-
-    rc = cq_preview_add_clip(p, 1, 1, /*start*/ 0, TS, /*duration*/ 3 * TS, TS,
-                             /*source_in*/ 0, TS);
-    printf("  add_clip -> %d\n", rc);
-    Check(rc == 0, "cq_preview_add_clip 成功（0 ~ 3s 单片段）");
-
-    rc = cq_preview_add_clip(p, 1, 1, 0, 0, 3 * TS, TS, 0, TS);
-    Check(rc == 7000, "add_clip 传 timescale=0 返回 kInvalidArgument(7000)");
+    /* （素材与片段已改经 session 装配 —— 见 create 之前。
+     *  add_clip 的 timescale 校验属 cq_session_add_clip，在 c_abi_session 用例。） */
 
     /* ---- 渲染 t = 0.5s ---- */
     tex = NULL;
@@ -108,19 +121,35 @@ int main(void) {
     Check(cq_preview_last_hit_clip(p) == 0, "空隙时 last_hit_clip == 0");
     Check(tex != NULL, "空隙时仍返回可用的目标纹理（已清屏为黑）");
 
-    /* ---- 素材未注册 ---- */
+    /* ---- 片段引用未注册素材（独立 session：不注册素材直接建片段）---- */
     {
-        CQPreview* q = cq_preview_create(128, 128);
+        CQSession* s2 = cq_session_create();
+        Check(s2 != NULL, "第二个 session 创建成功");
+        Check(cq_session_add_track(s2, 0) == 0, "s2 add_track 入队");
+        for (int i = 0; i < 5000 && cq_session_current_snapshot(s2).version < 1; ++i) {
+            for (volatile int j = 0; j < 20000; ++j) {
+            }
+        }
+        CQTrackInfo t2info[4];
+        int32_t n2 = 0;
+        cq_session_query_tracks(s2, t2info, 4, &n2);
+        Check(cq_session_add_clip(s2, t2info[0].track_id, 999,
+                                  0, TS, 3 * TS, TS, 0, TS) == 0,
+              "s2 add_clip 引用未注册素材（允许提交，注册是独立动作）");
+        for (int i = 0; i < 5000 && cq_session_current_snapshot(s2).version < 2; ++i) {
+            for (volatile int j = 0; j < 20000; ++j) {
+            }
+        }
+        CQPreview* q = cq_preview_create(s2, 128, 128);
         Check(q != NULL, "第二个预览器创建成功");
         if (q != NULL) {
             void* t2 = NULL;
-            rc = cq_preview_add_clip(q, 1, 999, 0, TS, 3 * TS, TS, 0, TS);
-            Check(rc == 0, "add_clip 允许引用尚未注册的素材（注册是独立动作）");
             rc = cq_preview_render_frame(q, 60000, TS, &t2);
             printf("  render_frame(asset_id=999) -> %d\n", rc);
             Check(rc == 7000, "未注册素材渲染返回 kInvalidArgument(7000)");
             cq_preview_destroy(q);
         }
+        cq_session_destroy(s2);
     }
 
     /* ---- Resize ---- */
@@ -134,10 +163,12 @@ int main(void) {
     /* ---- 参数防御 & 幂等释放 ---- */
     Check(cq_preview_render_frame(p, 60000, 0, &tex) == 7000, "timescale=0 返回 7000");
     Check(cq_preview_render_frame(NULL, 60000, TS, &tex) == 7000, "preview=NULL 返回 7000");
-    Check(cq_preview_register_asset(p, 1, NULL) == 7000, "path=NULL 返回 7000");
     cq_preview_destroy(p);
     cq_preview_destroy(NULL); /* 幂等，不得崩 */
     Check(1, "destroy(NULL) 幂等不崩");
+
+    /* 生命周期：preview 必须先于 session 销毁（CQPreview 不拥有 session）。 */
+    cq_session_destroy(session);
 
     printf("\n== 结果：%d 项检查，%d 项失败 ==\n", g_checks, g_failures);
     return g_failures == 0 ? 0 : 1;

@@ -30,9 +30,14 @@ EditorModelState::EditorModelState() {
     Publish();
 }
 
-std::shared_ptr<const Timeline> EditorModelState::CurrentTimeline() const {
+std::shared_ptr<const ModelSnapshot> EditorModelState::CurrentSnapshot() const {
     std::lock_guard<std::mutex> lk(snap_mtx_);
     return published_;
+}
+
+std::shared_ptr<const Timeline> EditorModelState::CurrentTimeline() const {
+    std::lock_guard<std::mutex> lk(snap_mtx_);
+    return published_ ? published_->timeline : nullptr;
 }
 
 Status EditorModelState::Execute(std::unique_ptr<ICommand> cmd) {
@@ -45,8 +50,9 @@ Status EditorModelState::Execute(std::unique_ptr<ICommand> cmd) {
 Status EditorModelState::RegisterAsset(uint64_t asset_id, const std::string& path) {
     Status s = assets_.Register(asset_id, path);
     if (!s.IsOk()) return s;
-    // 素材表不进 fingerprint / 不参与 Undo，但快照里的 Timeline 未变，
-    // 无需重新发布（CurrentTimeline 只承载时间线）。版本推进由 EditorSession 做。
+    // 素材表进快照（预览按 asset_id 查路径）——必须重新发布，
+    // 否则渲染侧拿到的还是旧素材表。素材表不进 fingerprint / 不参与 Undo。
+    Publish();
     return Status::Ok();
 }
 
@@ -78,7 +84,10 @@ uint64_t EditorModelState::Fingerprint(const Timeline& timeline) {
 }
 
 void EditorModelState::Publish() {
-    auto snap = std::make_shared<const Timeline>(timeline_);
+    // 配对拷贝：Timeline 与 AssetRegistry 同版本发布（读侧一次加载，无撕裂）。
+    auto snap = std::make_shared<const ModelSnapshot>(
+        ModelSnapshot{std::make_shared<const Timeline>(timeline_),
+                      std::make_shared<const AssetRegistry>(assets_)});
     std::lock_guard<std::mutex> lk(snap_mtx_);
     published_ = std::move(snap);
 }

@@ -137,6 +137,15 @@ ISessionState 时类型化接口返回 kInternal）。
 「返回条数」约定刻意不同 —— 混用会出「成功返回 1 被当错误码」的事故，P26）。
 undo/redo 的 C ABI 归 UIA-008。
 
+## 子步骤 2（2026-10-03）：预览收口，Session 成为模型唯一真源
+
+`cq_preview_create(CQSession*, w, h)` —— 预览不再有本地模型，渲染读
+`CurrentModelSnapshot()`（Timeline+AssetRegistry **配对**发布，model_snapshot.h）。
+`cq_preview_register_asset / add_clip` 已删除。快照发布点从「仅时间线」扩为配对
+（RegisterAsset 也发布）。CQSession 的真实定义抽到内核私有头
+`core/src/cq_session_impl.h`（cq_sdk.cpp 与 cq_sdk_preview.cpp 共享；
+include 用相对路径 `../cq_session_impl.h`，pod 构建无私有 search path）。
+
 ## 读路径的下游
 
 - UIA-004 时间线视图：Session.queryTracks/queryClips（Swift 封装，主线程直读）

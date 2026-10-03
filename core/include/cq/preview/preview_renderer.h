@@ -32,6 +32,7 @@
 #include "cq/media/asset_registry.h"             // AssetRegistry
 #include "cq/media/frame_provider.h"             // FrameProvider
 #include "cq/media/frame_provider_factory.h"     // IFrameProviderFactory
+#include "cq/model/model_snapshot.h"             // ModelSnapshot / IModelSnapshotProvider
 #include "cq/model/timeline.h"                   // Timeline
 #include "cq/pal/common.h"                       // TextureHandle / TextureFormat / PalPtr
 #include "cq/pal/gfx.h"                          // IRenderTarget / INativeImageImporter
@@ -47,8 +48,13 @@ public:
     };
 
     // 依赖全部为**注入的非拥有指针**，生命周期由装配方持有（本类不 delete 它们）。
+    //
+    // snapshot_provider（UIA-009 子步骤 2）：渲染输入的唯一来源。每次 RenderFrame
+    // 入口加载最近发布的不可变 ModelSnapshot（Timeline + AssetRegistry 配对），
+    // 与 session 线程的持续变更解耦 —— 渲染期间模型再变，本帧仍用加载到的快照
+    // 完整渲染，下帧自然切到新快照（最终一致）。
     PreviewRenderer(IGfxDevice* gfx, IBlitPass* blit, IFrameProviderFactory* providers,
-                    const Timeline* timeline, const AssetRegistry* assets, const Config& cfg);
+                    IModelSnapshotProvider* snapshot_provider, const Config& cfg);
 
     ~PreviewRenderer();
 
@@ -86,23 +92,27 @@ private:
     Status EnsureTarget();
     Status EnsureImporter();
     // 按 asset_id 取（必要时创建并 Open）一个 FrameProvider。
-    Status GetProvider(uint64_t asset_id, FrameProvider*& out);
+    // 注册同 id 新路径（素材替换）时关闭旧实例重建 —— 旧解码会话不得滞留。
+    Status GetProvider(uint64_t asset_id, const AssetRegistry& assets, FrameProvider*& out);
     // 只清屏（空隙帧 / 渲染失败兜底）。
     Status ClearTarget(const CancelToken& token);
 
     IGfxDevice* gfx_ = nullptr;
     IBlitPass* blit_ = nullptr;
     IFrameProviderFactory* providers_ = nullptr;
-    const Timeline* timeline_ = nullptr;
-    const AssetRegistry* assets_ = nullptr;
+    IModelSnapshotProvider* snapshots_ = nullptr;
     Config cfg_{};
 
     PalPtr<INativeImageImporter> importer_;
     PalPtr<IRenderTarget> target_;
 
-    // asset_id → 已打开的 FrameProvider。素材被 Unregister 后这里不会自动清理——
-    // 本期素材表只增不删（BIND-003 子步骤 1 的 Clear() 由上层主动调用时才需同步）。
-    std::unordered_map<uint64_t, std::unique_ptr<FrameProvider>> providers_by_asset_;
+    // asset_id → 已打开的 FrameProvider + 打开时的素材路径。
+    // 路径与快照素材表不一致 = 素材被重注册替换 → 重建 provider（关闭旧解码会话）。
+    struct ProviderEntry {
+        std::unique_ptr<FrameProvider> provider;
+        std::string opened_path;
+    };
+    std::unordered_map<uint64_t, ProviderEntry> providers_by_asset_;
 
     // 上一帧导入的纹理。INativeImageImporter::Import 返回裸句柄且不接管，
     // 必须由本类显式释放，否则每帧泄漏一张（含其 IOSurface 引用）。

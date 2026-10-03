@@ -30,7 +30,8 @@
 | 模型 | MODEL-002 Command/CommandHistory（Undo/Redo） | ✅（2026-10-03，门禁 35/35） |
 | UI | UIA-004 时间线自绘视图（Canvas 单次绘制） | ✅（2026-10-03，0.663ms/500 片段） |
 | 模型 | UIA-009 子步骤 1：Session 级模型状态 + 查询 ABI | ✅（2026-10-03） |
-| **下一步** | **UIA-009 子步骤 2（预览收口）→ 子步骤 3（导入 UI）** | ⏭️ **下一步** |
+| 预览 | UIA-009 子步骤 2：预览收口（cq_preview 挂 session 快照，删本地装配 ABI） | ✅（2026-10-03） |
+| **下一步** | **UIA-009 子步骤 3：素材导入 UI** | ⏭️ **下一步** |
 **门禁**：`Debug 36/36`、`Release 36/36`（含 c_abi_session）；Swift 绑定 **16/16**；SharedUI **10/10**（含像素级与布局性能）；
 macOS App 编译 SUCCEEDED（Swift 告警 0）+ 启动冒烟通过；iOS `-sdk iphoneos` 编译 SUCCEEDED。
 
@@ -67,16 +68,14 @@ macOS App 编译 SUCCEEDED（Swift 告警 0）+ 启动冒烟通过；iOS `-sdk i
 「素材导入 UI」不是 BACKLOG 现有编号，归入 UIA-004/005 一起做。
 
 接下来（按优先级）：
-1. **UIA-009 子步骤 2：预览收口** —— PreviewRenderer 输入切到
-   `EditorModelState::CurrentTimeline()` 不可变快照，CQPreview 本地模型退役；
-   **实现前跑 cq-media-pipeline 专项分析**（线程/时序/取消）。
-2. **UIA-009 子步骤 3：导入 UI** —— 文件选择（NSOpenPanel/fileImporter）→
-   registerAsset → addClip Command → 时间线/预览可见。
-3. **UIA-005 拖拽/裁剪交互**：结束提交 Move/Trim Command；拖拽连续命令合并
-   （coalescing）届时设计；实帧率真机验证。
-4. **UIA-008 Undo/Redo 入口**（含 undo/redo 的 C ABI）。
-5. **播放驱动**：异步任务推进 playhead（主线程同步解码不可用于连续播放）。
-6. letterbox / fit、多轨合成（等 RENDER-001）。
+1. **UIA-009 子步骤 3：导入 UI** —— 文件选择（macOS NSOpenPanel / iOS
+   fileImporter）→ registerAsset → addClip Command → 时间线/预览可见。
+   注意 iOS 沙箱路径（security-scoped resource）真机才能验。
+2. **UIA-005 拖拽/裁剪交互**：结束提交 Move/Trim Command（**undo/redo 的 C ABI
+   一并落**）；拖拽连续命令合并（coalescing）届时设计；实帧率真机验证。
+3. **UIA-008 Undo/Redo 入口**（Mac Cmd+Z / iOS 摇一摇）。
+4. **播放驱动**：异步任务推进 playhead（主线程同步解码不可用于连续播放）。
+5. letterbox / fit、多轨合成（等 RENDER-001）。
 
 ⚠️ Swift 侧**绝不要**「读回像素再上传」：每帧一次 CPU 往返会直接毁掉预览帧率。
    直接把 `void*` 句柄 reinterpret 成 `MTLTexture` 交给 MTKView 绘制。

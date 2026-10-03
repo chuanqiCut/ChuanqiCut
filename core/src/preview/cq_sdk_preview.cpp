@@ -12,18 +12,20 @@
 
 #include "cq/cq_sdk.h"
 
+#include <memory>
 #include <new>
 #include <string>
+#include <utility>
 
 #include "cq/base/concurrency.h"
 #include "cq/base/status.h"
 #include "cq/base/time.h"
 #include "cq/gfx/gfx_device.h"
-#include "cq/media/asset_registry.h"
 #include "cq/media/pal_frame_provider.h"
-#include "cq/model/timeline.h"
+#include "cq/model/model_snapshot.h"
 #include "cq/pal/gfx.h"
 #include "cq/preview/preview_renderer.h"
+#include "../cq_session_impl.h"
 
 namespace {
 
@@ -38,20 +40,49 @@ int32_t CodeOfEnum(cq::StatusCode code) { return static_cast<int32_t>(code); }
 //    与 CQSession 同一坑）。
 // ⚠️ 成员顺序即初始化顺序：PreviewRenderer 持有的是**非拥有指针**，指向同结构体内
 //    的其它成员，故它必须在最后构造（用 unique_ptr 控制），且本结构不可被移动。
+//
+// UIA-009 子步骤 2（2026-10-03）收口：本地 Timeline/AssetRegistry **退役**，
+// 渲染输入改为 session 发布的不可变模型快照（每次 RenderFrame 入口加载，
+// 与 session 线程的持续变更解耦）。时间线/素材的唯一真源是 CQSession。
+// ⚠️ CQPreview **不拥有** CQSession —— 调用方保证 session 先活后死
+//    （Swift 侧 Previewer 强持有 Session，顺序由对象图保证）。
 struct CQPreview {
     cq::IGfxDevice* gfx = nullptr;              // 拥有（CreateGfxDevice 内部 new）
     cq::PalPtr<cq::IBlitPass> blit;             // 拥有
     cq::PalFrameProviderFactory provider_factory;
-    cq::Timeline timeline;
-    cq::AssetRegistry assets;
+    cq::EditorSession* session = nullptr;       // 非拥有（见上）
+    std::unique_ptr<cq::IModelSnapshotProvider> snapshot_provider;  // 拥有
     std::unique_ptr<cq::PreviewRenderer> renderer;
 };
 
-CQPreview* cq_preview_create(uint32_t width, uint32_t height) {
-    if (width == 0 || height == 0) return nullptr;
+namespace {
+
+// 把 EditorSession 的已发布快照适配成渲染器的输入。
+class SessionSnapshotProvider final : public cq::IModelSnapshotProvider {
+public:
+    explicit SessionSnapshotProvider(cq::EditorSession* session) : session_(session) {}
+    std::shared_ptr<const cq::ModelSnapshot> CurrentSnapshot() const override {
+        return session_->CurrentModelSnapshot();
+    }
+
+private:
+    cq::EditorSession* session_;
+};
+
+}  // namespace
+
+CQPreview* cq_preview_create(CQSession* session, uint32_t width, uint32_t height) {
+    if (session == nullptr || width == 0 || height == 0) return nullptr;
 
     CQPreview* p = new (std::nothrow) CQPreview();
     if (p == nullptr) return nullptr;
+    p->session = &session->impl;
+
+    // 注入自定义 ISessionState（无内建模型）时无可渲染输入 —— 如实返回 NULL。
+    if (p->session->CurrentModelSnapshot() == nullptr) {
+        cq_preview_destroy(p);
+        return nullptr;
+    }
 
     // PAL：图形设备 → GFX 门面（GFX 接管 PAL 设备所有权）
     cq::GraphicsDeviceDesc dd;
@@ -77,12 +108,18 @@ CQPreview* cq_preview_create(uint32_t width, uint32_t height) {
         return nullptr;
     }
 
+    p->snapshot_provider.reset(new (std::nothrow) SessionSnapshotProvider(p->session));
+    if (!p->snapshot_provider) {
+        cq_preview_destroy(p);
+        return nullptr;
+    }
+
     cq::PreviewRenderer::Config cfg;
     cfg.width = width;
     cfg.height = height;
     cfg.format = cq::TextureFormat::kRGBA8;
     p->renderer.reset(new (std::nothrow) cq::PreviewRenderer(
-        gfx, p->blit.get(), &p->provider_factory, &p->timeline, &p->assets, cfg));
+        gfx, p->blit.get(), &p->provider_factory, p->snapshot_provider.get(), cfg));
     if (!p->renderer) {
         cq_preview_destroy(p);
         return nullptr;
@@ -100,41 +137,6 @@ void cq_preview_destroy(CQPreview* preview) {
         preview->gfx = nullptr;
     }
     delete preview;
-}
-
-int32_t cq_preview_register_asset(CQPreview* preview, uint64_t asset_id, const char* path) {
-    if (preview == nullptr || path == nullptr) return CodeOfEnum(cq::StatusCode::kInvalidArgument);
-    return CodeOf(preview->assets.Register(asset_id, std::string(path)));
-}
-
-int32_t cq_preview_add_clip(CQPreview* preview, uint64_t track_id, uint64_t asset_id,
-                            int64_t start_value, int32_t start_timescale,
-                            int64_t duration_value, int32_t duration_timescale,
-                            int64_t source_in_value, int32_t source_in_timescale) {
-    if (preview == nullptr) return CodeOfEnum(cq::StatusCode::kInvalidArgument);
-    if (start_timescale <= 0 || duration_timescale <= 0 || source_in_timescale <= 0) {
-        return CodeOfEnum(cq::StatusCode::kInvalidArgument);
-    }
-
-    // 轨道不存在则自动创建（id 由内核分配，**不保证**等于传入的 track_id ——
-    // Timeline 的 id 是单调递增的自增序列，不支持指定）。
-    if (preview->timeline.FindTrack(track_id) == nullptr) {
-        uint64_t new_id = 0;
-        cq::Status s = preview->timeline.AddTrack(cq::TrackKind::kVideo, new_id);
-        if (!s.IsOk()) return CodeOf(s);
-        track_id = new_id;
-    }
-
-    cq::Clip clip;
-    clip.kind = cq::ClipKind::kVideo;
-    clip.source.asset_id = asset_id;
-    clip.source.source_in = cq::RationalTime{source_in_value, source_in_timescale};
-    clip.source.source_duration = cq::RationalTime{duration_value, duration_timescale};
-    clip.start = cq::RationalTime{start_value, start_timescale};
-    clip.duration = cq::RationalTime{duration_value, duration_timescale};
-
-    uint64_t clip_id = 0;
-    return CodeOf(preview->timeline.InsertClip(track_id, clip, clip_id));
 }
 
 int32_t cq_preview_render_frame(CQPreview* preview, int64_t pts_value, int32_t pts_timescale,

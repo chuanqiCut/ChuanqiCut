@@ -137,6 +137,15 @@ ISessionState 时类型化接口返回 kInternal）。
 「返回条数」约定刻意不同 —— 混用会出「成功返回 1 被当错误码」的事故，P26）。
 undo/redo 的 C ABI 归 UIA-008。
 
+## 素材表查询与时长探测（UIA-009 子步骤 3，2026-10-03）
+
+| 函数 | 语义 |
+|---|---|
+| `cq_session_asset_count` / `cq_session_query_assets` | 读快照（契约同其它查询）；`CQAssetInfo.path` 是 `char[512]` 值拷贝（NUL 结尾 + truncated 标记），**不是**指针 —— 快照发布后路径仍可读 |
+| `cq_media_probe_duration(path, out)` | **同步**探测媒体时长（打开容器→读 duration→关闭，毫秒级；用户导入动作、低频）。实现调 PAL 工厂链，**独立 TU** `core/src/media/media_probe_abi.cpp`（已登记 ADR-0011 §3 TU 表） |
+
+素材 id 由**调用方分配**（内核不生成）；AssetRegistry 新增 `ListAssets()` 遍历。
+
 ## 子步骤 2（2026-10-03）：预览收口，Session 成为模型唯一真源
 
 `cq_preview_create(CQSession*, w, h)` —— 预览不再有本地模型，渲染读

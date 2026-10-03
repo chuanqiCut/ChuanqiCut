@@ -48,6 +48,21 @@ public final class EditorViewModel: ObservableObject {
     /// （读已发布快照，不阻塞；查询在主线程执行，量级微秒）。
     @Published public private(set) var timeline: TimelineState = TimelineState()
 
+    /// 素材库显示状态（UIA-009 子步骤 3）：内核素材表 + 本地存活标记。
+    /// `exists == false` = 文件已不在原路径（D3：MVP 引用原路径，不拷贝入库）。
+    public struct LibraryAsset: Identifiable, Equatable {
+        public let id: UInt64           // = asset_id
+        public let path: String
+        public let pathTruncated: Bool
+        public let exists: Bool
+    }
+    @Published public private(set) var mediaLibrary: [LibraryAsset] = []
+
+    /// 下一个分配的素材 id（素材 id 由调用方分配，内核不生成）。
+    private var nextAssetId: UInt64 = 1
+    /// 导入期间的去重锁位（导入是用户动作，同屏不会并发；防连点）。
+    private var importInFlight = false
+
     // MARK: 内核会话
 
     private let session: Session
@@ -149,14 +164,93 @@ public final class EditorViewModel: ObservableObject {
             tracks: session.queryTracks(),
             clips: session.queryClips(),
             version: snap.version)
+        refreshMediaLibrary()
     }
 
-    /// 主动刷新一次时间线状态（初始加载用：版本 0 不触发 observer 回流）。
+    /// 主动刷新一次时间线与素材库状态（初始加载用：版本 0 不触发 observer 回流）。
     public func refreshTimeline() {
         timeline = TimelineState(
             tracks: session.queryTracks(),
             clips: session.queryClips(),
             version: session.currentSnapshot.version)
+        refreshMediaLibrary()
+    }
+
+    private func refreshMediaLibrary() {
+        mediaLibrary = session.queryAssets().map { asset in
+            LibraryAsset(id: asset.assetId,
+                         path: asset.path,
+                         pathTruncated: asset.pathTruncated,
+                         exists: FileManager.default.fileExists(atPath: asset.path))
+        }
+    }
+
+    // MARK: 素材导入（UIA-009 子步骤 3；D3：MVP 引用原路径，不拷贝入库）
+
+    /// 导入一个媒体文件：探测时长 → 注册素材 → 追加到第一条视频轨末尾。
+    ///
+    /// 流程全在主线程（用户动作、低频）：probe 是同步调用（打开容器读时长，
+    /// 毫秒级）；提交是异步的（track 不存在时需先建轨等 id，用 RunLoop 泵等待）。
+    ///
+    /// - Parameter url: 文件 URL（fileImporter 产出；内部处理 iOS security scope）。
+    /// - Returns: 失败状态（探测失败 / 提交失败 / 已有导入在进行中 resourceExhausted）。
+    @discardableResult
+    public func importMedia(url: URL) -> Status {
+        if importInFlight { return .resourceExhausted }
+        importInFlight = true
+        defer { importInFlight = false }
+
+        // iOS：fileImporter 产出的 URL 需要 security scope 才能读（macOS 无害）。
+        let scoped = url.startAccessingSecurityScopedResource()
+        defer { if scoped { url.stopAccessingSecurityScopedResource() } }
+        let path = url.path
+
+        // 1) 探测时长（同步；失败 = 无法解析的文件）
+        guard let duration = session.probeMediaDuration(path: path) else {
+            return Status(rawValue: 2000)  // kDecodeError：打不开/解析不了
+        }
+        guard duration.value > 0 else { return .invalidArgument }
+
+        // 2) 注册素材（素材 id 本地分配，单调递增）
+        let assetId = nextAssetId
+        nextAssetId += 1
+        guard session.registerAsset(id: assetId, path: path).isOK else {
+            nextAssetId -= 1
+            return .invalidArgument
+        }
+
+        // 3) 目标轨道：第一条视频轨；没有则建一条（异步 → 等 id）
+        let versionAtStart = session.currentSnapshot.version
+        var videoTrack = timeline.tracks.first(where: { $0.isVideo })
+        if videoTrack == nil {
+            guard session.addTrack(kind: 0).isOK else { return .invalidArgument }
+            let deadline = Date().addingTimeInterval(5)
+            while session.currentSnapshot.version <= versionAtStart && Date() < deadline {
+                RunLoop.main.run(until: Date().addingTimeInterval(0.01))
+            }
+            videoTrack = session.queryTracks().first(where: { $0.isVideo })
+            guard videoTrack != nil else { return .invalidArgument }
+        }
+        let trackId = videoTrack!.trackId
+
+        // 4) 追加片段：起点 = 该轨最后一片段的结束时刻（追加式，不重叠）
+        let end = timeline.clips
+            .filter { $0.trackId == trackId }
+            .compactMap { clip -> Double? in
+                let s = Double(clip.start.value) / Double(clip.start.timescale)
+                let d = Double(clip.duration.value) / Double(clip.duration.timescale)
+                return s + d
+            }
+            .max() ?? 0
+        let appendTicks = Int64((end * Double(RationalTime.projectTimescale)).rounded())
+        let start = RationalTime(value: appendTicks, timescale: RationalTime.projectTimescale)
+        guard session.addClip(trackId: trackId, assetId: assetId,
+                              start: start, duration: duration,
+                              sourceIn: RationalTime(value: 0, timescale: duration.timescale)
+                                  ).isOK else {
+            return .invalidArgument
+        }
+        return .ok
     }
 }
 

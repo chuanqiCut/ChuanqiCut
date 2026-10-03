@@ -33,7 +33,17 @@ parallel:    false（子步骤 1 改 cq_sdk.h；子步骤 2 改预览 TU；子�
 |---|---|
 | 1 契约（Session 级模型 + 查询 ABI） | ✅ |
 | 2 预览收口（cq_preview 挂 session 快照，删除本地装配 ABI） | ✅ |
-| 3 导入 UI（文件选择 → 入表 → Command 建片段） | ⏭️ 下一步 |
+| 3 导入 UI（文件选择 → 入表 → Command 建片段） | ✅（2026-10-03） |
+
+**任务整体完成（2026-10-03）**。验收对照：
+- UI 导入 golden mp4 → 时间线出现片段、预览渲染画面 ✅（MediaImportTests +
+  App 冒烟；预览经 session 快照同源）
+- 素材注册在 Session 级 ✅（c_abi_session + TimelineTests；预览渲染直接可用）
+- 片段创建走 CommandHistory（可撤销）✅（cq_session_add_clip → InsertClipCommand；
+  撤销入口归 UIA-008）
+- 新 ABI 有 C TU 测试 ✅（c_abi_session；probe 在 Swift 测试验证真实文件）
+- cq_tests_c_abi 只链 cq_core 仍通过 ✅（probe TU 独立，ADR-0011 表已登记）
+- 导入流程的坑：#filePath 上溯层数两次踩错 → RepoPath/TestPaths helper 根治（P30）
 
 ## 背景
 

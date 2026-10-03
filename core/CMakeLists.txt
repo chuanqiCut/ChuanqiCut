@@ -62,7 +62,10 @@ add_library(cq_core STATIC
     #    member 粒度拉符号，独立 TU 才能保证「不用预览的目标」不牵出 PAL 依赖。
     src/media/pal_frame_provider.cpp
     # BIND-003 子步骤 5：预览的 C ABI 实现。同理必须单独成 TU（同上）。
-    src/preview/cq_sdk_preview.cpp)
+    src/preview/cq_sdk_preview.cpp
+    # UIA-009 子步骤 3：媒体时长探测 C ABI。调 PAL 工厂链路
+    # （PalFrameProviderFactory::Create），单独成 TU（ADR-0011 规则 1）。
+    src/media/media_probe_abi.cpp)
 
 # 版本号由 CMake 注入，不在 cq_sdk.h 里硬编码（否则必然与 project VERSION 漂移）。
 target_compile_definitions(cq_core PRIVATE

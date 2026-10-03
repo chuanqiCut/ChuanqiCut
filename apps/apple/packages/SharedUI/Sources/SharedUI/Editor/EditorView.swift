@@ -20,10 +20,8 @@ public struct EditorView: View {
                 TimelineZone(snapshot: viewModel.snapshot)
             },
             panel: {
-                PropertyPanelZone(
-                    snapshot: viewModel.snapshot,
-                    capabilities: viewModel.capabilities
-                )
+                // UIA-009 子步骤 3：面板即素材库（@EnvironmentObject 取状态）
+                PropertyPanelZone()
             }
         )
         .background(Theme.editorBackground)

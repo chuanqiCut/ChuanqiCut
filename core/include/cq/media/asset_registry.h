@@ -26,6 +26,8 @@
 #include <memory>
 #include <string>
 #include <unordered_map>
+#include <utility>
+#include <vector>
 
 #include "cq/base/status.h"
 #include "cq/pal/media.h"
@@ -43,6 +45,11 @@ public:
     // 取媒体源；未注册返回 nullptr（**不**返回 Status —— 查不到是正常查询路径，
     // 不是错误，避免调用方被迫处理一个必然要忽略的错误码）。
     const MediaSource* Find(uint64_t asset_id) const;
+
+    // 遍历（UIA-009 子步骤 3：素材库查询用）。返回的 MediaSource.path 指向本表
+    // 内部字符串 —— **同步使用**，跨线程/跨发布版本无效（拷贝请自取 path 文本）。
+    // 顺序不保证（unordered_map）。
+    std::vector<std::pair<uint64_t, MediaSource>> ListAssets() const;
 
     std::size_t Count() const;
     void Clear();

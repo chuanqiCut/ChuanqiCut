@@ -90,6 +90,15 @@ public:
     // 总时长 = 所有轨道中最大的「clip 结束时刻 + 出转场时长」
     RationalTime Duration() const;
 
+    // ---- 显式恢复（仅供 Command 回放 / 序列化载入使用，业务代码不要调）----
+    // 与 AddTrack/InsertClip 的区别：**使用实体自带的 id，不分配新 id**。
+    // Undo/Redo 必须把实体放回原 id 上，否则历史里后续命令的 id 引用会全部失效。
+    // next_id_ 仍单调推进（max(next_id_, id+1)），保证之后新分配的 id 唯一。
+    // 校验与对应 Add/Insert 一致（同 id 已存在 / 轨道缺失 / 类型不匹配 /
+    // 时长非正 / 同轨重叠 → kInvalidArgument）。
+    Status RestoreTrack(const Track& track);
+    Status RestoreClip(uint64_t track_id, const Clip& clip);
+
 private:
     Clip* find_clip_mut(uint64_t clip_id, Track*& out_track);
     // exclude：移动/修剪时排除自身（否则自己跟自己判重叠）

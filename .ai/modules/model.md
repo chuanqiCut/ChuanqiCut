@@ -25,3 +25,45 @@ ctest -R anim_interp       # 四种插值曲线正确性
 
 ## 相关
 ADR-0006、`docs/tasks/TASK-BACKLOG.md` 的 `MODEL-0xx` / `ANIM-0xx`
+
+
+---
+
+# MODEL-002 落地（2026-10-03）：Command / CommandHistory
+
+## 位置与入口
+
+- `core/include/cq/command/command.h` + `core/src/command/command.cpp`
+- `ICommand`（Do / Undo / Redo / Name）+ `CommandHistory`（Execute/Undo/Redo/CanX/Depth/Clear）
+- 首批 6 个命令覆盖 Timeline 全部变更面：
+  `AddTrack / RemoveTrack / InsertClip / RemoveClip / MoveClip / TrimClip`
+
+## 语义要点
+
+| 主题 | 约定 |
+|---|---|
+| 失败语义 | Execute 失败 = 不入栈、模型不变、**redo 分支保留**；Undo/Redo 失败 = 栈不动（不变量破坏，测试守卫） |
+| 线性历史 | 新 Execute 丢弃 redo 分支；Clear() 清双栈不动模型 |
+| 编辑类命令 | 只存增量（clipID + old/new 值），不存实体 —— 硬约束 #2 原型 |
+| 结构类命令 | 持有受影响**单个实体**的内容（命令输入参数 / 回放依据），不做模型级快照 |
+| Redo 的 id | Add/Insert 重放会分配新 id → 必须走 `RestoreTrack/RestoreClip` 恢复**原 id**，否则历史里后续命令的引用悬空 |
+| 线程 | 非线程安全，在 session 线程用（CORE-009 已串行化） |
+
+## Timeline 最小扩展
+
+`RestoreTrack(const Track&)` / `RestoreClip(uint64_t track_id, const Clip&)`：
+按实体自带 id 恢复，不分配新 id；校验与 Add/Insert 一致；`next_id_` 仍单调推进。
+**仅供 Command 回放 / 序列化载入**，业务代码不要直调。
+
+## 不变量（破坏即 Undo 栈失效）
+
+1. Timeline 只能经 CommandHistory 变更（绕过直改会让历史 id 引用悬空）。
+2. 命令 Do/Undo/Redo 失败时不得改动模型（先校验后变更，与 Timeline 同风格）。
+3. Undo/Redo 按栈序（LIFO）：相邻命令的实体引用靠顺序保持有效。
+
+## 验证
+
+```bash
+ctest --test-dir build -R model_command   # 4 组用例：逐命令往返 / 201 深度全撤销回初始态 /
+                                          # 失败语义 / 排序不变量（门禁 35/35）
+```

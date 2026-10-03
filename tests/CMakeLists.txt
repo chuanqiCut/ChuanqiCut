@@ -127,6 +127,18 @@ target_include_directories(cq_tests_c_abi PRIVATE
 target_link_libraries(cq_tests_c_abi PRIVATE cq_core)
 add_test(NAME c_abi COMMAND cq_tests_c_abi)
 
+# ---- UIA-009 子步骤 1：会话级模型 C ABI（素材表 / 时间线 / 查询快照）----
+# 只链 cq_core：新 ABI 全部落在内建模型状态上，**不得**引入 PAL 依赖 ——
+# 这是 ADR-0011 隔离规则的回归守卫之一（session TU 不碰 PAL 工厂）。
+# 异步提交语义：测试靠「轮询快照版本 + 查询」等最终一致。
+add_executable(cq_tests_c_abi_session
+    unit/test_c_abi_session.c)
+set_target_properties(cq_tests_c_abi_session PROPERTIES LINKER_LANGUAGE CXX)
+target_include_directories(cq_tests_c_abi_session PRIVATE
+    ${CMAKE_SOURCE_DIR}/core/include)
+target_link_libraries(cq_tests_c_abi_session PRIVATE cq_core)
+add_test(NAME c_abi_session COMMAND cq_tests_c_abi_session)
+
 # ---- CORE-006：PAL 头文件编译期自洽验证（零平台类型 / 零 FFmpeg 类型 / base 类型契约）----
 # 仅包含 PAL 头文件 + static_assert，不链接任何 PAL 实现（接口冻结阶段无实现）。
 # 证明：头文件自洽（include 顺序无关）、跨层资源均为 opaque 指针（零平台类型）、

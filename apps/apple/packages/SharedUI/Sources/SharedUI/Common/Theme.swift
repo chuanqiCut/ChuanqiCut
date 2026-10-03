@@ -29,6 +29,16 @@ enum Theme {
     static let trackFill = Color(red: 0.18, green: 0.18, blue: 0.22)
     static let trackStroke = Color(red: 0.28, green: 0.28, blue: 0.32)
 
+    // MARK: - 时间线自绘（UIA-004）
+
+    static let timelineRuler = Color(red: 0.12, green: 0.12, blue: 0.15)
+    static let timelineTick = Color(red: 0.35, green: 0.35, blue: 0.40)
+    static let timelineTrackA = Color(red: 0.14, green: 0.14, blue: 0.17)
+    static let timelineTrackB = Color(red: 0.11, green: 0.11, blue: 0.14)
+    static let timelineClip = Color(red: 0.26, green: 0.42, blue: 0.62)
+    static let timelineClipBorder = Color(red: 0.38, green: 0.56, blue: 0.78)
+    static let timelineClipLabel = Color.white
+
     // MARK: - 尺寸
 
     enum Size {

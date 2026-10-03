@@ -103,3 +103,42 @@ session.ChangesSince(last_seen, &out);       // UI 增量刷新
 - Render / Encode / Audio 线程的专属调度（PALA / EXPORT / AUDIO 侧）
 - `EditorSession` 门面与快照（**CORE-009**，本层的直接下游）
 - 主线程卡死的自动检测（watchdog 类机制，属 PERF 范畴）
+
+
+---
+
+# UIA-009 子步骤 1（2026-10-03）：内建模型状态与查询 ABI
+
+## EditorModelState（ISessionState 的模型层实现）
+
+`core/include/cq/model/editor_model_state.h` —— Timeline + AssetRegistry +
+CommandHistory 组装为会话状态。`EditorSession` 默认构造即内建（注入自定义
+ISessionState 时类型化接口返回 kInternal）。
+
+- **变更**：仅 session 线程（经 Submit 投递）。类型化入口：
+  `SubmitRegisterAsset / SubmitAddTrack / SubmitAddClip`（前两者/三者分别
+  走素材表与 CommandHistory，可撤销的是片段命令）。
+- **读**：每次成功变更后发布 `shared_ptr<const Timeline>` 不可变快照
+  （mutex 保护的 shared_ptr，持锁 = 指针拷贝，纳秒级；⚠️ 本机 libc++ 未实现
+  C++20 atomic<shared_ptr>，P0718，编译期即拒）。任意线程无阻塞读。
+- **digest**：真实的 Timeline 结构指纹（FNV-1a，字段集见
+  `EditorModelState::Fingerprint`）——「恒为 0」时代结束，CORE-009 旧断言
+  已随语义更新。
+
+## 新 C ABI（cq_sdk.h 会话级模型段）
+
+| 函数 | 语义 |
+|---|---|
+| `cq_session_register_asset` | 异步提交；素材不参与 Undo、不进指纹 |
+| `cq_session_add_track` / `cq_session_add_clip` | 异步提交；校验在 session 线程（失败=版本不推进+观察者不回调） |
+| `cq_session_track_count` / `query_tracks` / `query_clips` | **同步读快照**；返回状态码，条数一律走 out_count（两段式：out=NULL 先取总数）|
+
+⚠️ **查询函数的返回值 = 状态码，条数 = out_count**（与 changes_since 的
+「返回条数」约定刻意不同 —— 混用会出「成功返回 1 被当错误码」的事故，P26）。
+undo/redo 的 C ABI 归 UIA-008。
+
+## 读路径的下游
+
+- UIA-004 时间线视图：Session.queryTracks/queryClips（Swift 封装，主线程直读）
+- UIA-009 子步骤 2 预览收口：EditorModelState.CurrentTimeline() 即预览该用的
+  读路径（渲染时原子加载最新快照），替代 CQPreview 本地 Timeline

@@ -65,7 +65,8 @@ xcrun swiftc -O \
     -I "$SCRIPT_DIR/Sources/CChuanqiCut/include" \
     "$SCRIPT_DIR/Sources/ChuanqiCut/ChuanqiCut.swift" \
     "$SCRIPT_DIR/Sources/ChuanqiCut/Time.swift" \
-    "$SCRIPT_DIR/Sources/ChuanqiCut/Preview.swift" \
+    "$SCRIPT_DIR/Sources/ChuanqiCut/Previewer.swift" \
+    "$SCRIPT_DIR/Sources/ChuanqiCut/Timeline.swift" \
     "$SCRIPT_DIR/Sources/ChuanqiCut/Session.swift" \
     "$SCRIPT_DIR/Tests/SwiftSmoke/main.swift" \
     -L "$LIB_DIR" -lChuanqiCut -lc++ "${FW_FLAGS[@]}" \

@@ -409,6 +409,31 @@
   `setNeedsDisplay()`），`enableSetNeedsDisplay=YES` 时即触发一次 draw。
 - 日期 / 来源 / 验证状态：2026-10-03 / UIA-003 / **verified**
 
+### P26 · 新 ABI 的返回值语义必须单一（错误码 XOR 数据），混用会被自己的封装层误判
+- 现象：`cq_session_query_tracks` 初版返回值既当「写入条数」（成功）又当错误码
+  （失败）。Swift 封装按 `cq_status_is_ok` 判断 → 填充查询成功返回条数 1，
+  被当错误码拒绝，查询永远空，且 C 侧测试（按条数断言）还是绿的。
+- 修复：契约改为「返回值 = 状态码；条数一律走 out_count」（趁无外部消费方）。
+- 防复发规则：**新 ABI 的返回值语义必须单一**；同类既有 API（changes_since
+  返回条数）不动，但新函数一律走「状态码 + out 参数」。
+- 日期 / 来源 / 验证状态：2026-10-03 / UIA-009 子步骤 1 / **verified**
+  （Swift 封装 16/16 + C TU 36/36 全绿；修改前 Swift 查询必空）
+
+### P27 · 文件改名后，所有引用该文件名的脚本必须重跑验证
+- 现象：UIA-003 把 Preview.swift 改名 Previewer.swift 在**最后一次 smoke 之后**，
+  run_smoke.sh 里的文件引用没同步 —— 提交后 smoke 一直是坏的（swiftc 找不到
+  输入文件），直到本轮才暴露。与 E10 同族：「改了 A 忘了引用 A 的 B」。
+- 防复发规则：**mv/rm 源文件后，立即 grep 仓库内的文件名引用**并重跑受影响脚本。
+- 日期 / 来源 / 验证状态：2026-10-03 / UIA-009 子步骤 1 / **verified**
+  （引用已修正，smoke 重跑 PASSED）
+
+### P28 · 本机 libc++（Xcode 16 / x86_64）未实现 C++20 atomic<shared_ptr>
+- 现象：`std::atomic<std::shared_ptr<T>>` 编译期即报
+  "_Atomic cannot be applied to ... not trivially copyable"（P0718 未实现）。
+- 处置：共享快照发布点改用 mutex 保护的 shared_ptr（持锁 = 指针拷贝，纳秒级，
+  命令频率下无竞争压力）。已写入 editor_model_state.h 注释。
+- 日期 / 来源 / 验证状态：2026-10-03 / UIA-009 子步骤 1 / **verified**
+
 ---
 
 ## 已修正的历史错误（供参考，避免重犯）

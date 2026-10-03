@@ -77,6 +77,10 @@
 - 编辑类命令只存增量（id + old/new），结构类命令只允许持有**单个实体**内容；
   模型级快照一律禁止。
 
+- **新 ABI 的返回值语义必须单一**：错误码 XOR 数据，绝不混用（P26）。
+  条数类结果一律走 out 参数；新函数统一「状态码 + out_count」。
+- **mv/rm 源文件后立即 grep 文件名引用并重跑受影响脚本**（P27，E10 同族）。
+
 ## 依赖治理硬规则（ADR-0008）
 - FFmpeg upstream 用 **GitHub 官方镜像** `https://github.com/FFmpeg/FFmpeg.git`（ffmpeg.org 登记为官方 mirror），本地 git 管理。
 - **源码集成的 git 依赖一律 `pin="commit"` + 40 位 hash。禁止 `pin="tag"`。**

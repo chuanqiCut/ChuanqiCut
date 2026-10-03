@@ -44,6 +44,10 @@ public final class EditorViewModel: ObservableObject {
     @Published public private(set) var playhead: RationalTime = RationalTime(
         value: 0, timescale: RationalTime.projectTimescale)
 
+    /// 时间线显示状态（UIA-004）。快照每次推进后从内核重新查询
+    /// （读已发布快照，不阻塞；查询在主线程执行，量级微秒）。
+    @Published public private(set) var timeline: TimelineState = TimelineState()
+
     // MARK: 内核会话
 
     private let session: Session
@@ -57,6 +61,8 @@ public final class EditorViewModel: ObservableObject {
         self.snapshot = session.currentSnapshot
         self.knownVersion = session.currentSnapshot.version
         self.preview = Previewer(width: 1280, height: 720)
+        // 版本 0 不触发 observer 回流，初始时间线状态主动查一次。
+        refreshTimeline()
 
         // 订阅快照变更：内核 session 线程 → 绑定层 main queue → 本处 MainActor。
         session.setSnapshotObserver { [weak self] snap in
@@ -93,30 +99,48 @@ public final class EditorViewModel: ObservableObject {
     }
 
 #if DEBUG
-    /// UIA-003 启动冒烟辅助：从环境变量 `CQ_DEMO_VIDEO` 载入演示素材，
+    /// UIA-003/004 启动冒烟辅助：从环境变量 `CQ_DEMO_VIDEO` 载入演示素材，
     /// 在轨道 1 铺一条 5 秒片段并把播放头放到 0.5s（120000 timescale 的 60000）。
     ///
     /// 变量未设置或文件不存在时不做任何事（返回 false）—— 预览保持黑屏，
-    /// 等真实素材导入（UIA-005）。App 正式路径**不依赖**本方法。
+    /// 等真实素材导入（UIA-009）。App 正式路径**不依赖**本方法。
     ///
-    /// ⚠️ 直接装配的是预览本地的装配视图（cq_preview_* 的 staging 时间线），
-    ///    不走 Session Command —— 这是 BIND-003 阶段性形状（预览与 Session
-    ///    模型的同步等 RENDER-001 / MODEL 接入后收口），不是 UI 绕过模型的先例。
+    /// ⚠️ 双写是收口前的**过渡形状**：预览本地装配（cq_preview_*，BIND-003 阶段
+    ///    形状，UIA-009 子步骤 2 收口）+ 会话级模型（UIA-009 子步骤 1 落地的
+    ///    真路径，时间线视图读这里）。会话提交是异步的，时间线经 observer 回流刷新。
     @discardableResult
     public func installDemoClipFromEnvironment() -> Bool {
         guard let path = ProcessInfo.processInfo.environment["CQ_DEMO_VIDEO"],
-              FileManager.default.fileExists(atPath: path),
-              let preview else {
+              FileManager.default.fileExists(atPath: path) else {
             return false
         }
         let ts = RationalTime.projectTimescale
-        let ok = preview.registerAsset(id: 1, path: path).isOK
-            && preview.addClip(
-                trackId: 1, assetId: 1,
-                start: RationalTime(value: 0, timescale: ts),
-                duration: RationalTime(value: 5 * Int64(ts), timescale: ts),
-                sourceIn: RationalTime(value: 0, timescale: ts)).isOK
-        guard ok else { return false }
+        let start = RationalTime(value: 0, timescale: ts)
+        let duration = RationalTime(value: 5 * Int64(ts), timescale: ts)
+        let sourceIn = RationalTime(value: 0, timescale: ts)
+
+        // 会话级（真路径）：时间线视图显示这里。
+        // ⚠️ 提交是异步的：addTrack 的真实轨道 id 要等内核分配 —— 先注册素材 +
+        //    建轨道，轮询版本推进后查询 id，再提交 addClip（DEBUG 冒烟用
+        //    RunLoop 泵主队列等待，正式 UI 走 observer 回流，不这样等）。
+        let versionAtStart = session.currentSnapshot.version
+        guard session.registerAsset(id: 1, path: path).isOK,
+              session.addTrack(kind: 0).isOK else { return false }
+        let deadline = Date().addingTimeInterval(5)
+        while session.currentSnapshot.version < versionAtStart + 2 && Date() < deadline {
+            RunLoop.main.run(until: Date().addingTimeInterval(0.01))
+        }
+        guard let track = session.queryTracks().first else { return false }
+        guard session.addClip(trackId: track.trackId, assetId: 1,
+                              start: start, duration: duration,
+                              sourceIn: sourceIn).isOK else { return false }
+
+        // 预览本地（过渡）：画面出这里
+        let previewOK = preview?.registerAsset(id: 1, path: path).isOK ?? false
+            && preview?.addClip(trackId: 1, assetId: 1,
+                                start: start, duration: duration,
+                                sourceIn: sourceIn).isOK ?? false
+        guard previewOK else { return false }
         setPlayhead(RationalTime(value: 60000, timescale: ts))
         return true
     }
@@ -129,6 +153,19 @@ public final class EditorViewModel: ObservableObject {
         lastChanges = session.changesSince(knownVersion)
         knownVersion = snap.version
         snapshot = snap
+        // 时间线显示状态随之刷新（UIA-004）：读内核已发布快照。
+        timeline = TimelineState(
+            tracks: session.queryTracks(),
+            clips: session.queryClips(),
+            version: snap.version)
+    }
+
+    /// 主动刷新一次时间线状态（初始加载用：版本 0 不触发 observer 回流）。
+    public func refreshTimeline() {
+        timeline = TimelineState(
+            tracks: session.queryTracks(),
+            clips: session.queryClips(),
+            version: session.currentSnapshot.version)
     }
 }
 

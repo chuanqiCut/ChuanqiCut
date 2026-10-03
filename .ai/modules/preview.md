@@ -133,6 +133,13 @@ SwiftUI PreviewZone
 - 调试演示：`CQ_DEMO_VIDEO=<视频路径>` 环境变量（DEBUG 构建）启动即载入 5s 片段。
 
 ## 11. 验证（UIA-003 之后）
+## 12. 读路径收口（UIA-009 子步骤 2 预告，2026-10-03）
+
+会话级模型已落地（UIA-009 子步骤 1）：`EditorModelState::CurrentTimeline()`
+每次成功命令后发布不可变 Timeline 快照。预览收口时，PreviewRenderer 的输入
+从 CQPreview 本地 Timeline 切换到该快照（渲染时原子加载，D2 方案），
+CQPreview 本地 Timeline/AssetRegistry 退役。本节实现时更新。
+
 ## 12. 相关
 
 ADR-0011（core 调 PAL 工厂的隔离规则）、`docs/tasks/TASK-BIND-003.md`、

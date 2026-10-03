@@ -150,6 +150,26 @@ target_include_directories(cq_tests_c_abi_edit PRIVATE
 target_link_libraries(cq_tests_c_abi_edit PRIVATE cq_core)
 add_test(NAME c_abi_edit COMMAND cq_tests_c_abi_edit)
 
+# ---- UIA-010：播放时钟（时刻 = 墙钟的函数，非帧数累加；帧网格量化）----
+# 平台无关（只用 steady_clock + 有理数），不依赖任何 PAL / Metal。
+add_executable(cq_tests_core_player_clock
+    unit/test_player_clock.cpp)
+target_include_directories(cq_tests_core_player_clock PRIVATE
+    ${CMAKE_SOURCE_DIR}/core/include)
+target_link_libraries(cq_tests_core_player_clock PRIVATE cq_core)
+cq_require_cxx20(cq_tests_core_player_clock)
+apply_cq_warnings(cq_tests_core_player_clock)
+add_test(NAME core_player_clock COMMAND cq_tests_core_player_clock)
+
+# ---- UIA-010：播放时钟 + 时间线时长的 C ABI（真正的 C TU，只链 cq_core）----
+add_executable(cq_tests_c_abi_player
+    unit/test_c_abi_player.c)
+set_target_properties(cq_tests_c_abi_player PROPERTIES LINKER_LANGUAGE CXX)
+target_include_directories(cq_tests_c_abi_player PRIVATE
+    ${CMAKE_SOURCE_DIR}/core/include)
+target_link_libraries(cq_tests_c_abi_player PRIVATE cq_core)
+add_test(NAME c_abi_player COMMAND cq_tests_c_abi_player)
+
 # ---- CORE-006：PAL 头文件编译期自洽验证（零平台类型 / 零 FFmpeg 类型 / base 类型契约）----
 # 仅包含 PAL 头文件 + static_assert，不链接任何 PAL 实现（接口冻结阶段无实现）。
 # 证明：头文件自洽（include 顺序无关）、跨层资源均为 opaque 指针（零平台类型）、

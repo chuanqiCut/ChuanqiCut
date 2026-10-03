@@ -34,8 +34,9 @@
 | UI | UIA-009 子步骤 3：素材导入 UI（素材库面板 + probe + Command 建片段） | ✅（2026-10-03，任务整体完成） |
 | 编辑 | UIA-005 拖拽/裁剪交互 + undo/redo C ABI（含 UIA-008 的撤销入口） | ✅（2026-10-03，ADR-0012） |
 | **下一步** | **UIA-006 属性面板（变换/调色/滤镜参数，走 Command）** 或 **播放驱动** | ⏭️ **下一步** |
-**门禁（2026-10-03 UIA-005 后）**：`Debug 37/37`、`Release 37/37`（新增 c_abi_edit）；
-Swift 绑定 **18/18**；SharedUI **18/18**；macOS App 编译 SUCCEEDED + 启动冒烟通过。
+**门禁（2026-10-03 UIA-010 后）**：`Debug 39/39`、`Release 39/39`（+core_player_clock、
++c_abi_player）；Swift 绑定 **21/21**；SharedUI **19/19**；macOS App 编译 SUCCEEDED。
+⚠️ SharedUI 全量跑存在 **flaky**（MediaImportTests 约 50% 概率失败，P33，根因未定位）。
 ⚠️ **iOS 编译本轮未验证**：Xcode 26.6 的 IDESimulatorFoundation 插件加载失败
 （`-runFirstLaunch` 修复插件后仍 "Found no destinations" —— 本机无 iOS 运行时）。
 不是代码问题，但 iOS 侧改动自 2026-10-03 起**只有 macOS 路径被编译过**。
@@ -89,13 +90,23 @@ UIA-009 已整体完成（2026-10-03）：导入链路 fileImporter → probeMed
   **iOS 摇一摇未实现**（需 UIViewController 代表层）。
 - 守卫：`tests/unit/test_c_abi_edit.c`（61 断言）+ 绑定 + SharedUI（共 18/18）。
 
+**UIA-010 子步骤 1~4 已完成（2026-10-03）**：播放时钟 + 播放/暂停入口。
+- 内核 `PlayerClock`：时刻 = 墙钟的函数（`t = anchor + (now - anchor_wall)`，
+  非帧数累加），帧网格量化，停止态恒 0；`Tick()` 处理边界（loop/停止）。
+- C ABI：`cq_player_*` + `cq_session_timeline_duration`（边界由内核时间线算）。
+- Swift `Player` + SharedUI 播放按钮（ViewModel.togglePlayback + Timer 30Hz）。
+- ⚠️ **未达标**：取帧与渲染仍在**主线程**，帧率未实测 —— 子步骤 5 要把取帧/渲染
+  挪到播放线程（主线程只做 blit + present）。这是 UIA-010 剩下的活。
+- ⚠️ **P33 未解决**：MediaImportTests 偶发失败（~50%），怀疑 probe 返回 0 时长
+  （hypothesis）。先排它 —— 真机"导入无反应"会是同一症状。
+
 接下来（按优先级）：
-1. **UIA-006 属性面板**（变换/调色/滤镜，参数变更走 Command）—— MODEL-003 尚未做，
-   参数模型需先定；或先做下面第 2 项。
-2. **播放驱动**：异步任务推进 playhead（主线程同步解码不可用于连续播放）。
-   现在播放头只能手动设置，没有真正播放。
-3. letterbox / fit、多轨合成（等 RENDER-001）、素材库整理（拷入沙箱，D3 后续）。
-4. iOS 真机验证（iPhone 17 Pro）：拖拽帧率、手势观感、沙箱导入路径。
+1. **UIA-010 子步骤 5**：把取帧/渲染挪到播放线程（当前主线程解码是硬伤）。
+2. **P33 定位**：probe 返回 0 时长的内核路径。
+3. **UIA-006 属性面板**（参数模型 MODEL-003 未做，需先定）。
+4. letterbox / fit、多轨合成（等 RENDER-001）、素材库整理（拷入沙箱，D3 后续）。
+5. iOS 真机验证（iPhone 17 Pro）：拖拽帧率、播放帧率、沙箱导入路径。
+   ⚠️ iOS 编译当前**跑不通**（无 iOS 运行时 + Xcode 插件曾异常，见门禁段）。
 
 ⚠️ Swift 侧**绝不要**「读回像素再上传」：每帧一次 CPU 往返会直接毁掉预览帧率。
    直接把 `void*` 句柄 reinterpret 成 `MTLTexture` 交给 MTKView 绘制。

@@ -65,7 +65,10 @@ add_library(cq_core STATIC
     src/preview/cq_sdk_preview.cpp
     # UIA-009 子步骤 3：媒体时长探测 C ABI。调 PAL 工厂链路
     # （PalFrameProviderFactory::Create），单独成 TU（ADR-0011 规则 1）。
-    src/media/media_probe_abi.cpp)
+    src/media/media_probe_abi.cpp
+    # UIA-010：播放时钟 —— 时刻 = 墙钟的函数（非帧数累加），帧网格量化。
+    # 平台无关（只用 steady_clock + 有理数），不碰 PAL / Metal。
+    src/preview/player_clock.cpp)
 
 # 版本号由 CMake 注入，不在 cq_sdk.h 里硬编码（否则必然与 project VERSION 漂移）。
 target_compile_definitions(cq_core PRIVATE

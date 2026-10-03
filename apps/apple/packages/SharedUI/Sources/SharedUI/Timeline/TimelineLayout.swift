@@ -12,6 +12,33 @@
 import CoreGraphics
 import ChuanqiCut
 
+/// 拖拽/裁剪期间的**本地几何覆盖**（UIA-005）。
+///
+/// 拖拽期间不提交命令（结束时才提交一次，见任务卡 D1），故片段的"当前形状"
+/// 是 UI 本地状态，不是内核模型。绘制与命中测试都必须能带上它，否则
+/// 「看到的矩形」与「按下去命中的矩形」会不一致。
+struct ClipPreviewOverride: Equatable {
+    let clipId: UInt64
+    let startSeconds: Double
+    let durationSeconds: Double
+}
+
+/// 命中到的片段区域。
+enum ClipHitRegion: Equatable {
+    /// 片段主体 → 拖拽移动（改 start）。
+    case move
+    /// 右边缘 → 裁剪（改 duration）。
+    ///
+    /// ⚠️ **左边缘裁剪本期不支持**（任务卡 D2）：它会牵动 source_in，
+    ///    内核 TrimClipCommand 的语义是「只改 duration」。左边缘归「移动」。
+    case trimEnd
+}
+
+struct TimelineHit: Equatable {
+    let clip: ClipInfo
+    let region: ClipHitRegion
+}
+
 /// 时间线布局参数与结果。`make` 是唯一构造路径（纯函数）。
 struct TimelineLayout {
 
@@ -54,14 +81,23 @@ struct TimelineLayout {
         scrollSeconds..<scrollSeconds + Double(viewport.width / pixelsPerSecond)
     }
 
+    /// 右边缘裁剪手柄宽度（pt）。
+    static let trimHandleWidth: CGFloat = 8
+
     /// 片段矩形（y 已含标尺偏移；行号以 trackId 在 tracks 中的位置定位）。
     /// 完全在视口外的片段返回 nil（布局层的可见裁剪，调用方跳过绘制）。
-    func rect(for clip: ClipInfo) -> CGRect? {
+    ///
+    /// `override`：拖拽/裁剪期间的本地预览值（未提交内核）。
+    func rect(for clip: ClipInfo, override: ClipPreviewOverride? = nil) -> CGRect? {
         guard let trackRow = tracks.firstIndex(where: { $0.trackId == clip.trackId }) else {
             return nil
         }
-        let startSeconds = Double(clip.start.value) / Double(clip.start.timescale)
-        let durationSeconds = Double(clip.duration.value) / Double(clip.duration.timescale)
+        var startSeconds = Double(clip.start.value) / Double(clip.start.timescale)
+        var durationSeconds = Double(clip.duration.value) / Double(clip.duration.timescale)
+        if let o = override, o.clipId == clip.clipId {
+            startSeconds = o.startSeconds
+            durationSeconds = o.durationSeconds
+        }
         let x = x(forSeconds: startSeconds)
         let width = CGFloat(durationSeconds) * pixelsPerSecond
         // 完全在视口外（含 1pt 边界容差）→ 跳过
@@ -79,6 +115,27 @@ struct TimelineLayout {
             }
         }
         return result
+    }
+
+    /// 命中测试：点落在哪个片段、哪个区域（UIA-005）。
+    ///
+    /// 纯函数、可单测 —— 手势的判定逻辑不藏在 View 里。
+    /// 未命中任何片段返回 nil（调用方据此降级为「平移时间线」）。
+    ///
+    /// ⚠️ 右边缘 `trimHandleWidth` 内算裁剪区；**左边缘仍归移动**
+    /// （左边缘裁剪要动 source_in，本期内核不支持，见任务卡 D2）。
+    func hitTest(_ point: CGPoint, override: ClipPreviewOverride? = nil) -> TimelineHit? {
+        for clip in clips {
+            guard let r = rect(for: clip, override: override) else { continue }
+            guard point.x >= r.minX, point.x <= r.maxX,
+                  point.y >= r.minY, point.y <= r.maxY else { continue }
+            let region: ClipHitRegion =
+                (r.width >= Self.trimHandleWidth * 2 && point.x >= r.maxX - Self.trimHandleWidth)
+                    ? .trimEnd
+                    : .move
+            return TimelineHit(clip: clip, region: region)
+        }
+        return nil
     }
 
     /// 标尺刻度：返回 (时间秒, 是否主刻度)。步长随缩放自适应，保证相邻刻度 ≥ 60pt。

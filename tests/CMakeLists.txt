@@ -139,6 +139,17 @@ target_include_directories(cq_tests_c_abi_session PRIVATE
 target_link_libraries(cq_tests_c_abi_session PRIVATE cq_core)
 add_test(NAME c_abi_session COMMAND cq_tests_c_abi_session)
 
+# ---- UIA-005：片段编辑与撤销 C ABI（move / trim / undo / redo / can_*）----
+# 同只链 cq_core。同步手法不用 sleep：提交一条必定成功的哨兵变更并等它落地
+# （session 队列 FIFO ⇒ 哨兵执行完代表前面所有提交都已执行，含被拒的那些）。
+add_executable(cq_tests_c_abi_edit
+    unit/test_c_abi_edit.c)
+set_target_properties(cq_tests_c_abi_edit PROPERTIES LINKER_LANGUAGE CXX)
+target_include_directories(cq_tests_c_abi_edit PRIVATE
+    ${CMAKE_SOURCE_DIR}/core/include)
+target_link_libraries(cq_tests_c_abi_edit PRIVATE cq_core)
+add_test(NAME c_abi_edit COMMAND cq_tests_c_abi_edit)
+
 # ---- CORE-006：PAL 头文件编译期自洽验证（零平台类型 / 零 FFmpeg 类型 / base 类型契约）----
 # 仅包含 PAL 头文件 + static_assert，不链接任何 PAL 实现（接口冻结阶段无实现）。
 # 证明：头文件自洽（include 顺序无关）、跨层资源均为 opaque 指针（零平台类型）、

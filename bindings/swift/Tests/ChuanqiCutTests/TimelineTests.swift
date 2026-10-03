@@ -107,6 +107,102 @@ final class TimelineTests: XCTestCase {
         XCTAssertNil(session.probeMediaDuration(path: "/tmp/definitely_missing_cq.mp4"))
     }
 
+    // MARK: - 编辑与撤销（UIA-005）
+
+    /// 同步点：提交一条必定成功的哨兵并等它落地。
+    ///
+    /// 为什么不能直接「提交后 sleep」：被内核拒绝的提交**不推进版本**，
+    /// 光等版本推进永远等不到；而单纯 sleep 只是赌时长。session 队列 FIFO，
+    /// 哨兵落地 ⇒ 它之前的所有提交（含被拒的）都已执行完。
+    ///
+    /// - Parameters:
+    ///   - base: **提交这批变更之前**读到的版本号。⚠️ 必须是提交前读的：
+    ///     若在提交后才读，异步任务可能已经落地，基准版本号偏大 ⇒ 目标版本
+    ///     永远达不到 ⇒ 超时（首版就是这么错的，5s 超时失败）。
+    ///   - k: 这批变更里预期**成功**的条数（预期被拒的不计）。
+    ///     哨兵落地时版本恰好 == base + k + 1。
+    @discardableResult
+    private func drain(_ session: Session, from base: UInt64, expecting k: UInt64) -> Bool {
+        guard session.submit("test-sentinel") { .ok } == .ok else { return false }
+        return waitForVersion(session, base + k + 1)
+    }
+
+    func testMoveAndTrimRoundTripWithUndoRedo() throws {
+        guard let session = Session() else { return XCTFail("Session 创建失败") }
+        let ts = RationalTime.projectTimescale
+        let t = { (v: Int64) in RationalTime(value: v, timescale: ts) }
+
+        var base = session.currentSnapshot.version
+        XCTAssertEqual(session.registerAsset(id: 1, path: "/tmp/a.mp4"), .ok)
+        XCTAssertEqual(session.addTrack(kind: 0), .ok)
+        XCTAssertTrue(drain(session, from: base, expecting: 2), "register + addTrack 落地")
+
+        let trackId = try XCTUnwrap(session.queryTracks().first?.trackId)
+        base = session.currentSnapshot.version
+        XCTAssertEqual(session.addClip(trackId: trackId, assetId: 1,
+                                       start: t(0), duration: t(5000), sourceIn: t(0)), .ok)
+        XCTAssertEqual(session.addClip(trackId: trackId, assetId: 1,
+                                       start: t(8000), duration: t(5000), sourceIn: t(0)), .ok)
+        XCTAssertTrue(drain(session, from: base, expecting: 2), "两个片段落地")
+
+        let clipA = try XCTUnwrap(session.queryClips().first?.clipId)
+        XCTAssertTrue(session.canUndo, "有命令历史 → canUndo 为 true")
+        XCTAssertFalse(session.canRedo, "未撤销过 → canRedo 为 false")
+
+        // ---- move：合法 ----
+        base = session.currentSnapshot.version
+        XCTAssertEqual(session.moveClip(clipId: clipA, start: t(1000)), .ok)
+        XCTAssertTrue(drain(session, from: base, expecting: 1))
+        XCTAssertEqual(session.queryClips().first?.start, t(1000), "move 生效（内核真值）")
+
+        // ---- move：与 B 重叠 → 被拒（版本只推进哨兵那一次）----
+        base = session.currentSnapshot.version
+        XCTAssertEqual(session.moveClip(clipId: clipA, start: t(7000)), .ok,
+                       "提交本身入队成功")
+        XCTAssertTrue(drain(session, from: base, expecting: 0), "哨兵落地 ⇒ 重叠 move 已执行完")
+        XCTAssertEqual(session.currentSnapshot.version, base + 1,
+                       "重叠 move 被拒：版本只推进哨兵")
+        XCTAssertEqual(session.queryClips().first?.start, t(1000), "被拒：start 未变")
+
+        // ---- trim：合法（只改 duration，不动 sourceIn）----
+        base = session.currentSnapshot.version
+        XCTAssertEqual(session.trimClip(clipId: clipA, duration: t(3000)), .ok)
+        XCTAssertTrue(drain(session, from: base, expecting: 1))
+        XCTAssertEqual(session.queryClips().first?.duration, t(3000), "trim 生效")
+        XCTAssertEqual(session.queryClips().first?.sourceIn, t(0), "trim 不动 sourceIn")
+
+        // ---- trim：duration = 0 → 被拒 ----
+        base = session.currentSnapshot.version
+        XCTAssertEqual(session.trimClip(clipId: clipA, duration: t(0)), .ok)
+        XCTAssertTrue(drain(session, from: base, expecting: 0))
+        XCTAssertEqual(session.queryClips().first?.duration, t(3000), "duration=0 被拒")
+
+        // ---- undo ×2 → 回到 move 之前 ----
+        base = session.currentSnapshot.version
+        XCTAssertEqual(session.undo(), .ok)
+        XCTAssertTrue(drain(session, from: base, expecting: 1))
+        XCTAssertEqual(session.queryClips().first?.duration, t(5000), "undo trim")
+        XCTAssertTrue(session.canRedo, "撤销后可重做")
+
+        base = session.currentSnapshot.version
+        XCTAssertEqual(session.undo(), .ok)
+        XCTAssertTrue(drain(session, from: base, expecting: 1))
+        XCTAssertEqual(session.queryClips().first?.start, t(0), "undo move")
+
+        // ---- redo ×2 → 再前进 ----
+        base = session.currentSnapshot.version
+        XCTAssertEqual(session.redo(), .ok)
+        XCTAssertTrue(drain(session, from: base, expecting: 1))
+        XCTAssertEqual(session.queryClips().first?.start, t(1000), "redo move")
+
+        base = session.currentSnapshot.version
+        XCTAssertEqual(session.redo(), .ok)
+        XCTAssertTrue(drain(session, from: base, expecting: 1))
+        XCTAssertEqual(session.queryClips().first?.duration, t(3000), "redo trim")
+        XCTAssertFalse(session.canRedo, "redo 到底")
+        XCTAssertTrue(session.canUndo)
+    }
+
     func testOverlappingAddClipIsRejectedAsynchronously() throws {
         guard let session = Session() else { return XCTFail("Session 创建失败") }
         XCTAssertEqual(session.addTrack(kind: 0), .ok)

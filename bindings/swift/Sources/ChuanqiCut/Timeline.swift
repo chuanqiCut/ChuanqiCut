@@ -116,6 +116,53 @@ extension Session {
         return Status(rawValue: code)
     }
 
+    // MARK: 片段编辑（UIA-005；异步提交，经 CommandHistory 可撤销）
+
+    /// 移动片段起点（同轨）。与同轨片段重叠 → session 线程校验失败
+    /// （版本不推进、观察者不回调）。
+    @discardableResult
+    public func moveClip(clipId: UInt64, start: RationalTime) -> Status {
+        guard let h = handle else { return .invalidArgument }
+        let code = cq_session_move_clip(h, clipId, start.value, start.timescale)
+        return Status(rawValue: code)
+    }
+
+    /// 裁剪片段占时。**只改 duration，不动 source_in**（内核既定语义）。
+    /// duration ≤ 0 或与同轨下一片段重叠 → 校验失败。
+    @discardableResult
+    public func trimClip(clipId: UInt64, duration: RationalTime) -> Status {
+        guard let h = handle else { return .invalidArgument }
+        let code = cq_session_trim_clip(h, clipId, duration.value, duration.timescale)
+        return Status(rawValue: code)
+    }
+
+    // MARK: 撤销 / 重做（UIA-005）
+
+    /// 撤销最近一条命令。**异步**：命令历史是 session 线程状态，
+    /// 本调用只是入队；空历史在 session 线程返回失败（版本不推进）。
+    @discardableResult
+    public func undo() -> Status {
+        guard let h = handle else { return .invalidArgument }
+        return Status(rawValue: cq_session_undo(h))
+    }
+
+    @discardableResult
+    public func redo() -> Status {
+        guard let h = handle else { return .invalidArgument }
+        return Status(rawValue: cq_session_redo(h))
+    }
+
+    /// 撤销栈是否非空（**同步**读内核原子标志，任意线程）。UI 据此置灰按钮。
+    public var canUndo: Bool {
+        guard let h = handle else { return false }
+        return cq_session_can_undo(h) != 0
+    }
+
+    public var canRedo: Bool {
+        guard let h = handle else { return false }
+        return cq_session_can_redo(h) != 0
+    }
+
     // MARK: 查询（同步读快照，任意线程）
 
     public func trackCount() -> Int {

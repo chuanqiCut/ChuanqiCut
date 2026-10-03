@@ -66,4 +66,17 @@ ADR-0006、`docs/tasks/TASK-BACKLOG.md` 的 `MODEL-0xx` / `ANIM-0xx`
 ```bash
 ctest --test-dir build -R model_command   # 4 组用例：逐命令往返 / 201 深度全撤销回初始态 /
                                           # 失败语义 / 排序不变量（门禁 35/35）
+ctest --test-dir build -R c_abi_edit      # UIA-005：move/trim/undo/redo 经 C ABI 的往返
 ```
+
+# UIA-005 落地（2026-10-03）：撤销链路接到 C ABI
+
+`CommandHistory` 此前只有 C++ 侧入口（MODEL-002 完成但**对外不可用**）。
+UIA-005 把它接到 `EditorModelState::Undo/Redo` 与 `cq_session_undo/redo`。
+
+- **撤销也发布新快照**：`Undo/Redo` 成功后 `Publish()`（否则 UI 读到的还是旧
+  时间线）+ `RefreshHistoryFlags()`（刷新 can_undo/can_redo 原子标志）。
+- **id 稳定性得到 C 侧实证**：全 undo 到空再全 redo，clip id 与撤销前完全相同
+  （`RestoreClip` 生效，未重分配）—— 这是不变量 3 的端到端守卫。
+- **digest 可回退**：undo 到某一步时 fingerprint 与「那一步之前」的值相等，
+  测试直接断言相等（不是"变了就行"）。

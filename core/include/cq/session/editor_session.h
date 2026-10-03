@@ -91,6 +91,21 @@ public:
     Status SubmitAddTrack(const char* name, TrackKind kind);
     Status SubmitAddClip(const char* name, uint64_t track_id, const Clip& clip);
 
+    // ---- 编辑类提交（UIA-005；同样异步，校验在 session 线程）----
+    // MoveClip：改片段起点（同轨；与同轨片段重叠 → 校验失败）。
+    // TrimClip：改片段占时（duration ≤ 0 或与同轨下一片段重叠 → 校验失败）。
+    // Undo/Redo：走 CommandHistory。**历史本身也是 session 线程状态**，
+    //   故撤销同样必须入队执行 —— 不能在调用线程直接翻栈。
+    Status SubmitMoveClip(const char* name, uint64_t clip_id, const RationalTime& start);
+    Status SubmitTrimClip(const char* name, uint64_t clip_id, const RationalTime& duration);
+    Status SubmitUndo(const char* name);
+    Status SubmitRedo(const char* name);
+
+    // ---- 撤销栈能力（任意线程读；读的是原子标志，不触碰 history_）----
+    // 注入自定义状态时恒为 false（无内建模型）。
+    bool CanUndo() const;
+    bool CanRedo() const;
+
     // ---- 快照查询（任意线程可调用）----
     // 读路径只碰 atomic：绝不跨线程调用 state->Digest()（D4）。
     Snapshot CurrentSnapshot() const;

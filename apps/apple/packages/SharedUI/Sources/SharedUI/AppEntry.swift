@@ -48,6 +48,11 @@ public final class EditorViewModel: ObservableObject {
     /// （读已发布快照，不阻塞；查询在主线程执行，量级微秒）。
     @Published public private(set) var timeline: TimelineState = TimelineState()
 
+    /// 撤销 / 重做是否可用（UIA-005）。读的是内核原子标志（同步、不阻塞），
+    /// 每次快照推进后刷新 —— UI 据此置灰按钮。
+    @Published public private(set) var canUndo = false
+    @Published public private(set) var canRedo = false
+
     /// 素材库显示状态（UIA-009 子步骤 3）：内核素材表 + 本地存活标记。
     /// `exists == false` = 文件已不在原路径（D3：MVP 引用原路径，不拷贝入库）。
     public struct LibraryAsset: Identifiable, Equatable {
@@ -79,6 +84,7 @@ public final class EditorViewModel: ObservableObject {
         self.preview = Previewer(session: session, width: 1280, height: 720)
         // 版本 0 不触发 observer 回流，初始时间线状态主动查一次。
         refreshTimeline()
+        refreshHistoryFlags()
 
         // 订阅快照变更：内核 session 线程 → 绑定层 main queue → 本处 MainActor。
         session.setSnapshotObserver { [weak self] snap in
@@ -105,6 +111,46 @@ public final class EditorViewModel: ObservableObject {
             result[capability] = ChuanqiCut.queryCapability(capability)
         }
         capabilities = result
+    }
+
+    // MARK: 片段编辑与撤销（UIA-005）
+
+    /// 移动片段起点（同轨）。**异步**：Ok 只代表入队，与同轨片段重叠时
+    /// 内核在 session 线程拒绝（版本不推进）。
+    @discardableResult
+    public func moveClip(clipId: UInt64, to start: RationalTime) -> Status {
+        session.moveClip(clipId: clipId, start: start)
+    }
+
+    /// 裁剪片段占时（只改 duration，不动 source_in —— 内核既定语义）。
+    @discardableResult
+    public func trimClip(clipId: UInt64, duration: RationalTime) -> Status {
+        session.trimClip(clipId: clipId, duration: duration)
+    }
+
+    @discardableResult
+    public func undo() -> Status { session.undo() }
+
+    @discardableResult
+    public func redo() -> Status { session.redo() }
+
+    /// 主动回到内核真值（UIA-005 的关键收口）。
+    ///
+    /// 拖拽/裁剪提交可能被内核拒绝（重叠 / duration ≤ 0），而拒绝**不会**
+    /// 触发 observer 回流 —— 若 UI 此时还留着本地预览位置，就会显示一个
+    /// 内核里并不存在的"幽灵片段"。故提交后一律主动重查一次：成功时 observer
+    /// 随后会再刷一次（同值，无害），失败时这一次就是回到真值的唯一途径。
+    public func refreshFromKernel() {
+        timeline = TimelineState(
+            tracks: session.queryTracks(),
+            clips: session.queryClips(),
+            version: session.currentSnapshot.version)
+        refreshHistoryFlags()
+    }
+
+    private func refreshHistoryFlags() {
+        canUndo = session.canUndo
+        canRedo = session.canRedo
     }
 
     // MARK: 预览（BIND-003 子步骤 6）
@@ -165,6 +211,7 @@ public final class EditorViewModel: ObservableObject {
             clips: session.queryClips(),
             version: snap.version)
         refreshMediaLibrary()
+        refreshHistoryFlags()
     }
 
     /// 主动刷新一次时间线与素材库状态（初始加载用：版本 0 不触发 observer 回流）。
@@ -174,6 +221,7 @@ public final class EditorViewModel: ObservableObject {
             clips: session.queryClips(),
             version: session.currentSnapshot.version)
         refreshMediaLibrary()
+        refreshHistoryFlags()
     }
 
     private func refreshMediaLibrary() {

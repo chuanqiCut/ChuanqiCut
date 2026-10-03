@@ -18,6 +18,7 @@
 #ifndef CQ_MODEL_EDITOR_MODEL_STATE_H_
 #define CQ_MODEL_EDITOR_MODEL_STATE_H_
 
+#include <atomic>
 #include <cstdint>
 #include <memory>
 #include <mutex>
@@ -45,6 +46,12 @@ public:
     // 失败：历史与模型不动（MODEL-002 语义），也不发布。
     Status Execute(std::unique_ptr<ICommand> cmd);
 
+    // ---- 撤销 / 重做（仅 session 线程；UIA-005）----
+    // 与 Execute 同构：成功后发布新快照，失败则历史与模型都不动。
+    // 空历史返回 kInvalidArgument（CommandHistory 语义）。
+    Status Undo();
+    Status Redo();
+
     // 注册素材（id → 路径）。**不走 Command**：素材是资料库不是时间线编辑，
     // 不参与 Undo/Redo；但**会发布新快照**（素材表进入快照配对，预览读得到）。
     // 版本推进由 EditorSession 负责。fingerprint 不含素材表 —— 时间线结构未变。
@@ -67,6 +74,12 @@ public:
     // 便捷取时间线部分（同一份已发布快照，引用计数保证存活）。
     std::shared_ptr<const Timeline> CurrentTimeline() const;
 
+    // ---- 撤销栈能力（任意线程读；UIA-005 D3）----
+    // ⚠️ 不能直接读 CommandHistory：它非线程安全、只在 session 线程变更。
+    //    故在这里缓存两个原子标志，由 Execute/Undo/Redo 成功后刷新。
+    bool CanUndo() const { return can_undo_.load(std::memory_order_acquire); }
+    bool CanRedo() const { return can_redo_.load(std::memory_order_acquire); }
+
     // ISessionState
     uint64_t Digest() const override;  // = fingerprint（时间线结构哈希）
     const char* TypeName() const override { return "EditorModelState"; }
@@ -77,10 +90,15 @@ public:
 
 private:
     void Publish();  // (timeline_, assets_) → 重建配对快照并发布（session 线程）
+    void RefreshHistoryFlags();  // history_ → can_undo_/can_redo_（session 线程）
 
     Timeline timeline_;
     AssetRegistry assets_;
     CommandHistory history_;
+
+    // 撤销栈能力标志：session 线程写（Execute/Undo/Redo 后），任意线程读。
+    std::atomic<bool> can_undo_{false};
+    std::atomic<bool> can_redo_{false};
 
     // 不可变快照的发布点。mutable：读接口（const）也要锁。
     mutable std::mutex snap_mtx_;

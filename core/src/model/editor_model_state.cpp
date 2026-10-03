@@ -44,7 +44,30 @@ Status EditorModelState::Execute(std::unique_ptr<ICommand> cmd) {
     Status s = history_.Execute(std::move(cmd), timeline_);
     if (!s.IsOk()) return s;
     Publish();
+    RefreshHistoryFlags();
     return Status::Ok();
+}
+
+Status EditorModelState::Undo() {
+    Status s = history_.Undo(timeline_);
+    if (!s.IsOk()) return s;
+    Publish();
+    RefreshHistoryFlags();
+    return Status::Ok();
+}
+
+Status EditorModelState::Redo() {
+    Status s = history_.Redo(timeline_);
+    if (!s.IsOk()) return s;
+    Publish();
+    RefreshHistoryFlags();
+    return Status::Ok();
+}
+
+void EditorModelState::RefreshHistoryFlags() {
+    // 只在 session 线程调用（history_ 非线程安全）；原子量供任意线程读。
+    can_undo_.store(history_.CanUndo(), std::memory_order_release);
+    can_redo_.store(history_.CanRedo(), std::memory_order_release);
 }
 
 Status EditorModelState::RegisterAsset(uint64_t asset_id, const std::string& path) {

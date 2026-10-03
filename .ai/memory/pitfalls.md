@@ -460,6 +460,38 @@
 - 日期 / 来源 / 验证状态：2026-10-03 / UIA-009 子步骤 3 / **verified**
   （helper 化后双包 17+13 全绿）
 
+### P31 · 异步提交的测试同步点：基准版本号必须在提交**前**读，且目标要算上「预期成功条数」
+- 现象（同一轮在两个包里各错一次）：
+  1. C 侧 `Drain()` 提交哨兵后只等 `version >= before+1`，而 `before` 是**提交哨兵之后**读的
+     —— 队列里还压着未执行的提交（register/add_track 尚未落地），
+     `query_tracks` 拿到空时间线，**19 条断言集体失败**（首版 61 checks / 19 failures）。
+  2. Swift 侧改成「提交后才读基准」同样错：异步任务可能已落地，基准偏大 ⇒
+     目标版本号永远达不到 ⇒ 5s 超时失败。
+- 根因：**「等版本推进」不等于「队列排空」**。提交是异步的，被拒的提交还不推进版本。
+- 正确写法（哨兵法）：
+  * `base` = **这批变更提交之前**读到的版本号；
+  * 提交 X（可能失败）→ 提交必定成功的哨兵 → 等 `version == base + k + 1`，
+    其中 `k` = 这批里预期**成功**的条数（预期被拒的不计）。
+  * session 队列 FIFO ⇒ 哨兵落地就证明此前所有提交（含被拒的）都已执行完；
+    而「+1」正好是**失败语义的判据**：X 被拒时版本只推进哨兵那一次。
+- 防复发：**不要用 sleep 赌时长**，也不要无参数地「等一次推进」。
+  参考实现：`tests/unit/test_c_abi_edit.c::DrainAfter(s,k)`、
+  `bindings/swift/Tests/ChuanqiCutTests/TimelineTests.swift::drain(_:from:expecting:)`。
+- 日期 / 来源 / 验证状态：2026-10-03 / UIA-005 / **verified**
+  （C 61/61、Swift 绑定 18/18、SharedUI 18/18）
+
+### P32 · 裁剪预览不能让位移同时作用于起点和时长
+- 现象：`ClipDrag.previewStart` 无条件返回 `max(0, originStart + delta)`，
+  于是**裁剪**（region == .trimEnd）拖过左边界时起点被夹成 0 —— 视觉上片段
+  自己跳到时间线开头。SharedUI 测试 `testDragClampsNegativeStartAndTinyDuration`
+  抓出（0.0 ≠ 0.5）。
+- 修复：`previewStart` 在非 move 时直接返回 `originStart`（位移只作用于时长），
+  与 `previewDuration` 对称。
+- 防复发：**夹取规则必须逐 region 分支**，不要写成"统一公式"。
+  这类边界（负起点 / 零时长）是 UI 侧必须夹住的 —— 内核 `MoveClip` **不校验
+  负 start**（只校验重叠），UI 不夹就会把语义外的片段提交进去。
+- 日期 / 来源 / 验证状态：2026-10-03 / UIA-005 / **verified**
+
 ---
 
 ## 已修正的历史错误（供参考，避免重犯）

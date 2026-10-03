@@ -17,7 +17,7 @@ public struct EditorView: View {
                 PreviewZone(preview: viewModel.preview, playhead: viewModel.playhead)
             },
             timeline: {
-                TimelineZone(snapshot: viewModel.snapshot)
+                TimelineZone()
             },
             panel: {
                 // UIA-009 子步骤 3：面板即素材库（@EnvironmentObject 取状态）

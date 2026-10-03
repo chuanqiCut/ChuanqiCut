@@ -130,3 +130,33 @@ ARCH-005、TASK-UIA-002、pitfalls P7/P8
 - 媒体类型白名单：movie/video/mpeg4Movie。
 - **测试路径 helper 唯一真源**：`RepoPath`（SharedUI）/`TestPaths`（bindings），
   #filePath 上溯链**不得在新测试里手写**（本轮两次踩层数错误，P30）。
+
+
+# UIA-005 落地（2026-10-03）：拖拽 / 裁剪交互 + 撤销入口
+
+决策见 ADR-0012。要点（三条反直觉的，改代码前必读）：
+
+- **拖拽期间不提交命令**：`ClipDrag`（本地状态）+ `ClipPreviewOverride`
+  （几何覆盖）只影响绘制；松手时提交**一条** Move/Trim Command。
+  → 不引入 coalescing：需求来自「每帧提交」，而每帧提交会污染 Undo 栈。
+- **提交后必须 `refreshFromKernel()`**：内核拒绝（重叠 / duration ≤ 0）时
+  **不触发 observer 回流**，不主动回查就会留下"幽灵片段"。代价：成功时有
+  一次旧值回弹 —— 正确性优先。
+- **左边缘不裁剪**：`TrimClipCommand` 只改 duration 不动 source_in；左边缘
+  归「移动」（要动 source_in 的是另一条命令，本期不做）。
+
+结构：
+
+| 位置 | 内容 |
+|---|---|
+| `Timeline/TimelineLayout.swift` | `hitTest(point, override)`（`ClipHitRegion.move` / `.trimEnd`，右边缘 8pt）+ `rect(for:override:)`；**纯函数、可单测** |
+| `Timeline/EditorTimelineView.swift` | `ClipDrag`（夹取：起点 ≥ 0、时长 ≥ 0.05s）+ DragGesture 分支（命中片段=编辑 / 空白=平移）+ `commit()` |
+| `Editor/AppEntry.swift` | `moveClip/trimClip/undo/redo` + `canUndo/canRedo`（@Published）+ `refreshFromKernel()` |
+| `Editor/TimelineZone.swift` | 撤销/重做按钮（`disabled` 绑能力标志，macOS 吃 Cmd+Z / Cmd+Shift+Z） |
+
+⚠️ **iOS 摇一摇撤销未实现**（需 UIViewController 代表层，SharedUI 是纯
+SwiftUI）—— 两端通用的是按钮入口，摇一摇留给后续任务。
+
+⚠️ **未被自动测试覆盖**：SwiftUI 手势（DragGesture 的 onChanged/onEnded）
+无法在 XCTest 里驱动。故命中判定、夹取规则、提交结果都抽成纯函数/ViewModel
+方法去测；手势接线靠 App 冒烟与人工验证。

@@ -32,9 +32,13 @@
 | 模型 | UIA-009 子步骤 1：Session 级模型状态 + 查询 ABI | ✅（2026-10-03） |
 | 预览 | UIA-009 子步骤 2：预览收口（cq_preview 挂 session 快照，删本地装配 ABI） | ✅（2026-10-03） |
 | UI | UIA-009 子步骤 3：素材导入 UI（素材库面板 + probe + Command 建片段） | ✅（2026-10-03，任务整体完成） |
-| **下一步** | **UIA-005 拖拽/裁剪交互（含 undo/redo C ABI）** | ⏭️ **下一步** |
-**门禁**：`Debug 36/36`、`Release 36/36`（含 c_abi_session）；Swift 绑定 **16/16**；SharedUI **10/10**（含像素级与布局性能）；
-macOS App 编译 SUCCEEDED（Swift 告警 0）+ 启动冒烟通过；iOS `-sdk iphoneos` 编译 SUCCEEDED。
+| 编辑 | UIA-005 拖拽/裁剪交互 + undo/redo C ABI（含 UIA-008 的撤销入口） | ✅（2026-10-03，ADR-0012） |
+| **下一步** | **UIA-006 属性面板（变换/调色/滤镜参数，走 Command）** 或 **播放驱动** | ⏭️ **下一步** |
+**门禁（2026-10-03 UIA-005 后）**：`Debug 37/37`、`Release 37/37`（新增 c_abi_edit）；
+Swift 绑定 **18/18**；SharedUI **18/18**；macOS App 编译 SUCCEEDED + 启动冒烟通过。
+⚠️ **iOS 编译本轮未验证**：Xcode 26.6 的 IDESimulatorFoundation 插件加载失败
+（`-runFirstLaunch` 修复插件后仍 "Found no destinations" —— 本机无 iOS 运行时）。
+不是代码问题，但 iOS 侧改动自 2026-10-03 起**只有 macOS 路径被编译过**。
 
 **本轮新增的架构决策**：
 - **ADR-0011**（core 调用 PAL 工厂的隔离规则）—— core 从不调 PAL 工厂的惯例被开口子，
@@ -72,13 +76,26 @@ UIA-009 已整体完成（2026-10-03）：导入链路 fileImporter → probeMed
 （同步探测，独立 TU）→ registerAsset（id 本地分配）→ addClip Command 追加到
 视频轨末尾；素材库面板含失效标记（D3：引用原路径）。iOS 沙箱真机验证待设备。
 
+**UIA-005 已完成（2026-10-03）**，决策见 **ADR-0012**（提交时机 + 撤销栈线程边界）：
+- 内核 6 个新 ABI：`cq_session_move_clip / trim_clip / undo / redo / can_undo / can_redo`。
+  ⚠️ undo/redo **也是异步入队**（CommandHistory 与 Timeline 都是 session 线程状态）。
+  ⚠️ can_undo/can_redo 返回 **0/1 数据**，不是状态码（别比 cq_status_is_ok）。
+- **不引入 coalescing**（推翻旧设想）：拖拽期间不提交，UI 本地 `ClipDrag` +
+  `ClipPreviewOverride` 只影响绘制，松手提交**一条**命令。
+- 提交后必须 `refreshFromKernel()`：内核拒绝**不触发 observer 回流**，不回查就
+  会留下"幽灵片段"。代价：成功时有一次旧值回弹（正确性优先）。
+- 裁剪**只做右边缘**（TrimClipCommand 只改 duration 不动 source_in）；左边缘归移动。
+- 撤销入口：TimelineZone 按钮（绑 canUndo/canRedo），macOS 吃 Cmd+Z / Cmd+Shift+Z。
+  **iOS 摇一摇未实现**（需 UIViewController 代表层）。
+- 守卫：`tests/unit/test_c_abi_edit.c`（61 断言）+ 绑定 + SharedUI（共 18/18）。
+
 接下来（按优先级）：
-1. **UIA-005 拖拽/裁剪交互**：结束提交 Move/Trim Command（**undo/redo 的 C ABI
-   一并落**：cq_session_undo/redo + CanX 查询，内核 CommandHistory 已就绪）；
-   拖拽连续命令合并（coalescing）届时设计；实帧率真机验证。
-2. **UIA-008 Undo/Redo 入口**（Mac Cmd+Z / iOS 摇一摇；依赖上面的 C ABI）。
-3. **播放驱动**：异步任务推进 playhead（主线程同步解码不可用于连续播放）。
-4. letterbox / fit、多轨合成（等 RENDER-001）、素材库整理（拷入沙箱，D3 后续）。
+1. **UIA-006 属性面板**（变换/调色/滤镜，参数变更走 Command）—— MODEL-003 尚未做，
+   参数模型需先定；或先做下面第 2 项。
+2. **播放驱动**：异步任务推进 playhead（主线程同步解码不可用于连续播放）。
+   现在播放头只能手动设置，没有真正播放。
+3. letterbox / fit、多轨合成（等 RENDER-001）、素材库整理（拷入沙箱，D3 后续）。
+4. iOS 真机验证（iPhone 17 Pro）：拖拽帧率、手势观感、沙箱导入路径。
 
 ⚠️ Swift 侧**绝不要**「读回像素再上传」：每帧一次 CPU 往返会直接毁掉预览帧率。
    直接把 `void*` 句柄 reinterpret 成 `MTLTexture` 交给 MTKView 绘制。

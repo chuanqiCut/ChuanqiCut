@@ -38,6 +38,8 @@ enum Theme {
     static let timelineClip = Color(red: 0.26, green: 0.42, blue: 0.62)
     static let timelineClipBorder = Color(red: 0.38, green: 0.56, blue: 0.78)
     static let timelineClipLabel = Color.white
+    /// 拖拽中的片段（UIA-005）：本地预览态，尚未提交内核 —— 用更亮的颜色提示。
+    static let timelineClipDragging = Color(red: 0.36, green: 0.56, blue: 0.82)
 
     // MARK: - 尺寸
 

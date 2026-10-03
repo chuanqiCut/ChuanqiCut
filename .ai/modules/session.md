@@ -155,6 +155,30 @@ undo/redo 的 C ABI 归 UIA-008。
 `core/src/cq_session_impl.h`（cq_sdk.cpp 与 cq_sdk_preview.cpp 共享；
 include 用相对路径 `../cq_session_impl.h`，pod 构建无私有 search path）。
 
+# UIA-005 落地（2026-10-03）：片段编辑与撤销的 C ABI
+
+决策见 `docs/decisions/ADR-0012`（提交时机 + 撤销栈线程边界）。要点：
+
+- **编辑类提交**：`SubmitMoveClip / SubmitTrimClip` —— 与 SubmitAddClip 同构
+  （异步入队，校验在 session 线程：片段存在 / duration>0 / 同轨不重叠）。
+- **撤销也是 session 线程操作**：`SubmitUndo / SubmitRedo` —— CommandHistory
+  与 Timeline 都是 session 线程状态，UI 线程不能直接翻栈。空历史 → session
+  线程返回 kInvalidArgument（版本不推进）。
+- **撤销栈能力**：`EditorModelState` 维护 `atomic<bool> can_undo_/can_redo_`
+  （Execute/Undo/Redo 成功后 `RefreshHistoryFlags()` 刷新），
+  `EditorSession::CanUndo/CanRedo` 读原子量 —— **不直读 CommandHistory**。
+
+| 新 C ABI | 语义 |
+|---|---|
+| `cq_session_move_clip` / `cq_session_trim_clip` | 异步提交（Ok=入队）；trim **只改 duration，不动 source_in** |
+| `cq_session_undo` / `cq_session_redo` | 异步提交；空历史在 session 线程失败 |
+| `cq_session_can_undo` / `cq_session_can_redo` | **同步**读原子标志；返回 **0/1 数据**，不是状态码（P26，别拿去比 cq_status_is_ok） |
+
+守卫：`tests/unit/test_c_abi_edit.c`（61 条断言，只链 cq_core）。
+
+⚠️ **左边缘裁剪本期不支持**：需同时改 start + source_in + duration，是另一条
+命令。UI 左边缘归「移动」，见 ADR-0012 D5。
+
 ## 读路径的下游
 
 - UIA-004 时间线视图：Session.queryTracks/queryClips（Swift 封装，主线程直读）

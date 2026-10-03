@@ -170,6 +170,44 @@ int32_t cq_session_add_clip(CQSession* session, uint64_t track_id, uint64_t asse
     return CodeOf(session->impl.SubmitAddClip("add-clip", track_id, clip));
 }
 
+// ---- 片段编辑与撤销（UIA-005）--------------------------------------------
+
+int32_t cq_session_move_clip(CQSession* session, uint64_t clip_id, int64_t start_value,
+                             int32_t start_timescale) {
+    if (session == nullptr) return CodeOfEnum(cq::StatusCode::kInvalidArgument);
+    if (start_timescale <= 0) return CodeOfEnum(cq::StatusCode::kInvalidArgument);
+    const cq::RationalTime start{start_value, start_timescale};
+    return CodeOf(session->impl.SubmitMoveClip("move-clip", clip_id, start));
+}
+
+int32_t cq_session_trim_clip(CQSession* session, uint64_t clip_id, int64_t duration_value,
+                             int32_t duration_timescale) {
+    if (session == nullptr) return CodeOfEnum(cq::StatusCode::kInvalidArgument);
+    if (duration_timescale <= 0) return CodeOfEnum(cq::StatusCode::kInvalidArgument);
+    const cq::RationalTime duration{duration_value, duration_timescale};
+    return CodeOf(session->impl.SubmitTrimClip("trim-clip", clip_id, duration));
+}
+
+int32_t cq_session_undo(CQSession* session) {
+    if (session == nullptr) return CodeOfEnum(cq::StatusCode::kInvalidArgument);
+    return CodeOf(session->impl.SubmitUndo("undo"));
+}
+
+int32_t cq_session_redo(CQSession* session) {
+    if (session == nullptr) return CodeOfEnum(cq::StatusCode::kInvalidArgument);
+    return CodeOf(session->impl.SubmitRedo("redo"));
+}
+
+int32_t cq_session_can_undo(const CQSession* session) {
+    if (session == nullptr) return 0;
+    return session->impl.CanUndo() ? 1 : 0;
+}
+
+int32_t cq_session_can_redo(const CQSession* session) {
+    if (session == nullptr) return 0;
+    return session->impl.CanRedo() ? 1 : 0;
+}
+
 int32_t cq_session_track_count(const CQSession* session, int32_t* out_count) {
     if (session == nullptr || out_count == nullptr) {
         return CodeOfEnum(cq::StatusCode::kInvalidArgument);

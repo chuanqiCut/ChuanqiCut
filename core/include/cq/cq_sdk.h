@@ -164,6 +164,36 @@ int32_t cq_session_add_clip(CQSession* session, uint64_t track_id, uint64_t asse
                             int64_t duration_value, int32_t duration_timescale,
                             int64_t source_in_value, int32_t source_in_timescale);
 
+/* ---- 片段编辑：移动 / 裁剪（UIA-005；异步提交，经 CommandHistory 可撤销）----
+ *
+ * 与 add_clip 同一提交语义：Ok = 已入队；校验（片段存在 / duration > 0 /
+ * 同轨不重叠）在 session 线程执行 —— 失败表现为版本不推进 + 观察者不回调。
+ *
+ * ⚠️ **裁剪只改 duration，不动 source_in**（MODEL-002 既定语义）。
+ *    左边缘裁剪需要同时改 start + source_in + duration，是另一条命令，
+ *    本期不提供 —— UI 不要假装支持左边缘裁剪。
+ */
+int32_t cq_session_move_clip(CQSession* session, uint64_t clip_id, int64_t start_value,
+                             int32_t start_timescale);
+
+int32_t cq_session_trim_clip(CQSession* session, uint64_t clip_id, int64_t duration_value,
+                             int32_t duration_timescale);
+
+/* ---- 撤销 / 重做（UIA-005；异步提交）----
+ *
+ * 命令历史是 **session 线程状态**（非线程安全），故 undo/redo 也必须入队：
+ * Ok = 已入队，实际翻栈在 session 线程发生。空历史 → session 线程返回
+ * kInvalidArgument，表现为版本不推进。
+ */
+int32_t cq_session_undo(CQSession* session);
+int32_t cq_session_redo(CQSession* session);
+
+/* 撤销栈是否非空。**同步读**（原子标志，任意线程、不阻塞）。
+ * 返回值是**数据**不是状态码：1 = 可执行，0 = 不可执行（会话无效时也是 0）。
+ * UI 据此置灰按钮 —— 不要拿它去比 cq_status_is_ok。 */
+int32_t cq_session_can_undo(const CQSession* session);
+int32_t cq_session_can_redo(const CQSession* session);
+
 /* ---- 时间线查询（读已发布快照；任意线程）---- */
 
 typedef struct CQTrackInfo {

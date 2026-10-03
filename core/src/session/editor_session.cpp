@@ -126,6 +126,48 @@ Status EditorSession::SubmitAddClip(const char* name, uint64_t track_id, const C
     });
 }
 
+Status EditorSession::SubmitMoveClip(const char* name, uint64_t clip_id,
+                                     const RationalTime& start) {
+    EditorModelState* model = BuiltinModel();
+    if (model == nullptr) return Status{StatusCode::kInternal};
+    if (start.timescale <= 0) return Status{StatusCode::kInvalidArgument};
+    return Submit(name, [model, clip_id, start]() -> Status {
+        return model->Execute(std::make_unique<MoveClipCommand>(clip_id, start));
+    });
+}
+
+Status EditorSession::SubmitTrimClip(const char* name, uint64_t clip_id,
+                                     const RationalTime& duration) {
+    EditorModelState* model = BuiltinModel();
+    if (model == nullptr) return Status{StatusCode::kInternal};
+    if (duration.timescale <= 0) return Status{StatusCode::kInvalidArgument};
+    return Submit(name, [model, clip_id, duration]() -> Status {
+        return model->Execute(std::make_unique<TrimClipCommand>(clip_id, duration));
+    });
+}
+
+Status EditorSession::SubmitUndo(const char* name) {
+    EditorModelState* model = BuiltinModel();
+    if (model == nullptr) return Status{StatusCode::kInternal};
+    return Submit(name, [model]() -> Status { return model->Undo(); });
+}
+
+Status EditorSession::SubmitRedo(const char* name) {
+    EditorModelState* model = BuiltinModel();
+    if (model == nullptr) return Status{StatusCode::kInternal};
+    return Submit(name, [model]() -> Status { return model->Redo(); });
+}
+
+bool EditorSession::CanUndo() const {
+    EditorModelState* model = BuiltinModel();
+    return (model != nullptr) ? model->CanUndo() : false;
+}
+
+bool EditorSession::CanRedo() const {
+    EditorModelState* model = BuiltinModel();
+    return (model != nullptr) ? model->CanRedo() : false;
+}
+
 std::shared_ptr<const ModelSnapshot> EditorSession::CurrentModelSnapshot() const {
     EditorModelState* model = BuiltinModel();
     if (model == nullptr) return nullptr;

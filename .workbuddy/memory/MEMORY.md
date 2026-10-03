@@ -80,6 +80,24 @@
 - **新 ABI 的返回值语义必须单一**：错误码 XOR 数据，绝不混用（P26）。
   条数类结果一律走 out 参数；新函数统一「状态码 + out_count」。
 - **mv/rm 源文件后立即 grep 文件名引用并重跑受影响脚本**（P27，E10 同族）。
+
+## 时间线交互硬规则（2026-10-03 定，UIA-005 / ADR-0012）
+
+- **拖拽期间不提交命令**：UI 本地几何覆盖（ClipDrag / ClipPreviewOverride）
+  只影响绘制，松手提交**一条** Move/Trim Command。**不引入 coalescing** ——
+  它的需求来自"每帧提交"，而每帧提交会污染 Undo 栈（按一次 Cmd+Z 只回退几像素）。
+- **提交后必须主动回到内核真值**（`refreshFromKernel()`）：内核拒绝
+  （同轨重叠 / duration ≤ 0）**不触发 observer 回流**，不回查就留下"幽灵片段"。
+  代价：成功时有一次旧值回弹 —— 正确性优先于动画平滑。
+- **Undo/Redo 也是 session 线程操作**，走异步入队（CommandHistory 与 Timeline
+  都是 session 线程状态）；空历史在 session 线程失败（版本不推进）。
+- **撤销栈能力走原子量**：`EditorModelState` 内 `atomic<bool> can_undo_/can_redo_`，
+  由 Execute/Undo/Redo 成功后刷新。**不得直读 CommandHistory**。
+  `cq_session_can_undo/redo` 返回 **0/1 数据**，不是状态码（P26，别比 cq_status_is_ok）。
+- **裁剪只改 duration，不动 source_in**（TrimClipCommand 语义）。左边缘裁剪
+  需同时改 start+source_in+duration，是另一条命令，**本期不做**，UI 左边缘归移动。
+- **异步提交的测试同步点 = 哨兵法**（P31）：基准版本号必须在**提交前**读，
+  目标 = base + 预期成功条数 + 1。不要 sleep 赌时长，也不要无参数地"等一次推进"。
 - **测试里的 #filePath 上溯链不得手写**（P30）：一律用共享 helper
   （bindings→TestPaths.root、SharedUI→RepoPath.root）；新建 helper 时层数
   必须打印实际结果验证后写死并逐层注释。

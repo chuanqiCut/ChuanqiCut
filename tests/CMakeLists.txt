@@ -424,6 +424,18 @@ cq_require_cxx20(cq_tests_model_timeline)
 apply_cq_warnings(cq_tests_model_timeline)
 add_test(NAME model_timeline COMMAND cq_tests_model_timeline)
 
+# ---- MODEL-002：Command / CommandHistory（Undo/Redo）----
+# 验收（BACKLOG）：100 次 undo 后回到初始态；另覆盖 6 类命令往返、
+# 原 id 恢复、失败不入历史、失败不清 redo、排序不变量。
+add_executable(cq_tests_model_command
+    unit/test_model_command.cpp)
+target_include_directories(cq_tests_model_command PRIVATE
+    ${CMAKE_SOURCE_DIR}/core/include)
+target_link_libraries(cq_tests_model_command PRIVATE cq_core)
+cq_require_cxx20(cq_tests_model_command)
+apply_cq_warnings(cq_tests_model_command)
+add_test(NAME model_command COMMAND cq_tests_model_command)
+
 # ---- BIND-003 子步骤 1：素材表（asset_id → MediaSource）----
 # 重点：验证 unordered_map 重哈希后 MediaSource.path 裸指针仍然有效（SSO 陷阱）。
 add_executable(cq_tests_asset_registry

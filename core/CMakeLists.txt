@@ -41,6 +41,9 @@ add_library(cq_core STATIC
     # MODEL-001：时间线数据模型（Timeline / Track / Clip / Transition）。
     # 先于 UIA-003 落地：没有时间线模型，预览就没有"播放头在哪、该显示哪个片段"。
     src/model/timeline.cpp
+    # MODEL-002：Command 模式与 CommandHistory（Undo/Redo）。
+    # 红线 #5 的执行点：UI 变更全部经 Command；历史在 session 线程串行使用。
+    src/command/command.cpp
     # BIND-003 子步骤 1：素材表（asset_id → MediaSource）。
     # 补上 MODEL-001 留下的那一环：MediaRef 只有 asset_id，预览要解码必须先查到媒体源。
     src/media/asset_registry.cpp

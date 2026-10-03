@@ -193,6 +193,73 @@ RationalTime Timeline::Duration() const {
 }
 
 // ===========================================================================
+// 显式恢复（Command 回放 / 序列化载入专用，见 timeline.h 注释）
+// ===========================================================================
+
+Status Timeline::RestoreTrack(const Track& track) {
+    if (track.id == 0) return Status(StatusCode::kInvalidArgument);
+    for (const Track& t : tracks_) {
+        if (t.id == track.id) return Status(StatusCode::kInvalidArgument);
+    }
+    // 轨道内片段沿用 RestoreClip 的全部校验（id 非零 / 类型匹配 / 时长正 / 同轨不重叠），
+    // 但走同一条插入路径，保证回放结果与正常编辑一致。
+    // 先在局部把内容装好、再一次性入列：校验失败时不留下半恢复状态。
+    Track restored = track;
+    restored.clips.clear();
+    for (const Clip& clip : track.clips) {
+        if (clip.id == 0) return Status(StatusCode::kInvalidArgument);
+        const ClipKind expected = (restored.kind == TrackKind::kVideo)
+                                      ? ClipKind::kVideo
+                                      : ClipKind::kAudio;
+        if (clip.kind != expected) return Status(StatusCode::kInvalidArgument);
+        if (clip.duration.value <= 0 || clip.duration.timescale <= 0) {
+            return Status(StatusCode::kInvalidArgument);
+        }
+        if (overlaps_in_track(restored, clip, nullptr)) {
+            return Status(StatusCode::kInvalidArgument);
+        }
+        restored.clips.push_back(clip);
+    }
+    // 保持与正常编辑相同的有序不变量。
+    std::sort(restored.clips.begin(), restored.clips.end(),
+              [](const Clip& a, const Clip& b) {
+                  return CompareRational(a.start, b.start) < 0;
+              });
+    tracks_.push_back(restored);
+    if (next_id_ <= track.id) next_id_ = track.id + 1;
+    for (const Clip& clip : restored.clips) {
+        if (next_id_ <= clip.id) next_id_ = clip.id + 1;
+    }
+    return Status::Ok();
+}
+
+Status Timeline::RestoreClip(uint64_t track_id, const Clip& clip) {
+    Track* track = nullptr;
+    for (Track& t : tracks_) {
+        if (t.id == track_id) { track = &t; break; }
+    }
+    if (track == nullptr) return Status(StatusCode::kInvalidArgument);
+    if (clip.id == 0) return Status(StatusCode::kInvalidArgument);
+
+    const ClipKind expected = (track->kind == TrackKind::kVideo) ? ClipKind::kVideo
+                                                                 : ClipKind::kAudio;
+    if (clip.kind != expected) return Status(StatusCode::kInvalidArgument);
+    if (clip.duration.value <= 0 || clip.duration.timescale <= 0) {
+        return Status(StatusCode::kInvalidArgument);
+    }
+    if (overlaps_in_track(*track, clip, nullptr)) {
+        return Status(StatusCode::kInvalidArgument);
+    }
+    auto pos = track->clips.begin();
+    while (pos != track->clips.end() && CompareRational(pos->start, clip.start) <= 0) {
+        ++pos;
+    }
+    track->clips.insert(pos, clip);
+    if (next_id_ <= clip.id) next_id_ = clip.id + 1;
+    return Status::Ok();
+}
+
+// ===========================================================================
 // 内部辅助
 // ===========================================================================
 

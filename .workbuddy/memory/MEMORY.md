@@ -68,6 +68,15 @@
 - 本机（Intel Mac + AMD GPU / macOS 15.4）`MTLTexture.getBytes` 读不到 GPU
   写入内容：读回一律 blit→Shared Buffer→contents（pitfalls P21）。
 
+## 模型变更硬规则（2026-10-03 定，MODEL-002）
+
+- **Timeline 只能经 CommandHistory 变更**（红线 #5 的执行点）。绕过直改会让
+  历史里的 id 引用悬空，Undo/Redo 静默失效。
+- **Add/Insert 类命令的 Redo 必须走 `RestoreTrack/RestoreClip` 恢复原 id**；
+  重放 Add/Insert 会分配新 id（pitfalls 同类：「id 是单调查分配的，回放不能重分配」）。
+- 编辑类命令只存增量（id + old/new），结构类命令只允许持有**单个实体**内容；
+  模型级快照一律禁止。
+
 ## 依赖治理硬规则（ADR-0008）
 - FFmpeg upstream 用 **GitHub 官方镜像** `https://github.com/FFmpeg/FFmpeg.git`（ffmpeg.org 登记为官方 mirror），本地 git 管理。
 - **源码集成的 git 依赖一律 `pin="commit"` + 40 位 hash。禁止 `pin="tag"`。**

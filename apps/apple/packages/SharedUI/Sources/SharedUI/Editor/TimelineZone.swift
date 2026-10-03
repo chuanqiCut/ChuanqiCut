@@ -1,7 +1,7 @@
-// SharedUI — 时间线区桩视图（UIA-002）
+// SharedUI — 时间线区（UIA-004）：宿主 Canvas 自绘视图
 //
-// ⚠️ 本文件是**桩**：UIA-004 将用自绘视图（Metal/Canvas）替换 —— 时间线不把每个
-// 片段做成 UI 组件（ARCH-005 §5，数百片段会掉帧）。播放头/轨道占位仅示意布局。
+// 自绘本体在 Timeline/EditorTimelineView.swift（单 Canvas，几何在 TimelineLayout）。
+// 头部保留快照版本指示（与 UIA-002 桩的行为连续，便于肉眼确认刷新）。
 
 import SwiftUI
 import ChuanqiCut
@@ -11,41 +11,21 @@ struct TimelineZone: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            // 播放头指示（桩：固定 30% 位置，自绘视图落地后由播放头状态驱动）
-            GeometryReader { geo in
-                Rectangle()
-                    .fill(Theme.playhead)
-                    .frame(width: 1.5)
-                    .offset(x: geo.size.width * 0.3)
-            }
-            .frame(height: 14)
-
-            Divider()
-
             HStack {
                 Text("Timeline")
                     .font(.caption)
                     .foregroundStyle(Theme.secondaryText)
-
                 Spacer()
-
                 Text("v\(snapshot.version)")
                     .font(.caption2.monospaced())
                     .foregroundStyle(Theme.tertiaryText)
             }
             .padding(.horizontal, 12)
-            .frame(height: 28)
+            .frame(height: 24)
 
-            // 占位轨道（UIA-004 替换）
-            RoundedRectangle(cornerRadius: 4)
-                .fill(Theme.trackFill)
-                .overlay(
-                    RoundedRectangle(cornerRadius: 4)
-                        .stroke(Theme.trackStroke, lineWidth: 1)
-                )
-                .padding(.horizontal, 12)
-                .padding(.top, 8)
-                .frame(maxHeight: .infinity, alignment: .top)
+            Divider()
+
+            EditorTimelineView()
         }
         .background(Theme.timelineBackground)
     }

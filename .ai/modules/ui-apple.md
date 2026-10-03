@@ -99,3 +99,17 @@ xcodebuild build -workspace ChuanqiCut.xcworkspace -scheme ChuanqiCutApp \
 
 ## 相关
 ARCH-005、TASK-UIA-002、pitfalls P7/P8
+
+
+---
+
+# UIA-004 落地（2026-10-03）：时间线自绘
+
+- `apps/apple/packages/SharedUI/Sources/SharedUI/Timeline/EditorTimelineView.swift`
+  （⚠️ 不叫 TimelineView —— SwiftUI 有同名系统类型，P22 同款）
+- 几何纯函数 `TimelineLayout`（时间↔像素 / 可见裁剪 / 标尺自适应）——可单测可 measure
+- **单 Canvas 绘制**（轨道行/片段/标尺/播放头），非组件堆叠
+- 数据流：快照 observer → 版本推进 → Session.queryTracks/queryClips（主线程直读
+  内核快照）→ EditorViewModel.timeline（@Published）→ Canvas
+- 实测：500 片段布局 0.663 ms/帧（< 16ms 预算的 4%，见 baselines）
+- 拖拽/裁剪/选择交互归 UIA-005；波形成略图等媒体分析后续任务

@@ -106,10 +106,12 @@ typedef int32_t (*CQMutateFn)(void* ctx);
 int32_t cq_session_submit(CQSession* session, const char* change_name, CQMutateFn mutate,
                           void* ctx);
 
-/* 快照。任意线程可调。 */
+/* 快照。任意线程可调。
+ * digest 自 UIA-009 子步骤 1（2026-10-03）起为**真实时间线结构指纹**
+ * （内建模型状态；注入自定义 ISessionState 时语义由注入方定义）。 */
 typedef struct CQSnapshot {
     uint64_t version; /* 单调递增；0 = 尚无变更 */
-    uint64_t digest;  /* 状态摘要。**当前恒为 0**：模型层（MODEL-001）未接入 */
+    uint64_t digest;  /* 时间线结构指纹（FNV-1a；字段集见 EditorModelState::Fingerprint） */
 } CQSnapshot;
 
 CQSnapshot cq_session_current_snapshot(const CQSession* session);
@@ -131,6 +133,77 @@ int32_t cq_session_change_count(const CQSession* session);
 typedef void (*CQSnapshotObserver)(CQSnapshot snapshot, void* ctx);
 
 void cq_session_set_observer(CQSession* session, CQSnapshotObserver observer, void* ctx);
+
+/* --------------------------------------------------------------------------
+ * 会话级模型：素材表 + 时间线（UIA-009 子步骤 1，2026-10-03）
+ * --------------------------------------------------------------------------
+ * EditorSession 内建真实模型状态（时间线 + 素材表 + 命令历史，可撤销）。
+ *
+ * ⚠️ 提交与查询是**两种线程语义**：
+ *    - register_asset / add_track / add_clip：**异步提交**（入队 session 线程
+ *      后立即返回）。Ok 只代表「已入队」；参数校验（重叠 / 素材类型 / 轨道缺失）
+ *      在 session 线程执行 —— 失败表现为版本不推进 + 观察者不回调，调用方经
+ *      查询接口确认最终状态。**不要**在提交后同步假设已生效。
+ *    - track_count / query_tracks / query_clips：**同步读**已发布的不可变快照
+ *      （任意线程、无锁、不阻塞），反映「最近一次成功变更之后」的完整状态。
+ *      未发生变更前返回空时间线（track_count=0）。
+ *
+ * 时间一律 RationalTime{value, timescale}（红线 #4，项目 timescale = 120000）。 */
+
+/* 注册素材到会话级素材表（id → 文件路径；path 被内核拷贝）。
+ * 重复注册同一 id 整体替换。素材不参与 Undo（资料库语义，非时间线编辑）。 */
+int32_t cq_session_register_asset(CQSession* session, uint64_t asset_id, const char* path);
+
+/* 新增轨道。kind：0 = 视频，1 = 音频。 */
+int32_t cq_session_add_track(CQSession* session, int32_t kind);
+
+/* 新增片段（可撤销 —— 经 CommandHistory）。参数语义与 cq_preview_add_clip 相同：
+ * 轨道不存在 / 类型不匹配 / 时长非正 / 同轨重叠 → session 线程校验失败。 */
+int32_t cq_session_add_clip(CQSession* session, uint64_t track_id, uint64_t asset_id,
+                            int64_t start_value, int32_t start_timescale,
+                            int64_t duration_value, int32_t duration_timescale,
+                            int64_t source_in_value, int32_t source_in_timescale);
+
+/* ---- 时间线查询（读已发布快照；任意线程）---- */
+
+typedef struct CQTrackInfo {
+    uint64_t track_id;
+    int32_t kind;     /* 0 = 视频，1 = 音频 */
+    int32_t enabled;  /* 0/1 */
+    int32_t muted;    /* 0/1 */
+} CQTrackInfo;
+
+typedef struct CQClipInfo {
+    uint64_t track_id;
+    uint64_t clip_id;
+    uint64_t asset_id;
+    int64_t start_value;
+    int32_t start_timescale;
+    int64_t duration_value;
+    int32_t duration_timescale;
+    int64_t source_in_value;
+    int32_t source_in_timescale;
+    int64_t source_duration_value;
+    int32_t source_duration_timescale;
+    int32_t in_transition;   /* 0=none 1=cross_fade 2=dip_to_black */
+    int32_t out_transition;  /* 同上 */
+    int64_t transition_duration_value;
+    int32_t transition_duration_timescale;
+} CQClipInfo;
+
+/* 三个查询函数的统一契约（与 changes_since 的「返回条数」约定刻意不同）：
+ *   返回值 = **状态码**（0 成功；7000 参数非法；其它见状态表）；
+ *   out_count = **条数**（成功时：out 非 NULL 为实际写入条数，out 为 NULL 为总数
+ *   —— 两段式查询：先 out=NULL 拿总数分配缓冲，再带缓冲取数据）。 */
+int32_t cq_session_track_count(const CQSession* session, int32_t* out_count);
+
+/* 查询轨道，按模型内顺序写入 out。 */
+int32_t cq_session_query_tracks(const CQSession* session, CQTrackInfo* out,
+                                int32_t capacity, int32_t* out_count);
+
+/* 查询片段。track_id = 0 表示全部轨道（按轨道顺序、轨内按 start 升序）。 */
+int32_t cq_session_query_clips(const CQSession* session, uint64_t track_id, CQClipInfo* out,
+                               int32_t capacity, int32_t* out_count);
 
 /* ==========================================================================
  * 预览（BIND-003）

@@ -23,7 +23,9 @@ public final class Session {
 
     // MARK: 生命周期
 
-    private var handle: OpaquePointer?
+    // internal（非 private）：Timeline.swift 等同模块扩展文件要访问 C 句柄。
+    // 对外仍不可见（模块外 private 语义等效，Swift 无「文件外 module 内」粒度）。
+    var handle: OpaquePointer?
 
     /// 创建并启动会话。内核启动失败时返回 nil。
     public init?() {

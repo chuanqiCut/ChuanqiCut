@@ -26,7 +26,8 @@ final class EditorViewModelTests: XCTestCase {
     func testInitCreatesSessionAndStartsAtVersionZero() throws {
         let viewModel = try EditorViewModel()
         XCTAssertEqual(viewModel.snapshot.version, 0)
-        XCTAssertEqual(viewModel.snapshot.digest, 0, "MODEL-001 落地前 digest 恒为 0")
+        // 语义变更（UIA-009 子步骤 1，2026-10-03）：内建模型后 digest 为真实时间线指纹
+        XCTAssertNotEqual(viewModel.snapshot.digest, 0, "digest 为真实时间线指纹")
         XCTAssertTrue(viewModel.lastChanges.isEmpty)
     }
 

@@ -44,6 +44,9 @@ add_library(cq_core STATIC
     # MODEL-002：Command 模式与 CommandHistory（Undo/Redo）。
     # 红线 #5 的执行点：UI 变更全部经 Command；历史在 session 线程串行使用。
     src/command/command.cpp
+    # UIA-009 子步骤 1：Session 的真实模型状态（Timeline + 素材表 + 命令历史），
+    # ISessionState 的模型层实现；每次成功变更发布不可变 Timeline 快照（无锁读）。
+    src/model/editor_model_state.cpp
     # BIND-003 子步骤 1：素材表（asset_id → MediaSource）。
     # 补上 MODEL-001 留下的那一环：MediaRef 只有 asset_id，预览要解码必须先查到媒体源。
     src/media/asset_registry.cpp

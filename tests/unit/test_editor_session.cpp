@@ -244,12 +244,16 @@ void TestStateDigest() {
 
 // ---- 8. 未注入状态也能工作 ----
 void TestNoState() {
-    std::printf("[test] 未注入 ISessionState 时机制仍可用\n");
-    cq::EditorSession session;  // 不注入 state
+    std::printf("[test] 未注入 ISessionState：内建模型生效（UIA-009 子步骤 1 起的新语义）\n");
+    // 语义变更（2026-10-03）：默认构造现在内建 EditorModelState ——
+    // digest 从构造起就是真实时间线指纹，不再是 0。机制本身（不注入也不崩）不变。
+    cq::EditorSession session;  // 不注入 state → 内建模型
+    Check(session.CurrentSnapshot().digest != 0, "构造后 digest 即为真实指纹");
     session.Start();
     Check(session.Submit("x", [] { return cq::Status::Ok(); }).IsOk(), "Submit 成功");
     Check(WaitVersion(session, 1), "版本推进");
-    Check(session.CurrentSnapshot().digest == 0, "digest 恒为 0（不崩溃）");
+    Check(session.CurrentSnapshot().digest != 0, "变更后 digest 仍真实");
+    Check(session.CurrentTimeline() != nullptr, "CurrentTimeline 快照可读");
     session.Shutdown();
 }
 

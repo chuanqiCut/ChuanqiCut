@@ -446,6 +446,20 @@
 - 日期 / 来源 / 验证状态：2026-10-03 / UIA-009 子步骤 2 / **verified**
   （双门禁 + pod 构建 App 全绿）
 
+### P30 · #filePath 上溯层数手写必错（同一会话内连踩两次）
+- 现象：定位仓库根的 `#filePath` 上溯链，TimelineTests 先写成 4 层（错），
+  改成 6 层（仍错，正确 5 层）；MediaImportTests 又写成 6 层（正确 7 层）。
+  每次都靠「夹具缺失」的失败信息反推。**上溯链的层数无法目测**——测试文件
+  嵌套多深取决于它所在包的结构，猜必错。
+- 修复：建共享 helper **唯一真源**——`bindings/swift/Tests/ChuanqiCutTests/
+  TestPaths.swift`（5 层）与 `apps/apple/packages/SharedUI/Tests/SharedUITests/
+  RepoPath.swift`（7 层），全部测试改转发。
+- 防复发规则：**新测试不得手写 #filePath 上溯链**，一律 `TestPaths.root` /
+  `RepoPath.root`；新包要建自己的 helper 时，层数必须用「打印一次实际结果」
+  验证后写死，并带上逐层注释。
+- 日期 / 来源 / 验证状态：2026-10-03 / UIA-009 子步骤 3 / **verified**
+  （helper 化后双包 17+13 全绿）
+
 ---
 
 ## 已修正的历史错误（供参考，避免重犯）

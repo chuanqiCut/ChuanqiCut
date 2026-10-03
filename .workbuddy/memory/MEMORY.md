@@ -80,6 +80,9 @@
 - **新 ABI 的返回值语义必须单一**：错误码 XOR 数据，绝不混用（P26）。
   条数类结果一律走 out 参数；新函数统一「状态码 + out_count」。
 - **mv/rm 源文件后立即 grep 文件名引用并重跑受影响脚本**（P27，E10 同族）。
+- **测试里的 #filePath 上溯链不得手写**（P30）：一律用共享 helper
+  （bindings→TestPaths.root、SharedUI→RepoPath.root）；新建 helper 时层数
+  必须打印实际结果验证后写死并逐层注释。
 
 ## 依赖治理硬规则（ADR-0008）
 - FFmpeg upstream 用 **GitHub 官方镜像** `https://github.com/FFmpeg/FFmpeg.git`（ffmpeg.org 登记为官方 mirror），本地 git 管理。

@@ -30,6 +30,15 @@ const MediaSource* AssetRegistry::Find(uint64_t asset_id) const {
     return &it->second.source;
 }
 
+std::vector<std::pair<uint64_t, MediaSource>> AssetRegistry::ListAssets() const {
+    std::vector<std::pair<uint64_t, MediaSource>> out;
+    out.reserve(assets_.size());
+    for (const auto& [id, entry] : assets_) {
+        out.emplace_back(id, entry.source);
+    }
+    return out;
+}
+
 std::size_t AssetRegistry::Count() const { return assets_.size(); }
 
 void AssetRegistry::Clear() { assets_.clear(); }

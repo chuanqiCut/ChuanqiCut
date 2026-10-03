@@ -55,6 +55,7 @@ PAL 的存在意义恰恰是让 core 能以平台无关的方式拿到平台能�
 |---|---|
 | `core/src/media/pal_frame_provider.cpp` | `CreateFrameProvider` |
 | `core/src/preview/cq_sdk_preview.cpp` | `CreateGraphicsDevice` / `CreateBlitPass` / `CreateFrameProvider` |
+| `core/src/media/media_probe_abi.cpp`（2026-10-03） | `CreateFrameProvider`（时长探测：打开→读 duration→关闭） |
 
 ## 4. 实证
 

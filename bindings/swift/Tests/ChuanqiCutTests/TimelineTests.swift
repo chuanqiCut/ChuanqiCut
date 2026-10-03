@@ -68,6 +68,45 @@ final class TimelineTests: XCTestCase {
         XCTAssertNotEqual(session.currentSnapshot.digest, digest0, "加片段后指纹变化")
     }
 
+    func testAssetQueryAndProbeDuration() throws {
+        guard let session = Session() else { return XCTFail("Session 创建失败") }
+        // golden 夹具：bindings/swift → 仓库根
+        let golden = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()   // 1 → Tests/ChuanqiCutTests
+            .deletingLastPathComponent()   // 2 → Tests
+            .deletingLastPathComponent()   // 3 → bindings/swift
+            .deletingLastPathComponent()   // 4 → bindings
+            .deletingLastPathComponent()   // 5 → 仓库根
+            .appendingPathComponent("tests/golden/frames/gf_1080p_h264.mp4").path
+        guard FileManager.default.fileExists(atPath: golden) else {
+            return XCTFail("golden 夹具缺失：\(golden)")
+        }
+
+        XCTAssertTrue(session.queryAssets().isEmpty, "初始素材表为空")
+        XCTAssertEqual(session.registerAsset(id: 7, path: golden), .ok)
+        XCTAssertTrue(waitForVersion(session, 1))
+
+        // 查询（读快照；registerAsset 发布新快照 —— UIA-009 子步骤 2 语义）
+        let assets = session.queryAssets()
+        XCTAssertEqual(assets.count, 1)
+        XCTAssertEqual(assets[0].assetId, 7)
+        XCTAssertEqual(assets[0].path, golden)
+        XCTAssertFalse(assets[0].pathTruncated)
+        XCTAssertEqual(session.assetCount(), 1)
+
+        // 时长探测（同步打开容器；golden 是 ~3s 彩条）
+        let duration = try XCTUnwrap(session.probeMediaDuration(path: golden),
+                                     "探测应成功")
+        XCTAssertGreaterThan(duration.value, 0)
+        XCTAssertGreaterThan(duration.timescale, 0)
+        let seconds = Double(duration.value) / Double(duration.timescale)
+        XCTAssertGreaterThan(seconds, 0.5, "时长 \(seconds)s 合理")
+        XCTAssertLessThan(seconds, 30, "时长 \(seconds)s 合理")
+
+        // 探测不存在的文件 → nil（不是崩溃）
+        XCTAssertNil(session.probeMediaDuration(path: "/tmp/definitely_missing_cq.mp4"))
+    }
+
     func testOverlappingAddClipIsRejectedAsynchronously() throws {
         guard let session = Session() else { return XCTFail("Session 创建失败") }
         XCTAssertEqual(session.addTrack(kind: 0), .ok)

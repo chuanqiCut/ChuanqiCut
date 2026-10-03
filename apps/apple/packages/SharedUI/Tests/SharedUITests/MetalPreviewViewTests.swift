@@ -22,21 +22,7 @@ import ChuanqiCut
 @MainActor
 final class MetalPreviewViewTests: XCTestCase {
 
-    private var repoRoot: String {
-        URL(fileURLWithPath: #filePath)
-            .deletingLastPathComponent()   // 1 → Tests/SharedUITests
-            .deletingLastPathComponent()   // 2 → Tests
-            .deletingLastPathComponent()   // 3 → SharedUI 包根
-            .deletingLastPathComponent()   // 4 → packages
-            .deletingLastPathComponent()   // 5 → apple
-            .deletingLastPathComponent()   // 6 → apps
-            .deletingLastPathComponent()   // 7 → 仓库根
-            .path
-    }
-
-    private var goldenVideo: String {
-        repoRoot + "/tests/golden/frames/gf_1080p_h264.mp4"
-    }
+    private var goldenVideo: String { RepoPath.goldenVideo }
 
     // MARK: 工具
 

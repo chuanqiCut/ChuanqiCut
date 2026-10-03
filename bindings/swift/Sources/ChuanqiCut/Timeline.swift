@@ -66,6 +66,20 @@ public struct ClipInfo: Equatable, Sendable {
     }
 }
 
+/// 素材库条目（内核素材表快照的投影）。`pathTruncated` 为 true 时路径被截断，
+/// 仅可作展示用途，不可当文件路径打开。
+public struct AssetInfo: Equatable, Sendable {
+    public let assetId: UInt64
+    public let path: String
+    public let pathTruncated: Bool
+
+    public init(assetId: UInt64, path: String, pathTruncated: Bool) {
+        self.assetId = assetId
+        self.path = path
+        self.pathTruncated = pathTruncated
+    }
+}
+
 // MARK: - Session 扩展
 
 extension Session {
@@ -159,5 +173,49 @@ extension Session {
                 transitionDuration: RationalTime(
                     value: c.transition_duration_value, timescale: c.transition_duration_timescale))
         }
+    }
+
+    // MARK: 素材表查询（UIA-009 子步骤 3）
+
+    public func assetCount() -> Int {
+        guard let h = handle else { return 0 }
+        var count: Int32 = 0
+        guard cq_status_is_ok(cq_session_asset_count(h, &count)) != 0 else { return 0 }
+        return Int(count)
+    }
+
+    public func queryAssets() -> [AssetInfo] {
+        guard let h = handle else { return [] }
+        var total: Int32 = 0
+        guard cq_status_is_ok(cq_session_query_assets(h, nil, 0, &total)) != 0, total > 0 else {
+            return []
+        }
+        var buffer = [CQAssetInfo](repeating: CQAssetInfo(), count: Int(total))
+        var written: Int32 = 0
+        guard cq_status_is_ok(cq_session_query_assets(h, &buffer, total, &written)) != 0 else {
+            return []
+        }
+        return (0..<Int(written)).map { i in
+            let a = buffer[i]
+            // char[512] 导入为 512 元组，无法按数组遍历 —— 用内存布局转 CChar 串
+            //（C 侧保证 NUL 结尾，String(cString:) 停在首个 0）。
+            let path = withUnsafeBytes(of: a.path) { raw -> String in
+                let base = raw.baseAddress!.assumingMemoryBound(to: CChar.self)
+                return String(cString: base)
+            }
+            return AssetInfo(assetId: a.asset_id, path: path, pathTruncated: a.path_truncated != 0)
+        }
+    }
+
+    /// 媒体时长探测（**同步**：打开容器读时长后立即关闭）。
+    /// 导入流程用于确定片段时长；用户动作低频，非逐帧路径。
+    /// 失败返回 nil（文件缺失 / 无法解析 —— 上层标记素材不可用）。
+    public func probeMediaDuration(path: String) -> RationalTime? {
+        // 探测是自由函数（无 session 状态参与），保留在 Session 上只为 API 归类。
+        var value: Int64 = 0
+        var timescale: Int32 = 0
+        let code = path.withCString { cq_media_probe_duration($0, &value, &timescale) }
+        guard cq_status_is_ok(code) != 0 else { return nil }
+        return RationalTime(value: value, timescale: timescale)
     }
 }

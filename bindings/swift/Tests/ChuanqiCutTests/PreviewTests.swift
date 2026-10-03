@@ -17,18 +17,8 @@ final class PreviewTests: XCTestCase {
 
     /// 仓库根（golden 夹具位于 tests/golden/frames/）。从本文件位置上溯五级：
     /// 文件 → ChuanqiCutTests → Tests → swift → bindings → 仓库根。
-    private var repoRoot: String {
-        URL(fileURLWithPath: #filePath)
-            .deletingLastPathComponent()   // Tests/ChuanqiCutTests
-            .deletingLastPathComponent()   // Tests
-            .deletingLastPathComponent()   // bindings/swift
-            .deletingLastPathComponent()   // bindings
-            .deletingLastPathComponent()   // 仓库根
-            .path
-    }
-
     private var goldenVideo: String {
-        repoRoot + "/tests/golden/frames/gf_1080p_h264.mp4"
+        TestPaths.goldenVideo
     }
 
     /// 轮询版本推进（提交异步；RunLoop 泵给 observer/内核线程让路）。

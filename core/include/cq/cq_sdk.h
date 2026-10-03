@@ -205,6 +205,26 @@ int32_t cq_session_query_tracks(const CQSession* session, CQTrackInfo* out,
 int32_t cq_session_query_clips(const CQSession* session, uint64_t track_id, CQClipInfo* out,
                                int32_t capacity, int32_t* out_count);
 
+/* ---- 素材表查询（UIA-009 子步骤 3；读已发布快照，契约同上：状态码 + out_count）---- */
+
+typedef struct CQAssetInfo {
+    uint64_t asset_id;
+    char path[512];            /* NUL 结尾；超长截断（path_truncated = 1） */
+    int32_t path_truncated;    /* 0/1 */
+} CQAssetInfo;
+
+int32_t cq_session_asset_count(const CQSession* session, int32_t* out_count);
+
+int32_t cq_session_query_assets(const CQSession* session, CQAssetInfo* out,
+                                int32_t capacity, int32_t* out_count);
+
+/* 媒体时长探测（UIA-009 子步骤 3；**同步**：打开容器读时长后立即关闭。
+ * 导入流程用于确定片段时长 —— 用户动作、低频，非逐帧路径）。
+ *   0 = 成功；7000 = 参数非法；其它 = 打开/解析失败原样透传。
+ * ⚠️ 实现调用 PAL 工厂，隔离在独立 TU（ADR-0011 规则 1）。 */
+int32_t cq_media_probe_duration(const char* path, int64_t* out_value,
+                                int32_t* out_timescale);
+
 /* ==========================================================================
  * 预览（BIND-003 建立；UIA-009 子步骤 2 收口，2026-10-03）
  * ==========================================================================

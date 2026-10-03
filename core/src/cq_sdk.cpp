@@ -11,6 +11,7 @@
 
 #include "cq/cq_sdk.h"
 
+#include <cstring>
 #include <memory>
 #include <new>
 #include <utility>
@@ -251,5 +252,41 @@ int32_t cq_session_query_clips(const CQSession* session, uint64_t track_id, CQCl
         }
     }
     *out_count = (out == nullptr) ? total : written;
+    return CodeOfEnum(cq::StatusCode::kOk);
+}
+
+int32_t cq_session_asset_count(const CQSession* session, int32_t* out_count) {
+    if (session == nullptr || out_count == nullptr) {
+        return CodeOfEnum(cq::StatusCode::kInvalidArgument);
+    }
+    std::shared_ptr<const cq::ModelSnapshot> snap = session->impl.CurrentModelSnapshot();
+    if (!snap || !snap->assets) return CodeOfEnum(cq::StatusCode::kInternal);
+    *out_count = static_cast<int32_t>(snap->assets->Count());
+    return CodeOfEnum(cq::StatusCode::kOk);
+}
+
+int32_t cq_session_query_assets(const CQSession* session, CQAssetInfo* out, int32_t capacity,
+                                int32_t* out_count) {
+    if (session == nullptr || out_count == nullptr || (out != nullptr && capacity <= 0)) {
+        return CodeOfEnum(cq::StatusCode::kInvalidArgument);
+    }
+    std::shared_ptr<const cq::ModelSnapshot> snap = session->impl.CurrentModelSnapshot();
+    if (!snap || !snap->assets) return CodeOfEnum(cq::StatusCode::kInternal);
+
+    std::vector<std::pair<uint64_t, cq::MediaSource>> listed = snap->assets->ListAssets();
+    *out_count = static_cast<int32_t>(listed.size());
+    if (out == nullptr) return CodeOfEnum(cq::StatusCode::kOk);  // 两段式：仅查总数
+    int32_t written = 0;
+    for (const auto& [id, src] : listed) {
+        if (written >= capacity) break;
+        out[written].asset_id = id;
+        const char* p = (src.path != nullptr) ? src.path : "";
+        const bool truncated = std::strlen(p) >= sizeof(out[written].path);
+        std::strncpy(out[written].path, p, sizeof(out[written].path) - 1);
+        out[written].path[sizeof(out[written].path) - 1] = '\0';
+        out[written].path_truncated = truncated ? 1 : 0;
+        ++written;
+    }
+    *out_count = written;
     return CodeOfEnum(cq::StatusCode::kOk);
 }

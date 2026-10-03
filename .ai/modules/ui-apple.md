@@ -113,3 +113,20 @@ ARCH-005、TASK-UIA-002、pitfalls P7/P8
   内核快照）→ EditorViewModel.timeline（@Published）→ Canvas
 - 实测：500 片段布局 0.663 ms/帧（< 16ms 预算的 4%，见 baselines）
 - 拖拽/裁剪/选择交互归 UIA-005；波形成略图等媒体分析后续任务
+
+
+# UIA-009 子步骤 3 落地（2026-10-03）：素材库面板与导入流程
+
+- **PropertyPanelZone 重写**：素材库（fileImporter 导入按钮 + 列表 + 失效标记）
+  + 属性桩保留（UIA-006 接真实参数）。签名改为无参 + `@EnvironmentObject`。
+- **EditorViewModel.importMedia(url)**（主线程，用户动作低频）：
+  security scope（iOS）→ `probeMediaDuration`（同步探测时长）→ `registerAsset`
+  （id 本地单调分配）→ 目标轨道（第一条视频轨，无则建 + RunLoop 泵等 id）→
+  `addClip` 追加到该轨末尾（追加式不重叠）。失败全链路干净返回（探测失败/
+  提交失败不留半截状态）。
+- **失效标记（D3 决策的落地）**：MVP 引用原路径不拷贝 —— `LibraryAsset.exists`
+  由 FileManager 实时判定，文件被移走显示「⚠ 文件不在原路径（已失效）」，
+  渲染侧届时以 kInvalidArgument 暴露。素材库整理（拷入沙箱）后续任务。
+- 媒体类型白名单：movie/video/mpeg4Movie。
+- **测试路径 helper 唯一真源**：`RepoPath`（SharedUI）/`TestPaths`（bindings），
+  #filePath 上溯链**不得在新测试里手写**（本轮两次踩层数错误，P30）。

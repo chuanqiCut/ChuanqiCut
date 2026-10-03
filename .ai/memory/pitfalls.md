@@ -492,6 +492,44 @@
   负 start**（只校验重叠），UI 不夹就会把语义外的片段提交进去。
 - 日期 / 来源 / 验证状态：2026-10-03 / UIA-005 / **verified**
 
+### P33 · MediaImportTests 偶发失败（flaky，约 50%），根因**未定位**
+- 现象：`importMedia` 返回 `7000 (kInvalidArgument)`，素材库为空，随后
+  `mediaLibrary[0]` 越界 → Fatal error → 整个 xctest 进程以 signal 4 退出。
+  **单独跑 `--filter MediaImportTests` 全绿；全量跑时约一半概率失败。**
+  复现序列（同一份代码、连续 4 次全量）：失败 → 绿 → 失败 → 绿。
+- 已排除：TaskRunner 启动竞态（`Start()` 先置 `running_=true` 再建线程，
+  `Post()` 在 Start 返回后不可能看到未启动状态）。
+- 当前最可能（**hypothesis，未证实**）：`cq_media_probe_duration` **成功返回但
+  时长为 0**，于是 `importMedia` 在 `duration.value > 0` 处返回 invalidArgument。
+  证据：把该分支改成返回 2000（decodeError）后，症状的**语义**才对得上
+  「文件能打开但读不到时长」—— 但 0 时长的内核侧成因仍未知（疑与同进程内
+  前序用例残留的解码会话 / PAL 初始化竞争有关）。
+- 影响面：这是**真缺陷不是测试问题** —— 真机上"导入后无反应"会是同一症状。
+- 待办：给 probe 加返回 0 时的诊断（日志 + 状态区分），并在内核侧定位
+  「容器打开成功但 duration=0」的路径。在此之前**不要**把 importMedia 的失败
+  一律当"用户选了坏文件"处理。
+- 日期 / 来源 / 验证状态：2026-10-03 / UIA-010 / **unverified（root cause 未证）**
+
+### P34 · CocoaPods 工程看不到新增的 Swift 源文件 → 需重新 pod install
+- 现象：给 `bindings/swift/Sources/ChuanqiCut/` 新增 `Player.swift` 后，
+  App（CocoaPods 源码集成）编译报 `cannot find type 'Player' in scope`，
+  而 SPM 路径（swift test）完全正常。
+- 原因：Pods 工程的文件引用是 `pod install` 时生成的**快照**，新增文件不会
+  自动进入；SPM 是目录扫描，所以两条消费路径表现不同。
+- 规则：**往绑定层新增文件后必须重跑 `bundle exec pod install`**（mac/ios 两个
+  工程各自跑），否则 App 侧必挂，而 SPM 测试全绿会给出"没问题"的假象
+  （又一次「绿灯 ≠ 可用」）。
+- 日期 / 来源 / 验证状态：2026-10-03 / UIA-010 / **verified**
+
+### P35 · Xcode 升级后 iOS 切片的 CMakeCache 会残留已消失的 SDK 路径
+- 现象：`build_core_apple.sh` 报 `no such sysroot directory:
+  .../iPhoneSimulator18.4.sdk`（该 SDK 已不存在，现为 26.5）。此前同脚本刚成功过。
+- 原因：`CMakeCache.txt` 里缓存了**绝对 SDK 路径**，Xcode 更新后旧路径消失，
+  CMake 复用缓存 → `-Wmissing-sysroot` + `-Werror` 直接失败。
+- 处理：删掉对应切片的 `CMakeCache.txt` + `CMakeFiles/` 让 CMake 重新解析
+  （脚本里已有同类"脏 cache 自愈"逻辑，可扩成检测 SDK 路径是否存在）。
+- 日期 / 来源 / 验证状态：2026-10-03 / UIA-010 / **verified**
+
 ---
 
 ## 已修正的历史错误（供参考，避免重犯）

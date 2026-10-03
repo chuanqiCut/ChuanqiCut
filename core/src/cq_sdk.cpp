@@ -20,6 +20,8 @@
 #include "cq/base/status.h"
 #include "cq/pal/capabilities.h"
 #include "cq_session_impl.h"
+#include "cq/model/timeline.h"
+#include "cq/preview/player_clock.h"
 #include "cq/session/editor_session.h"
 #include "cq/session/snapshot.h"
 #include "cq/session/thread_model.h"
@@ -327,4 +329,87 @@ int32_t cq_session_query_assets(const CQSession* session, CQAssetInfo* out, int3
     }
     *out_count = written;
     return CodeOfEnum(cq::StatusCode::kOk);
+}
+
+// ---- 时间线总时长与播放时钟（UIA-010）--------------------------------------
+
+int32_t cq_session_timeline_duration(const CQSession* session, int64_t* out_value,
+                                     int32_t* out_timescale) {
+    if (session == nullptr || out_value == nullptr || out_timescale == nullptr) {
+        return CodeOfEnum(cq::StatusCode::kInvalidArgument);
+    }
+    std::shared_ptr<const cq::Timeline> snap = session->impl.CurrentTimeline();
+    if (!snap) return CodeOfEnum(cq::StatusCode::kInternal);
+    const cq::RationalTime d = snap->Duration();
+    *out_value = d.value;
+    *out_timescale = d.timescale;
+    return CodeOfEnum(cq::StatusCode::kOk);
+}
+
+// CQPlayer 的真实定义：包一层 PlayerClock（与 CQSession 同手法，
+// 公共头只有 opaque 句柄）。
+struct CQPlayer {
+    explicit CQPlayer(const cq::RationalTime& frame) : impl(frame) {}
+    cq::PlayerClock impl;
+};
+
+CQPlayer* cq_player_create(int64_t frame_value, int32_t frame_timescale) {
+    // 参数非法时 PlayerClock 内部回落到 1001/30000，不返回 NULL（纯计算对象）。
+    CQPlayer* p = new (std::nothrow) CQPlayer(cq::RationalTime{frame_value, frame_timescale});
+    return p;  // 分配失败时为 nullptr
+}
+
+void cq_player_destroy(CQPlayer* player) {
+    delete player;  // nullptr 安全
+}
+
+int32_t cq_player_set_duration(CQPlayer* player, int64_t value, int32_t timescale) {
+    if (player == nullptr) return CodeOfEnum(cq::StatusCode::kInvalidArgument);
+    return CodeOf(player->impl.SetDuration(cq::RationalTime{value, timescale}));
+}
+
+void cq_player_set_loop(CQPlayer* player, int32_t loop) {
+    if (player == nullptr) return;
+    player->impl.SetLoop(loop != 0);
+}
+
+int32_t cq_player_play(CQPlayer* player) {
+    if (player == nullptr) return CodeOfEnum(cq::StatusCode::kInvalidArgument);
+    return CodeOf(player->impl.Play());
+}
+
+void cq_player_pause(CQPlayer* player) {
+    if (player == nullptr) return;
+    player->impl.Pause();
+}
+
+void cq_player_stop(CQPlayer* player) {
+    if (player == nullptr) return;
+    player->impl.Stop();
+}
+
+int32_t cq_player_seek(CQPlayer* player, int64_t value, int32_t timescale) {
+    if (player == nullptr) return CodeOfEnum(cq::StatusCode::kInvalidArgument);
+    return CodeOf(player->impl.Seek(cq::RationalTime{value, timescale}));
+}
+
+int32_t cq_player_is_playing(const CQPlayer* player) {
+    if (player == nullptr) return 0;
+    return player->impl.IsPlaying() ? 1 : 0;
+}
+
+int32_t cq_player_current_time(const CQPlayer* player, int64_t* out_value,
+                               int32_t* out_timescale) {
+    if (player == nullptr || out_value == nullptr || out_timescale == nullptr) {
+        return CodeOfEnum(cq::StatusCode::kInvalidArgument);
+    }
+    const cq::RationalTime t = player->impl.CurrentTime();
+    *out_value = t.value;
+    *out_timescale = t.timescale;
+    return CodeOfEnum(cq::StatusCode::kOk);
+}
+
+int32_t cq_player_tick(CQPlayer* player) {
+    if (player == nullptr) return CodeOfEnum(cq::StatusCode::kInvalidArgument);
+    return CodeOf(player->impl.Tick());
 }

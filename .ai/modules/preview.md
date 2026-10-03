@@ -166,3 +166,32 @@ SwiftUI PreviewZone
 
 ADR-0011（core 调 PAL 工厂的隔离规则）、`docs/tasks/TASK-BIND-003.md`、
 `.ai/modules/pal.md`、`.ai/modules/gfx.md`
+
+---
+
+# UIA-010 落地（2026-10-03）：播放时钟
+
+`core/include/cq/preview/player_clock.h` —— **只算时间，不取帧不渲染**。
+取帧渲染仍归 `PreviewRenderer`，两者由调用方串起来（`currentTime` → `render_frame`）。
+
+| 主题 | 约定 |
+|---|---|
+| 时刻来源 | **墙钟的函数**：`t = anchor + (now - anchor_wall)`，误差不累积（不是帧数累加） |
+| 量化 | 时刻恒为**整帧**（帧网格，29.97fps = 1001/30000），全程整数 |
+| 线程 | 内部 mutex，可跨线程读；**时钟自己不跑线程**，由调用方按帧 `Tick()` |
+| 状态 | kStopped / kPlaying / kPaused；**停止态时刻恒 0**（含播完自然结束） |
+| 边界 | `Tick()` 判定：到时长末尾 → loop 开则回绕，否则停止回 0 |
+| 边界来源 | `cq_session_timeline_duration`（Timeline::Duration）—— UI 不自己累加片段 |
+
+C ABI：`cq_player_create/destroy/set_duration/set_loop/play/pause/stop/seek/
+is_playing/current_time/tick` + `cq_session_timeline_duration`。
+⚠️ `cq_player_is_playing` 返回 **0/1 数据**，不是状态码（P26）。
+
+Swift：`Player` 类 + `Session.timelineDuration()`。
+SharedUI：ViewModel 的 `togglePlayback/stopPlayback` + `Timer` 驱动（30Hz）。
+
+⚠️ **MVP 未达标项**：取帧与渲染仍在**主线程**（Timer → setPlayhead → MTKView
+按需渲染），帧率受单帧解码耗时限制，**未实测**。下一步把取帧/渲染挪到播放
+线程，主线程只做 blit + present。
+
+守卫：`ctest -R player`（core_player_clock 29 断言 + c_abi_player 33 断言）。

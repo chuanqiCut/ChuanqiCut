@@ -18,6 +18,19 @@ struct TimelineZone: View {
 
                 Spacer()
 
+                // 播放 / 暂停（UIA-010）。无片段时不可播（播空时间线没意义）。
+                Button {
+                    viewModel.togglePlayback()
+                } label: {
+                    Image(systemName: viewModel.isPlaying ? "pause.fill" : "play.fill")
+                        .font(.caption)
+                }
+                .buttonStyle(.plain)
+                .disabled(viewModel.timeline.clips.isEmpty)
+                .foregroundStyle(viewModel.timeline.clips.isEmpty
+                                  ? Theme.tertiaryText : Theme.primaryText)
+                .help(viewModel.isPlaying ? "暂停" : "播放")
+
                 // 撤销 / 重做入口（UIA-008 的一部分随 UIA-005 落地）。
                 // 按钮形态两端通用；macOS 额外吃 Cmd+Z / Cmd+Shift+Z。
                 // ⚠️ **iOS 摇一摇撤销本期未实现**（要靠 UIViewController 代表层，

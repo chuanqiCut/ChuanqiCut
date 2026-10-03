@@ -11,6 +11,7 @@
 //   - `submit()` 非阻塞（内核投递到 session 线程后立刻返回），主线程零阻塞。
 
 import SwiftUI
+import Foundation
 import ChuanqiCut
 
 // MARK: - 错误
@@ -53,6 +54,9 @@ public final class EditorViewModel: ObservableObject {
     @Published public private(set) var canUndo = false
     @Published public private(set) var canRedo = false
 
+    /// 是否正在播放（UIA-010）。
+    @Published public private(set) var isPlaying = false
+
     /// 素材库显示状态（UIA-009 子步骤 3）：内核素材表 + 本地存活标记。
     /// `exists == false` = 文件已不在原路径（D3：MVP 引用原路径，不拷贝入库）。
     public struct LibraryAsset: Identifiable, Equatable {
@@ -73,6 +77,13 @@ public final class EditorViewModel: ObservableObject {
     private let session: Session
     private var knownVersion: UInt64
 
+    /// 播放时钟（UIA-010）。只算时间，不取帧不渲染（渲染走 `preview`）。
+    private let player: Player?
+    /// 播放驱动定时器（主线程）。**MVP 实现**：定时器推 playhead → MTKView 按需
+    /// 渲染，解码与渲染都在主线程。帧率受解码速度限制（未实测），
+    /// 把取帧/渲染挪到播放线程是下一步（见任务卡「剩余风险」）。
+    private var playbackTimer: Timer?
+
     public init() throws {
         guard let session = Session() else {
             throw EditorError.sessionCreationFailed
@@ -82,6 +93,8 @@ public final class EditorViewModel: ObservableObject {
         self.knownVersion = session.currentSnapshot.version
         // UIA-009 子步骤 2 收口后预览挂 session 快照（单一真源），并强持有 session。
         self.preview = Previewer(session: session, width: 1280, height: 720)
+        // UIA-010：播放时钟（纯计算对象，内核侧无后端依赖）。
+        self.player = Player()
         // 版本 0 不触发 observer 回流，初始时间线状态主动查一次。
         refreshTimeline()
         refreshHistoryFlags()
@@ -111,6 +124,74 @@ public final class EditorViewModel: ObservableObject {
             result[capability] = ChuanqiCut.queryCapability(capability)
         }
         capabilities = result
+    }
+
+    // MARK: 播放（UIA-010）
+
+    /// 播放 / 暂停切换。播放前同步一次边界（时间线可能刚变）。
+    ///
+    /// ⚠️ MVP 的驱动方式：`Timer` 推 playhead → MTKView 按需渲染，
+    ///    **解码与渲染都在主线程**，帧率取决于单帧耗时（未实测）。
+    ///    把取帧/渲染挪到播放线程是下一子步骤（那时才能真正脱离主线程）。
+    public func togglePlayback() {
+        guard let player else { return }
+        // 无片段 = 没有可播内容（UI 按钮同样置灰）。播空时间线没有意义，
+        // 且边界为 0 会让时钟立刻判定"播完"。
+        guard !timeline.clips.isEmpty else { return }
+        if isPlaying {
+            player.pause()
+            stopPlaybackLoop()
+            isPlaying = false
+            return
+        }
+        // 边界由内核时间线算（UI 不自己累加片段）。
+        if let duration = session.timelineDuration(), duration.value > 0 {
+            player.setDuration(duration)
+        }
+        guard player.play().isOK else { return }
+        isPlaying = true
+        startPlaybackLoop()
+    }
+
+    /// 停止播放并回到 0。
+    public func stopPlayback() {
+        guard let player else { return }
+        player.stop()
+        stopPlaybackLoop()
+        isPlaying = false
+        setPlayhead(RationalTime(value: 0, timescale: RationalTime.projectTimescale))
+    }
+
+    private func startPlaybackLoop() {
+        playbackTimer?.invalidate()
+        // 30Hz 驱动：与预览渲染节奏对齐（渲染比这慢时会自然丢帧 —— 时刻由
+        // 墙钟算，丢帧不会让播放变慢或变快）。
+        let timer = Timer.scheduledTimer(withTimeInterval: 1.0 / 30.0, repeats: true) {
+            [weak self] _ in
+            // Timer 在主 run loop 回调，但 Swift 6 并发模型不认识
+            // "main run loop == MainActor" —— 跳一次（同 applySnapshot 的手法）。
+            Task { @MainActor [weak self] in self?.tickPlayback() }
+        }
+        playbackTimer = timer
+    }
+
+    private func stopPlaybackLoop() {
+        playbackTimer?.invalidate()
+        playbackTimer = nil
+    }
+
+    /// 推进一帧：tick 判定边界 → 取当前时刻 → 推进播放头（触发预览重绘）。
+    private func tickPlayback() {
+        guard let player, isPlaying else { return }
+        _ = player.tick()
+        if player.isPlaying {
+            setPlayhead(player.currentTime)
+        } else {
+            // 播完自然结束：内核把状态置为停止、时刻归 0（语义见 player_clock.h）
+            stopPlaybackLoop()
+            isPlaying = false
+            setPlayhead(RationalTime(value: 0, timescale: RationalTime.projectTimescale))
+        }
     }
 
     // MARK: 片段编辑与撤销（UIA-005）
@@ -257,7 +338,11 @@ public final class EditorViewModel: ObservableObject {
         guard let duration = session.probeMediaDuration(path: path) else {
             return Status(rawValue: 2000)  // kDecodeError：打不开/解析不了
         }
-        guard duration.value > 0 else { return .invalidArgument }
+        // 文件能打开却读不到时长 = 解析问题（不是参数非法）—— 用 decodeError 而非
+        // invalidArgument，调用方与日志能区分这两类失败。
+        // ⚠️ 实测偶发（SharedUI 全量跑约 50% 命中，pitfalls P33）：probe 成功但
+        //    时长为 0，根因未定位在内核侧。这里是症状的最早可观测点。
+        guard duration.value > 0 else { return Status(rawValue: 2000) }
 
         // 2) 注册素材（素材 id 本地分配，单调递增）
         let assetId = nextAssetId

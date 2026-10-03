@@ -317,6 +317,72 @@ int32_t cq_preview_last_cpu_fallback(const CQPreview* preview);
 int32_t cq_preview_last_frame_pts(const CQPreview* preview, int64_t* out_value,
                                   int32_t* out_timescale);
 
+/* ==========================================================================
+ * 播放时钟（UIA-010）
+ * ==========================================================================
+ * CQPlayer 只回答「现在播放到时间线的哪一刻」，**不取帧、不渲染** ——
+ * 取帧与渲染仍由 CQPreview 负责，调用方把 CurrentTime() 的结果喂给
+ * render_frame 即可。刻意分开：时钟是纯计算（无平台依赖、可单测），
+ * 渲染是需要后端的能力（可能缺失）。
+ *
+ * 时刻 = **墙钟的函数**（不是帧数累加）：定时器回调间隔有抖动，累加写法
+ * 播几分钟就偏帧；这里无论调用多频繁、暂停多久，时刻都跟真实时间一致，
+ * 且恒为**整帧**（量化到帧网格）。
+ *
+ * 语义（定死，便于断言）：
+ *   * 停止态（含播完自然结束）时刻**恒为 0** —— 不提供"停在末帧"。
+ *   * 边界由 cq_player_tick() 判定：到时长末尾 → loop 开则回绕，否则停止。
+ *     时钟自己**不跑线程** —— 由调用方按帧驱动（线程决策归上层）。
+ *
+ * 线程安全：全部接口可跨线程调用（内部有锁）。
+ */
+
+typedef struct CQPlayer CQPlayer;
+
+/* 创建播放时钟。frame_value/frame_timescale = 一帧时长（29.97fps = 1001/30000）。
+ * 参数非法（timescale ≤ 0 或 value ≤ 0）时回落到 1001/30000，不返回 NULL
+ * （时钟是纯计算对象，参数错不值得让调用方崩）。 */
+CQPlayer* cq_player_create(int64_t frame_value, int32_t frame_timescale);
+
+/* 释放；传 NULL 安全。 */
+void cq_player_destroy(CQPlayer* player);
+
+/* 播放边界（时间线总时长）。不设置 = 无边界（一直播）。 */
+int32_t cq_player_set_duration(CQPlayer* player, int64_t value, int32_t timescale);
+
+/* 循环播放开关（1/0）。 */
+void cq_player_set_loop(CQPlayer* player, int32_t loop);
+
+/* 开始 / 继续播放（从当前时刻起；停止态即从 0 起）。 */
+int32_t cq_player_play(CQPlayer* player);
+
+/* 暂停（冻结在当前时刻）。 */
+void cq_player_pause(CQPlayer* player);
+
+/* 停止并回到 0。 */
+void cq_player_stop(CQPlayer* player);
+
+/* 定位（量化到整帧，向下）。播放中调用会重锚。 */
+int32_t cq_player_seek(CQPlayer* player, int64_t value, int32_t timescale);
+
+/* 是否正在播放（返回**数据** 0/1，不是状态码）。 */
+int32_t cq_player_is_playing(const CQPlayer* player);
+
+/* 当前播放时刻。返回状态码，时刻经 out 参数给出（P26：数据与错误码不混用）。 */
+int32_t cq_player_current_time(const CQPlayer* player, int64_t* out_value,
+                               int32_t* out_timescale);
+
+/* 边界推进。到末尾：loop 开 → 回绕；否则停止。未播放 = no-op。 */
+int32_t cq_player_tick(CQPlayer* player);
+
+/* ==========================================================================
+ * 时间线总时长（UIA-010；读已发布快照，契约同其它查询）
+ * ==========================================================================
+ * 播放边界的唯一真源：由内核时间线算出（末片段结束 + 出转场），UI 不要自己算。
+ * 空时间线返回 0（时长 0 = 没内容可播）。 */
+int32_t cq_session_timeline_duration(const CQSession* session, int64_t* out_value,
+                                     int32_t* out_timescale);
+
 #ifdef __cplusplus
 } /* extern "C" */
 #endif

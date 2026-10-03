@@ -27,6 +27,14 @@ risk:  预览读 Session 模型的线程安全（子步骤 2 的核心设计，�
 parallel:    false（子步骤 1 改 cq_sdk.h；子步骤 2 改预览 TU；子步骤 3 改 SharedUI —— 串行推进）
 ```
 
+## 进度（2026-10-03）
+
+| 子步骤 | 状态 |
+|---|---|
+| 1 契约（Session 级模型 + 查询 ABI） | ✅ |
+| 2 预览收口（cq_preview 挂 session 快照，删除本地装配 ABI） | ✅ |
+| 3 导入 UI（文件选择 → 入表 → Command 建片段） | ⏭️ 下一步 |
+
 ## 背景
 
 - 用户侧导入流程此前**没有任务编号**（BACKLOG 缺口，2026-10-03 与传哲确认补建）。
@@ -63,7 +71,7 @@ MVP **引用原路径**（不拷贝）：文件被移动/删除后素材失效�
 | # | 内容 | 写集 | 验证 |
 |---|---|---|---|
 | 1 | **✅ 已完成（2026-10-03）**：EditorModelState（Timeline+AssetRegistry+CommandHistory，不可变快照发布）+ C ABI（register_asset/add_track/add_clip/query_*，查询返回状态码+out_count）。C TU 测试 c_abi_session；digest 转真实指纹。undo/redo C ABI 仍留 UIA-008 |`EditorSession` 挂 Timeline+AssetRegistry+CommandHistory；`cq_sdk.h` 补 `cq_session_register_asset` / `cq_session_add_clip`（内部转 `InsertClipCommand` 进 CommandHistory）/ `cq_session_timeline_fingerprint`（digest 用真实指纹，替换「恒为 0」）；undo/redo 的 C ABI **不在本任务**（归 UIA-008）。新增测试 `test_c_abi_session.c` | `core/include/cq/session/editor_session.h`、`core/src/session/editor_session.cpp`、`core/include/cq/cq_sdk.h`、`core/src/cq_sdk.cpp`、`tests/unit/test_c_abi_session.c`、`tests/CMakeLists.txt`（登记） | ctest -R c_abi_session；门禁 Debug+Release |
-| 2 | **预览收口**：`cq_preview_*` 渲染输入从本地 Timeline 切到 Session 快照（D2 方案）；CQPreview 退役本地模型；`cq_preview_add_clip` 废弃或改为兼容 shim（实现时定，倾向直接删 + Swift 侧同步改，避免双写漂移） | `core/include/cq/preview/preview_renderer.h`、`core/src/preview/preview_renderer.cpp`、`core/src/preview/cq_sdk_preview.cpp`、`bindings/swift/Sources/ChuanqiCut/Previewer.swift`（API 同步）、相关测试 | 预览渲染测试 + 绑定 swift test 全绿；**实现前跑 cq-media-pipeline 专项分析**（线程/时序/取消） |
+| 2 | **✅ 已完成（2026-10-03）**：PreviewRenderer 改 IModelSnapshotProvider（D2 方案落地：渲染入口加载配对快照，本帧全用同一快照）；CQPreview 本地模型退役；register_asset/add_clip **直接删除**（Swift 同步改，无双写漂移）；provider 缓存按路径变更失效；CQSession 定义抽私有共享头 cq_session_impl.h | `core/include/cq/preview/preview_renderer.h`、`core/src/preview/preview_renderer.cpp`、`core/src/preview/cq_sdk_preview.cpp`、`bindings/swift/Sources/ChuanqiCut/Previewer.swift`（API 同步）、相关测试 | 预览渲染测试 + 绑定 swift test 全绿；**实现前跑 cq-media-pipeline 专项分析**（线程/时序/取消） |
 | 3 | **导入 UI**：macOS `NSOpenPanel` / iOS `fileImporter` → `registerAsset` → `addClip` Command → UIA-004 时间线视图显示 + 预览可见；素材库最小面板（列表 + 失效标记，D3） | `apps/apple/packages/SharedUI/Sources/SharedUI/**`（MediaLibrary 面板 + EditorViewModel 扩展）、App 入口、`bindings/swift/Sources/ChuanqiCut/Session.swift`（新 ABI 封装）、测试 | swift test + macOS App 编译 + 启动冒烟（导入 → 预览可见）；iOS 真机验沙箱路径 |
 
 ## 验收（对应子步骤）

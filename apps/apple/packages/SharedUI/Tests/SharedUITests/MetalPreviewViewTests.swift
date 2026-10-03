@@ -132,17 +132,28 @@ final class MetalPreviewViewTests: XCTestCase {
         guard FileManager.default.fileExists(atPath: goldenVideo) else {
             return XCTFail("golden 夹具缺失：\(goldenVideo)")
         }
-        guard let preview = Previewer(width: 256, height: 256) else {
+        guard let session = Session() else { return XCTFail("Session 创建失败") }
+        // 会话装配（UIA-009 子步骤 2：模型真源在 Session；提交异步需等生效）
+        XCTAssertEqual(session.registerAsset(id: 1, path: goldenVideo), .ok)
+        XCTAssertEqual(session.addTrack(kind: 0), .ok)
+        let deadline = Date().addingTimeInterval(5)
+        while session.currentSnapshot.version < 2 && Date() < deadline {
+            RunLoop.main.run(until: Date().addingTimeInterval(0.005))
+        }
+        guard let trackId = session.queryTracks().first?.trackId else {
+            return XCTFail("轨道查询为空")
+        }
+        let ts = RationalTime.projectTimescale
+        XCTAssertEqual(session.addClip(trackId: trackId, assetId: 1,
+                                       start: RationalTime(value: 0, timescale: ts),
+                                       duration: RationalTime(value: 5 * Int64(ts), timescale: ts),
+                                       sourceIn: RationalTime(value: 0, timescale: ts)), .ok)
+        while session.currentSnapshot.version < 3 && Date() < deadline {
+            RunLoop.main.run(until: Date().addingTimeInterval(0.005))
+        }
+        guard let preview = Previewer(session: session, width: 256, height: 256) else {
             return XCTFail("预览创建失败（内核预览后端缺失）")
         }
-
-        let ts = RationalTime.projectTimescale
-        XCTAssertEqual(preview.registerAsset(id: 1, path: goldenVideo), .ok)
-        XCTAssertEqual(preview.addClip(
-            trackId: 1, assetId: 1,
-            start: RationalTime(value: 0, timescale: ts),
-            duration: RationalTime(value: 5 * Int64(ts), timescale: ts),
-            sourceIn: RationalTime(value: 0, timescale: ts)), .ok)
         XCTAssertEqual(preview.renderFrame(
             pts: RationalTime(value: 60000, timescale: ts)), .ok)
 

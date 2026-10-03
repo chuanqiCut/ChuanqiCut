@@ -434,6 +434,18 @@
   命令频率下无竞争压力）。已写入 editor_model_state.h 注释。
 - 日期 / 来源 / 验证状态：2026-10-03 / UIA-009 子步骤 1 / **verified**
 
+### P29 · 内核私有头跨构建系统（CMake/pod）的 include 必须用相对路径
+- 现象：`cq_session_impl.h` 放 core/src/，CMake 里加了 PRIVATE include 目录
+  编译全绿；pod 路径（现场编译 core/src/**/*.cpp，无该 search path）构建失败
+  "'cq_session_impl.h' file not found"。**CMake 绿 ≠ pod 绿**（P9~P13 同族：
+  只有两套构建定义都真编译过才算过）。
+- 修复：消费者（cq_sdk_preview.cpp）用相对路径 `#include "../cq_session_impl.h"`，
+  CMake 的 PRIVATE 目录对同目录的 cq_sdk.cpp 不需要特殊处理。
+- 防复发规则：**私有头被跨目录 include 时一律写相对路径**，不依赖任何构建
+  系统的 search path。
+- 日期 / 来源 / 验证状态：2026-10-03 / UIA-009 子步骤 2 / **verified**
+  （双门禁 + pod 构建 App 全绿）
+
 ---
 
 ## 已修正的历史错误（供参考，避免重犯）

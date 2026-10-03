@@ -18,17 +18,14 @@
 
 #include "cq/base/status.h"
 #include "cq/pal/capabilities.h"
+#include "cq_session_impl.h"
 #include "cq/session/editor_session.h"
 #include "cq/session/snapshot.h"
 #include "cq/session/thread_model.h"
 
-// CQSession 的真实定义：就是 cq_sdk.h 里那个 opaque 句柄的本体。
-// ⚠️ 必须定义在**全局**命名空间 —— 放进匿名 namespace 会与头文件的
-//    `typedef struct CQSession CQSession;` 产生命名歧义（实测 clang 报
-//    "reference to 'CQSession' is ambiguous"）。
-struct CQSession {
-    cq::EditorSession impl;
-};
+// CQSession 的真实定义移至内核私有共享头（cq_session_impl.h）——
+// cq_sdk_preview.cpp（UIA-009 子步骤 2 预览收口）需要从 CQSession* 取
+// EditorSession*，两 TU 必须共享同一份定义。
 
 namespace {
 

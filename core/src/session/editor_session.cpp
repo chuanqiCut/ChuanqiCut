@@ -126,6 +126,13 @@ Status EditorSession::SubmitAddClip(const char* name, uint64_t track_id, const C
     });
 }
 
+std::shared_ptr<const ModelSnapshot> EditorSession::CurrentModelSnapshot() const {
+    EditorModelState* model = BuiltinModel();
+    if (model == nullptr) return nullptr;
+    // 只读已发布的不可变快照，任意线程安全。
+    return model->CurrentSnapshot();
+}
+
 std::shared_ptr<const Timeline> EditorSession::CurrentTimeline() const {
     EditorModelState* model = BuiltinModel();
     if (model == nullptr) return nullptr;

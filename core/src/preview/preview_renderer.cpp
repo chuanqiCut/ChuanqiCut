@@ -45,10 +45,9 @@ public:
 }  // namespace
 
 PreviewRenderer::PreviewRenderer(IGfxDevice* gfx, IBlitPass* blit,
-                                 IFrameProviderFactory* providers, const Timeline* timeline,
-                                 const AssetRegistry* assets, const Config& cfg)
-    : gfx_(gfx), blit_(blit), providers_(providers), timeline_(timeline), assets_(assets),
-      cfg_(cfg) {}
+                                 IFrameProviderFactory* providers,
+                                 IModelSnapshotProvider* snapshots, const Config& cfg)
+    : gfx_(gfx), blit_(blit), providers_(providers), snapshots_(snapshots), cfg_(cfg) {}
 
 PreviewRenderer::~PreviewRenderer() {
     // 上一帧导入的纹理必须显式释放：Import 返回裸句柄且不接管所有权。
@@ -90,21 +89,28 @@ Status PreviewRenderer::ClearTarget(const CancelToken& token) {
     return gfx_->RenderFrame(ctx, target_.get(), client, token);
 }
 
-Status PreviewRenderer::GetProvider(uint64_t asset_id, FrameProvider*& out) {
+Status PreviewRenderer::GetProvider(uint64_t asset_id, const AssetRegistry& assets,
+                                    FrameProvider*& out) {
     out = nullptr;
+    if (providers_ == nullptr) return Status(StatusCode::kInvalidArgument);
+    const MediaSource* src = assets.Find(asset_id);
+    if (src == nullptr) return Status(StatusCode::kInvalidArgument);  // 素材未注册
+
     auto it = providers_by_asset_.find(asset_id);
     if (it != providers_by_asset_.end()) {
-        out = it->second.get();
-        return Status::Ok();
+        if (it->second.opened_path == src->path) {
+            out = it->second.provider.get();
+            return Status::Ok();
+        }
+        // 同 id 重注册为新路径（素材替换）：关闭旧解码会话再重建。
+        providers_by_asset_.erase(it);
     }
-    if (assets_ == nullptr || providers_ == nullptr) return Status(StatusCode::kInvalidArgument);
-    const MediaSource* src = assets_->Find(asset_id);
-    if (src == nullptr) return Status(StatusCode::kInvalidArgument);  // 素材未注册
     std::unique_ptr<FrameProvider> provider;
     Status s = providers_->Create(*src, provider);
     if (!s.IsOk()) return s;
     out = provider.get();
-    providers_by_asset_.emplace(asset_id, std::move(provider));
+    providers_by_asset_.emplace(asset_id,
+                                ProviderEntry{std::move(provider), src->path});
     return Status::Ok();
 }
 
@@ -112,7 +118,17 @@ Status PreviewRenderer::RenderFrame(const RationalTime& pts, TextureHandle& out_
                                     const CancelToken& token) {
     out_texture = nullptr;
     last_hit_clip_ = false;
-    if (gfx_ == nullptr || timeline_ == nullptr) return Status(StatusCode::kInvalidArgument);
+    if (gfx_ == nullptr || snapshots_ == nullptr) return Status(StatusCode::kInvalidArgument);
+
+    // ---- 0. 加载模型快照（UIA-009 子步骤 2）----
+    // 一次加载、本帧全程使用：渲染期间 session 线程再变更也不影响本帧
+    // （不可变数据，无竞争）；下帧自然看到新快照（最终一致）。
+    std::shared_ptr<const ModelSnapshot> snapshot = snapshots_->CurrentSnapshot();
+    if (!snapshot || !snapshot->timeline || !snapshot->assets) {
+        return Status(StatusCode::kInternal);
+    }
+    const Timeline& timeline = *snapshot->timeline;
+    const AssetRegistry& assets = *snapshot->assets;
 
     Status s = EnsureTarget();
     if (!s.IsOk()) return s;
@@ -121,9 +137,9 @@ Status PreviewRenderer::RenderFrame(const RationalTime& pts, TextureHandle& out_
 
     // ---- 1. 定位片段：只取**第一条命中的视频轨**（本期不支持多轨合成）----
     const Clip* clip = nullptr;
-    for (const Track& track : timeline_->Tracks()) {
+    for (const Track& track : timeline.Tracks()) {
         if (track.kind != TrackKind::kVideo || !track.enabled) continue;
-        const Clip* hit = timeline_->FindClipAt(track.id, pts);
+        const Clip* hit = timeline.FindClipAt(track.id, pts);
         if (hit != nullptr) {
             clip = hit;
             break;
@@ -149,7 +165,7 @@ Status PreviewRenderer::RenderFrame(const RationalTime& pts, TextureHandle& out_
 
     // ---- 3. 取帧（AcquireFrame 内部按需 seek，未 seek 或目标变化时幂等对齐）----
     FrameProvider* provider = nullptr;
-    s = GetProvider(clip->source.asset_id, provider);
+    s = GetProvider(clip->source.asset_id, assets, provider);
     if (!s.IsOk()) return s;
 
     FrameRequest req;

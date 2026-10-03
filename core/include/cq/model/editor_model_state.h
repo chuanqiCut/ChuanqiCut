@@ -26,6 +26,7 @@
 #include "cq/base/status.h"
 #include "cq/command/command.h"
 #include "cq/media/asset_registry.h"
+#include "cq/model/model_snapshot.h"
 #include "cq/model/timeline.h"
 #include "cq/session/snapshot.h"
 
@@ -45,8 +46,8 @@ public:
     Status Execute(std::unique_ptr<ICommand> cmd);
 
     // 注册素材（id → 路径）。**不走 Command**：素材是资料库不是时间线编辑，
-    // 不参与 Undo/Redo；但同样发布新版本（版本推进由 EditorSession 负责）。
-    // fingerprint 不含素材表 —— 时间线结构未变。
+    // 不参与 Undo/Redo；但**会发布新快照**（素材表进入快照配对，预览读得到）。
+    // 版本推进由 EditorSession 负责。fingerprint 不含素材表 —— 时间线结构未变。
     Status RegisterAsset(uint64_t asset_id, const std::string& path);
 
     // ---- session 线程内的直读（mutate 闭包内用，勿跨线程持有引用）----
@@ -56,11 +57,14 @@ public:
 
     // ---- 读路径（任意线程）----
 
-    // 最近一次成功变更后的时间线快照（不可变）。初始即有值（空时间线）。
-    // 实现：mutex 保护的 shared_ptr（持锁时长 = 一次指针拷贝，纳秒级；
-    // 写侧只在命令提交后发生，无竞争压力）。⚠️ C++20 的
-    // atomic<shared_ptr> 本机 libc++（Xcode 16 / x86_64）未实现 P0718，
-    // 编译期即报 "_Atomic ... not trivially copyable"（2026-10-03 实测）。
+    // 最近一次成功变更后的模型快照（Timeline + AssetRegistry 配对，不可变）。
+    // 初始即有值（空时间线 + 空素材表）。实现：mutex 保护的 shared_ptr
+    // （持锁时长 = 一次指针拷贝，纳秒级；写侧只在命令提交后发生，无竞争压力）。
+    // ⚠️ C++20 的 atomic<shared_ptr> 本机 libc++（Xcode 16 / x86_64）未实现
+    // P0718，编译期即报 "_Atomic ... not trivially copyable"（2026-10-03 实测）。
+    std::shared_ptr<const ModelSnapshot> CurrentSnapshot() const;
+
+    // 便捷取时间线部分（同一份已发布快照，引用计数保证存活）。
     std::shared_ptr<const Timeline> CurrentTimeline() const;
 
     // ISessionState
@@ -72,7 +76,7 @@ public:
     static uint64_t Fingerprint(const Timeline& timeline);
 
 private:
-    void Publish();  // timeline_ → 重建快照并发布（session 线程）
+    void Publish();  // (timeline_, assets_) → 重建配对快照并发布（session 线程）
 
     Timeline timeline_;
     AssetRegistry assets_;
@@ -80,7 +84,7 @@ private:
 
     // 不可变快照的发布点。mutable：读接口（const）也要锁。
     mutable std::mutex snap_mtx_;
-    std::shared_ptr<const Timeline> published_;
+    std::shared_ptr<const ModelSnapshot> published_;
 };
 
 }  // namespace cq

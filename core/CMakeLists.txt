@@ -73,6 +73,9 @@ target_compile_definitions(cq_core PRIVATE
 # 公共头目录：对外 C ABI 伞形头 core/include。
 target_include_directories(cq_core PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/include)
+# 内核私有头目录（cq_session_impl.h 等）——不进 PUBLIC，消费者不可见。
+target_include_directories(cq_core PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/src)
 
 # 硬锁 C++20 + 禁 GNU 扩展；强制项目警告集合并开 -Werror。
 cq_require_cxx20(cq_core)

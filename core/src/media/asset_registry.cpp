@@ -10,7 +10,7 @@ Status AssetRegistry::Register(uint64_t asset_id, const std::string& path) {
     if (path.empty()) return Status(StatusCode::kInvalidArgument);
 
     Entry entry;
-    entry.path = std::make_unique<std::string>(path);
+    entry.path = std::make_shared<std::string>(path);
     // source.path 指向堆上的字符串：Entry 搬家时该地址不变（见头文件注释）。
     entry.source.path = entry.path->c_str();
     entry.source.path_len = entry.path->size();

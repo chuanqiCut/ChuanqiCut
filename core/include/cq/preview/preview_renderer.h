@@ -15,11 +15,12 @@
 //   * 多轨合成 —— 只渲染**第一条命中的视频轨**，叠加/转场合成等 RenderGraph
 //     （RENDER-001）落地后再补。
 //   * 变速 / retime —— MODEL-001 无该字段，时间线时长与素材时长 1:1 映射。
-//   * 宽高比适配 —— 当前是「拉伸铺满」，letterbox/fit 模式待 UI 需求明确后加。
+//   （宽高比适配已支持 —— 见 FitMode / ADR-0015；片段级缩放/位移仍归 MODEL-003。）
 
 #ifndef CQ_PREVIEW_PREVIEW_RENDERER_H_
 #define CQ_PREVIEW_PREVIEW_RENDERER_H_
 
+#include <atomic>
 #include <cstdint>
 #include <memory>
 #include <unordered_map>
@@ -40,12 +41,22 @@
 
 namespace cq {
 
+// 源帧 → 画布的宽高比适配模式（UIA-011 / ADR-0015）。
+// 实现接缝 = 编码器视口：三种模式都是「把全屏 blit 变换到一个矩形」，
+// bar 区即清屏色黑（清屏不受视口影响，视口外无写入）。
+enum class FitMode : int32_t {
+    kStretch = 0,  // 拉伸铺满（引入 FitMode 前的既有行为，默认值）
+    kContain = 1,  // 内切居中：letterbox / pillarbox，不裁内容
+    kCover = 2,    // 外接居中：裁剪铺满，不留 bar
+};
+
 class PreviewRenderer : public IPreviewFrameSource {
 public:
     struct Config {
         uint32_t width = 1920;
         uint32_t height = 1080;
         TextureFormat format = TextureFormat::kRGBA8;
+        FitMode fit_mode = FitMode::kStretch;
     };
 
     // ---- 单帧各阶段耗时（ns，steady_clock）----
@@ -100,6 +111,15 @@ public:
     // 线程约定同上（挂泵后只由泵线程调用，走 `PreviewPump::RequestResize`）。
     Status Resize(uint32_t width, uint32_t height) override;
 
+    // 宽高比适配模式（UIA-011）。setter 与渲染读（挂泵后在泵线程）分属不同线程，
+    // 故内部为 atomic —— 主线程设置、泵线程读取，无竞争。
+    void SetFitMode(FitMode mode) {
+        fit_mode_.store(static_cast<int>(mode), std::memory_order_relaxed);
+    }
+    FitMode GetFitMode() const {
+        return static_cast<FitMode>(fit_mode_.load(std::memory_order_relaxed));
+    }
+
     IRenderTarget* Target() override { return target_.get(); }
 
     // 上一帧的各阶段耗时（见 Timings 注释）。首帧之前全 0。
@@ -151,6 +171,7 @@ private:
     RationalTime last_source_time_{0, 1};
     RationalTime last_frame_pts_{0, 1};
     Timings timings_{};
+    std::atomic<int> fit_mode_{static_cast<int>(FitMode::kStretch)};  // 见 SetFitMode
 };
 
 }  // namespace cq

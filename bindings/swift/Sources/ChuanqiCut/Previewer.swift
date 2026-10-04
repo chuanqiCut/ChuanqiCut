@@ -80,6 +80,23 @@ public final class Previewer {
         return Status(rawValue: cq_preview_resize(h, UInt32(width), UInt32(height)))
     }
 
+    // MARK: 宽高比适配（UIA-011）
+
+    /// 源帧与画布比例不同时的映射模式（语义以 cq_sdk.h 的 cq_preview_set_fit_mode
+    /// 注释为契约）。内部 atomic，可在泵运行期间调用。
+    public enum FitMode: Int32, Sendable {
+        case stretch = 0  // 拉伸铺满（默认，历史行为）
+        case contain = 1  // 内切居中：letterbox/pillarbox，不裁内容
+        case cover = 2    // 外接居中：裁剪铺满
+    }
+
+    /// 设置宽高比适配模式。非法值由内核拒绝（返回 7000）。
+    @discardableResult
+    public func setFitMode(_ mode: FitMode) -> Status {
+        guard let h = handle else { return .invalidArgument }
+        return Status(rawValue: cq_preview_set_fit_mode(h, mode.rawValue))
+    }
+
     // MARK: 诊断量（不是渲染结果；静态素材像素相同，靠它们证明「取对了帧」）
 
     /// 上一帧是否命中片段。

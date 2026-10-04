@@ -428,6 +428,94 @@ int main() {
         }
     }
 
+    // =========================================================================
+    // 8. 宽高比适配（UIA-011 / ADR-0015）：contain / cover 像素断言
+    // 16:9 素材（1920x1080）进 256x256 方形画布：
+    //   contain → 上下各 56px 黑 bar，内容带 256x144 居中；
+    //   cover   → 无 bar，整幅被内容裁剪铺满；
+    //   stretch（默认）→ 既有段 [2]（256x256 画布中心 = 绿）即回归。
+    // =========================================================================
+    std::printf("\n[8] FitMode：contain letterbox / cover 裁剪铺满\n");
+    {
+        const std::string fit_path =
+            std::string(CQ_SOURCE_DIR) + "/tests/golden/frames/gf_1080p_h264.mp4";
+        cq::AssetRegistry fit_assets;
+        Check(fit_assets.Register(1, fit_path).IsOk(), "AssetRegistry.Register(FitMode)");
+        cq::Timeline fit_timeline;
+        BuildSingleClipTimeline(fit_timeline, 1, 3000);
+        FixedSnapshotProvider fit_snapshots(fit_timeline, fit_assets);
+
+        // ---- 8a. contain：bar 区 = 清屏黑，内容带 = smptebars ----
+        {
+            cq::PreviewRenderer::Config fit_cfg;
+            fit_cfg.width = 256;
+            fit_cfg.height = 256;
+            fit_cfg.format = cq::TextureFormat::kRGBA8;
+            fit_cfg.fit_mode = cq::FitMode::kContain;  // 构造路径
+            cq::PreviewRenderer fit_renderer(gfx, blit.get(), &factory, &fit_snapshots,
+                                             fit_cfg);
+            fit_renderer.SetFitMode(cq::FitMode::kContain);  // setter 路径同样覆盖
+            Check(fit_renderer.GetFitMode() == cq::FitMode::kContain, "GetFitMode 回读 contain");
+
+            cq::CancelToken fit_token;
+            cq::TextureHandle fit_out = nullptr;
+            Check(fit_renderer.RenderFrame(Ms(500), fit_out, fit_token).IsOk(),
+                  "RenderFrame(contain)");
+            std::vector<uint8_t> fit_px;
+            Check(ReadPixels(fit_renderer.Target(), 256, 256, fit_px), "读回 contain 像素");
+            if (!fit_px.empty()) {
+                // 内容带：256 宽 → 高 256*9/16 = 144 → y ∈ [56, 200)
+                const uint8_t* bar_top = &fit_px[(static_cast<size_t>(20) * 256 + 128) * 4];
+                const uint8_t* content = &fit_px[(static_cast<size_t>(128) * 256 + 128) * 4];
+                const uint8_t* bar_bot = &fit_px[(static_cast<size_t>(240) * 256 + 128) * 4];
+                std::printf("  bar_top=%u,%u,%u,%u content=%u,%u,%u,%u bar_bot=%u,%u,%u,%u\n",
+                            bar_top[0], bar_top[1], bar_top[2], bar_top[3],
+                            content[0], content[1], content[2], content[3],
+                            bar_bot[0], bar_bot[1], bar_bot[2], bar_bot[3]);
+                Check(ColorNear(bar_top, 0, 0, 0, 255, 2), "contain 上 bar = 清屏黑");
+                Check(ColorNear(bar_bot, 0, 0, 0, 255, 2), "contain 下 bar = 清屏黑");
+                Check(ColorNear(content, 0, 188, 0, 255, 12),
+                      "contain 内容带中心 ≈ smptebars 真值");
+            }
+        }
+
+        // ---- 8b. cover：无 bar（上下边缘也是内容），裁剪铺满 ----
+        {
+            cq::PreviewRenderer::Config fit_cfg;
+            fit_cfg.width = 256;
+            fit_cfg.height = 256;
+            fit_cfg.format = cq::TextureFormat::kRGBA8;
+            cq::PreviewRenderer fit_renderer(gfx, blit.get(), &factory, &fit_snapshots,
+                                             fit_cfg);
+            fit_renderer.SetFitMode(cq::FitMode::kCover);
+            Check(fit_renderer.GetFitMode() == cq::FitMode::kCover, "GetFitMode 回读 cover");
+
+            cq::CancelToken fit_token;
+            cq::TextureHandle fit_out = nullptr;
+            Check(fit_renderer.RenderFrame(Ms(500), fit_out, fit_token).IsOk(),
+                  "RenderFrame(cover)");
+            std::vector<uint8_t> fit_px;
+            Check(ReadPixels(fit_renderer.Target(), 256, 256, fit_px), "读回 cover 像素");
+            if (!fit_px.empty()) {
+                // contain 在 y=8/y=248 处是 bar；cover 必须是内容（非黑）。
+                // smptebars 中列：顶部竖条区 = 绿，底部条带中央 = 白，均非黑。
+                const uint8_t* top = &fit_px[(static_cast<size_t>(8) * 256 + 128) * 4];
+                const uint8_t* mid = &fit_px[(static_cast<size_t>(128) * 256 + 128) * 4];
+                const uint8_t* bot = &fit_px[(static_cast<size_t>(248) * 256 + 128) * 4];
+                std::printf("  top=%u,%u,%u mid=%u,%u,%u bot=%u,%u,%u\n",
+                            top[0], top[1], top[2], mid[0], mid[1], mid[2],
+                            bot[0], bot[1], bot[2]);
+                const int sum_top = top[0] + top[1] + top[2];
+                const int sum_bot = bot[0] + bot[1] + bot[2];
+                Check(sum_top > 60, "cover 顶缘 = 内容（无 letterbox bar）");
+                Check(sum_bot > 60, "cover 底缘 = 内容（无 letterbox bar）");
+                Check(ColorNear(mid, 0, 188, 0, 255, 12), "cover 中心 ≈ smptebars 真值");
+            }
+        }
+
+        // ---- 8c. 非法枚举不走渲染器（ABI 契约在 test_c_abi_preview.c）----
+    }
+
     std::printf("\n== 结果：%d 项检查，%d 项失败 ==\n", g_checks, g_failures);
     return g_failures == 0 ? 0 : 1;
 }

@@ -40,6 +40,9 @@ public:
     void SetSampler(SamplerHandle sampler, uint32_t binding) override {
         enc_->SetSampler(sampler, binding);
     }
+    void SetViewport(float x, float y, float width, float height) override {
+        enc_->SetViewport(x, y, width, height);
+    }
     void Draw(uint32_t vertex_count) override { enc_->Draw(vertex_count); }
     void DrawIndexed(uint32_t index_count) override { enc_->DrawIndexed(index_count); }
 

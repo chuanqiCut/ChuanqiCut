@@ -163,6 +163,21 @@ int32_t cq_preview_resize(CQPreview* preview, uint32_t width, uint32_t height) {
     return CodeOf(preview->renderer->Resize(width, height));
 }
 
+int32_t cq_preview_set_fit_mode(CQPreview* preview, int32_t fit_mode) {
+    if (preview == nullptr || preview->renderer == nullptr) {
+        return CodeOfEnum(cq::StatusCode::kInvalidArgument);
+    }
+    switch (fit_mode) {
+        case 0:  // kStretch
+        case 1:  // kContain
+        case 2:  // kCover
+            preview->renderer->SetFitMode(static_cast<cq::FitMode>(fit_mode));
+            return CodeOf(cq::Status::Ok());
+        default:
+            return CodeOfEnum(cq::StatusCode::kInvalidArgument);
+    }
+}
+
 int32_t cq_preview_last_hit_clip(const CQPreview* preview) {
     if (preview == nullptr || preview->renderer == nullptr) return 0;
     return preview->renderer->LastHitClip() ? 1 : 0;

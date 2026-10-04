@@ -89,9 +89,14 @@ private:
 // 画全屏三角形采样纹理的 client
 class DrawClient final : public cq::IFrameEncoderClient {
 public:
-    DrawClient(cq::PipelineHandle pipeline, cq::BufferHandle vbuf,
-               cq::TextureHandle tex, cq::SamplerHandle sampler)
+    DrawClient(cq::PipelineHandle pipeline, cq::BufferHandle vbuf, cq::TextureHandle tex,
+               cq::SamplerHandle sampler)
         : pipeline_(pipeline), vbuf_(vbuf), tex_(tex), sampler_(sampler) {}
+
+    // 可选视口（UIA-011 用例 C）：设置后 Encode 先 SetViewport 再 Draw。
+    void UseViewport(float x, float y, float w, float h) {
+        vp_x_ = x; vp_y_ = y; vp_w_ = w; vp_h_ = h; has_vp_ = true;
+    }
 
     cq::Status Encode(cq::IGfxEncoder& enc, const cq::FrameContext&,
                       const cq::CancelToken&) override {
@@ -99,6 +104,7 @@ public:
         enc.SetVertexBuffer(vbuf_, 0);
         enc.SetTexture(tex_, 0);
         enc.SetSampler(sampler_, 0);
+        if (has_vp_) enc.SetViewport(vp_x_, vp_y_, vp_w_, vp_h_);
         enc.Draw(3);
         return cq::Status::Ok();
     }
@@ -108,6 +114,8 @@ private:
     cq::BufferHandle vbuf_;
     cq::TextureHandle tex_;
     cq::SamplerHandle sampler_;
+    float vp_x_ = 0, vp_y_ = 0, vp_w_ = 0, vp_h_ = 0;
+    bool has_vp_ = false;
 };
 
 }  // namespace
@@ -254,6 +262,44 @@ int main() {
             Check(tr[1] > 200 && tr[0] < 55, "右上 = 绿");
             Check(bl[2] > 200 && bl[0] < 55, "左下 = 蓝（uv 未上下颠倒）");
             Check(br[0] > 200 && br[1] > 200 && br[2] < 55, "右下 = 黄");
+
+            // =================================================================
+            // 用例 C：视口限定绘制（UIA-011 契约验收，ADR-0015）
+            // 同一套资源，把绘制限制进 (16,16,32,32)：视口内正常采样，
+            // 视口外保持清屏色 —— 证明 SetViewport 真的约束了写入区域。
+            // =================================================================
+            std::printf("\n[用例 C] SetViewport(16,16,32,32) + 读回视口内外像素\n");
+            {
+                DrawClient vp_client(cq::apple::ToPipelineHandle(pipeline.get()),
+                                     cq::apple::ToBufferHandle(vbuf.get()),
+                                     cq::apple::ToTextureHandle(tex.get()),
+                                     cq::apple::ToSamplerHandle(sampler.get()));
+                vp_client.UseViewport(16.0f, 16.0f, 32.0f, 32.0f);
+                cq::FrameContext ctx2;
+                cq::CancelToken token2;
+                Check(gfx->RenderFrame(ctx2, rt.get(), vp_client, token2).IsOk(),
+                      "RenderFrame(视口绘制)");
+                std::vector<uint8_t> px2(64 * 64 * 4, 0);
+                Check(cq::apple::ReadRenderTargetPixels(rt.get(), 0, 0, 64, 64, px2.data(),
+                                                        px2.size()).IsOk(),
+                      "ReadRenderTargetPixels(视口)");
+                // 视口内象限中心：左上 (24,24) → 红；右下 (40,40) → 黄
+                const uint8_t* iv_tl = &px2[(24 * 64 + 24) * 4];
+                const uint8_t* iv_br = &px2[(40 * 64 + 40) * 4];
+                // 视口外（距边界 8px 余量）：必须仍是清屏黑
+                const uint8_t* ov_tl = &px2[(8 * 64 + 8) * 4];
+                const uint8_t* ov_br = &px2[(56 * 64 + 56) * 4];
+                std::printf("  视口内左上=%u,%u,%u 右下=%u,%u,%u | 视口外左上=%u,%u,%u 右下=%u,%u,%u\n",
+                            iv_tl[0], iv_tl[1], iv_tl[2], iv_br[0], iv_br[1], iv_br[2],
+                            ov_tl[0], ov_tl[1], ov_tl[2], ov_br[0], ov_br[1], ov_br[2]);
+                Check(iv_tl[0] > 200 && iv_tl[1] < 55 && iv_tl[2] < 55,
+                      "视口内左上 = 红（绘制被限制进视口）");
+                Check(iv_br[0] > 200 && iv_br[1] > 200 && iv_br[2] < 55, "视口内右下 = 黄");
+                Check(ov_tl[0] == 0 && ov_tl[1] == 0 && ov_tl[2] == 0 && ov_tl[3] == 255,
+                      "视口外左上 = 清屏黑（视口外无写入）");
+                Check(ov_br[0] == 0 && ov_br[1] == 0 && ov_br[2] == 0 && ov_br[3] == 255,
+                      "视口外右下 = 清屏黑（视口外无写入）");
+            }
         }
     }
 

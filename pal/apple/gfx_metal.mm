@@ -289,6 +289,16 @@ public:
         }
     }
 
+    // 契约见 pal/gfx.h：像素、原点 = target 左上、可大于目标。Metal 的 MTLViewport
+    // 正是左上原点 + 像素，1:1 直映；z 范围用全量 {0,1}（本层无深度语义）。
+    void SetViewport(float x, float y, float width, float height) override {
+        if (enc_ != nil) {
+            [enc_ setViewport:MTLViewport{static_cast<double>(x), static_cast<double>(y),
+                                          static_cast<double>(width),
+                                          static_cast<double>(height), 0.0, 1.0}];
+        }
+    }
+
     void Draw(uint32_t vertex_count) override {
         if (enc_ != nil) {
             [enc_ drawPrimitives:MTLPrimitiveTypeTriangle

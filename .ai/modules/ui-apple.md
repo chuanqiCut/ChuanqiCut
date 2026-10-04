@@ -160,3 +160,31 @@ SwiftUI）—— 两端通用的是按钮入口，摇一摇留给后续任务。
 ⚠️ **未被自动测试覆盖**：SwiftUI 手势（DragGesture 的 onChanged/onEnded）
 无法在 XCTest 里驱动。故命中判定、夹取规则、提交结果都抽成纯函数/ViewModel
 方法去测；手势接线靠 App 冒烟与人工验证。
+
+
+# CAM-011 落地（2026-10-04）：Vision 检测桥 + 帧间平滑（B 期第 1 卡）
+
+- **新增目录** `apps/apple/ios/iOSApp/Camera/Detection/`（xcodegen `sources: [iOSApp]`
+  递归收集，project.yml 零改动）：
+  - `VisionDetector.swift` — 检测桥。`offer(pixelBuffer, pts)` 从**采集队列**进，
+    锁内降频闸门（默认 15Hz [E] 可配）+ busy 信号量（latest-wins），异步转
+    **专用检测队列** `cq.camera.detection` —— 与采集/渲染队列互不阻塞。
+    人脸 76 点级 + 人体 19 关节 + 动物物种（`VNRecognizeAnimalsRequest`）+
+    动物姿态（iOS 17+ 门控，类型引用全收在门控内）。
+  - `FaceObservation.swift` — 中性观测结构（与 Vision 解耦，检测器可替换）：
+    人脸 12 区域 + yaw/pitch/roll、`BodyJoint` 19 关节、`AnimalJoint` 5 头部关节、
+    `DetectionSnapshot`（pts + face + body + animals）。
+- **SharedUI 新增** `Camera/DetectionSmoothing.swift`（纯函数，macOS 可测）：
+  - `smoothKeypoints(previous:current:params:)` — One-Euro 简化款自适应 EMA
+    （静止重平滑抗抖、快速移动 alpha→1 低延迟跟随）；缺失点保持上帧、
+    形状变更重置；**平滑状态由检测器携带，onResult 交付的观测已平滑**。
+  - `visionPointToImageNormalized` / `visionRectToImageNormalized` — 坐标映射。
+- **坐标契约（B 期全链，013/014 消费方照此）**：图像归一化坐标、**origin 左上**、
+  两轴 0...1，与像素尺寸/方向无关；Vision 的左下原点在检测器内翻转，消费方不再翻。
+- **接线状态**：`offer()` 尚未挂进 `CameraViewModel.wireCallbacks`（本卡 write_set
+  不含该文件）——**CAM-013 首个消费方落地时接线**，届时一并把
+  `smoothingStrength` 接美颜面板。
+- 诊断埋点：`lastDetectionDurationMs` / `totalDetections` / `totalDroppedByRate` /
+  `totalFailed`（真机耗时入 baselines 的数据源）。
+- 验证：simulator SDK `-typecheck` 0 错 0 警（比 -parse 强，抓出 4 个 API 形状错，
+  见 P39）+ macOS 宿主执行数学断言 19/19；包级 swift test 待新 Xcode 机器（P39）。

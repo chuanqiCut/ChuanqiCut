@@ -172,3 +172,12 @@ iOS 平台差异五处修复、门禁命令、红线摘录、下一步优先级�
   `export CMAKE_BIN=$(ls ~/Library/Python/*/bin/cmake | head -1)` 再跑 build_core.sh。
 - 代码跨工具链兼容规则：不用 `std::va_list`（用全局 `::va_list` + `<cstdarg>`）；
   不对 volatile 做复合赋值/自增（C++20 已弃用）。
+
+## 相机模块（B 期起，2026-10-04 定）
+- **观测坐标契约**：相机检测观测 = 图像归一化坐标、origin 左上、两轴 0...1，
+  与像素尺寸/方向无关。Vision 的左下原点翻转**只在检测器转换层做一次**
+  （SharedUI `visionPointToImageNormalized`），消费方（美型 warp/贴纸）不得再翻。
+- **检测队列纪律**：采集/渲染/检测三队列互不阻塞；检测 latest-wins（busy 丢帧），
+  平滑状态只在检测队列持有；`onResult` 交付的观测已平滑。
+- iOS 17+ 才有的 Vision 类型（如动物姿态）其**类型引用也必须收进 `@available`
+  分支或用基类**（VNRequest/VNObservation）持有——无门控作用域写类型名直接编译错。

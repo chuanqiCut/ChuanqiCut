@@ -37,6 +37,8 @@
 | **是否命中 ANE** | 假设命中 [H] | — | | |
 | 磨皮 compute shader | ~0.5ms [E] | — | | |
 | 完整美颜管线 | 2–9.5ms [E] | — | | |
+| 相机检测桥单帧耗时（CAM-011：人脸+人体+动物全请求，含转换与平滑） | 未估算 | **未实测**（需真机；数据源 `VisionDetector.lastDetectionDurationMs` 埋点） | | |
+| 相机检测降频默认值（CAM-011 `detectionHz`） | 15Hz [E] | **未实测**（真机以 `totalDroppedByRate`/帧率权衡定频） | | |
 
 ### 内存
 | 项 | 目标 | 实测 | 设备 | 日期 |

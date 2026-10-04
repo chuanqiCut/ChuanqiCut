@@ -30,6 +30,8 @@ targets:
       path: MacApp/Info.plist
       properties:
         CFBundleDisplayName: ChuanqiCut
+        # 自研相册浏览器读权限（UIA-013；macOS 同样走 Photos 框架读照片图库）
+        NSPhotoLibraryUsageDescription: 从照片图库选择视频导入编辑器需要读取照片图库
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.chuanqi.cutmac

@@ -250,3 +250,39 @@ Spec UIA-012 / ADR-0015。分支 `mini.zhu/UIA-012-photo-multiselect`。
 - ⚠️ 门禁:本机 tools version 6.1 拒跑(P39);`swiftc -parse` 新代码零新增
   错误(PropertyPanelZone 仅剩 UIA-011 既有 5.7 简写噪音 1 处);
   swift test / 两平台编译待真实构建机执行。
+
+---
+
+# UIA-013 落地(2026-10-04,提前启动):自研相册浏览器 MediaPicker/
+
+Spec UIA-013 / ADR-0015(决策 3:B 期任务经用户决策提前)。**挂载点替换**:
+PropertyPanelZone 的系统 PhotosPicker 已移除,换 `AlbumPickerScreen` sheet;
+确认交付的 URL 列表走 UIA-012 同款 `runBatch(count:resolveURL:importURL:)`
+→ `sequencedImport` → importMedia,导入链路零分叉。权限:双端 project.yml
+新增 `NSPhotoLibraryUsageDescription`(显式偏离零权限,ADR-0015 批准)。
+
+- **分层**(MediaPicker/ 六文件,取数 seam 挡 PhotoKit):
+  `AlbumPickerModels`(纯逻辑:AssetDescriptor / AlbumSummary / 配置 /
+  SelectionState 有序多选状态机 / DurationFilter / 文案)→
+  `AlbumPermissionModel`(PHAuthorizationStatus 纯映射 + 注入式请求)→
+  `PhotoKitAlbumStore`(AlbumFetching 协议生产实现)→
+  `MediaPickerViewModel`(装配:装载/切换/选取反馈/确认导出)→
+  `MediaGridCell` + `AlbumPickerScreen`(视图)。测试注入夹具取数器
+  (AlbumPickerTests 12 用例),PhotoKit 运行时行为靠冒烟/真机。
+- **PhotoKit 两个关键处理**(承 ZL/HX 经验,见 store 头注释):
+  ① iCloud 判定 = 缩略图请求 `isNetworkAccessAllowed=false` + 
+  PHImageResultIsInCloudKey(云端 cell 显示占位 + 云徽标,不在此联网);
+  ② 选中项 → 文件 URL = PHAssetResourceManager.writeData 落我方 tmp
+  (确认导出时联网拉取,进度上抛给完成按钮)—— 不改"选中项落成文件 URL"
+  的导入落盘路径(Spec §2 方向锚),落盘优化归素材库整理任务。
+- **交互范式**(对齐 ZLPhotoBrowser/HXPhotoPicker):序号徽标(选取顺序
+  可视化,取消后序号前移)、满选置灰 + 抖动提示、时长角标 + 区间过滤
+  (超限灰化 + 原因)、底部已选托盘(跨相簿持久,点缩略图取消)、相簿切换
+  菜单(最近项目/智能相簿/用户相簿,剔除最近删除)、受限横幅、权限拒绝
+  引导(去设置)、iOS 轻触震动。暗色,强调色 PickerTheme.accent 与时间线
+  片段蓝同族。
+- **已知留白**(Spec §7,后续增量):.limited 的"管理可选照片"系统面板
+  只有 UIKit 入口(SwiftUI 接线待做,横幅暂为说明性);选择器内点击预览
+  播放器未做;PHFetchResult 变更增量刷新未做(MVP 整段 reload)。
+- ⚠️ 门禁:同 UIA-012(P39 拒跑);parse 零新增错误类别;构建机验收 +
+  真机项(权限弹窗/.limited/iCloud/滚动帧率)待执行。

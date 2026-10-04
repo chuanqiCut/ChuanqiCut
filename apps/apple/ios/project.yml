@@ -39,6 +39,9 @@ targets:
         NSCameraUsageDescription: 需要使用相机进行拍摄与实时特效预览
         NSMicrophoneUsageDescription: 录制视频需要使用麦克风采集声音
         NSPhotoLibraryAddUsageDescription: 用于将录制完成的视频保存到相册
+        # 自研相册浏览器读权限（UIA-013，Spec UIA-013 §4.2；ADR-0015 决策 3：
+        # 显式偏离系统 picker 的零权限惯例）
+        NSPhotoLibraryUsageDescription: 从相册选择视频导入编辑器需要读取照片图库
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.chuanqi.cut

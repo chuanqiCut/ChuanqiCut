@@ -1,8 +1,9 @@
 // SharedUI — 相册导入胶水验收（UIA-011 单选语义 + UIA-012 批量语义）
 //
-// PhotosPicker 的系统选择器与 loadTransferable 需要真实 PHAsset，XCTest 宿主
-// 没有相册数据，无法驱动（同 UIA-005"SwiftUI 手势不可测"的既有结论）—— 故把
-// items→URL→importMedia 的批量状态机抽成 PhotoLibraryImporter（闭包注入），本文件锁：
+// 导入胶水的选取源需要真实相册数据（UIA-011/012 时代的 loadTransferable、
+// UIA-013 起自研浏览器交付的 tmp URL 列表），XCTest 宿主无法驱动（同 UIA-005
+// "SwiftUI 手势不可测"的既有结论）—— 故把 URLs→importMedia 的批量状态机抽成
+// PhotoLibraryImporter（闭包注入），本文件锁：
 //   * UIA-011 单条语义（以 count:1 的批量特例表达，逐条保留）：loading 翻转、
 //     resolve 抛错 / 返回 nil → 只置错误信息不导入、成功汇入导入闭包、
 //     导入失败带 Status 文本

@@ -4,9 +4,10 @@
 id:          TASK-UIA-013
 layer:       UI
 goal:        自研 SwiftUI 相册浏览器(网格/相簿/多选序号/时长过滤/iCloud/受限模式),替换 UIA-011 系统挂载点
-status:      规划中 —— B 期启动时先跑 cq-task-planning 拆 3~4 子任务
-             (权限与数据源 / 网格与相簿 UI / 选择与导入接线 / 受限模式与 iCloud),
-             届时以子任务卡为准,本卡只锁伞范围与总写集
+status:      B 期任务,2026-10-04 用户决策提前启动（"对齐调研的两个大项目,UI 要
+             足够优秀"）—— 单模块伞卡直接落地,子任务内联实现（权限与数据源 /
+             网格与相簿 UI / 选择与导入接线 三件套一次交付;.limited 系统管理
+             面板与选择器内预览播放器为后续增量）
 input:       [docs/specs/UIA-013-自研相册浏览器.md, docs/decisions/ADR-0015-相册选择器系统过渡与自研浏览器.md,
              .ai/modules/ui-apple.md, ZLPhotoBrowser/HXPhotoPicker 源码(仅设计参考,不引代码)]
 output:      [SharedUI MediaPicker 新组件 + 权限 info 变更 + AlbumPickerTests + 文档回写]
@@ -37,6 +38,26 @@ risk:        PhotoKit 边缘 case 自担(缓解:边缘 case 清单提炼自 ZL/H
              显式批准);project.yml 高冲突(缓解:开工时声明写集串行)
 parallel:    true(新目录为主,唯一高冲突点 project.yml 开工时协调)
 ```
+
+## 状态（2026-10-04，提前启动轮）
+
+- 代码已落盘（同分支 `mini.zhu/UIA-012-photo-multiselect`,与 UIA-012 串联）：
+  `MediaPicker/` 六文件 —— AlbumPickerModels(纯逻辑：SelectionState /
+  DurationFilter / 配置 / 文案)、AlbumPermissionModel(权限三态 + .limited)、
+  PhotoKitAlbumStore(取数 seam + PHCachingImageManager 缩略图 +
+  PHAssetResource 落盘含 iCloud 拉取)、MediaPickerViewModel(装配与确认导出)、
+  MediaGridCell / AlbumPickerScreen(暗色网格 UI,交互范式对齐 ZL/HX)。
+  挂载点：PropertyPanelZone 的 PhotosPicker 已替换为 AlbumPickerScreen sheet,
+  确认交付走 UIA-012 同款 runBatch → sequencedImport → importMedia。
+- project.yml 双端已加 `NSPhotoLibraryUsageDescription`(ADR-0015 决策 3 落地)。
+- 测试：`AlbumPickerTests.swift` 12 用例(纯逻辑 + 夹具 VM:选取顺序/满选拒绝/
+  时长过滤边界/权限映射/装载与切换/确认导出顺序与部分失败/全失败不交付)。
+- ⚠️ 门禁未执行(本机 Swift 5.5,P39):`swiftc -parse` 全部新文件通过,
+  唯一报错类别 = 既有"5.5 不识别 5.7 简写"噪音(与 UIA-011 代码同款写法),
+  零新增错误类别;swift test / 两平台编译 / xcodegen+pod 须构建机执行。
+- 真机项(权限弹窗 / .limited / iCloud 拉取 / 网格滚动帧率)沿用延期决策;
+  已知留白(Spec §7):.limited 的"管理可选照片"系统面板 SwiftUI 接线、
+  选择器内点击预览播放器,均为后续增量。
 
 ## 背景
 

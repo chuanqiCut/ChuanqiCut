@@ -38,7 +38,7 @@ parallel:    true(写集与其他在途任务不相交)
   macOS 15.4 基线内，无需动 project.yml / Podfile。
 - ⚠️ **verification 段的门禁本轮未执行**：当前机器无 Swift 6.1 工具链
   （Xcode 13.1 / Swift 5.5 / macOS 12.6，SDK 里没有 PhotosPicker；
-  见 pitfalls P39）。已做：`swiftc -parse` 两文件语法级通过（仅 Swift 5.5
+  见 pitfalls P45）。已做：`swiftc -parse` 两文件语法级通过（仅 Swift 5.5
   不识别 5.7 简写的两条已知噪音，与既有代码同款写法）。
   **swift test / macOS / iOS 编译必须在真实构建机执行后才算验收通过。**
 

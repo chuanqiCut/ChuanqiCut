@@ -80,7 +80,7 @@ public final class Previewer {
         return Status(rawValue: cq_preview_resize(h, UInt32(width), UInt32(height)))
     }
 
-    // MARK: 宽高比适配（UIA-011）
+    // MARK: 宽高比适配（UIA-012）
 
     /// 源帧与画布比例不同时的映射模式（语义以 cq_sdk.h 的 cq_preview_set_fit_mode
     /// 注释为契约）。内部 atomic，可在泵运行期间调用。

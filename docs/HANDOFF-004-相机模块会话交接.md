@@ -25,7 +25,7 @@
 | CAM-002~005（iOS 原生实现） | **代码全部写完**（11 个 Swift 文件，见 §4），验证见下 |
 | 追加（同日晚）：拍照 + 基础美颜 | **完成**：照片/视频模式 + 双态快门 + AVCapturePhotoOutput；CameraBeauty 磨皮/美白纯函数三路共用（预览/拍照/录制 WYSIWYG）+ 单测；美型仍归 B 期（UI 如实标注） |
 | Swift 语法解析（swiftc -parse，全部新文件） | **通过** |
-| SharedUI swift test（含新增 CameraFilterTests） | **本机阻塞**：测试宿主需 xcframework，xcframework 的 ios-device 切片需 Xcode 16+（pitfalls P36b：iOS 17.2 SDK 无 VT 编码器常量） |
+| SharedUI swift test（含新增 CameraFilterTests） | **本机阻塞**：测试宿主需 xcframework，xcframework 的 ios-device 切片需 Xcode 16+（pitfalls P42b：iOS 17.2 SDK 无 VT 编码器常量） |
 | iOS App 构建（xcodegen/pod/xcodebuild） | **本机阻塞**：xcodegen 未装、Ruby 2.6 跑不了 CocoaPods 1.17、SWIFT_VERSION 6.1 需 Xcode 16+（§3-3） |
 | core 门禁（回退后） | **39/39** |
 

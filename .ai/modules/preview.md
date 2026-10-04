@@ -63,13 +63,13 @@ golden 素材 `gf_1080p_h264.mp4` 是**静态**彩条，不同时刻的像素完
 - **多轨合成** —— 只渲染第一条命中的视频轨；叠加 / 转场合成等 RenderGraph
   （RENDER-001）落地后再补。
 - **变速 / retime** —— MODEL-001 无该字段，时间线时长与素材时长 1:1。
-- ~~**宽高比适配**~~ —— **已支持（UIA-011，2026-10-04）**：`FitMode`
+- ~~**宽高比适配**~~ —— **已支持（UIA-012，2026-10-04）**：`FitMode`
   stretch / contain / cover，见下文专节；片段级缩放/位移仍归 MODEL-003。
 
-## 6.5 宽高比适配 FitMode（UIA-011 / ADR-0015，2026-10-04）
+## 6.5 宽高比适配 FitMode（UIA-012 / ADR-0018，2026-10-04）
 
 源帧与画布比例不同时的映射，**实现接缝 = 编码器视口**（`IGfxEncoder::SetViewport`
-→ PAL `ICommandEncoder::SetViewport`，ADR-0015）：
+→ PAL `ICommandEncoder::SetViewport`，ADR-0018）：
 
 | FitMode | 视口 | 效果 |
 |---|---|---|
@@ -226,7 +226,7 @@ SharedUI：ViewModel 的 `togglePlayback/stopPlayback` + `Timer` 驱动（30Hz�
 
 # UIA-010 子步骤 5（2026-10-04）：取帧搬到泵线程，主线程只 blit
 
-> ADR-0013（预览取帧的线程归属与共享命令队列）、`docs/tasks/TASK-UIA-010.md`、
+> ADR-0016（预览取帧的线程归属与共享命令队列）、`docs/tasks/TASK-UIA-010.md`、
 > `.ai/memory/baselines.md`（本节的实测数字都从那里来）
 
 ## 1. 装配形状（改后）

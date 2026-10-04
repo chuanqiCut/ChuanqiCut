@@ -190,7 +190,7 @@ Spec：`docs/specs/UIA-011-相册素材导入.md`。**选型结论**：用系统
   素材库整理（拷入沙箱）任务两条路径一起收口。
 
 ⚠️ **本轮门禁未执行**：当前机器无 Swift 6.1 工具链（Xcode 13.1 / Swift 5.5 /
-macOS 12.6，见 pitfalls P39），只做了 `swiftc -parse` 语法级检查；swift test /
+macOS 12.6，见 pitfalls P45），只做了 `swiftc -parse` 语法级检查；swift test /
 两平台 xcodebuild 待真实构建机执行后才算验收通过。
 
 > **补充决策(2026-10-04,传哲确认)**:低配设备(本机 Mac mini 2014,

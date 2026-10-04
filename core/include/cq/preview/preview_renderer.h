@@ -15,7 +15,7 @@
 //   * 多轨合成 —— 只渲染**第一条命中的视频轨**，叠加/转场合成等 RenderGraph
 //     （RENDER-001）落地后再补。
 //   * 变速 / retime —— MODEL-001 无该字段，时间线时长与素材时长 1:1 映射。
-//   （宽高比适配已支持 —— 见 FitMode / ADR-0015；片段级缩放/位移仍归 MODEL-003。）
+//   （宽高比适配已支持 —— 见 FitMode / ADR-0018；片段级缩放/位移仍归 MODEL-003。）
 
 #ifndef CQ_PREVIEW_PREVIEW_RENDERER_H_
 #define CQ_PREVIEW_PREVIEW_RENDERER_H_
@@ -41,7 +41,7 @@
 
 namespace cq {
 
-// 源帧 → 画布的宽高比适配模式（UIA-011 / ADR-0015）。
+// 源帧 → 画布的宽高比适配模式（UIA-012 / ADR-0018）。
 // 实现接缝 = 编码器视口：三种模式都是「把全屏 blit 变换到一个矩形」，
 // bar 区即清屏色黑（清屏不受视口影响，视口外无写入）。
 enum class FitMode : int32_t {
@@ -111,7 +111,7 @@ public:
     // 线程约定同上（挂泵后只由泵线程调用，走 `PreviewPump::RequestResize`）。
     Status Resize(uint32_t width, uint32_t height) override;
 
-    // 宽高比适配模式（UIA-011）。setter 与渲染读（挂泵后在泵线程）分属不同线程，
+    // 宽高比适配模式（UIA-012）。setter 与渲染读（挂泵后在泵线程）分属不同线程，
     // 故内部为 atomic —— 主线程设置、泵线程读取，无竞争。
     void SetFitMode(FitMode mode) {
         fit_mode_.store(static_cast<int>(mode), std::memory_order_relaxed);

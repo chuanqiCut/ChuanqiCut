@@ -103,7 +103,7 @@ public final class EditorViewModel: ObservableObject {
         self.knownVersion = session.currentSnapshot.version
         // UIA-009 子步骤 2 收口后预览挂 session 快照（单一真源），并强持有 session。
         self.preview = Previewer(session: session, width: 1280, height: 720)
-        // UIA-011：非画布比例的素材按 contain 适配（letterbox），不再拉伸变形。
+        // UIA-012：非画布比例的素材按 contain 适配（letterbox），不再拉伸变形。
         // 内核默认仍是 stretch（既有行为/断言兼容），产品装配在此显式选择。
         _ = self.preview?.setFitMode(.contain)
         // UIA-010 子步骤 5：取帧泵（把 seek+解码+导入+离屏绘制搬离主线程）。

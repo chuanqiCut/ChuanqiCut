@@ -613,7 +613,7 @@ fit 为每帧一次整数几何计算（4 次乘除）+ 一次视口状态设置
 > ⚠️ ADR-0014：相机转 iOS 原生（App 层），CAM-001 的 PAL 契约/ABI/枚举已回退，
 > 本条目保留环境事实与"未实测清单"（这些验收项转给 iOS 原生实现的任务）。
 
-**环境注意（pitfalls P36）**：本轮构建机 = Intel Mac / **macOS 13.7 / Xcode 15.2（AppleClang 15）**，
+**环境注意（pitfalls P42）**：本轮构建机 = Intel Mac / **macOS 13.7 / Xcode 15.2（AppleClang 15）**，
 与此前 baselines 里的 "macOS 15.4 / AppleClang 17" **不是同一台机器**。
 数字引用先看环境。相机真机数字全部**未实测**（iPhone 17 Pro 待 CAM-002/003 落地后由传哲测）。
 

@@ -1,6 +1,6 @@
 // ChuanqiCut — MEDIA-021 顺序取帧快路径单测（Mock 驱动，逐帧 pts 断言）
 //
-// 背景（TASK-MEDIA-021 / ADR-0014 / pitfalls P38）：顺序播放时每帧
+// 背景（TASK-MEDIA-021 / ADR-0017 / pitfalls P38）：顺序播放时每帧
 // 「seek + Flush + 重解 GOP」是预览帧率真瓶颈。本测试验证快路径的正确性与
 // 生效条件，重点不是"播起来了"，而是**逐帧 pts 断言** —— 静态彩条素材看不
 // 出差一帧，pts 是唯一可判定的证据。

@@ -180,7 +180,7 @@ public:
         }
         Status s{StatusCode::kUnknown};
         // MEDIA-021 快路径：顺序前进的 kExact 请求不重新 seek，从上次交付位置
-        // 继续前向解码（每帧 seek 重解 GOP 是预览帧率的真瓶颈，见 ADR-0014）。
+        // 继续前向解码（每帧 seek 重解 GOP 是预览帧率的真瓶颈，见 ADR-0017）。
         bool handled = false;
         if (req.policy == SeekPolicy::kExact) {
             handled = TrySequentialAcquire(req.at, token, s);

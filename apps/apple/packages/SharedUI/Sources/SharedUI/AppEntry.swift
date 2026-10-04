@@ -103,6 +103,9 @@ public final class EditorViewModel: ObservableObject {
         self.knownVersion = session.currentSnapshot.version
         // UIA-009 子步骤 2 收口后预览挂 session 快照（单一真源），并强持有 session。
         self.preview = Previewer(session: session, width: 1280, height: 720)
+        // UIA-011：非画布比例的素材按 contain 适配（letterbox），不再拉伸变形。
+        // 内核默认仍是 stretch（既有行为/断言兼容），产品装配在此显式选择。
+        _ = self.preview?.setFitMode(.contain)
         // UIA-010 子步骤 5：取帧泵（把 seek+解码+导入+离屏绘制搬离主线程）。
         // 预览后端缺失时 preview 为 nil，泵也随之不可建 —— 预览区据此走降级展示。
         self.previewPump = self.preview.flatMap { PreviewPump(preview: $0) }
@@ -378,22 +381,36 @@ public final class EditorViewModel: ObservableObject {
         // 2) 注册素材（素材 id 本地分配，单调递增）
         let assetId = nextAssetId
         nextAssetId += 1
-        guard session.registerAsset(id: assetId, path: path).isOK else {
+        let regSt = session.registerAsset(id: assetId, path: path)
+        guard regSt.isOK else {
             nextAssetId -= 1
+            print("[EditorViewModel] importMedia: registerAsset 失败 raw=\(regSt.rawValue)")
             return .invalidArgument
         }
 
-        // 3) 目标轨道：第一条视频轨；没有则建一条（异步 → 等 id）
-        let versionAtStart = session.currentSnapshot.version
+        // 3) 目标轨道：第一条视频轨；没有则建一条（异步 → 等落地）。
+        // ⚠️ 判据必须是「视频轨出现」本身，**不能**是「版本号推进了」（P33）：
+        //    registerAsset 也发布快照推版本，版本差值无法区分是哪条命令落地 ——
+        //    在途的 registerAsset 先应用就会让等待提前通过，随后查询看不到视频轨，
+        //    importMedia 假失败 7000（负载越重窗口越大，故只在全量跑时偶发）。
+        //    查询是纳秒级快照读，10ms 轮询安全且便宜。
         var videoTrack = timeline.tracks.first(where: { $0.isVideo })
         if videoTrack == nil {
-            guard session.addTrack(kind: 0).isOK else { return .invalidArgument }
+            let addTrackSt = session.addTrack(kind: 0)
+            guard addTrackSt.isOK else {
+                print("[EditorViewModel] importMedia: addTrack 失败 raw=\(addTrackSt.rawValue)")
+                return .invalidArgument
+            }
             let deadline = Date().addingTimeInterval(5)
-            while session.currentSnapshot.version <= versionAtStart && Date() < deadline {
+            while Date() < deadline {
+                videoTrack = session.queryTracks().first(where: { $0.isVideo })
+                if videoTrack != nil { break }
                 RunLoop.main.run(until: Date().addingTimeInterval(0.01))
             }
-            videoTrack = session.queryTracks().first(where: { $0.isVideo })
-            guard videoTrack != nil else { return .invalidArgument }
+            guard videoTrack != nil else {
+                print("[EditorViewModel] importMedia: 5s 内未等到视频轨（addTrack 未落地或被拒）")
+                return .invalidArgument
+            }
         }
         let trackId = videoTrack!.trackId
 
@@ -408,10 +425,13 @@ public final class EditorViewModel: ObservableObject {
             .max() ?? 0
         let appendTicks = Int64((end * Double(RationalTime.projectTimescale)).rounded())
         let start = RationalTime(value: appendTicks, timescale: RationalTime.projectTimescale)
-        guard session.addClip(trackId: trackId, assetId: assetId,
-                              start: start, duration: duration,
-                              sourceIn: RationalTime(value: 0, timescale: duration.timescale)
-                                  ).isOK else {
+        let addClipSt = session.addClip(trackId: trackId, assetId: assetId,
+                                        start: start, duration: duration,
+                                        sourceIn: RationalTime(value: 0, timescale: duration.timescale))
+        guard addClipSt.isOK else {
+            print("[EditorViewModel] importMedia: addClip 失败 raw=\(addClipSt.rawValue) "
+                + "trackId=\(trackId) start=\(start.value)/\(start.timescale) "
+                + "dur=\(duration.value)/\(duration.timescale)")
             return .invalidArgument
         }
         return .ok

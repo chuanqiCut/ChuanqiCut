@@ -517,11 +517,24 @@
   存在的文件才重建 asset 重试一次；④ probe 补 `value <= 0` → kDecodeError。
 - 教训：**「completion 触发」≠「加载成功」**（终态三义性）；**任何
   DISPATCH_TIME_FOREVER 等 AVFoundation 回调都是挂死隐患**（回调可能不触发）。
-- **验证（2026-10-04）**：SharedUI 全量 ×3 连续 **20/20 全绿**（4.2~6.1s，
-  无失败无挂死），此前 50% 概率失败未再复现；Debug 门禁 42/42。
+- **⚠️ 第二层根因（2026-10-04 新会话实证，同签名 7000 的另一来源）**：
+  `importMedia` 等 addTrack 落地的判据是「session 版本号 > versionAtStart」，
+  但 **registerAsset 也发布快照推版本**（editor_model_state.cpp RegisterAsset
+  会 Publish）—— 版本差值无法区分是哪条命令落地。在途 registerAsset 先应用
+  → 等待提前通过 → 此刻查询还没有视频轨 → `videoTrack == nil` → importMedia
+  假失败 7000。诊断实锤：`track wait: version 0 -> 2, elapsed=10μs, tracks=1`
+  （循环 10μs 即退出；前后两次 queryTracks 看到不同版本）。负载越重窗口越大
+  —— **前一轮「内核修复后 ×3 全绿」不可复现**（新会话复跑 6/3/0 失败）。
+  教训：flaky 的「N 次全绿」只是概率证据，必须配合失败签名闭环。
+- **修复 2**：等待判据改为**轮询目标效果本身**（`queryTracks` 出现视频轨，
+  10ms 间隔 / 5s 上限；查询是纳秒级快照读，轮询安全、语义直接），
+  并在三个失败分支补正式日志（registerAsset/addTrack/addClip 的 raw 状态码）。
+- **验证（2026-10-04，修复 2 后）**：SharedUI 全量 ×3 连续 **20/20 全绿**
+  （4.2~4.9s；此前失败用例要烧满 5s 超时，套件时长 9.9~14.8s —— 时长本身
+  回归正常也是修复有效的旁证）；Debug 门禁 42/42。
   真机（iPhone 17 Pro）导入路径待传哲验证。
-- 日期 / 来源 / 验证状态：2026-10-03 UIA-010 发现 / 2026-10-04 MEDIA-021 会话定位修复 /
-  **verified（根因 + 修复 + 全量 ×3 flaky 消除）**
+- 日期 / 来源 / 验证状态：2026-10-03 UIA-010 发现 / 2026-10-04 定位（缺陷 1 + 缺陷 2）/
+  **verified（双层根因 + 修复 + 全量 ×3 + 失败签名闭环）**
 
 ### P34 · CocoaPods 工程看不到新增的 Swift 源文件 → 需重新 pod install
 - 现象：给 `bindings/swift/Sources/ChuanqiCut/` 新增 `Player.swift` 后，

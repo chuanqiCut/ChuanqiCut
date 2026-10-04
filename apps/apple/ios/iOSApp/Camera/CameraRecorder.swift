@@ -45,6 +45,7 @@ final class CameraRecorder {
     private var pixelBufferPool: CVPixelBufferPool?
 
     private let preset: CameraFilterPreset
+    private let beauty: CameraBeautyParams
     private let ciContext: CIContext
     private let withAudio: Bool
     private let lock = NSLock()
@@ -53,12 +54,14 @@ final class CameraRecorder {
 
     /// - Parameters:
     ///   - ciContext: 与预览共享的上下文（线程安全）。
-    ///   - preset: 录制开始时锁定的滤镜（录制中不换滤镜，TASK-CAM-004 的简化决策）。
+    ///   - preset / beauty: 录制开始时锁定的滤镜与美颜（WYSIWYG；录制中面板已锁）。
     ///   - withAudio: 麦克风权限被拒时传 false（录制降级为无声视频，不伪造有声音）。
-    init(outputURL: URL, ciContext: CIContext, preset: CameraFilterPreset, withAudio: Bool) {
+    init(outputURL: URL, ciContext: CIContext,
+         preset: CameraFilterPreset, beauty: CameraBeautyParams, withAudio: Bool) {
         self.outputURL = outputURL
         self.ciContext = ciContext
         self.preset = preset
+        self.beauty = beauty
         self.withAudio = withAudio
     }
 
@@ -140,8 +143,9 @@ final class CameraRecorder {
         }
         lock.unlock()
 
-        // 滤镜（开始时锁定）→ 渲染进池缓冲。渲染失败丢帧不崩溃（实时优先）。
+        // 美颜 → 滤镜（与预览 process 同序）→ 渲染进池缓冲。失败丢帧不崩溃（实时优先）。
         var image = CIImage(cvPixelBuffer: sourceBuffer)
+        image = beauty.apply(to: image)
         if let filtered = preset.apply(to: image) {
             image = filtered
         }

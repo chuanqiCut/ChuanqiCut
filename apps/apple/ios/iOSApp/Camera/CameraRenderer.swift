@@ -53,6 +53,8 @@ final class CameraPreviewRenderer: NSObject, MTKViewDelegate {
     private let ciContext: CIContext
     private let presetLock = NSLock()
     private var preset: CameraFilterPreset = .none
+    private let beautyLock = NSLock()
+    private var beauty: CameraBeautyParams = .off
     /// 渲染帧计数（诊断/埋点：真机帧率验证归 SPEC-CAM-001 A5）。
     private(set) var renderedFrameCount: UInt64 = 0
 
@@ -71,10 +73,32 @@ final class CameraPreviewRenderer: NSObject, MTKViewDelegate {
         presetLock.unlock()
     }
 
+    /// 主线程调用（美颜面板滑杆）。
+    func setBeauty(_ newBeauty: CameraBeautyParams) {
+        beautyLock.lock()
+        beauty = newBeauty
+        beautyLock.unlock()
+    }
+
     private func currentFilter() -> CameraFilterPreset {
         presetLock.lock()
         defer { presetLock.unlock() }
         return preset
+    }
+
+    private func currentBeauty() -> CameraBeautyParams {
+        beautyLock.lock()
+        defer { beautyLock.unlock() }
+        return beauty
+    }
+
+    /// 统一处理链（预览/拍照共用语义）：美颜 → 滤镜。录制侧在 Recorder 内保持同序。
+    func process(_ image: CIImage) -> CIImage {
+        var result = currentBeauty().apply(to: image)
+        if let filtered = currentFilter().apply(to: result) {
+            result = filtered
+        }
+        return result
     }
 
     // MARK: MTKViewDelegate
@@ -91,10 +115,7 @@ final class CameraPreviewRenderer: NSObject, MTKViewDelegate {
         }
 
         var image = CIImage(cvPixelBuffer: buffer)
-        let filtered = currentFilter().apply(to: image)
-        if let filtered {
-            image = filtered
-        }
+        image = process(image)
 
         do {
             let destination = CIRenderDestination(mtlTexture: drawable.texture,

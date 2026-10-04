@@ -29,7 +29,9 @@
 | UI | UIA-009 素材导入（三个子步骤全完成） | ✅ |
 | 播放 | UIA-010 子步骤 1~5 全部完成（时钟 + 播放入口 + 取帧泵） | ✅（2026-10-04） |
 | 取帧 | **MEDIA-021 顺序取帧快路径 ✅**（P38 修复 + P39/P40/P41 正确性修复；acquire 93.3ms → 4.45ms Release，14.8x；ADR-0017） | ✅（2026-10-04） |
-| 相机链路 | BACKLOG 中**不存在**；由传哲本人在另一台设备并行开发 | ➖ 不在本机写集 |
+| 相机链路 | CAM-001~005（iOS 原生栈，ADR-0014）：调研→任务卡→代码全部落地，见 `HANDOFF-004-相机模块会话交接` | ✅（另一台开发机，2026-10-04 推送） |
+| 相册导入 | UIA-011/012/013（PhotosPicker→多选→自研浏览器，ADR-0015），由另一台机开发；**Swift 集成修复见 pitfalls P45 后记** | ✅（合并时本机补全类型级验证） |
+| 预览宽高比 | UIA-014 letterbox/fit（ADR-0018，视口原语接缝；编号两次让位 011→012→014） | ✅（2026-10-04，本机） |
 
 **并行开发的写集边界（已与传哲确认）**：
 相机侧只动 `pal/*`、`docs/tasks/TASK-CAP-*`、`docs/specs/`；
@@ -129,7 +131,7 @@ ctest --test-dir build -R core_preview_pump    # 41 断言
 ctest --test-dir build -R c_abi_preview        # 71 断言
 ctest --test-dir build -R preview_renderer     # 38 断言
 cd bindings/swift && swift test --disable-sandbox                      # 23/23
-cd apps/apple/packages/SharedUI && swift test --disable-sandbox        # 20/20
+cd apps/apple/packages/SharedUI && swift test --disable-sandbox        # 54/54（含相册/相机，另一台机的新增用例）
 # macOS App：先 bundle exec pod install（P34），再 xcodebuild → BUILD SUCCEEDED
 ./tools/build/build_core_apple.sh --config=Release && cd bindings/swift && ./prepare.sh
 ```
@@ -163,9 +165,13 @@ cd apps/apple/packages/SharedUI && swift test --disable-sandbox        # 20/20
    `FitMode` stretch/contain/cover，实现接缝 = 编码器视口原语（GFX/PAL additive，
    不动 IBlitPass 与 MSL）。门禁：Debug 42/42、Release 42/42、
    preview_renderer 51、c_abi_preview 78、gfx_device 30（含视口像素断言）、
-   swift 23/23、SharedUI ×3 20/20。产品装配 = AppEntry 显式 contain。
-   剩余：UIA-006 属性面板（需先定 MODEL-003）、多轨合成（等 RENDER-001）、
-   素材库整理（拷入沙箱，D3）。
+   swift 23/23。产品装配 = AppEntry 显式 contain。
+   ⚠️ 编号两次让位 011→012→014（另一台机先推了相册导入/多选）。
+5. **素材库整理（拷入沙箱，D3 后续）** —— 前置阅读已完成（D3 决策在
+   TASK-UIA-009 §D3；iOS security-scoped URL 重启后本就不可再读，拷入沙箱是
+   持久化硬前提）。无前置依赖，**下一个编码任务首选**；UIA-006 属性面板需先
+   定 MODEL-003（走 cq-spec-authoring，需传哲拍板参数模型范围）；
+   多轨合成等 RENDER-001。**取号前先 fetch**（编号纪律见 MEMORY.md）。
 5. （低优）取帧流水线优化：`WaitForAsynchronousFrames` 等全部在途帧，
    可改 per-frame 同步进一步提高吞吐（ADR-0017 §后果 4）。
 

@@ -8,6 +8,7 @@
 //     本文件中的 LogImpl / LogFrameImpl 在 Release 仍被编译（外部链接、可被测试
 //     或平台代码直接调用），但宏层不会把调用点编进去。
 
+#include <cstdarg>
 #include <cstdio>
 #include <cstring>
 #include <mutex>
@@ -112,7 +113,8 @@ private:
 
 // 格式化辅助：把变参格式化进定长缓冲，返回截断后的 C 串。
 // 返回指向 buf 的指针（调用方不应长期持有）。
-const char* FormatVa(char* buf, std::size_t buf_size, const char* fmt, std::va_list ap) {
+// 用全局 ::va_list（<cstdarg> 保证）；旧版 AppleClang 的 libc++ 不提供 std::va_list。
+const char* FormatVa(char* buf, std::size_t buf_size, const char* fmt, va_list ap) {
     int n = std::vsnprintf(buf, buf_size, fmt, ap);
     (void)n;  // 超长部分被 vsnprintf 截断，不视为错误。
     return buf;
@@ -138,7 +140,7 @@ void LogImpl(LogLevel level, const char* file, int line, const char* fmt, ...) {
     if (static_cast<int32_t>(level) < static_cast<int32_t>(logger.MinLevel())) {
         return;
     }
-    std::va_list ap;
+    va_list ap;
     va_start(ap, fmt);
     char buf[1024];
     const char* msg = FormatVa(buf, sizeof(buf), fmt, ap);
@@ -153,7 +155,7 @@ void LogFrameImpl(PipelineStage stage, const RationalTime& pts, const char* file
     if (static_cast<int32_t>(LogLevel::kTrace) < static_cast<int32_t>(logger.MinLevel())) {
         return;
     }
-    std::va_list ap;
+    va_list ap;
     va_start(ap, fmt);
     char msg[1024];
     const char* user = FormatVa(msg, sizeof(msg), fmt, ap);

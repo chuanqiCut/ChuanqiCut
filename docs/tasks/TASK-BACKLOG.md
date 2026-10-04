@@ -191,7 +191,8 @@ parallel:    false          # 是否与同批次其他任务并行
 | UIA-007 | UI | 导出界面与进度/取消 | EXPORT-001 | SharedUI | 可取消，进度准确 |
 | UIA-008 | UI | Undo/Redo 入口（含 Mac 快捷键） | MODEL-002 | SharedUI | iOS 摇一摇 + Mac Cmd+Z |
 | UIA-009 | UI | 素材导入流程（含 Session 级素材表收口：文件选择 → 入表 → Command 建片段 → 时间线/预览可见） | UIA-004, MODEL-002 ✅ | `SharedUI` + `cq_sdk.h` + `core/session` | 导入的片段重启前可见；素材表 Session 级共享 |
-| UIA-011 | 跨平台 + UI | 预览宽高比适配（FitMode stretch/contain/cover，视口原语接缝） | UIA-010 | `preview_renderer.*` + GFX/PAL 编码器 + `cq_sdk.h` + `Previewer.swift` + SharedUI AppEntry | 非同比例素材按模式适配；默认 stretch 行为不变；像素断言见 TASK-UIA-011 |
+| UIA-011 | UI | 相册素材导入（PhotosPicker → 既有 importMedia 链路，不引第三方；Spec UIA-011） | UIA-009 ✅ | `SharedUI`（PropertyPanelZone + PhotoImportTests） | 相册选视频追加进时间线；与文件导入汇入同一入口；内核/绑定零改动 |
+| UIA-012 | 跨平台 + UI | 预览宽高比适配（FitMode stretch/contain/cover，视口原语接缝）✅ 2026-10-04 | UIA-010 | `preview_renderer.*` + GFX/PAL 编码器 + `cq_sdk.h` + `Previewer.swift` + SharedUI AppEntry | 非同比例素材按模式适配；默认 stretch 行为不变；像素断言见 TASK-UIA-012（原取号 UIA-011 与相册导入撞号，合并时改为 012） |
 
 ### 3.6 导出
 
@@ -348,3 +349,29 @@ INFRA-001/002 → CORE-001~005 → CORE-006(PAL冻结) → PALA-001/010
 - 进展追踪用项目管理系统（Issue/PR），**不要用聊天记录**
 - 任务完成判定由门禁决定，不由执行者自述（见 ARCH-001 §10）
 - 每次任务结束必须回写：架构事实变更 → ADR/模块文档；失败教训 → `.ai/memory/pitfalls.md`
+
+---
+
+## 9. 相机与首页（CAM，2026-10-04 新增；**同日架构转向 iOS 原生，ADR-0014**）
+
+> 用户需求：首页两入口 + 相机采集 + 实时特效（美颜/美型/美体/宠物/贴纸/滤镜/头部道具）+ 前后同开。
+> **ADR-0014**：相机域为 iOS 原生功能域（AVFoundation + Vision/ARKit + Core Image/Metal），
+> 不经 PAL/C ABI；编辑器内核维持 C++ 跨端。CAM-001 曾冻结的 PAL 契约当日回退。
+> 分 A/B/C 三期（SPEC-CAM-001 v1.1 §3）。
+
+| ID | 层 | 任务 | 依赖 | 写集 | 验收 |
+|---|---|---|---|---|---|
+| CAM-001 | SDK | ~~PAL 契约冻结~~ **已回退留档** | — | — | 39/39 门禁（回退后） |
+| CAM-002 | UI | 相机采集管理器（AVCaptureSession 前后摄/权限） | — | `iOSApp/Camera/CameraManager.swift` | 授权状态机单测；iOS 构建 |
+| CAM-003 | UI | 预览渲染链（MTKView + Core Image）+ 滤镜预设 | CAM-002 | `CameraVideoView/Renderer.swift`、SharedUI `CameraFilter.swift` | 滤镜单测；真机 ≥30fps |
+| CAM-004 | UI | 首页两入口 + 相机页 + EditorViewModel 惰性化 | CAM-002/003 | `HomeView.swift`、`CameraView.swift`、SharedUI `EditorScreen.swift` | SharedUI 全量；iOS 构建+权限 |
+| CAM-005 | UI | 录制（AVAssetWriter H.264+AAC）+ 存相册/进编辑器 | CAM-002~004 | `CameraRecorder.swift`、EditorScreen initialMedia | 产物校验 ≤2 帧偏差 |
+| CAM-011 | B 期 | Vision 检测桥(人脸关键点/人体/动物)+ 帧间平滑 | CAM-002~004 | `Camera/Detection/`、SharedUI 平滑纯函数 | 观测/平滑单测;检测耗时真机入库 |
+| CAM-012 | B 期 | 磨皮升级 Metal kernel(替换 A 期高斯近似) | CAM-003 | `Camera/Effects/`、CameraBeauty 封装层 | 单调/off 恒等口径不变;≤8ms [E] |
+| CAM-013 | B 期 | 美型 MeshWarp(瘦脸/大眼/下巴,关键点驱动) | CAM-011 | `Camera/Effects/`、CameraReshapeParams | 无脸直通;真机无接缝/抖动 |
+| CAM-014 | B 期 | 贴纸 + 头部道具锚定(处理链最后一段) | CAM-011 | `Camera/Effects/`、StickerAnchor、资产 | 锚定纯函数锁定;资产许可干净 |
+| CAM-021~024 | C 期 | 双摄 MultiCam / MetalFX / 景深人像 / 宠物 / 美体 | CAM-011~ | 待 C 期任务卡 | 待细化 |
+
+**关键路径**：`CAM-002 → CAM-003 → CAM-004 → CAM-005`。
+**注意**：相机特效与编辑器特效是两套实现（ADR-0014 代价）——时间线滤镜仍等
+RENDER-001/红线 #6 路线，勿把相机滤镜直接当 SDK 能力引用。

@@ -12,6 +12,7 @@
 import CoreImage
 import Foundation
 import Metal
+import MetalKit
 import SharedUI
 
 // MARK: - 帧槽（latest-wins）
@@ -19,12 +20,12 @@ import SharedUI
 final class CameraFrameSlot {
 
     private let lock = NSLock()
-    private var latest: CVImageBuffer?
+    private var latestBuffer: CVImageBuffer?
 
     /// 采集队列调用。保留最新帧（不取走 —— 渲染线程可能以低于采集的频率消费）。
     func push(_ buffer: CVImageBuffer) {
         lock.lock()
-        latest = buffer
+        latestBuffer = buffer
         lock.unlock()
     }
 
@@ -32,13 +33,13 @@ final class CameraFrameSlot {
     func latest() -> CVImageBuffer? {
         lock.lock()
         defer { lock.unlock() }
-        return latest
+        return latestBuffer
     }
 
     /// 停止采集时清引用，避免持有最后一帧的缓冲。
     func clear() {
         lock.lock()
-        latest = nil
+        latestBuffer = nil
         lock.unlock()
     }
 }
@@ -117,14 +118,10 @@ final class CameraPreviewRenderer: NSObject, MTKViewDelegate {
         var image = CIImage(cvPixelBuffer: buffer)
         image = process(image)
 
-        do {
-            let destination = CIRenderDestination(mtlTexture: drawable.texture,
-                                                  commandBuffer: commandBuffer)
-            try ciContext.render(image, to: destination)
-        } catch {
-            // 渲染失败（尺寸/格式不匹配等）：跳帧不崩溃；持续失败靠帧计数停滞暴露。
-            return
-        }
+        // render(toMTLTexture:) 非 throws（iOS 17.2 SDK 无同步 render(toDestination:)，
+        // P41）：失败经 commandBuffer.error 暴露 → 表现为帧计数停滞，与既有口径一致。
+        ciContext.render(image, to: drawable.texture, commandBuffer: commandBuffer,
+                         bounds: image.extent, colorSpace: CGColorSpaceCreateDeviceRGB())
 
         commandBuffer.present(drawable)
         commandBuffer.commit()

@@ -17,6 +17,7 @@
 
 import AVFoundation
 import CoreImage
+import CoreVideo
 import Foundation
 import SharedUI
 
@@ -94,7 +95,7 @@ final class CameraRecorder {
 
         let adaptor = AVAssetWriterInputPixelBufferAdaptor(
             assetWriterInput: videoInput,
-            sourceBufferAttributes: [
+            sourcePixelBufferAttributes: [
                 kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA,
                 kCVPixelBufferWidthKey as String: width,
                 kCVPixelBufferHeightKey as String: height,
@@ -152,11 +153,8 @@ final class CameraRecorder {
         guard let pool = pixelBufferPool, let pixelBuffer = createBuffer(from: pool) else {
             return  // 池耗尽：丢帧（同采集侧 latest-wins 语义）
         }
-        do {
-            try ciContext.render(image, to: pixelBuffer)
-        } catch {
-            return
-        }
+        // render(toCVPixelBuffer:) 非 throws（P41）；CI 内部失败不会抛出到此层。
+        ciContext.render(image, to: pixelBuffer)
 
         startSessionIfNeeded(at: time)
         guard videoInput.isReadyForMoreMediaData else { return }
@@ -223,7 +221,8 @@ final class CameraRecorder {
 
     private func createBuffer(from pool: CVPixelBufferPool) -> CVPixelBuffer? {
         var maybeBuffer: CVPixelBuffer?
-        CVPixelBufferPoolCreateBuffer(kCFAllocatorDefault, pool, nil, &maybeBuffer)
+        // 本 SDK 桥接为 3 参（auxAttributes 被导入器吞掉，P41）：allocator, pool, &out。
+        CVPixelBufferPoolCreatePixelBuffer(kCFAllocatorDefault, pool, &maybeBuffer)
         return maybeBuffer
     }
 }

@@ -65,22 +65,36 @@ apps/apple/ios/project.yml   # info.properties 补三个 Usage 权限
 | 任务 | 状态 |
 |---|---|
 | CAM-001 跨端契约 | 完成→**回退留档**（39/39） |
-| CAM-002~005（A 期 iOS 原生实现 + 拍照/基础美颜追加） | **完成**（本机阻塞项见 §2，待新 Xcode 机器） |
+| CAM-002~005（A 期 iOS 原生实现 + 拍照/基础美颜追加） | **完成**（本机阻塞项见 §2，待新 Xcode 机器；**A 期 4 文件 7 处存量编译错误已于 CAM-012 修复**，P41） |
 | B 期 CAM-011 检测桥 | **完成**（2026-10-04：检测/观测/平滑三件套落地；simulator typecheck 0 错 + 宿主数学 19/19；接线归 013，见 TASK-CAM-011 进度段） |
-| B 期 CAM-012~014 | 已拆卡，未开工（**下一步 CAM-012**） |
+| B 期 CAM-012 Metal 磨皮 | **完成**（2026-10-04：Effects/ 双 pass 亮度域双边 + CameraBeautyEngine 注入点；宿主 GPU harness ALL PASS，方差 75× 压降、边过渡 2-4px、kernel 9.85ms@0.5 vs 旧 19.12ms【Iris Plus 640 非真机】；swift test/iOS 构建仍本机阻塞 P39/P36b；真机 ≤8ms 与视觉验收归传哲） |
+| B 期 CAM-013~014 | 已拆卡，未开工（**下一步 CAM-013**） |
 | C 期 CAM-021~024 | 未拆卡 |
 
-## 6. 新会话开场指引(B 期 CAM-011 已完成,下一步 CAM-012)
+## 6. 新会话开场指引(B 期 CAM-012 已完成,下一步 CAM-013)
 
-开场说一句「继续相机模块 B 期,按 HANDOFF-004 从 TASK-CAM-012 开始」即可。
+开场说一句「继续相机模块 B 期,按 HANDOFF-004 从 TASK-CAM-013 开始」即可。
 新会话按仓库惯例先读:AGENTS.md(真源)→ 本文件 → SPEC-CAM-001 v1.1 →
-TASK-CAM-012 → `.ai/modules/ui-apple.md`(CAM-011 落地段含坐标契约与接线状态)。
+TASK-CAM-013 → `.ai/modules/ui-apple.md`(CAM-011/012 落地段含坐标契约、
+引擎注入契约与接线状态)。
 
-- **CAM-012 注意**:磨皮升级不需要检测;但 **CAM-013 开工时要把
-  `VisionDetector.offer()` 挂进 `CameraViewModel.wireCallbacks`**(CAM-011 write_set
-  不含该文件,当时未接线)+ `smoothingStrength` 接美颜面板。
-- B 期处理链总序(写代码前记住):
+- **CAM-013 开工清单**(CAM-011 留下的接线义务):
+  1. 把 `VisionDetector.offer()` 挂进 `CameraViewModel.wireCallbacks`
+     (CAM-011 write_set 不含该文件,当时未接线;CAM-012 已把 wireCallbacks 的
+     引用局部化修过一轮,照现有形状接);
+  2. `smoothingStrength` 接美颜面板;
+  3. 美型 warp 插位在**磨皮之后、滤镜之前**(处理链总序见下);
+  4. 美型参数 UI 替换美颜面板"禁用行"。
+- **CAM-012 定下的注入契约**(013/014 复用同一形状):
+  SharedUI 契约层(参数 + 注入点 + 默认兜底)↔ App 层 Effects/ 引擎;
+  引擎放弃/加载失败回落默认实现,永不黑帧。CI kernel 必须
+  `metal -fcikernel` 编译(P40),加载失败静默降级。
+- **B 期处理链总序**(写代码前记住):
   **磨皮(012) → 美型 warp(013) → 滤镜(A 期既有) → 贴纸叠加(014)**,
   四段全部走 latest-wins 帧槽 + 采集/渲染/检测三队列互不阻塞的既有线程模型。
-- 消费 CAM-011 观测的坐标契约(图像归一化、origin 左上、0...1)见
+- **消费 CAM-011 观测的坐标契约**(图像归一化、origin 左上、0...1)见
   TASK-CAM-011「锁定的契约」段;Vision y 翻转方向是真机冒烟校验项。
+- **真机待验清单**(传哲,新 Xcode 机器):iOS 首编(xcodegen + pod + xcodebuild,
+  确认 default.metallib 入包)→ SharedUI swift test(CAM-011/012 新用例随包跑)
+  → 磨皮 ≤8ms 真机实测回填 baselines → 磨皮/检测视觉人工验收
+  (harness 诊断 `CQ_DEBUG_PROFILE=1` 可复用)。

@@ -1,16 +1,65 @@
-// SharedUI — 相机基础美颜（CAM-003 追加：磨皮 + 美白）
+// SharedUI — 相机美颜（CAM-003 建立，CAM-012 改薄封装）
 //
 // 平台无关纯函数，与 CameraFilterPreset 同插槽约定：输入 CIImage 输出 CIImage，
 // 预览 / 拍照 / 录制三路共用（WYSIWYG）。
 //
-// 算法档位（诚实定位）：**基础款**——高斯模糊 + 锐化保边的近似磨皮，
-// 以及曝光/亮度的小步长美白。精细美型（瘦脸/大眼）依赖人脸关键点驱动的
-// Metal 网格形变，归 CAM-012/013（B 期），本结构体预留其插位（顺序：美颜 → 滤镜）。
+// 职责分层（CAM-012 起）：
+//   - 本文件 = **契约层**：参数结构（单调 / off 恒等直通）+ 磨皮算法注入点
+//     + 默认实现兜底。调用方（预览/拍照/录制）零改动。
+//   - 算法实现 = **可替换**：iOS 侧在启动时把 Metal 双边滤波引擎
+//     （iOSApp Camera/Effects/BeautyKernel）装进 CameraBeautyEngine；
+//     引擎返回 nil（设备/输入不支持）时自动回落本文件的默认 CI 近似。
+//     macOS 等未注入方始终走默认实现 —— 默认实现必须永远保留。
+//
+// 默认算法档位（诚实定位）：**基础款**——高斯模糊 + 锐化保边的近似磨皮，
+// 以及曝光/亮度的小步长美白。精细美型（瘦脸/大眼）归 CAM-013。
 //
 // 所有效果对参数**单调**（滑杆方向可预期），off（0,0）必须恒等直通（可测）。
 
 import CoreImage
 import Foundation
+
+/// 磨皮算法引擎签名：`(输入图, 磨皮强度 0...1) -> 结果图`。
+/// 返回 nil = 引擎放弃处理（能力缺失/输入不支持），调用方回落默认实现。
+/// 实现要求：对强度单调、不改变 extent、只构造 CIImage DAG（懒执行，线程安全）。
+public typealias CameraBeautySmoothingEngine = @Sendable (CIImage, Double) -> CIImage?
+
+/// 磨皮算法注入点。原生侧（iOS App）启动时安装 Metal 引擎；不安装 =
+/// 默认 CI 近似。锁保护：主线程写（启动期一次），渲染/录制线程读。
+/// 实现说明：Swift 5.9（本机验证工具链）没有 nonisolated(unsafe)，用
+/// 锁保护类 + 不可变 static let 持有，两种语言模式（5.9/6.x）都并发安全。
+public enum CameraBeautyEngine {
+
+    private final class Storage: @unchecked Sendable {
+        private let lock = NSLock()
+        private var impl: CameraBeautySmoothingEngine?
+        var smoothing: CameraBeautySmoothingEngine? {
+            get {
+                lock.lock()
+                defer { lock.unlock() }
+                return impl
+            }
+            set {
+                lock.lock()
+                impl = newValue
+                lock.unlock()
+            }
+        }
+    }
+
+    private static let storage = Storage()
+
+    /// 当前磨皮引擎。nil = 默认实现。
+    public static var smoothing: CameraBeautySmoothingEngine? {
+        get { storage.smoothing }
+        set { storage.smoothing = newValue }
+    }
+
+    /// 测试隔离用：恢复默认实现。
+    public static func reset() {
+        smoothing = nil
+    }
+}
 
 /// 美颜参数。0...1，0 = 关闭。
 public struct CameraBeautyParams: Equatable, Sendable {
@@ -36,20 +85,10 @@ public struct CameraBeautyParams: Equatable, Sendable {
 
         var result = image
 
-        // 磨皮：高斯模糊（半径随强度单调）+ 轻度亮度锐化找回边缘轮廓。
-        // clampedToExtent 防模糊边缘发黑，最后裁回原 extent。
+        // 磨皮：注入引擎优先，放弃/未注入回落默认实现。
         if smoothing > 0 {
-            let radius = 3.0 + 9.0 * smoothing
-            let blurred = result
-                .clampedToExtent()
-                .applyingFilter("CIGaussianBlur", parameters: [
-                    kCIInputRadiusKey: radius,
-                ])
-                .cropped(to: result.extent)
-            result = blurred.applyingFilter("CISharpenLuminance", parameters: [
-                kCIInputSharpnessKey: 0.2 + 0.2 * smoothing,
-                kCIInputRadiusKey: 4.0,
-            ])
+            result = CameraBeautyEngine.smoothing?(result, smoothing)
+                ?? defaultSmoothing(result, strength: smoothing)
         }
 
         // 美白：小步长曝光 + 亮度（保守上限，避免过曝死白）。
@@ -65,5 +104,23 @@ public struct CameraBeautyParams: Equatable, Sendable {
         }
 
         return result
+    }
+
+    /// 默认磨皮（A 期口径：高斯模糊 + 亮度锐化近似保边）。
+    /// 引擎未注入（macOS）或引擎放弃时走这里，是兜底不是死代码。
+    private func defaultSmoothing(_ image: CIImage, strength: Double) -> CIImage {
+        // 高斯模糊（半径随强度单调）+ 轻度亮度锐化找回边缘轮廓。
+        // clampedToExtent 防模糊边缘发黑，最后裁回原 extent。
+        let radius = 3.0 + 9.0 * strength
+        let blurred = image
+            .clampedToExtent()
+            .applyingFilter("CIGaussianBlur", parameters: [
+                kCIInputRadiusKey: radius,
+            ])
+            .cropped(to: image.extent)
+        return blurred.applyingFilter("CISharpenLuminance", parameters: [
+            kCIInputSharpnessKey: 0.2 + 0.2 * strength,
+            kCIInputRadiusKey: 4.0,
+        ])
     }
 }

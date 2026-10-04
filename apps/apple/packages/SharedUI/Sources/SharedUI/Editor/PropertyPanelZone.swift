@@ -1,18 +1,18 @@
-// SharedUI — 右侧面板：素材库（UIA-009 子步骤 3 + UIA-011 相册入口 + UIA-012 多选）+ 属性桩（UIA-002/006）
+// SharedUI — 右侧面板：素材库（UIA-009 子步骤 3 + UIA-011/012 相册入口 + UIA-013 自研相册浏览器）+ 属性桩（UIA-002/006）
 //
 // 素材库两条导入入口，汇入同一 EditorViewModel.importMedia（Spec UIA-011 §2）：
 //   * 从文件导入：fileImporter（"文件"App 路径）
-//   * 从相册导入：PhotosPicker（系统进程外选择器，**无需** NSPhotoLibraryUsageDescription），
-//     UIA-012 起多选（上限 20），批量逐条汇入同一链路（Spec UIA-012 §2）
-// D3 决策不变：MVP 引用原路径不拷贝入库 —— 相册视频由系统落到 tmp 的 URL 在
-// App 重启后可能被清理，届时同样显示「已失效」，与文件路径行为一致（批量会
-// 放大失效面，Spec UIA-012 §2 已声明）；素材库整理（拷入沙箱）是后续任务，
-// 两条路径届时统一收口。
+//   * 从相册导入：UIA-013 起为自研相册浏览器（MediaPicker/，Spec UIA-013）——
+//     网格/相簿/多选序号/时长过滤/iCloud 拉取/受限模式；确认后交付文件 URL
+//     列表，走与 UIA-012 完全相同的 runBatch 批量汇入链路。UIA-011/012 的系统
+//     PhotosPicker 被替换（ADR-0015 决策 3），挂载点（按钮 + 胶水）形态不变。
+// D3 决策不变：MVP 引用 tmp/原路径不拷贝入库 —— 相册视频落盘的 URL 在 App
+// 重启后可能被清理，届时同样显示「已失效」，与文件路径行为一致；素材库整理
+// （拷入沙箱）是后续任务，两条路径届时统一收口。
 // 属性区仍是桩：UIA-006 接入真实参数（变更必须走 Command）。
 
 import SwiftUI
 import ChuanqiCut
-import PhotosUI
 import UniformTypeIdentifiers
 
 struct PropertyPanelZone: View {
@@ -21,14 +21,10 @@ struct PropertyPanelZone: View {
     @State private var showImporter = false
     @State private var importError: String?
 
-    // UIA-011/012：相册导入（多选）。selection 清空复用见 onChange 注释；
-    // 批量加载态/错误汇总自持在 PhotoLibraryImporter（AppEntry 的 importMedia
-    // 及其 importInFlight 保持零改动）。
-    @State private var photoItems: [PhotosPickerItem] = []
+    // UIA-013：自研相册浏览器（sheet）。批量加载态/错误汇总自持在
+    // PhotoLibraryImporter（AppEntry 的 importMedia 及其 importInFlight 零改动）。
+    @State private var showAlbumPicker = false
     @StateObject private var photosImporter = PhotoLibraryImporter()
-
-    /// 单批导入上限（Spec UIA-012 §6.2：防一次性 tmp 拷贝体积失控的估算值，可调）。
-    private static let maxPhotoImportCount = 20
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -49,11 +45,11 @@ struct PropertyPanelZone: View {
                 .buttonStyle(.bordered)
                 .controlSize(.small)
 
-                // 只选视频（与文件入口白名单 movie/video/mpeg4Movie 对齐）、
-                // 多选上限见 maxPhotoImportCount（iOS 16 起支持该参数）。
-                PhotosPicker(selection: $photoItems,
-                             matching: .videos,
-                             maxSelectionCount: Self.maxPhotoImportCount) {
+                // 从相册导入：自研浏览器（UIA-013）。只选视频、多选上限 20，
+                // 时长过滤等配置在 AlbumPickerConfiguration.standard。
+                Button {
+                    showAlbumPicker = true
+                } label: {
                     Label(photosImporter.isLoading ? "正在读取相册素材…" : "从相册导入",
                           systemImage: "photo.on.rectangle.angled")
                         .frame(maxWidth: .infinity)
@@ -170,21 +166,18 @@ struct PropertyPanelZone: View {
                 importError = "选择失败：\(error.localizedDescription)"
             }
         }
-        // 相册批量选取：items → 逐条系统 tmp 文件 URL → 既有 importMedia（导入
-        // 链路零分叉）。loadTransferable 挂起等系统出文件（iCloud 素材可能慢），
-        // 不阻塞主线程；批量内部逐条等落库保证追加顺序（见 sequencedImport）。
-        .onChange(of: photoItems) { items in
-            guard !items.isEmpty else { return }
-            // onChange 闭包非 actor 隔离：显式跳 MainActor（同 applySnapshot 手法，
-            // Swift 6 并发模型不自动继承），状态变更与 @MainActor 胶水都在主线程。
-            Task { @MainActor in
-                await photosImporter.runBatch(
-                    count: items.count,
-                    resolveURL: { try await items[$0].loadTransferable(type: URL.self) },
-                    importURL: photosImporter.sequencedImport(into: viewModel))
-                // 清空 selection：PhotosPickerItem 按 itemIdentifier 判等，
-                // 不清空则"再次选取同一批素材"不会触发 onChange。
-                photoItems = []
+        // 自研相册浏览器（UIA-013）：确认交付的文件 URL 列表（顺序 = 选取序号）
+        // 走 UIA-012 同款 runBatch 批量汇入 —— resolveURL 直接命中已落盘的 tmp
+        // 文件（浏览器确认阶段已完成 PHAssetResource 落盘 / iCloud 拉取）。
+        .sheet(isPresented: $showAlbumPicker) {
+            AlbumPickerScreen { urls in
+                showAlbumPicker = false
+                Task { @MainActor in
+                    await photosImporter.runBatch(
+                        count: urls.count,
+                        resolveURL: { urls[$0] },
+                        importURL: photosImporter.sequencedImport(into: viewModel))
+                }
             }
         }
     }

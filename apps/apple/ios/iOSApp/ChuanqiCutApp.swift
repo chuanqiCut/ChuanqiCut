@@ -1,7 +1,12 @@
-// ChuanqiCutApp — iOS App 入口（UIA-002）
+// ChuanqiCutApp — iOS App 入口（CAM-004 重构：首页两入口）
 //
 // ⚠️ 必须在 UI 线程调用 ChuanqiCut.markMainThread()（CORE-008 约束）：
 //    漏调不会报错，只会让「主线程零阻塞」守卫静默失效。
+//
+// 变更（CAM-004）：root 从 EditorView 改为 HomeView；EditorViewModel（含内核
+// Session）从 App.init 迁到 SharedUI.EditorScreen 惰性创建 —— 进编辑器才付
+// Session 成本（SPEC-CAM-001 v1.1 §7，ADR-0014）。DEBUG 演示片段钩子随迁到
+// EditorScreen（无录制产物入口时才装，互斥语义见该文件注释）。
 
 import SwiftUI
 import SharedUI
@@ -9,30 +14,13 @@ import ChuanqiCut
 
 @main
 struct ChuanqiCutApp: App {
-    @StateObject private var editor: EditorViewModel
-
     init() {
         ChuanqiCut.markMainThread()
-        do {
-            // 先创建再包进 StateObject：wrappedValue 是非 throwing 自动闭包，
-            // 不能直接写 `StateObject(wrappedValue: try ...)`。
-            let viewModel = try EditorViewModel()
-            // UIA-003 启动冒烟钩子（DEBUG）：CQ_DEMO_VIDEO 指向存在的视频时，
-            // 载入演示片段并播到 0.5s；否则无操作，预览黑屏等 UIA-005 导入流程。
-#if DEBUG
-            viewModel.installDemoClipFromEnvironment()
-#endif
-            _editor = StateObject(wrappedValue: viewModel)
-        } catch {
-            // 内核会话创建失败 = 静态库未链接或线程启动失败，启动即失败是诚实的做法
-            fatalError("ChuanqiCut 内核会话创建失败：\(error)")
-        }
     }
 
     var body: some Scene {
         WindowGroup {
-            EditorView()
-                .environmentObject(editor)
+            HomeView()
         }
     }
 }

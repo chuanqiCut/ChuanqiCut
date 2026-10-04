@@ -216,3 +216,12 @@ iOS 平台差异五处修复、门禁命令、红线摘录、下一步优先级�
 4. **flaky 排障手法**：先给可疑分支加「分支名 + 内核原始状态码 + 计时」的
    临时诊断，全量复跑抓现行，一轮定位（本轮 10μs 内退出却查空的打印直接
    揭示了竞态）；比对着日志猜测快一个数量级。
+
+## 构建环境约定（2026-10-04 起，多机事实）
+- **开发机不止一台**：此前所有"本机实测"来自 macOS 15.4 / AppleClang 17 的机器；
+  2026-10-04 起新机为 macOS 13.7 / Xcode 15.2（AppleClang 15）。引用 baselines
+  数字必须连同环境一起引用；跨机兼容写法见 pitfalls P36。
+- 新机构建：`pip3 install --user cmake` 后
+  `export CMAKE_BIN=$(ls ~/Library/Python/*/bin/cmake | head -1)` 再跑 build_core.sh。
+- 代码跨工具链兼容规则：不用 `std::va_list`（用全局 `::va_list` + `<cstdarg>`）；
+  不对 volatile 做复合赋值/自增（C++20 已弃用）。

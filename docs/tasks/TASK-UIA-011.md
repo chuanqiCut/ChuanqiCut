@@ -1,124 +1,82 @@
-# TASK-UIA-011：预览宽高比适配（letterbox / fit）
-
-> 建立：2026-10-04。来源：HANDOFF-004 §5 第 4 项；`preview_renderer.h`「本期不支持」
-> 清单第 3 条（宽高比适配）转正 —— 用户已明确将其列为下一个编码任务（「优先编码」）。
->
-> **状态：✅ 已完成（2026-10-04，同会话收口）**。决策 = ADR-0015。
-> 门禁：Debug 42/42、Release 42/42、preview_renderer 51 项、c_abi_preview 78 项、
-> gfx_device 30 项（含用例 C）、swift 23/23、SharedUI ×3 20/20（见下文「执行记录」）。
+# TASK-UIA-011:相册素材导入(PhotosPicker 入口)
 
 ```yaml
-id:          UIA-011
-layer:       跨平台（core/GFX/PAL）+ UI（SharedUI 装配，竖切）
-goal:        预览不再「拉伸铺满」：PreviewRenderer 支持 FitMode（stretch/contain/cover），
-             非同比例素材按模式适配画布，bar 区为黑（清屏色）
-input:       [preview_renderer.h「不支持」清单, cq_sdk.h:281 注释, ADR-0013（线程归属）,
-              UIA-010 后的渲染装配（泵线程 / 共享队列）]
-output:      [GFX/PAL 编码器视口原语, PreviewRenderer FitMode, C ABI setter,
-              Swift Previewer.setFitMode, SharedUI AppEntry 装配 contain,
-              单测（像素断言）, preview.md / gfx.md / pal.md 回写, ADR-0015]
-write_set:   core/include/cq/pal/gfx.h, core/include/cq/gfx/gfx_device.h,
-             core/src/gfx/gfx_device.cpp, pal/apple/gfx_metal.mm,
-             core/include/cq/preview/preview_renderer.{h,cpp},
-             core/src/preview/cq_sdk_preview.cpp, core/include/cq/cq_sdk.h,
-             bindings/swift/Sources/ChuanqiCut/Previewer.swift,
-             apps/apple/packages/SharedUI/Sources/SharedUI/Editor/AppEntry.swift,
-             tests/unit/test_gfx_device.cpp, tests/unit/test_preview_renderer.cpp,
-             tests/unit/test_c_abi_preview.c
-read_set:    core/include/cq/preview/preview_pump.h, core/src/gfx/*（其余）,
-             pal/apple/blit_pass.mm, bindings/swift 其余, SharedUI 其余,
-             docs/HANDOFF-004, .ai/modules/{preview,gfx,pal-apple}.md
-deps:        []（无前置任务；相机链路写集边界明确避开 cq_sdk.h / SharedUI，无冲突）
+id:          TASK-UIA-011
+layer:       UI
+goal:        素材库面板新增「从相册导入」入口,选视频后汇入既有 importMedia 链路
+input:       [docs/specs/UIA-011-相册素材导入.md, .ai/modules/ui-apple.md, docs/tasks/TASK-UIA-009.md]
+output:      [PropertyPanelZone 相册入口 + 加载态/错误路径胶水 + SharedUI 测试 + 文档回写]
+write_set:   apps/apple/packages/SharedUI/Sources/SharedUI/Editor/PropertyPanelZone.swift,
+             apps/apple/packages/SharedUI/Tests/SharedUITests/PhotoImportTests.swift(新),
+             docs/specs/UIA-011-相册素材导入.md, docs/tasks/TASK-UIA-011.md,
+             docs/tasks/TASK-BACKLOG.md(登记行), .ai/modules/ui-apple.md(回写)
+read_set:    apps/apple/packages/SharedUI/Sources/SharedUI/AppEntry.swift(importMedia 不改),
+             apps/apple/packages/SharedUI/Tests/SharedUITests/{RepoPath,MediaImportTests}.swift
+deps:        [UIA-009 ✅]
 acceptance:
-  - 默认行为不变：FitMode 默认 kStretch，既有全部像素断言不改一字通过
-  - contain：16:9 素材（gf_1080p_h264.mp4）进 256x256 画布 → 上下各 ~56px 黑 bar，
-    内容带像素 = smptebars 真值；bar 区像素 = 清屏色 (0,0,0,255)
-  - cover：同素材同画布 → 无 bar、整幅被内容覆盖（画布边缘无清屏色）
-  - stretch（默认）：同素材 → 整幅被拉伸内容覆盖（既有断言保持）
-  - 非法 FitMode 经 C ABI 返回 kInvalidArgument(7000)
-  - 视口原语有独立像素断言（gfx_device 用例：视口外为清屏色）
-  - 泵线程模型不破坏：fit 状态为 atomic，主线程 setter 与泵线程 RenderFrame 无竞争
+  - SharedUI swift test 全绿(macOS 宿主),含新增 PhotoImportTests
+  - macOS App xcodebuild build 通过
+  - iOS 用 legacy -sdk iphoneos 链编译通过(无运行时,编译门禁)
+  - 相册入口 filter 为 .videos、单选;loadTransferable 失败不产生素材不崩溃(测试锁)
+  - importMedia(url:) 及内核/绑定层零改动(git diff 证明)
 verification:
-  - ctest --test-dir build -R gfx_device
-  - ctest --test-dir build -R preview_renderer
-  - ctest --test-dir build -R c_abi_preview
-  - ./tools/build/build_core.sh --platform=apple --config=Debug --test（及 Release）
-  - XCFramework 重建 + prepare.sh + swift test（bindings/swift 23 用例）
-  - cd apps/apple/packages/SharedUI && swift test --disable-sandbox（20 用例）
-risk:        cq_sdk.h 高冲突文件 —— 已核对相机链路写集边界（HANDOFF-004 §1），其避开
-             cq_sdk.h 与 SharedUI，本任务期间无并行写者；PAL ICommandEncoder 为冻结
-             接口，扩展必须 additive 且记录 ADR-0015
-parallel:    false（本会话单任务串行）
+  - cd apps/apple/packages/SharedUI && swift test --disable-sandbox
+  - cd apps/apple/mac && xcodegen generate && bundle exec pod install
+    && xcodebuild build -workspace ChuanqiCut.xcworkspace -scheme ChuanqiCutMacApp
+       -destination 'platform=macOS' CODE_SIGNING_ALLOWED=NO
+  - iOS legacy 链(见 .ai/modules/ui-apple.md 验证段,BUILD_DIR 三目标一致)
+risk:        PhotosPicker 的 UI 交互无法进 XCTest(同 UIA-005 既有结论),
+            手势/系统选择器接线靠 App 冒烟 + 人工验证;
+            真机 HEVC/iCloud 素材表现未实测(开放问题,见 Spec §7)
+parallel:    true(写集与其他在途任务不相交)
 ```
+
+## 状态（2026-10-04）
+
+- 代码与测试已落盘：`PropertyPanelZone.swift`（双入口 + PhotoLibraryImporter 胶水）、
+  `PhotoImportTests.swift`（6 用例）。PhotosUI / PhotosPicker 均在 iOS 16 /
+  macOS 15.4 基线内，无需动 project.yml / Podfile。
+- ⚠️ **verification 段的门禁本轮未执行**：当前机器无 Swift 6.1 工具链
+  （Xcode 13.1 / Swift 5.5 / macOS 12.6，SDK 里没有 PhotosPicker；
+  见 pitfalls P39）。已做：`swiftc -parse` 两文件语法级通过（仅 Swift 5.5
+  不识别 5.7 简写的两条已知噪音，与既有代码同款写法）。
+  **swift test / macOS / iOS 编译必须在真实构建机执行后才算验收通过。**
+
+- ✅ **2026-10-04 用户决策:低配设备(本机 Mac mini 2014,i5-4278U / 8GB /
+  macOS 12.7.6)暂时不跑真机测试** —— 真机相关验证(Spec §7.1)**延期非取消**,
+  待有条件时恢复;剩余缺口只有构建机上的编译门禁(swift test + 两平台编译)。
 
 ## 背景
 
-预览离屏画布（`cq_preview_create(w,h)`）与素材宽高比不同时，当前实现是**拉伸铺满**
-（IBlitPass 全屏拷贝，无任何适配）—— 9:16 竖拍素材进 16:9 画布会变形。这是
-`preview_renderer.h` 头注释里明示的「本期不支持」项，本任务把它转正。
+Spec:`docs/specs/UIA-011-相册素材导入.md`。现有导入只有 fileImporter("文件"App
+路径),相册视频导入体验割裂。系统 `PhotosPicker`(iOS 16 / macOS 13+,基线内)
+零依赖覆盖 MVP;不引第三方(红线 #10 依赖治理成本 > 收益),自定义相册浏览器
+是后续任务,替换挂载点即本任务的按钮 + item→URL 胶水。
 
 ## 实现要点
 
-**接缝选择（ADR-0015 的核心决策）**：fit = 纯几何映射，三种模式都能用
-「视口矩形」一个原语表达：
-
-| FitMode | 视口 |
-|---|---|
-| kStretch（默认，现状） | 整个 RT |
-| kContain | 源比例内切矩形居中（≤RT），bar 区不清屏色都不画 → 天然 letterbox |
-| kCover | 源比例外接矩形居中（≥RT），超出部分被光栅化自动裁掉 |
-
-- 视口原语加在 **GFX `IGfxEncoder` + PAL `ICommandEncoder`**（additive），
-  Apple 实现直映射 `MTLRenderViewport`（原点=target 左上，z 用 {0,1}，文档写清）。
-  **不动 IBlitPass 接口与 MSL**，RT→drawable 恒等 blit 及其与 SharedUI 的
-  逐值锁定不变量不受影响。
-- fit 几何计算在 `PreviewRenderer::RenderFrame`（`frame.video.width/height` 为源，
-  已由解码器填充；0 值诚实退化 kStretch）；FitMode 存 `std::atomic<int>`，
-  主线程 setter 与泵线程渲染读无竞争（泵模型不破坏）。
-- 清屏色黑色 + 视口外不写 → bar 即黑，无需第二 pass。
-- ABI：`cq_preview_set_fit_mode(CQPreview*, int32_t)`（0=stretch 1=contain 2=cover）。
-- 产品装配：SharedUI AppEntry 创建后设 contain（默认仍 stretch，向后兼容与
-  golden 断言不破）。
-
-## 媒体管线六问（cq-media-pipeline）
-
-1. **线程**：不改取帧/解码线程模型。新增 setter（主线程）↔ 渲染读（泵线程）
-   经 atomic；视口在泵线程编码时设置，无跨线程 GPU 状态。
-2. **时序**：RationalTime 路径不动；fit 只影响几何映射。
-3. **内存**：零新增分配路径（视口是栈上 4 个 float）。
-4. **取消**：CancelToken 语义不动。
-5. **错误码**：非法 mode → kInvalidArgument；源尺寸未知 → 诚实退化 stretch（非错误）。
-6. **一致性**：预览与导出同源（同一 RenderFrame 映射），红线 #9 不破。
+1. **View 层胶水,ViewModel 零改动**:`@State photoItem: PhotosPickerItem?` +
+   `PhotosPicker(selection:matching:)`,onChange 起 `Task` 做
+   `loadTransferable(type: URL.self)`,成功回 MainActor 调既有
+   `viewModel.importMedia(url:)`。加载期间置 loading 态(防重复点击,
+   ViewModel 已有 importInFlight 双保险)。
+2. **过滤与语义**:`PHPickerFilter.videos`、单选,与 fileImporter 白名单对齐;
+   不加 NSPhotoLibraryUsageDescription(PHPicker 进程外选择,无需权限)。
+3. **错误路径收敛**:loadTransferable 抛错 / 返回 nil URL → 面板既有
+   `importError` 展示,不产生素材;测试锁"失败不污染素材表"。
+4. **可测部分抽纯逻辑**:item→URL 的异步胶水无法在无相册数据的 XCTest 宿主里
+   驱动(PhotosPickerItem 需真实 PHAsset),故测试锁定:loading 态翻转、
+   失败路径状态、以及"成功路径汇入 importMedia"用文件 URL 直接调
+   ViewModel(等价 MediaImportTests 手法)。
 
 ## 验收
 
-见 yaml acceptance。逐条：stretch 断言 = 既有用例一字不改全绿；contain/cover =
-test_preview_renderer 新段（golden 16:9 素材 + 256x256 画布，bar/内容带像素断言）；
-视口原语 = test_gfx_device 新段；非法值 = test_c_abi_preview 新断言。
-
-## 执行记录（2026-10-04）
-
-- **子步骤 1（契约）✅**：PAL `ICommandEncoder::SetViewport`（additive）+
-  GFX `IGfxEncoder::SetViewport` 转发 + Metal `MTLViewport` 直映 + gfx_device
-  用例 C（视口 (16,16,32,32) 内红/黄、外清屏黑）—— 30 项全过。
-- **子步骤 2（实现+装配）✅**：`FitMode`（Config 字段 + atomic setter）、
-  `ComputeFitViewport`、C ABI `cq_preview_set_fit_mode`、Swift `Previewer.setFitMode`
-  （`FitMode` 枚举）、SharedUI AppEntry 显式 contain。preview_renderer [8]
-  contain/cover 像素断言 + c_abi 契约段 —— renderer 51 项、c_abi 78 项全过。
-- **实踩坑（已写进 preview.md §6.5）**：源尺寸必须在
-  `provider->ReleaseFrame(frame)` **之前**捕获 —— lease 归约会把 frame 重置为
-  `MediaFrame{}`，首版在归还后读 `frame.video.width` 得 0，fit 被诚实退化成
-  stretch（像素断言抓到，诊断打印定位）。
-- 门禁：Debug 42/42、Release 42/42；XCFramework 三切片重建 + prepare 后
-  swift 23/23、SharedUI 全量 ×3 20/20（与 P33 修复 2 同轮验证）。
-- **未实测项**：fit 为每帧一次整数几何计算 + 一次视口设置，无可测量性能项，
-  baselines 不新增条目（明确标注不适用）。
+对应 acceptance 逐条:swift test 输出全绿数字;两平台 xcodebuild 退出码 0;
+`git diff --stat` 确认 write_set 外无改动(尤其 AppEntry.swift / core/ / bindings/)。
 
 ## 回写
 
-- 接口变更 → `.ai/modules/gfx.md`（视口原语）、`.ai/modules/pal-apple.md`、
-  `.ai/modules/preview.md`（「不支持」清单移除该条 + FitMode 说明）
-- 决策 → `docs/decisions/ADR-0015-预览宽高比的视口接缝.md`
-- 本文件子步骤状态与写集实际核对
-- 新坑 → `.ai/memory/pitfalls.md`；无新实测性能数字则 baselines 不动（fit 为
-  一次性每帧整数计算，无可测量项，明确写「未实测/不适用」）
+- `.ai/modules/ui-apple.md`:UIA-011 落地段(入口形状 + D3 沿用说明)
+- `docs/tasks/TASK-BACKLOG.md`:登记 UIA-011 行
+- `.ai/memory/pitfalls.md`:如踩新坑(PhotosPicker/loadTransferable 平台差异)
+- `.workbuddy/memory/2026-10-04.md`:当日日志

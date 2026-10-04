@@ -170,3 +170,23 @@ Android / HarmonyOS 均无 `CreateBlitPass` / `CreateFrameProvider` 实现。
   - `GetColorTexture` 产出的 = 裸原生纹理（**只用于 UI 导出**，不可送 SetTexture）。
 - 验证：Debug/Release 34/34 + SharedUI 像素级用例（旧实现下必崩）。详见
   `pitfalls.md` P20。
+---
+
+# 2026-10-04 追加（CAM-001 → 已回退，相机域转 iOS 原生）
+
+**本日先冻结后回退了相机 PAL 契约**（`pal/camera.h`、`cq_sdk.h` 相机 ABI 段、
+kMultiCamCapture/kVisionDetection/kAnimalBodyPose 能力枚举与相应 Apple 实现/测试）。
+传哲指示相机模块"发挥 iOS 优势、不强套跨端逻辑"（**ADR-0014 已接受**）：相机
+采集/特效/录制改为 iOS 原生栈（AVFoundation + Vision/ARKit + Core Image/Metal，
+App 层），不经 PAL/C ABI。
+
+保留的**事实性知识**（防重查）：
+- `AVCaptureMultiCamSession` **仅 iOS**（macOS 编译报 unavailable，pitfalls P38）；
+  双摄能力运行时查 `isMultiCamSupported`。
+- 相机帧过零拷贝链路的能力已具备：CVPixelBuffer(32BGRA+MetalCompat) 走
+  `INativeImageImporter`（PALA-002），App 层也可直接用 `CVMetalTextureCache`。
+- 相机域 pts 约定沿用 120000 网格（ADR-0009）。
+- 录制若未来要进 SDK，`IMediaMuxer`（PALA-012）能力齐备（视频 CVPixelBuffer +
+  PCM→AAC）；相机 MVP 按 ADR-0014 直接用 `AVAssetWriter`。
+
+PAL 层无任何相机代码存留；门禁 39/39（回退后复跑，-Werror）。

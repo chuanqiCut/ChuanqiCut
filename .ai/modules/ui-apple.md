@@ -160,3 +160,41 @@ SwiftUI）—— 两端通用的是按钮入口，摇一摇留给后续任务。
 ⚠️ **未被自动测试覆盖**：SwiftUI 手势（DragGesture 的 onChanged/onEnded）
 无法在 XCTest 里驱动。故命中判定、夹取规则、提交结果都抽成纯函数/ViewModel
 方法去测；手势接线靠 App 冒烟与人工验证。
+
+
+---
+
+# UIA-011 落地（2026-10-04）：相册素材导入（PhotosPicker 入口）
+
+Spec：`docs/specs/UIA-011-相册素材导入.md`。**选型结论**：用系统
+`PhotosPicker`（PhotosUI，iOS 16 / macOS 13+，基线内），**不引第三方相册库**
+（红线 #10 治理成本 > 收益）；自定义相册浏览 UI 是后续任务，替换挂载点 =
+按钮 + item→URL 胶水，导入链路不动。
+
+- **PropertyPanelZone 双入口汇一**：「从文件导入」（fileImporter）+「从相册导入」
+  （`PhotosPicker(selection:matching: .videos)`，单选）。两条路**都汇入
+  `EditorViewModel.importMedia(url:)`** —— ViewModel / 内核 / 绑定层零改动。
+- **胶水 `PhotoLibraryImporter`**（同文件内，@MainActor ObservableObject）：
+  loading 翻转（防重复点击）+ errorMessage 自持；`run(resolveURL:importURL:)`
+  **闭包全部注入** —— loadTransferable 需要真实 PHAsset，XCTest 宿主没有
+  相册数据，注入后状态机可单测（PhotoImportTests，5 个注入态用例 + 1 个
+  与真 ViewModel 组合的 golden 全链路用例）。
+- **权限**：PHPicker 是进程外选择器，**无需** `NSPhotoLibraryUsageDescription`，
+  不动 project.yml 的 info 段。
+- **onChange 细节**：`Task { @MainActor in ... }`（onChange 闭包非 actor 隔离，
+  显式跳，同 applySnapshot 手法）；完成后 `photoItem = nil` 清 selection ——
+  PhotosPickerItem 按 itemIdentifier 判等，不清空则再次选取同一条素材
+  不触发 onChange。
+- **D3 沿用**：相册视频由系统落到 tmp 的 URL，App 重启后可能被清理 →
+  届时素材列表同样显示「⚠ 已失效」，与文件路径行为一致（非回归）；
+  素材库整理（拷入沙箱）任务两条路径一起收口。
+
+⚠️ **本轮门禁未执行**：当前机器无 Swift 6.1 工具链（Xcode 13.1 / Swift 5.5 /
+macOS 12.6，见 pitfalls P39），只做了 `swiftc -parse` 语法级检查；swift test /
+两平台 xcodebuild 待真实构建机执行后才算验收通过。
+
+> **补充决策(2026-10-04,传哲确认)**:低配设备(本机 Mac mini 2014,
+> i5-4278U / 8GB / macOS 12.7.6)**暂时**不跑真机测试 —— 真机验证**延期非取消**,
+> 待高配构建机 / 真机可用时恢复(HEVC / 4K / iCloud 素材届时一并验证);
+> 不作为 UIA-011 当前验收门槛。剩余验收缺口仅剩构建机上的编译门禁
+> (swift test + macOS/iOS 编译)。

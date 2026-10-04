@@ -585,3 +585,21 @@
 - **后记（同日）**：ADR-0014 转向后该实现随 CAM-001 契约一并回退，但 API 事实
   不变，未来在 macOS 上做相机相关代码仍会撞。
 - 日期 / 来源 / 验证状态：2026-10-04 / CAM-001 / **verified**
+
+### P39 · 本机（Mac mini 2014）工具链与 HANDOFF 门禁环境不符 —— 验证命令会以 "tools version" 失败
+- 现象：SharedUI `swift test` 报 `package is using Swift tools version 6.1.0 but the
+  installed version is 5.5.0`。本机（Mac mini 2014 低配机：i5-4278U 双核 2.6GHz / 8GB / macOS 12.7.6）/usr/bin/swift 来自 Xcode 13.1，
+  SDK 只有 iOS 15 / macOS 12；HANDOFF-003 描述的 Xcode 26.x / Ruby 3.4 / CocoaPods /
+  xcodegen / 已构建内核（build/）在当前机器**全部不存在**（2026-10-04 盘点：工作区是
+  当天 18:52 整体落盘的，无任何本地构建产物）。
+- 影响：本机只能做 `swiftc -parse` 语法级检查与读码审阅；**类型检查与全部门禁必须
+  在真实构建机上跑**。PhotosPicker（UIA-011）等 iOS16/macOS13+ API 在本机 SDK 里
+  根本不存在，连 `-parse` 以外的验证都做不了。
+- 规则：换机器 / 新会话接手时，先 `swift --version` + `xcodebuild -showsdks` 核对
+  环境，再决定 HANDOFF 里的验证命令哪些本机可跑；否则会把"环境跑不了"误判成
+  "代码有问题"（反之亦然）。附注：Swift 5.7 简写（`if let x {}`）在 5.5 下报
+  "requires an initializer" —— 是工具链旧，不是代码错。
+- 关联：P36（开发机 macOS 13.7 / Xcode 15.2）同样跑不了 SharedUI swift test
+  （其 P36b：Swift 测试宿主需 Xcode 16+）—— UIA-011 的 swift test 与 CAM 的
+  Swift 验证同桶，都等「有 Xcode 16+ 的机器」。
+- 日期 / 来源 / 验证状态：2026-10-04 / UIA-011 / **verified**

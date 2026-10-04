@@ -37,22 +37,65 @@ private:
     Clock::time_point t0_ = Clock::now();
 };
 
+// 源帧 → 画布的目标视口矩形（ADR-0015）：
+//   kStretch / 源尺寸未知(0) / 同比例 → 整目标（与引入 FitMode 前逐字节一致）；
+//   kContain → 内切矩形居中（letterbox，不裁内容）；
+//   kCover   → 外接矩形居中（裁剪铺满，超出目标的部分被光栅化丢弃）。
+// out = {x, y, w, h}（像素，原点 = target 左上）。
+void ComputeFitViewport(FitMode mode, uint32_t sw, uint32_t sh,
+                        uint32_t dw, uint32_t dh, float out[4]) {
+    out[0] = 0.0f;
+    out[1] = 0.0f;
+    out[2] = static_cast<float>(dw);
+    out[3] = static_cast<float>(dh);
+    if (mode == FitMode::kStretch || sw == 0 || sh == 0 || dw == 0 || dh == 0 ||
+        (sw == dw && sh == dh)) {
+        return;
+    }
+    const double src_ar = static_cast<double>(sw) / static_cast<double>(sh);
+    const double dst_ar = static_cast<double>(dw) / static_cast<double>(dh);
+    // 宽度贴边：contain 且源更宽，或 cover 且源更矮/更窄（cover 取另一半分支）。
+    const bool width_bound =
+        (mode == FitMode::kContain) ? (src_ar > dst_ar) : (src_ar <= dst_ar);
+    double w, h;
+    if (width_bound) {
+        w = static_cast<double>(dw);
+        h = w / src_ar;
+    } else {
+        h = static_cast<double>(dh);
+        w = h * src_ar;
+    }
+    if (w < 1.0) w = 1.0;
+    if (h < 1.0) h = 1.0;
+    out[0] = static_cast<float>((static_cast<double>(dw) - w) / 2.0);
+    out[1] = static_cast<float>((static_cast<double>(dh) - h) / 2.0);
+    out[2] = static_cast<float>(w);
+    out[3] = static_cast<float>(h);
+}
+
 // 把「一张纹理全屏画进当前 pass」适配成 IGfxDevice::RenderFrame 需要的编码器客户端。
 class BlitClient final : public IFrameEncoderClient {
 public:
-    BlitClient(IBlitPass* blit, TextureHandle tex) : blit_(blit), tex_(tex) {}
+    // viewport 可选：has_viewport=false 时完全等价于引入 FitMode 前的行为
+    // （不触碰视口状态，Metal 默认 viewport = 整目标）。
+    BlitClient(IBlitPass* blit, TextureHandle tex, const float* viewport = nullptr)
+        : blit_(blit), tex_(tex), viewport_(viewport) {}
 
     Status Encode(IGfxEncoder& encoder, const FrameContext&, const CancelToken&) override {
         if (blit_ == nullptr) return Status(StatusCode::kInvalidArgument);
         // IBlitPass 在 PAL 层，收的是 PAL 的 ICommandEncoder（PAL 不能反向依赖 GFX）。
         ICommandEncoder* pal_encoder = encoder.PalEncoder();
         if (pal_encoder == nullptr) return Status(StatusCode::kInternal);
+        if (viewport_ != nullptr) {
+            encoder.SetViewport(viewport_[0], viewport_[1], viewport_[2], viewport_[3]);
+        }
         return blit_->Encode(*pal_encoder, tex_);
     }
 
 private:
     IBlitPass* blit_;
     TextureHandle tex_;
+    const float* viewport_;
 };
 
 // 只清屏、不画任何东西（空隙帧 / 兜底路径）。
@@ -68,7 +111,12 @@ public:
 PreviewRenderer::PreviewRenderer(IGfxDevice* gfx, IBlitPass* blit,
                                  IFrameProviderFactory* providers,
                                  IModelSnapshotProvider* snapshots, const Config& cfg)
-    : gfx_(gfx), blit_(blit), providers_(providers), snapshots_(snapshots), cfg_(cfg) {}
+    : gfx_(gfx),
+      blit_(blit),
+      providers_(providers),
+      snapshots_(snapshots),
+      cfg_(cfg),
+      fit_mode_(static_cast<int>(cfg.fit_mode)) {}
 
 PreviewRenderer::~PreviewRenderer() {
     // 上一帧导入的纹理必须显式释放：Import 返回裸句柄且不接管所有权。
@@ -208,6 +256,10 @@ Status PreviewRenderer::RenderFrame(const RationalTime& pts, TextureHandle& out_
     // 记录实际帧 pts：素材内容静态时像素无法区分「取对了帧」与「复用旧帧」，
     // 这个量是可验证的差异点（单测据此断言渲染帧随时间推进）。
     last_frame_pts_ = frame.video.pts;
+    // ⚠️ 源尺寸必须在 ReleaseFrame 前捕获：lease 归约会把整个 frame 重置为空
+    //    （MediaFrame{}），此后读到的任何字段都是 0。
+    const uint32_t src_w = frame.video.width;
+    const uint32_t src_h = frame.video.height;
 
     // ---- 4. 零拷贝导入：CVPixelBuffer → 纹理 ----
     s = EnsureImporter();
@@ -238,7 +290,15 @@ Status PreviewRenderer::RenderFrame(const RationalTime& pts, TextureHandle& out_
     FrameContext ctx;
     ctx.pts = pts;
     ctx.target = target_->Handle();
-    BlitClient client(blit_, tex);
+    // 宽高比适配（UIA-011）：kStretch 时 viewport 为整目标 → 不设视口，
+    // 与引入 FitMode 前的编码序列逐字节一致（既有像素断言不因此改变）。
+    float viewport[4];
+    const FitMode fit_mode = GetFitMode();
+    ComputeFitViewport(fit_mode, src_w, src_h, cfg_.width, cfg_.height, viewport);
+    const bool has_viewport = !(viewport[0] == 0.0f && viewport[1] == 0.0f &&
+                                viewport[2] == static_cast<float>(cfg_.width) &&
+                                viewport[3] == static_cast<float>(cfg_.height));
+    BlitClient client(blit_, tex, has_viewport ? viewport : nullptr);
     const Clock::time_point t_draw = Clock::now();
     s = gfx_->RenderFrame(ctx, target_.get(), client, token);
     if (s.IsOk()) timings_.draw_ns = ElapsedNs(t_draw);

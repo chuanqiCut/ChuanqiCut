@@ -63,7 +63,29 @@ golden 素材 `gf_1080p_h264.mp4` 是**静态**彩条，不同时刻的像素完
 - **多轨合成** —— 只渲染第一条命中的视频轨；叠加 / 转场合成等 RenderGraph
   （RENDER-001）落地后再补。
 - **变速 / retime** —— MODEL-001 无该字段，时间线时长与素材时长 1:1。
-- **宽高比适配** —— 当前「拉伸铺满」，无 letterbox / fit 模式。
+- ~~**宽高比适配**~~ —— **已支持（UIA-011，2026-10-04）**：`FitMode`
+  stretch / contain / cover，见下文专节；片段级缩放/位移仍归 MODEL-003。
+
+## 6.5 宽高比适配 FitMode（UIA-011 / ADR-0015，2026-10-04）
+
+源帧与画布比例不同时的映射，**实现接缝 = 编码器视口**（`IGfxEncoder::SetViewport`
+→ PAL `ICommandEncoder::SetViewport`，ADR-0015）：
+
+| FitMode | 视口 | 效果 |
+|---|---|---|
+| kStretch=0（默认） | 不设（整目标） | 拉伸铺满 —— 与引入前编码序列**逐字节一致** |
+| kContain=1 | 内切矩形居中 | letterbox/pillarbox，bar 区 = 清屏黑，不裁内容 |
+| kCover=2 | 外接矩形居中 | 裁剪铺满，超出目标被光栅化自动丢弃 |
+
+- 源尺寸 = `frame.video.width/height`（解码器填充）。**0 = 未知 → 诚实退化 stretch**。
+- ⚠️ 源尺寸必须在 `provider->ReleaseFrame(frame)` **之前**捕获：lease 归约会把
+  frame 整体重置为空（首版即踩此坑，读到的全是 0）。
+- `SetFitMode` 内部 atomic（主线程设置 / 泵线程渲染读，无竞争）；
+  C ABI `cq_preview_set_fit_mode`（0/1/2，非法值 7000）；Swift `Previewer.setFitMode`。
+- 产品装配：SharedUI `AppEntry` init 显式设 **contain**（内核默认 stretch 保证
+  既有断言兼容）。
+- 守卫：`preview_renderer` [8]（contain bar 黑 + 内容真值 / cover 无 bar）、
+  `c_abi_preview` set_fit_mode 契约段、`gfx_device` 用例 C（视口原语像素断言）。
 
 ## 7. 零拷贝链路（不能退化的部分）
 
@@ -98,8 +120,8 @@ PreviewRenderer(gfx, blit.get(), &factory, &timeline, &assets, cfg)
 
 ```bash
 ./tools/build/build_core.sh --platform=apple --config=Debug --test
-ctest --test-dir build -R preview_renderer   # 35 项：像素真值 / 方向 / 零拷贝 / 空隙 / Resize
-ctest --test-dir build -R c_abi_preview      # 32 项：真正的 C TU，契约与诊断量
+ctest --test-dir build -R preview_renderer   # 51 项：像素真值 / 方向 / 零拷贝 / 空隙 / Resize / FitMode
+ctest --test-dir build -R c_abi_preview      # 78 项：真正的 C TU，契约与诊断量（含 set_fit_mode）
 
 cd bindings/swift && swift test --disable-sandbox          # Previewer 契约 + golden 帧
 ./bindings/swift/run_smoke.sh                              # 链接级 + 空隙语义
@@ -261,8 +283,9 @@ UI 的 blit 必须用这条，否则跨队列没有顺序保证（P37）。
 
 ```bash
 ctest --test-dir build -R core_preview_pump    # 41 断言（假帧源，只链 cq_core）
-ctest --test-dir build -R c_abi_preview        # 71 断言（真实链路 + 泵段）
-ctest --test-dir build -R preview_renderer     # 38 断言（含单帧耗时实测段）
+ctest --test-dir build -R c_abi_preview        # 78 断言（真实链路 + 泵段 + set_fit_mode 契约）
+ctest --test-dir build -R preview_renderer     # 51 断言（含单帧耗时实测段 + FitMode [8]）
+ctest --test-dir build -R gfx_device           # 30 断言（含视口原语用例 C）
 cd bindings/swift && swift test --disable-sandbox                 # 23 用例
 cd apps/apple/packages/SharedUI && swift test --disable-sandbox   # 20 用例
 ```

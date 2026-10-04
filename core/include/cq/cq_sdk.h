@@ -278,8 +278,8 @@ int32_t cq_media_probe_duration(const char* path, int64_t* out_value,
 typedef struct CQPreview CQPreview;
 
 /* 创建预览器（挂到 session 的模型快照上）。width/height 为离屏渲染目标尺寸；
- * 失败返回 NULL。注意：当前为「拉伸铺满」，不做宽高比适配（letterbox 待 UI
- * 需求明确后加）。 */
+ * 失败返回 NULL。宽高比适配由 cq_preview_set_fit_mode 控制（默认拉伸铺满 =
+ * 引入该接口前的既有行为）。 */
 CQPreview* cq_preview_create(CQSession* session, uint32_t width, uint32_t height);
 
 /* 释放；传 NULL 安全（幂等）。调用方保证 session 存活于此调用之前。 */
@@ -302,6 +302,15 @@ int32_t cq_preview_render_frame(CQPreview* preview, int64_t pts_value, int32_t p
 
 /* 改变离屏目标尺寸。会丢弃当前目标纹理（此前返回的 out_texture 失效）。 */
 int32_t cq_preview_resize(CQPreview* preview, uint32_t width, uint32_t height);
+
+/* 设置宽高比适配模式（UIA-011 / ADR-0015）。源帧与画布比例不同时的映射：
+ *   0 = 拉伸铺满（默认，行为与引入本接口前一致）
+ *   1 = contain：内切居中，letterbox/pillarbox（bar 区为黑），不裁内容
+ *   2 = cover：外接居中，裁剪铺满，不留 bar
+ * 返回 0 成功；非法 mode / 空指针返回 7000 (kInvalidArgument)。
+ * 线程安全：内部为 atomic，可在泵运行期间从任意线程调用。
+ * ⚠️ 片段级缩放/位移不归本接口（那是 MODEL-003 属性系统的事）。 */
+int32_t cq_preview_set_fit_mode(CQPreview* preview, int32_t fit_mode);
 
 /* ---- 诊断量（不是渲染结果，供日志/埋点与自测使用）----
  * 静态素材（如彩条）的像素相同，无法区分「取到了 t 时刻的帧」与「复用旧帧」，

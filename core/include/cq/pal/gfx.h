@@ -164,6 +164,16 @@ public:
     virtual void SetVertexBuffer(BufferHandle buffer, uint32_t slot) = 0;
     virtual void SetTexture(TextureHandle texture, uint32_t binding) = 0;
     virtual void SetSampler(SamplerHandle sampler, uint32_t binding) = 0;
+    // 设置后续绘制的视口矩形（渲染管线通用固定功能，非任何 pass 私有）。
+    //   * 单位 = 像素，原点 = render target **左上**（与 blit uv(0,0)=左上 的方向
+    //     约定一致；Apple 后端 1:1 映射 MTLViewport，其他后端负责各自坐标转换）。
+    //   * 只影响本次 render pass 内**之后**的绘制；清屏不受视口影响（整目标清）。
+    //   * 矩形可以大于目标（cover 类裁剪铺满）：超出部分的 fragment 被光栅化
+    //     自动丢弃（Metal 光栅化只在 attachment 内产生 fragment）。
+    //   * 不调用 = 整目标（Metal 默认 viewport 即 framebuffer 大小），行为与
+    //     引入本方法之前逐字节一致。
+    //   引入缘由与备选取舍见 ADR-0015（UIA-011 预览宽高比适配）。
+    virtual void SetViewport(float x, float y, float width, float height) = 0;
     virtual void Draw(uint32_t vertex_count) = 0;
     virtual void DrawIndexed(uint32_t index_count) = 0;
     virtual void End() = 0;

@@ -128,3 +128,21 @@ xcodebuild -workspace apps/apple/ChuanqiCut.xcworkspace -scheme MacApp build
 
 ## 相关
 ARCH-004 §3、`PALA-0xx` 任务、ADR-0009（RationalTime 网格）、EXPORT-001
+
+## PALA-011 重排与 Flush 语义修正（MEDIA-021，2026-10-04，ADR-0014）
+
+`VideoToolboxDecoder` 的三条硬规则（均为逐帧 pts 断言实测暴露，勿回退）：
+
+1. **输出回调按完成序（≈dts 序），不是显示序**（P39）。`PopFrame` 按
+   「显示序连续性」重排弹出：队列最小 pts 帧可弹 ⇔
+   `pts == 上一弹出帧 pts + 其 duration`；不匹配时等在途帧（pending 非空）
+   或返回 kIoNotFound 让 provider 继续喂包。无需知道 B 帧深度，VFR 兼容。
+2. **回调携带 dts 做完成登记**：`DecodeFrame` 传 `CFRetain(sbuf)` 作
+   sourceFrameRefCon，回调取 dts 后 CFRelease；成败都从 `pending_dts_pts_`
+   移除（丢帧/解错的包不能永远压住重排等待）。**Feed 登记必须发生在
+   DecodeFrame 之前**（回调可能在另一线程立即完成）。
+3. **Flush = 先 `WaitForAsynchronousFrames` 再清队**（P41）：在途回调可能在
+   Flush 后到达，只清缓冲会把上一解码区间的旧帧漏进新序列首弹。
+   首帧时长兜底用 **dts 差**（P40：B 帧文件前两包 pts 差 = (bframes+1) 帧）。
+
+回归：`pala_decode` / `frame_provider_apple` / `media_sequential_real`。

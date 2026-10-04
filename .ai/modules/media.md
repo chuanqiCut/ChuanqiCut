@@ -430,3 +430,29 @@ Apple 侧 = PALA-010 demux + PALA-011 VideoToolbox。
 - 工厂重载 `CreateSystemFrameProvider(PalPtr<IMediaDemuxer>, std::unique_ptr<IFrameDecoder>)`
 
 PAL 装配走重载版本即可。
+
+## MEDIA-021：顺序取帧快路径（2026-10-04 落地，ADR-0014）
+
+`SystemFrameProvider` 在不改变 kExact 语义（展示区间归属）的前提下，为顺序
+前进取帧增加**跳过 seek 的快路径**：
+
+```
+AcquireFrame(req)
+  ├─ 缓存命中 → 借出（锚点不动）
+  ├─ kExact 且 TrySequentialAcquire 命中（t ≥ 上次交付区间终点 且
+  │    跨度 ≤ proven_span_）→ 直接 AcquireExact（不 seek，不 flush）
+  └─ 否则慢路径：未 seek / consumed_ / 目标变化 → Seek → Acquire*
+```
+
+- **自适应阈值** `proven_span_`：只吸收两类实证（连续关键帧间隔、关键帧到
+  交付帧距离），初始 0，最坏退化为旧「每帧 seek」行为；无固定常量。
+- **consumed_ 硬规则**：`seek_target_` 被一次取帧消费后，重复同目标请求必须
+  重新 seek，否则越过兜底会返回下一帧（违反 kExact；旧实现实踩）。
+- **解码接缝循环结构（硬约束）**：三个 `Acquire*` 一律「先 Feed 一包再连续
+  PopFrame」——B 帧未喂入时任何重排判据无信息可用（P39）。
+- **失败/取消使增量锚点失效**（has_last_ = false），下次慢路径重新对齐。
+
+实测：GOP60/B帧3 素材顺序 120 帧 acquire 93.3ms → **4.45ms（Release）**，
+与「每帧 seek」旧语义逐帧 pts 一致；数字见 `.ai/memory/baselines.md`。
+测试：`media_sequential_acquire`（46 断言，多 GOP mock）+
+`media_sequential_real`（真实硬解 + 快/慢对照）。

@@ -27,7 +27,8 @@
 | 预览 | BIND-003（素材表 / 取帧 / 渲染器 / C ABI / Swift 绑定） | ✅ |
 | UI | UIA-003 预览嵌入、UIA-004 时间线自绘、UIA-005 拖拽裁剪 | ✅ |
 | UI | UIA-009 素材导入（三个子步骤全完成） | ✅ |
-| 播放 | **UIA-010 子步骤 1~5 全部完成**（时钟 + 播放入口 + 取帧泵） | ✅（2026-10-04） |
+| 播放 | UIA-010 子步骤 1~5 全部完成（时钟 + 播放入口 + 取帧泵） | ✅（2026-10-04） |
+| 取帧 | **MEDIA-021 顺序取帧快路径 ✅**（P38 修复 + P39/P40/P41 正确性修复；acquire 93.3ms → 4.45ms Release，14.8x；ADR-0014） | ✅（2026-10-04） |
 | 相机链路 | BACKLOG 中**不存在**；由传哲本人在另一台设备并行开发 | ➖ 不在本机写集 |
 
 **并行开发的写集边界（已与传哲确认）**：
@@ -100,6 +101,25 @@ SharedUI 的 `MetalPreviewView` / `PreviewFrameRenderer` / `PreviewZone` /
 
 ---
 
+## 3.5 MEDIA-021：顺序取帧快路径（本轮第二轮工作，2026-10-04）
+
+**决策：`docs/decisions/ADR-0014-顺序取帧快路径与解码器显示序重排.md`**
+
+- `SystemFrameProvider` 新增顺序快路径（`TrySequentialAcquire` + 自适应阈值
+  `proven_span_`，无固定常量）+ `consumed_` 语义修复（同目标重复请求重新 seek）。
+- 解码接缝三个 `Acquire*` 循环改「**先喂后弹**」（P39：B 帧未喂入时任何重排
+  判据无信息可用）。
+- `VideoToolboxDecoder` 按「显示序连续性」重排弹出（P40：VT 回调按完成序）；
+  首帧时长兜底改 dts 差（P40 同族）；Flush 先等在途帧落地再清队（P41）。
+- 新增测试：`tests/unit/test_media_sequential_acquire.cpp`（mock，46 断言，
+  含混合序列 vs 参照实现逐帧一致）、`tests/unit/test_media_sequential_real_apple.cpp`
+  （真实硬解 + 快/慢对照 + 性能断言）。
+- 门禁：Debug 42/42、Release 42/42、swift 23/23、SharedUI 20/20。
+  **核心数字**：顺序取帧 acquire 93.3ms → 4.45ms（Release），14.8x；
+  逐帧 pts 严格递增/区间归属/快慢一致 120/120 全过。完整表见 baselines「MEDIA-021」段。
+
+---
+
 ## 4. 门禁
 
 ```bash
@@ -121,13 +141,20 @@ cd apps/apple/packages/SharedUI && swift test --disable-sandbox        # 20/20
 
 ## 5. 下一步（按优先级）
 
-1. **TASK-MEDIA-021**（顺序取帧不必每帧 seek）—— 预览能不能看的**唯一**阻塞项。
+1. ~~TASK-MEDIA-021~~ **✅ 已完成（2026-10-04）**：顺序取帧快路径落地
+   （ADR-0014）。acquire 93.3ms → 4.45ms（Release，GOP60/B帧3 素材），
+   与旧语义逐帧 pts 一致；顺带修复 P39/P40/P41 三个 B 帧正确性 bug
+   （修复前 kExact 在 B 帧素材上系统性差帧）。数字见 `.ai/memory/baselines.md`
+   「MEDIA-021」段；**预览端到端帧率 App 侧数字待真机**。
 2. **iOS 编译与真机验证**（传哲本人做，iPhone 17 Pro）：本机无 iOS 运行时，
-   自 2026-10-03 起 iOS 侧改动**只有 macOS 路径被编译过**。
+   自 2026-10-03 起 iOS 侧改动**只有 macOS 路径被编译过**。本轮取帧提速后，
+   真机重点验证：顺序播放实际帧率、回退 seek（时间线反向拖动）正确性。
 3. **P33 定位**：`MediaImportTests` 偶发失败（probe 成功但时长 0），根因未证 ——
    真机"导入无反应"会是同一症状，别拖。
 4. UIA-006 属性面板（需先定 MODEL-003）、letterbox/fit、多轨合成（等 RENDER-001）、
    素材库整理（拷入沙箱，D3）。
+5. （低优）取帧流水线优化：`WaitForAsynchronousFrames` 等全部在途帧，
+   可改 per-frame 同步进一步提高吞吐（ADR-0014 §后果 4）。
 
 ---
 
@@ -135,7 +162,13 @@ cd apps/apple/packages/SharedUI && swift test --disable-sandbox        # 20/20
 
 - **P36** 消费端持锁期间调 `Request` → 死锁（第一版单测直接挂死）。
 - **P37** 跨 `MTLCommandQueue` 访问同一纹理没有顺序保证 → 共享队列是刚需。
-- **P38** 顺序播放每帧 seek = 每帧重解 GOP。
+- **P38** 顺序播放每帧 seek = 每帧重解 GOP。→ **已修（MEDIA-021）**。
+- **P39** VT 回调按完成序非显示序，B 帧必错帧 → 重排判据（ADR-0014 D4）。
+- **P40** 首帧时长兜底用 pts 差 → B 帧素材区间报宽 4 倍 → 改 dts 差。
+- **P41** decoder Flush 后旧在途回调帧污染新序列首弹 → Flush 先等在途落地。
 - 附：CocoaPods 的 Pods target 是显式 `-fno-exceptions`，**连 `try` 都编译不过**
   （`cannot use 'try' with exceptions disabled`）。内核里不要写 try/catch，
   与 `TaskRunner` 同策略。
+- 附（MEDIA-021 实测教训）：**测试请求网格必须整数 ticks 构造**——浮点
+  `ms*120` 截断出 3999/4000 交替步长，大量请求落回同一帧区间，污染"严格
+  递增"断言与性能均值（首版 120 请求仅 31 个不同 pts，即此因）。

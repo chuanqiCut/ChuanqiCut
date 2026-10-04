@@ -557,11 +557,48 @@
 - 原因：`SystemFrameProvider::AcquireFrame` 见 `seek_target_ != req.at` 就
   `Seek()`（demuxer seek + decoder Flush），随后 `AcquireExact` 从关键帧解码到
   目标 —— 顺序播放时每帧都付一遍整个 GOP 的解码。
-- 状态：**未修**（属 MEDIA-020 取帧策略，不在 UIA-010 写集内）。
-  已开 `docs/tasks/TASK-MEDIA-021.md`。
+- 状态：**已修（2026-10-04，MEDIA-021 / ADR-0014）**。顺序快路径 +
+  自适应阈值（实证学习），同口径实测 14.8~22.8x；过程中暴露 P39/P40/P41。
 - 教训：修"帧率"之前先量各阶段耗时 —— 本次若不埋点，会误以为是"渲染太慢"
   而去做 GPU 侧优化，方向全错。
-- 日期 / 来源 / 验证状态：2026-10-04 / UIA-010 子步骤 5 / **verified（实测，未修）**
+- 日期 / 来源 / 验证状态：2026-10-04 / UIA-010 子步骤 5 → MEDIA-021 / **verified（已修，实测通过）**
+
+### P39 · 平台解码器按**完成序**回调，不是显示序（B 帧必错帧）
+- 现象：`media_sequential_real` 逐帧 pts 断言失败；VT 输出实测 145/300 非单调
+  （模式 I → P+4帧 → B…），且乱序弹出的帧 duration 为**负值**（-8000）。
+- 原因：`media_decode.h` 原注释「VideoToolbox 已在显示序回调」是错误假设——
+  VT 回调按解码完成序（≈dts 序），B 帧在其参考 P 帧之后完成；且旧「弹不出才喂」
+  循环在 B 尚未喂入时只能弹 P，任何重排判据都无信息可用。
+- 处理：① 编排层三个 Acquire* 循环改「先喂后弹」（ADR-0014 D3）；
+  ② decoder `PopFrame` 按「显示序连续性」重排：队列最小 pts 帧可弹当且仅当
+  `pts == 上一弹出帧 pts + duration`，不匹配时等在途帧或返回 kIoNotFound
+  让 provider 继续喂（ADR-0014 D4）——无需知道 B 帧深度，对 VFR 成立。
+- 教训：**"解码器输出什么序"必须实测，不能信文档注释/直觉**；逐帧 pts 断言
+  是唯一能抓住这类问题的验收手段（静态彩条看不出差一帧）。
+- 日期 / 来源 / 验证状态：2026-10-04 / MEDIA-021 / **verified（已修，120/120 断言过）**
+
+### P40 · 首帧时长兜底用「喂入包 pts 差」→ B 帧素材首帧区间报宽 (bframes+1) 倍
+- 现象：顺序请求严格递增只有 31/120（≈ 每 4 个请求推进 1 帧）；「区间归属」
+  120/120 假绿（区间太宽怎么都"包含"）。
+- 原因：`VideoToolboxDecoder::Feed` 用前两个**喂入包**的 pts 差估
+  `nominal_duration_`。喂入是**解码序**：B 帧文件前两个包是 I 和其后的参考帧，
+  pts 差 = (bframes+1) 帧（golden bframes=3 → 4 帧宽）。首帧区间 [P, P+16000)
+  使 kExact 在关键帧上提前命中，画面差 1~3 帧。
+- 处理：改用 **dts 差**（CFR 下解码序相邻 dts 间隔 = 一帧，与 B 帧排布无关）。
+- 教训：**区间归属（FrameContains）的正确性完全依赖 duration 报准**；
+  duration 是元数据不是噪声，任何"兜底估算"都要过 B 帧场景的测试。
+- 日期 / 来源 / 验证状态：2026-10-04 / MEDIA-021 / **verified（已修）**
+
+### P41 · decoder Flush 后旧在途回调帧污染新序列首弹
+- 现象：Seek(124000) 后首弹弹出**旧 GOP 的 128000**（step1 复现），后续请求
+  交付漂移（甚至回到流首 8000）。
+- 原因：VT 异步回调可能在 `Flush()` 之后才到达；Flush 清队列但拦不住**之后**
+  落地的旧帧，而 Flush 后首弹无显示序约束，旧帧直接被当新序列首帧交付。
+- 处理：`Flush()` 先 `VTDecompressionSessionWaitForAsynchronousFrames` 等
+  在途帧全部落地，再清队列/pending（provider 串行调用 Flush/Feed，无并发）。
+- 教训：**异步解码器的"清空"要分两步——先等在途落地、再清**；只清缓冲等于
+  没清。连带修好了一个 AVAssetReader 频繁重建的异常源（读 1 包即尽）。
+- 日期 / 来源 / 验证状态：2026-10-04 / MEDIA-021 / **verified（已修）**
 
 ---
 

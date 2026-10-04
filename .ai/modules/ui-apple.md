@@ -188,3 +188,33 @@ SwiftUI）—— 两端通用的是按钮入口，摇一摇留给后续任务。
   `totalFailed`（真机耗时入 baselines 的数据源）。
 - 验证：simulator SDK `-typecheck` 0 错 0 警（比 -parse 强，抓出 4 个 API 形状错，
   见 P39）+ macOS 宿主执行数学断言 19/19；包级 swift test 待新 Xcode 机器（P39）。
+
+# CAM-012 落地（2026-10-04）：Metal 磨皮替换 CI 高斯近似（B 期第 2 卡）
+
+- **新增目录** `apps/apple/ios/iOSApp/Camera/Effects/`（App 层特效资产，ADR-0014 §3
+  红线 #6 边界，不进 SDK shader 清单）：
+  - `beauty_bilateral.metal` — 双 pass 亮度域双边：Pass1 下采样(2x2 盒)+水平双边
+    （输出半分辨率 extent）；Pass2 垂直双边+双线性上采样+与原图按强度混合
+    （输出原图 extent）。随 Xcode **编译期内建**为 default.metallib（iOS 17.2 SDK
+    的 CIKernel 无源码串初始化器，只有 `fromMetalLibraryData:`，P40）。
+  - `BeautyKernel.swift` — 从 bundle 扫 metallib → CIKernel×2 → 双 pass apply；
+    `BeautyKernelProfile` 纯函数映射（taps 2...5 / σr 0.03+0.08s / mix=s，单调不减）；
+    加载失败/非零 origin/引擎放弃一律返回 nil → SharedUI 默认实现兜底。
+- **SharedUI `CameraBeauty.swift` 改薄封装（契约层）**：新增
+  `CameraBeautySmoothingEngine`（@Sendable `(CIImage, Double) -> CIImage?`）注入点
+  `CameraBeautyEngine.smoothing`（锁保护类，Swift 5.9/6.x 双兼容，无
+  nonisolated(unsafe)）。`apply` 语义不变：off 恒等直通（===）→ 引擎优先 →
+  引擎放弃/未注入回落默认 CI 高斯（**保留为兜底不是死代码**，macOS 一直走它）。
+  调用方（预览/拍照/录制）零改动。
+- **装配**：`CameraViewModel.init` Metal 分支末行
+  `BeautyKernel.installSharedSmoothingIfNeeded()`（幂等；bundle 无 metallib 静默降级）。
+- **A 期存量编译错误修复（P41，7 处）**：CameraRenderer（缺 import MetalKit、
+  latest 重声明、render(toDestination:) 在 iOS 17.2 SDK 不存在→改 toMTLTexture
+  变体）、CameraRecorder（sourcePixelBufferAttributes 标签、
+  CVPixelBufferPoolCreatePixelBuffer 3 参桥接）、CameraView（iOS 17 两参 onChange
+  用于 iOS 16 部署目标）、CameraViewModel（缺 import UIKit、wireCallbacks 引用
+  局部化去 self 捕获）。
+- **验证新工具** `tools/qa/beauty_harness/build_and_run.sh`：`metal -fcikernel` 编
+  同一 .metal → metallib，连同真 BeautyKernel/CameraBeauty 在 macOS 宿主 GPU 上
+  跑算法断言（profile 单调/方差单调/边缘过渡宽度/平台对比度/1080p 耗时），
+  诊断开关 `CQ_DEBUG_PROFILE=1`。真机指标（≤8ms）仍待实测回填 baselines。

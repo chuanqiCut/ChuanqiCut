@@ -12,6 +12,7 @@ import Foundation
 import Metal
 import Photos
 import SharedUI
+import UIKit
 
 @MainActor
 final class CameraViewModel: ObservableObject {
@@ -75,6 +76,8 @@ final class CameraViewModel: ObservableObject {
             let previewRenderer = CameraPreviewRenderer(ciContext: context, commandQueue: queue)
             previewRenderer.setFilter(filter)
             renderer = previewRenderer
+            // CAM-012：Metal 磨皮引擎注入（bundle 无 metallib 时静默走 SharedUI 默认实现）。
+            BeautyKernel.installSharedSmoothingIfNeeded()
         } else {
             ciContext = nil
             renderer = nil
@@ -264,7 +267,10 @@ final class CameraViewModel: ObservableObject {
 
     private func wireCallbacks() {
         guard let renderer else { return }
-        // 捕获非隔离引用（renderer / recorderBox），闭包体内不触碰 MainActor 状态。
+        // 捕获非隔离引用（renderer / recorderBox 局部化，不捕获 self：既满足
+        // 显式捕获要求，又避免 manager → 闭包 → self 的保留环）；闭包体内
+        // 不触碰 MainActor 状态。
+        let recorderBox = self.recorderBox
         manager.onVideoFrame = { buffer, pts in
             renderer.frameSlot.push(buffer)      // 预览（latest-wins）
             recorderBox.get()?.appendVideo(sourceBuffer: buffer, at: pts)  // 录制

@@ -181,3 +181,15 @@ iOS 平台差异五处修复、门禁命令、红线摘录、下一步优先级�
   平滑状态只在检测队列持有；`onResult` 交付的观测已平滑。
 - iOS 17+ 才有的 Vision 类型（如动物姿态）其**类型引用也必须收进 `@available`
   分支或用基类**（VNRequest/VNObservation）持有——无门控作用域写类型名直接编译错。
+
+## 相机特效分层与验证（2026-10-04 定，CAM-012）
+- **相机特效 = App 层资产**（`iOSApp/Camera/Effects/`，ADR-0014 §3）：.metal +
+  Swift 壳都放这里，不进 SDK shader 清单；SharedUI 只持有**契约层**（参数结构 +
+  注入点 + 默认 CI 兜底实现）。原生引擎经 `CameraBeautyEngine.smoothing` 注入，
+  引擎放弃/加载失败**必须回落默认实现**——引擎永不制造黑帧。后续特效卡
+  （CAM-013 warp / CAM-014 贴纸）照此分层。
+- **CI kernel 资产纪律**（P40）：.metal 用 `metal -fcikernel` 一步编（两步 air→
+  metallib 在本机工具链出空库）；运行时只走 `CIKernel(functionName:
+  fromMetalLibraryData:)`，加载失败静默降级，不抛错不崩。
+- **相机模块 Swift 文件合入前必须过 iphonesimulator SDK 全量 -typecheck**
+  （P39/P41：-parse 已两次证明会放行真错误；A 期 4 文件 7 处存量错误即证据）。

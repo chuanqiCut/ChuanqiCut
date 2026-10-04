@@ -613,3 +613,39 @@
      非可选 FloatingPoint，可选分量要自行解包比较，否则新机器 swift test 必挂。
 - 日期 / 来源 / 验证状态：2026-10-04 / CAM-011 / **verified**（typecheck 0 错 +
   harness 19/19；API 形状以 iphonesimulator 17.2 SDK 头文件 grep 对表为准）
+- 日期 / 来源 / 验证状态：2026-10-04 / CAM-012 / **verified**（探针 + harness 实跑）
+
+### P40 · iOS 17.2 SDK 的 CI Metal kernel 全套 API 事实（与常见文档记忆不符）
+1. **CIKernel 没有源码串初始化器**：`CIKernel(functionName:from:)` 不存在，
+   只有 `CIKernel(functionName:fromMetalLibraryData:)`（iOS 11+）。CI kernel
+   必须 build 期用 `metal -fcikernel` 编成 metallib 入包，运行时从 bundle 取
+   Data 加载；**不能**走 `MTLDevice.makeLibrary(source:)`（那是普通 Metal，
+   coreimage::sampler 不可用）。
+2. **`metal -c` 出 .air 再 `metallib` 链接在本机工具链（Xcode 15.2）得到 96 字节
+   空库**——必须一步 `metal -fcikernel x.metal -o x.metallib`。两步法是网上常见
+   写法，本机实测丢函数。
+3. **`CIContext.render(_:to: CIRenderDestination)` 同步重载在 iOS 17.2 SDK 不存在**
+   （只有 startTaskToRender 异步任务 + toMTLTexture/toCVPixelBuffer/toBitmap 同步
+   变体）。toMTLTexture 变体的 colorSpace 参数**非可选**（CGColorSpace），
+   macOS 上试传 nil 会编译错。
+4. `CVPixelBufferPoolCreatePixelBuffer` 在本 SDK 桥接为 **3 参**
+   （allocator, pool, &out）——头文件里的 auxAttributes 参数被 Swift 导入器吞掉；
+   `CVPixelBufferPoolCreateBuffer` 不存在（-parse 查不出这种错，见 P41）。
+5. coreimage::sampler 只有 `sample(float2)`（无自定义 sampler state），
+   边界行为未定义 → kernel 内手动 clamp 到 `extent().xy ~ xy+zw-1`。
+- 日期 / 来源 / 验证状态：2026-10-04 / CAM-012 / **verified**（typecheck 抓出后逐条修复）
+
+### P41 · A 期相机代码从未 typecheck 过，存量 7 处编译错误（-parse 的代价清单）
+CAM-012 首次对相机模块做全量 `-typecheck`（P39 技法），一次抓出 7 处 -parse
+放行的真错误（已全部修复）：
+1. CameraRenderer：用了 MTKView/MTKViewDelegate 但没 `import MetalKit`；
+2. CameraRenderer：`private var latest` 与 `func latest()` 同类型内重声明；
+3. CameraRenderer：`render(_:to: CIRenderDestination)` 不存在（P40-3）；
+4. CameraRecorder：`sourceBufferAttributes:` 应为 `sourcePixelBufferAttributes:`；
+5. CameraRecorder：`CVPixelBufferPoolCreateBuffer` 不存在（P40-4）；
+6. CameraView：iOS 17 起的两参 `.onChange(of:)` 用于 iOS 16.0 部署目标（同 P39-③
+   的"iOS 17 API 未门控"类型）；
+7. CameraViewModel：缺 `import UIKit`（UIImage）；wireCallbacks 闭包里
+   recorderBox 隐式 self——已改局部 let 捕获（顺便消掉潜在保留环）。
+**规则**：相机模块新文件合入前必须过 iphonesimulator SDK 全量 -typecheck
+（-parse 只验语法不验类型/API/可用性）；harness 已是固定工具。

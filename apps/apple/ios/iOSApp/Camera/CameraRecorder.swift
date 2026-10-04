@@ -153,7 +153,7 @@ final class CameraRecorder {
         guard let pool = pixelBufferPool, let pixelBuffer = createBuffer(from: pool) else {
             return  // 池耗尽：丢帧（同采集侧 latest-wins 语义）
         }
-        // render(toCVPixelBuffer:) 非 throws（P41）；CI 内部失败不会抛出到此层。
+        // render(toCVPixelBuffer:) 非 throws（P48）；CI 内部失败不会抛出到此层。
         ciContext.render(image, to: pixelBuffer)
 
         startSessionIfNeeded(at: time)
@@ -221,7 +221,7 @@ final class CameraRecorder {
 
     private func createBuffer(from pool: CVPixelBufferPool) -> CVPixelBuffer? {
         var maybeBuffer: CVPixelBuffer?
-        // 本 SDK 桥接为 3 参（auxAttributes 被导入器吞掉，P41）：allocator, pool, &out。
+        // 本 SDK 桥接为 3 参（auxAttributes 被导入器吞掉，P48）：allocator, pool, &out。
         CVPixelBufferPoolCreatePixelBuffer(kCFAllocatorDefault, pool, &maybeBuffer)
         return maybeBuffer
     }

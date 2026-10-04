@@ -69,4 +69,45 @@ final class PlaybackTests: XCTestCase {
         XCTAssertFalse(vm.isPlaying)
         XCTAssertEqual(vm.playhead.value, 0, "停止回到 0")
     }
+
+    /// 播放把时刻喂给**取帧泵**：泵真的在产出帧，且帧随时间推进。
+    ///
+    /// 断言的是「帧从泵里出来且随时间前进」，不是"定时器被调了几次"。
+    /// ⚠️ 不断言具体帧率：单帧取帧耗时随机器与构建配置漂移，一写死就 flaky。
+    ///    数字每跑一次都会打印出来，供 baselines 记录。
+    func testPlaybackFeedsPumpAndFramesAdvance() throws {
+        let vm = try EditorViewModel()
+        guard FileManager.default.fileExists(atPath: goldenURL.path) else {
+            return XCTFail("golden 夹具缺失：\(goldenURL.path)")
+        }
+        XCTAssertEqual(vm.importMedia(url: goldenURL), .ok)
+        XCTAssertTrue(waitForTimelineVersion(vm, 3), "导入落地")
+
+        guard let pump = vm.previewPump else {
+            return XCTFail("预览泵应存在（本机有 Metal 后端）")
+        }
+
+        vm.togglePlayback()
+        XCTAssertTrue(vm.isPlaying)
+
+        var firstPts: Int64 = -1
+        var lastPts: Int64 = -1
+        let started = Date()
+        while Date().timeIntervalSince(started) < 1.0 {
+            RunLoop.main.run(until: Date().addingTimeInterval(0.02))
+            if let frame = pump.withLatestFrame({ $0 }), frame.seq > 0 {
+                if firstPts < 0 { firstPts = frame.pts.value }
+                lastPts = frame.pts.value
+            }
+        }
+        vm.togglePlayback()
+        XCTAssertFalse(vm.isPlaying)
+
+        let stats = pump.stats
+        print("[baseline] 1s 播放：requested=\(stats.requested) rendered=\(stats.rendered) "
+              + "coalesced=\(stats.coalesced) nonOk=\(stats.nonOk)")
+        XCTAssertGreaterThan(stats.rendered, UInt64(0), "泵真的渲染了帧")
+        XCTAssertGreaterThanOrEqual(stats.requested, stats.rendered, "请求数 >= 渲染数（守恒）")
+        XCTAssertGreaterThan(lastPts, firstPts, "泵产出的帧随播放推进（不是复用同一帧）")
+    }
 }

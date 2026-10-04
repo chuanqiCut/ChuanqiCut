@@ -53,11 +53,11 @@ parallel:    false
 
 | 项 | 命令 | 结果 |
 |---|---|---|
-| iOS 侧类型检查 | `xcrun swiftc -typecheck -sdk iphonesimulator -target x86_64-apple-ios16.0-simulator -I <stub>`（FaceObservation + VisionDetector，SharedUI 真源文件编成同名 stub 模块） | **0 错误 0 警告**（比 A 期的 `-parse` 强：抓出并修正 4 个 API 形状错误，见 pitfalls P39） |
+| iOS 侧类型检查 | `xcrun swiftc -typecheck -sdk iphonesimulator -target x86_64-apple-ios16.0-simulator -I <stub>`（FaceObservation + VisionDetector，SharedUI 真源文件编成同名 stub 模块） | **0 错误 0 警告**（比 A 期的 `-parse` 强：抓出并修正 4 个 API 形状错误，见 pitfalls P46） |
 | 单测文件类型检查 | 同上（macOS SDK + `-enable-testing` stub + XCTest 平台路径） | **0 错误**（抓出 `XCTAssertEqual(CGFloat?, accuracy:)` 重载不适用，已修——否则新机器 swift test 必挂） |
 | 纯函数数学真实执行 | macOS 宿主 `swiftc` 编译执行 scratch harness（断言集复刻单测） | **19/19 PASS**（收敛残差 0.00045 < 输入抖动 0.003） |
-| SharedUI `swift test` | 包级 | **本机阻塞**（双重：Package.swift tools 6.1 清单 Swift 5.9.2 解析不了 + xcframework 缺失，见 P39）——**待新 Xcode 机器**，非代码未完成 |
-| iOS App 构建 | 同 CAM-002 命令 | 本机阻塞（既有结论 P36b，非本卡新增） |
+| SharedUI `swift test` | 包级 | **本机阻塞**（双重：Package.swift tools 6.1 清单 Swift 5.9.2 解析不了 + xcframework 缺失，见 P46）——**待新 Xcode 机器**，非代码未完成 |
+| iOS App 构建 | 同 CAM-002 命令 | 本机阻塞（既有结论 P42b，非本卡新增） |
 
 ### 锁定的契约（CAM-013/014 消费方必读）
 

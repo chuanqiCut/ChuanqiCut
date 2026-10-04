@@ -21,6 +21,7 @@
 
 #include <atomic>
 #include <deque>
+#include <map>
 #include <mutex>
 #include <string>
 
@@ -64,7 +65,11 @@ CVPixelBufferRef GetCvPixelBuffer(NativeImageHandle handle);
 //   * SPS/PPS 注入：通过 Open 时由 source path 打开 AVAsset 取得视频轨的
 //     `CMFormatDescription`（内嵌 avcC，含 SPS/PPS）建立解码会话；无需手解 avcC 字节，
 //     也绕开任何已废弃的 parameter-set 构造 API。
-//   * 解码重排（dts→pts）：VideoToolbox 内部 DPB 已在**显示序**回调，PopFrame 按显示序吐出。
+//   * 解码重排（dts→pts）：⚠️ VT 输出回调按**解码完成序**（≈dts 序），不是显示序
+//     —— MEDIA-021 逐帧 pts 断言实测暴露（B 帧 B 在其参考 P 之后完成）。故
+//     PopFrame 必须自行重排：回调携带 dts（经 sourceFrameRefCon 的 CMSampleBuffer
+//     取得）并登记「已喂未完成」集合；弹出时取 pts 最小帧，仅当不存在 pts 更小
+//     的未完成包时才可交付，否则等待异步帧完成。Flush 清空重排状态。
 //   * seek 后 flush/reset：Flush() 清空待出队帧并复位时长跟踪；新 GOP 以 IDR 起头，
 //     VT 内部 DPB 随 IDR 自动复位，无需重建会话。
 //
@@ -100,7 +105,9 @@ private:
                               VTDecodeInfoFlags info_flags, CVImageBufferRef image_buffer,
                               CMTime pts, CMTime duration);
 
-    void Enqueue(CVPixelBufferRef pb, const RationalTime& pts);
+    void Enqueue(CVPixelBufferRef pb, const RationalTime& pts, const RationalTime& dts);
+    // 回调完成登记（成败皆调）：把该包从「已喂未完成」集合移除，解锁重排等待。
+    void MarkDecoded(const RationalTime& dts);
     void ReleaseOutputQueue();
     void TeardownSession();
     RationalTime ToRational(CMTime t) const;
@@ -113,22 +120,29 @@ private:
     CMFormatDescriptionRef format_desc_ = nullptr;  // Open 时取得，会话与 CMSampleBuffer 共用
     VTDecompressionSessionRef session_ = nullptr;
 
-    // 输出队列（显示序）：回调入队，PopFrame 出队。互斥保护（回调可能在异线程）。
+    // 输出队列（完成序入队，PopFrame 重排为显示序弹出）。互斥保护（回调可能在异线程）。
     std::mutex queue_mutex_;
     struct OutputFrame {
         CVPixelBufferRef pb = nullptr;
         RationalTime pts{0, kProjectTimeScale};
+        RationalTime dts{0, kProjectTimeScale};
     };
     std::deque<OutputFrame> output_queue_;
+    // 已喂入、尚未收到完成回调的包：dts.value → pts（重排依据）。key 约束：
+    // demuxer 已把 pts/dts 统一转换到项目网格（timescale 120000），故用 value 作 key。
+    std::map<int64_t, RationalTime> pending_dts_pts_;
     RationalTime prev_popped_pts_{0, 0};  // timescale=0 表示未初始化
+    RationalTime prev_duration_{0, 1};    // 上一弹出帧 duration（显示序连续性判据：期望=pts+duration）
     bool has_prev_ = false;
     RationalTime nominal_duration_{4000, kProjectTimeScale};  // 首帧时长兜底（≈1/30s @120000）
     int64_t popped_count_ = 0;
 
     CqNativeImage* last_returned_ = nullptr;  // 供 Flush/析构释放，避免泄漏
 
-    // 首帧时长兜底：记录前两个喂入包的显示序差（假定恒定帧率），用于首帧 duration。
-    RationalTime first_fed_pts_{0, 0};
+    // 首帧时长兜底：记录前两个喂入包的解码序差（假定恒定帧率），用于首帧 duration。
+    // 必须用 dts 差：B 帧文件前两个包的 pts 差 = (bframes+1) 帧（media_decode.mm
+    // Feed 内注释），曾致首帧区间报宽 4 倍、kExact 在关键帧提前命中（画面差帧）。
+    RationalTime first_fed_dts_{0, 0};
     bool fed_first_ = false;
     bool fed_second_ = false;
 

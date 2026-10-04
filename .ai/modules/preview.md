@@ -23,6 +23,9 @@ IBlitPass::Encode                  → 画到离屏 RenderTarget
 |---|---|
 | `core/include/cq/preview/preview_renderer.h` + `src/preview/preview_renderer.cpp` | 预览渲染器本体（平台无关） |
 | `core/src/preview/cq_sdk_preview.cpp` | 预览的 C ABI 实现（**独立 TU**，原因见 ADR-0011） |
+| `core/include/cq/preview/preview_frame_source.h` | `IPreviewFrameSource`：渲染一帧的接缝（供泵注入假实现测试） |
+| `core/include/cq/preview/preview_pump.h` + `src/preview/preview_pump.cpp` | **预览取帧泵**（UIA-010 子步骤 5，自有线程） |
+| `core/include/cq/preview/player_clock.h` + `src/...cpp` | 播放时钟（UIA-010，只算时间不取帧） |
 
 ## 3. 依赖全部是**注入的非拥有指针**
 
@@ -60,7 +63,29 @@ golden 素材 `gf_1080p_h264.mp4` 是**静态**彩条，不同时刻的像素完
 - **多轨合成** —— 只渲染第一条命中的视频轨；叠加 / 转场合成等 RenderGraph
   （RENDER-001）落地后再补。
 - **变速 / retime** —— MODEL-001 无该字段，时间线时长与素材时长 1:1。
-- **宽高比适配** —— 当前「拉伸铺满」，无 letterbox / fit 模式。
+- ~~**宽高比适配**~~ —— **已支持（UIA-014，2026-10-04）**：`FitMode`
+  stretch / contain / cover，见下文专节；片段级缩放/位移仍归 MODEL-003。
+
+## 6.5 宽高比适配 FitMode（UIA-014 / ADR-0018，2026-10-04）
+
+源帧与画布比例不同时的映射，**实现接缝 = 编码器视口**（`IGfxEncoder::SetViewport`
+→ PAL `ICommandEncoder::SetViewport`，ADR-0018）：
+
+| FitMode | 视口 | 效果 |
+|---|---|---|
+| kStretch=0（默认） | 不设（整目标） | 拉伸铺满 —— 与引入前编码序列**逐字节一致** |
+| kContain=1 | 内切矩形居中 | letterbox/pillarbox，bar 区 = 清屏黑，不裁内容 |
+| kCover=2 | 外接矩形居中 | 裁剪铺满，超出目标被光栅化自动丢弃 |
+
+- 源尺寸 = `frame.video.width/height`（解码器填充）。**0 = 未知 → 诚实退化 stretch**。
+- ⚠️ 源尺寸必须在 `provider->ReleaseFrame(frame)` **之前**捕获：lease 归约会把
+  frame 整体重置为空（首版即踩此坑，读到的全是 0）。
+- `SetFitMode` 内部 atomic（主线程设置 / 泵线程渲染读，无竞争）；
+  C ABI `cq_preview_set_fit_mode`（0/1/2，非法值 7000）；Swift `Previewer.setFitMode`。
+- 产品装配：SharedUI `AppEntry` init 显式设 **contain**（内核默认 stretch 保证
+  既有断言兼容）。
+- 守卫：`preview_renderer` [8]（contain bar 黑 + 内容真值 / cover 无 bar）、
+  `c_abi_preview` set_fit_mode 契约段、`gfx_device` 用例 C（视口原语像素断言）。
 
 ## 7. 零拷贝链路（不能退化的部分）
 
@@ -95,8 +120,8 @@ PreviewRenderer(gfx, blit.get(), &factory, &timeline, &assets, cfg)
 
 ```bash
 ./tools/build/build_core.sh --platform=apple --config=Debug --test
-ctest --test-dir build -R preview_renderer   # 35 项：像素真值 / 方向 / 零拷贝 / 空隙 / Resize
-ctest --test-dir build -R c_abi_preview      # 32 项：真正的 C TU，契约与诊断量
+ctest --test-dir build -R preview_renderer   # 51 项：像素真值 / 方向 / 零拷贝 / 空隙 / Resize / FitMode
+ctest --test-dir build -R c_abi_preview      # 78 项：真正的 C TU，契约与诊断量（含 set_fit_mode）
 
 cd bindings/swift && swift test --disable-sandbox          # Previewer 契约 + golden 帧
 ./bindings/swift/run_smoke.sh                              # 链接级 + 空隙语义
@@ -195,3 +220,72 @@ SharedUI：ViewModel 的 `togglePlayback/stopPlayback` + `Timer` 驱动（30Hz�
 线程，主线程只做 blit + present。
 
 守卫：`ctest -R player`（core_player_clock 29 断言 + c_abi_player 33 断言）。
+
+
+---
+
+# UIA-010 子步骤 5（2026-10-04）：取帧搬到泵线程，主线程只 blit
+
+> ADR-0016（预览取帧的线程归属与共享命令队列）、`docs/tasks/TASK-UIA-010.md`、
+> `.ai/memory/baselines.md`（本节的实测数字都从那里来）
+
+## 1. 装配形状（改后）
+
+```
+主线程                          泵线程（PreviewPump）
+──────────────────────────────  ────────────────────────────────────────
+Timer 60Hz → player.tick()
+  → pump.request(pts)  ────────►  取 pts → Renderer::RenderFrame
+  → playhead 发布（30Hz）          （seek + 解码 + 导入 + 离屏绘制）
+MTKView.draw(in:)
+  → pump.Lock()
+  → LatestLocked().texture
+  → PreviewFrameRenderer.blit     ← 同一条 MTLCommandQueue（commit 顺序）
+  → present
+  → pump.Unlock()
+```
+
+## 2. 线程归属（硬约束）
+
+- 挂上泵后，`PreviewRenderer::RenderFrame` / `Resize` **只由泵线程调用**。
+  解码会话与 `CVMetalTextureCache` 不可并发访问 —— 这不是"可能出错"是必然竞争。
+- `Resize` 会销毁离屏 RT，故只能经 `PreviewPump::RequestResize`；消费端取句柄
+  走 `Lock → LatestLocked → blit → Unlock`（持锁期间泵不发布、不 resize）。
+- ⚠️ **持锁期间不要调 `Request`**（同一把锁 → 死锁，P36 实踩），也不要
+  `waitUntilCompleted`（会把泵一起堵住）。
+
+## 3. 请求合并
+
+请求快于渲染时取最新，被覆盖的请求永不渲染（`Stats::coalesced`）。守恒式：
+`requested == rendered + coalesced`（排空后成立，用例有断言）。
+
+⚠️ 与 UIA-005 拒绝的「命令合并」相反 —— 理由相反：命令合并会丢一次编辑
+（撤销栈必须有），画面合并丢的是"某时刻的画面"，画面是时间的函数、重算即得。
+
+## 4. 共享命令队列（跨线程顺序的前提）
+
+`gfx_device.cpp` 由每帧 `CreateCommandQueue` 改为**按设备复用**；新增
+`ICommandQueue::NativeHandle()`（中性句柄）→ `IGfxDevice::SharedQueueHandle()`
+→ `cq_preview_shared_queue()` → Swift 侧 reinterpret 成 `MTLCommandQueue`。
+UI 的 blit 必须用这条，否则跨队列没有顺序保证（P37）。
+
+## 5. 实测（详见 baselines）
+
+| 项 | 数字 |
+|---|---:|
+| 连续递进请求单帧 total（128x128，Release） | 99.3 ms（取帧 93.3ms = 94%） |
+| 同上 Debug | 96.3 ms |
+| App 侧 1s 播放（1280x720，Debug XCFramework） | 请求 59 / 渲染 3 / 合并 54 |
+
+**帧率没有因此提高** —— 取帧策略才是瓶颈（P38 / TASK-MEDIA-021）。
+
+## 6. 守卫
+
+```bash
+ctest --test-dir build -R core_preview_pump    # 41 断言（假帧源，只链 cq_core）
+ctest --test-dir build -R c_abi_preview        # 78 断言（真实链路 + 泵段 + set_fit_mode 契约）
+ctest --test-dir build -R preview_renderer     # 51 断言（含单帧耗时实测段 + FitMode [8]）
+ctest --test-dir build -R gfx_device           # 30 断言（含视口原语用例 C）
+cd bindings/swift && swift test --disable-sandbox                 # 23 用例
+cd apps/apple/packages/SharedUI && swift test --disable-sandbox   # 20 用例
+```

@@ -161,6 +161,18 @@ cq_require_cxx20(cq_tests_core_player_clock)
 apply_cq_warnings(cq_tests_core_player_clock)
 add_test(NAME core_player_clock COMMAND cq_tests_core_player_clock)
 
+# ---- UIA-010 子步骤 5：预览取帧泵（并发语义；假帧源，只链 cq_core）----
+# 只链 cq_core：泵是平台无关的（std::thread + mutex + condvar），不需要 PAL 后端，
+# 故本用例在没有 Metal / 硬解后端的环境里也能跑 —— 这条是刻意的，别顺手加 cq_pal_apple。
+add_executable(cq_tests_core_preview_pump
+    unit/test_preview_pump.cpp)
+target_include_directories(cq_tests_core_preview_pump PRIVATE
+    ${CMAKE_SOURCE_DIR}/core/include)
+target_link_libraries(cq_tests_core_preview_pump PRIVATE cq_core)
+cq_require_cxx20(cq_tests_core_preview_pump)
+apply_cq_warnings(cq_tests_core_preview_pump)
+add_test(NAME core_preview_pump COMMAND cq_tests_core_preview_pump)
+
 # ---- UIA-010：播放时钟 + 时间线时长的 C ABI（真正的 C TU，只链 cq_core）----
 add_executable(cq_tests_c_abi_player
     unit/test_c_abi_player.c)
@@ -216,6 +228,20 @@ target_link_libraries(cq_tests_media_system_frame_provider PRIVATE cq_core)
 cq_require_cxx20(cq_tests_media_system_frame_provider)
 apply_cq_warnings(cq_tests_media_system_frame_provider)
 add_test(NAME media_system_frame_provider COMMAND cq_tests_media_system_frame_provider)
+
+# ---- MEDIA-021：顺序取帧快路径（不每帧 seek 重解 GOP）----
+# P38 修复的编排层单测：多 GOP Mock（4×IPBB）驱动，逐帧 pts 断言 + seek/flush
+# 计数（学习期后顺序请求不再 seek）。验收对照 TASK-MEDIA-021：顺序递进 / 同帧
+# 重复 / 回退 / 超阈值跳转 / 混合序列 vs 参照实现逐帧一致 / kKeyframeBefore 不受
+# 影响 / 取消恢复 / 显式 Seek 契约。平台无关，全平台可跑。
+add_executable(cq_tests_media_sequential_acquire
+    unit/test_media_sequential_acquire.cpp)
+target_include_directories(cq_tests_media_sequential_acquire PRIVATE
+    ${CMAKE_SOURCE_DIR}/core/include)
+target_link_libraries(cq_tests_media_sequential_acquire PRIVATE cq_core)
+cq_require_cxx20(cq_tests_media_sequential_acquire)
+apply_cq_warnings(cq_tests_media_sequential_acquire)
+add_test(NAME media_sequential_acquire COMMAND cq_tests_media_sequential_acquire)
 
 # ---- MEDIA-011：LruFrameCache 帧缓存池（LRU + 内存上界 + lease 保护）----
 # 跨平台，无平台后端。实测：插入超上界后 UsedBytes() <= 上界、LRU 淘汰最久未用、
@@ -505,6 +531,22 @@ if(APPLE)
     cq_require_cxx20(cq_tests_frame_provider_apple)
     apply_cq_warnings(cq_tests_frame_provider_apple)
     add_test(NAME frame_provider_apple COMMAND cq_tests_frame_provider_apple)
+
+    # ---- MEDIA-021：顺序取帧快路径真实链路（P38 修复端到端验收）----
+    # golden long_gop_bframes（30fps/GOP60/B帧3）顺序 120 帧：逐帧 pts 严格递增 +
+    # 区间归属 + 与「每帧显式 seek」对照实例逐帧一致；输出两段 acquire 均值/最大值
+    # （写回 .ai/memory/baselines.md）。性能断言宽松（fast < slow），倍数不写死。
+    add_executable(cq_tests_media_sequential_real
+        unit/test_media_sequential_real_apple.cpp)
+    target_include_directories(cq_tests_media_sequential_real PRIVATE
+        ${CMAKE_SOURCE_DIR}/core/include
+        ${CMAKE_SOURCE_DIR}/pal/apple)
+    target_compile_definitions(cq_tests_media_sequential_real PRIVATE
+        CQ_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
+    target_link_libraries(cq_tests_media_sequential_real PRIVATE cq_core cq_pal_apple)
+    cq_require_cxx20(cq_tests_media_sequential_real)
+    apply_cq_warnings(cq_tests_media_sequential_real)
+    add_test(NAME media_sequential_real COMMAND cq_tests_media_sequential_real)
 endif()
 
 # ---- PALA-011：Apple 硬解后端（VideoToolbox）----

@@ -8,5 +8,5 @@
 >
 > **留档价值**：契约设计中的语义决策（latest-wins 帧策略、lease 模型、
 > 120000 网格 pts、状态码映射）被 ADR-0014 的原生实现继承；
-> `AVCaptureMultiCamSession` 仅 iOS 等事实记入 pitfalls P38 与 pal.md。
+> `AVCaptureMultiCamSession` 仅 iOS 等事实记入 pitfalls P44 与 pal.md。
 > 详见 `docs/decisions/ADR-0014-相机模块采用iOS原生栈.md`。

@@ -4,7 +4,7 @@
 id:          TASK-CAM-002
 layer:       UI(iOSApp)
 goal:        CameraManager:AVCaptureSession 会话编排——前后摄切换、视频/音频帧输出、权限、生命周期
-input:       [SPEC-CAM-001 v1.1, ADR-0014, pitfalls P38]
+input:       [SPEC-CAM-001 v1.1, ADR-0014, pitfalls P44]
 output:      [apps/apple/ios/iOSApp/Camera/CameraManager.swift]
 write_set:   apps/apple/ios/iOSApp/Camera/CameraManager.swift, apps/apple/ios/project.yml(权限声明)
 read_set:    .ai/modules/ui-apple.md, apps/apple/ios/iOSApp/ChuanqiCutApp.swift

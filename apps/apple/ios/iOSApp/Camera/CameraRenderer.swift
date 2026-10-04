@@ -119,7 +119,7 @@ final class CameraPreviewRenderer: NSObject, MTKViewDelegate {
         image = process(image)
 
         // render(toMTLTexture:) 非 throws（iOS 17.2 SDK 无同步 render(toDestination:)，
-        // P41）：失败经 commandBuffer.error 暴露 → 表现为帧计数停滞，与既有口径一致。
+        // P48）：失败经 commandBuffer.error 暴露 → 表现为帧计数停滞，与既有口径一致。
         ciContext.render(image, to: drawable.texture, commandBuffer: commandBuffer,
                          bounds: image.extent, colorSpace: CGColorSpaceCreateDeviceRGB())
 

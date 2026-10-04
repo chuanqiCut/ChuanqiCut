@@ -492,23 +492,49 @@
   负 start**（只校验重叠），UI 不夹就会把语义外的片段提交进去。
 - 日期 / 来源 / 验证状态：2026-10-03 / UIA-005 / **verified**
 
-### P33 · MediaImportTests 偶发失败（flaky，约 50%），根因**未定位**
+### P33 · MediaImportTests 偶发失败（flaky，约 50%）→ 根因定位（AVAsset 加载终态/超时）
 - 现象：`importMedia` 返回 `7000 (kInvalidArgument)`，素材库为空，随后
   `mediaLibrary[0]` 越界 → Fatal error → 整个 xctest 进程以 signal 4 退出。
   **单独跑 `--filter MediaImportTests` 全绿；全量跑时约一半概率失败。**
-  复现序列（同一份代码、连续 4 次全量）：失败 → 绿 → 失败 → 绿。
-- 已排除：TaskRunner 启动竞态（`Start()` 先置 `running_=true` 再建线程，
-  `Post()` 在 Start 返回后不可能看到未启动状态）。
-- 当前最可能（**hypothesis，未证实**）：`cq_media_probe_duration` **成功返回但
-  时长为 0**，于是 `importMedia` 在 `duration.value > 0` 处返回 invalidArgument。
-  证据：把该分支改成返回 2000（decodeError）后，症状的**语义**才对得上
-  「文件能打开但读不到时长」—— 但 0 时长的内核侧成因仍未知（疑与同进程内
-  前序用例残留的解码会话 / PAL 初始化竞争有关）。
-- 影响面：这是**真缺陷不是测试问题** —— 真机上"导入后无反应"会是同一症状。
-- 待办：给 probe 加返回 0 时的诊断（日志 + 状态区分），并在内核侧定位
-  「容器打开成功但 duration=0」的路径。在此之前**不要**把 importMedia 的失败
-  一律当"用户选了坏文件"处理。
-- 日期 / 来源 / 验证状态：2026-10-03 / UIA-010 / **unverified（root cause 未证）**
+- **根因链（2026-10-04 定位，三层叠加）**：
+  1. `AppleDemuxer::Open` 用 `loadValuesAsynchronouslyForKeys` + 信号量收敛
+     同步，但 completionHandler **只 signal 不查状态** —— 它对所有 key 到
+     **终态**时触发，终态含 **Failed/Cancelled**。加载失败时
+     `[asset duration]` 返回 invalid。
+  2. invalid CMTime 经 demuxer `ToRational` 变 **`{0, 1}`**——timescale=1
+     骗过 probe 的 `timescale <= 0` 检查 → **probe 以 kOk 返回 value=0**
+     （hypothesis 证实，机制如上）。
+  3. Swift `importMedia` 在 `duration.value > 0` 处失败 → 导入失败、素材库空
+     → 测试越界崩溃。
+- **排障中的新发现（比 flaky 更危险）**：加载失败后**重建 AVURLAsset 重试，
+  其 completion 可能永不触发**（同 URL 的 AVFoundation 进程级加载状态被污染，
+  实测：新实例 5s 内无回调）——原代码 `DISPATCH_TIME_FOREVER` 无限等会让
+  probe **挂死**（比返回错误严重得多）。首版修复（重试 + 无限等）即被
+  `testImportInvalidFileFailsCleanly` 抓到挂死（xctest 10 分钟无响应）。
+- **修复**：① completion 后逐 key 查 `statusOfValue`（Failed/Cancelled 诚实
+  失败）；② 信号量 wait 改 **5s 有限超时**（正常加载 40~400ms ×10 余量），
+  超时/失败返回 kIoError；③ 文件已不存在（stat）跳过重试（确定性失败省 5s），
+  存在的文件才重建 asset 重试一次；④ probe 补 `value <= 0` → kDecodeError。
+- 教训：**「completion 触发」≠「加载成功」**（终态三义性）；**任何
+  DISPATCH_TIME_FOREVER 等 AVFoundation 回调都是挂死隐患**（回调可能不触发）。
+- **⚠️ 第二层根因（2026-10-04 新会话实证，同签名 7000 的另一来源）**：
+  `importMedia` 等 addTrack 落地的判据是「session 版本号 > versionAtStart」，
+  但 **registerAsset 也发布快照推版本**（editor_model_state.cpp RegisterAsset
+  会 Publish）—— 版本差值无法区分是哪条命令落地。在途 registerAsset 先应用
+  → 等待提前通过 → 此刻查询还没有视频轨 → `videoTrack == nil` → importMedia
+  假失败 7000。诊断实锤：`track wait: version 0 -> 2, elapsed=10μs, tracks=1`
+  （循环 10μs 即退出；前后两次 queryTracks 看到不同版本）。负载越重窗口越大
+  —— **前一轮「内核修复后 ×3 全绿」不可复现**（新会话复跑 6/3/0 失败）。
+  教训：flaky 的「N 次全绿」只是概率证据，必须配合失败签名闭环。
+- **修复 2**：等待判据改为**轮询目标效果本身**（`queryTracks` 出现视频轨，
+  10ms 间隔 / 5s 上限；查询是纳秒级快照读，轮询安全、语义直接），
+  并在三个失败分支补正式日志（registerAsset/addTrack/addClip 的 raw 状态码）。
+- **验证（2026-10-04，修复 2 后）**：SharedUI 全量 ×3 连续 **20/20 全绿**
+  （4.2~4.9s；此前失败用例要烧满 5s 超时，套件时长 9.9~14.8s —— 时长本身
+  回归正常也是修复有效的旁证）；Debug 门禁 42/42。
+  真机（iPhone 17 Pro）导入路径待传哲验证。
+- 日期 / 来源 / 验证状态：2026-10-03 UIA-010 发现 / 2026-10-04 定位（缺陷 1 + 缺陷 2）/
+  **verified（双层根因 + 修复 + 全量 ×3 + 失败签名闭环）**
 
 ### P34 · CocoaPods 工程看不到新增的 Swift 源文件 → 需重新 pod install
 - 现象：给 `bindings/swift/Sources/ChuanqiCut/` 新增 `Player.swift` 后，
@@ -530,6 +556,76 @@
   （脚本里已有同类"脏 cache 自愈"逻辑，可扩成检测 SDK 路径是否存在）。
 - 日期 / 来源 / 验证状态：2026-10-03 / UIA-010 / **verified**
 
+### P36 · 消费端持锁期间调 `PreviewPump::Request` → 死锁
+- 现象：`test_preview_pump.cpp` 第一版挂在 `[5] 消费锁` 段：主线程 `Lock()` 之后
+  又调 `pump.Request()`，进程卡死（无任何输出，只能被外部 kill）。
+- 原因：`Request` 也要拿同一把 `mtx_`；消费锁与它是**同一把锁**，自锁即死锁。
+- 规则：**先 Request，再 Lock → blit → Unlock**。已写进 `preview_pump.h` 的
+  「消费协议」注释与用例注释。同类：持锁期间也不要 `waitUntilCompleted`
+  （会把泵线程一起堵住）。
+- 日期 / 来源 / 验证状态：2026-10-04 / UIA-010 子步骤 5 / **verified（已复现并修）**
+
+### P37 · 跨 MTLCommandQueue 访问同一纹理没有顺序保证 —— 共享队列是刚需不是优化
+- 现象（推演后按文档定论，未做"随机花屏"复现实验）：把取帧渲染挪到泵线程后，
+  泵线程写离屏 RT、主线程读它若各用一条队列，Metal **只保证同一条队列内**按
+  commit 顺序执行，跨队列必须显式 `MTLSharedEvent` / `MTLFence`。
+- 处理：`gfx_device.cpp` 由「每帧 `CreateCommandQueue`」改为按设备复用一条；
+  新增 `ICommandQueue::NativeHandle()` + `IGfxDevice::SharedQueueHandle()` +
+  `cq_preview_shared_queue()`，UI 侧 blit 强制走这条队列。
+- 副作用（收益）：顺带去掉了每帧新建 `MTLCommandQueue` 的无谓开销。
+- 日期 / 来源 / 验证状态：2026-10-04 / UIA-010 子步骤 5 / **设计定论 + 链接/功能测试通过；
+  "不共享会花屏"未做对照实验**
+
+### P38 · 顺序播放每帧都精确 seek → 每帧重解一个 GOP（预览帧率的真瓶颈）
+- 现象：连续递进请求（每帧 +40ms）时单帧 `acquire` 均值 **93ms**（128x128、
+  Release），占单帧总耗时 94%；而孤立请求同一素材约 5~8ms。App 侧 1s 播放
+  只产出 **14 帧**（Release XCFramework；Debug 为 3）（1280x720，Debug XCFramework）。
+- 原因：`SystemFrameProvider::AcquireFrame` 见 `seek_target_ != req.at` 就
+  `Seek()`（demuxer seek + decoder Flush），随后 `AcquireExact` 从关键帧解码到
+  目标 —— 顺序播放时每帧都付一遍整个 GOP 的解码。
+- 状态：**已修（2026-10-04，MEDIA-021 / ADR-0017）**。顺序快路径 +
+  自适应阈值（实证学习），同口径实测 14.8~22.8x；过程中暴露 P39/P40/P41。
+- 教训：修"帧率"之前先量各阶段耗时 —— 本次若不埋点，会误以为是"渲染太慢"
+  而去做 GPU 侧优化，方向全错。
+- 日期 / 来源 / 验证状态：2026-10-04 / UIA-010 子步骤 5 → MEDIA-021 / **verified（已修，实测通过）**
+
+### P39 · 平台解码器按**完成序**回调，不是显示序（B 帧必错帧）
+- 现象：`media_sequential_real` 逐帧 pts 断言失败；VT 输出实测 145/300 非单调
+  （模式 I → P+4帧 → B…），且乱序弹出的帧 duration 为**负值**（-8000）。
+- 原因：`media_decode.h` 原注释「VideoToolbox 已在显示序回调」是错误假设——
+  VT 回调按解码完成序（≈dts 序），B 帧在其参考 P 帧之后完成；且旧「弹不出才喂」
+  循环在 B 尚未喂入时只能弹 P，任何重排判据都无信息可用。
+- 处理：① 编排层三个 Acquire* 循环改「先喂后弹」（ADR-0017 D3）；
+  ② decoder `PopFrame` 按「显示序连续性」重排：队列最小 pts 帧可弹当且仅当
+  `pts == 上一弹出帧 pts + duration`，不匹配时等在途帧或返回 kIoNotFound
+  让 provider 继续喂（ADR-0017 D4）——无需知道 B 帧深度，对 VFR 成立。
+- 教训：**"解码器输出什么序"必须实测，不能信文档注释/直觉**；逐帧 pts 断言
+  是唯一能抓住这类问题的验收手段（静态彩条看不出差一帧）。
+- 日期 / 来源 / 验证状态：2026-10-04 / MEDIA-021 / **verified（已修，120/120 断言过）**
+
+### P40 · 首帧时长兜底用「喂入包 pts 差」→ B 帧素材首帧区间报宽 (bframes+1) 倍
+- 现象：顺序请求严格递增只有 31/120（≈ 每 4 个请求推进 1 帧）；「区间归属」
+  120/120 假绿（区间太宽怎么都"包含"）。
+- 原因：`VideoToolboxDecoder::Feed` 用前两个**喂入包**的 pts 差估
+  `nominal_duration_`。喂入是**解码序**：B 帧文件前两个包是 I 和其后的参考帧，
+  pts 差 = (bframes+1) 帧（golden bframes=3 → 4 帧宽）。首帧区间 [P, P+16000)
+  使 kExact 在关键帧上提前命中，画面差 1~3 帧。
+- 处理：改用 **dts 差**（CFR 下解码序相邻 dts 间隔 = 一帧，与 B 帧排布无关）。
+- 教训：**区间归属（FrameContains）的正确性完全依赖 duration 报准**；
+  duration 是元数据不是噪声，任何"兜底估算"都要过 B 帧场景的测试。
+- 日期 / 来源 / 验证状态：2026-10-04 / MEDIA-021 / **verified（已修）**
+
+### P41 · decoder Flush 后旧在途回调帧污染新序列首弹
+- 现象：Seek(124000) 后首弹弹出**旧 GOP 的 128000**（step1 复现），后续请求
+  交付漂移（甚至回到流首 8000）。
+- 原因：VT 异步回调可能在 `Flush()` 之后才到达；Flush 清队列但拦不住**之后**
+  落地的旧帧，而 Flush 后首弹无显示序约束，旧帧直接被当新序列首帧交付。
+- 处理：`Flush()` 先 `VTDecompressionSessionWaitForAsynchronousFrames` 等
+  在途帧全部落地，再清队列/pending（provider 串行调用 Flush/Feed，无并发）。
+- 教训：**异步解码器的"清空"要分两步——先等在途落地、再清**；只清缓冲等于
+  没清。连带修好了一个 AVAssetReader 频繁重建的异常源（读 1 包即尽）。
+- 日期 / 来源 / 验证状态：2026-10-04 / MEDIA-021 / **verified（已修）**
+
 ---
 
 ## 已修正的历史错误（供参考，避免重犯）
@@ -547,7 +643,7 @@
 | E10 | HANDOFF-003 §1 把「BIND-003 子步骤 3 纹理导入（零拷贝）」标为**下一步** | **已做过**：PALA-002（2026-09-26，commit 76fce6b）已完成零拷贝导入，`pala_native_image` 用例含 IOSurface ID 一致性（源 193==纹理 193）、零拷贝/CPU 退化耗时代差（0.0033ms vs 4.5788ms ≈ 1407×）、真实解码帧渲染读回。**交接文档的任务状态要对着 commit 历史核，不能照抄上一版** | 2026-10-02 / BIND-003 / verified |
 | E9 | 「XCFramework 合并失败是 bitcode 段导致，加 `-fno-embed-bitcode` 可解」（HANDOFF-002 §3 的遗留推测） | **根因判错**：是 Release **LTO/IPO** 产出 bitcode-only `.o`，与 ENABLE_BITCODE 无关；`-fno-embed-bitcode` 该 clang 不识别且方向错误。教训：`0xb17c0de` 这个 magic 既可能来自 embed-bitcode 也可能来自 `-flto`，**必须抽 `.o` 看实际内容再定论**，不能靠 magic 字面猜。另：那次尝试的脏 flag 残留在 `build/apple/ios-device/CMakeCache.txt` 里未被发现，CMake 会持续复用——**CMakeCache 是隐式状态，撤销改动时不要只撤销源码** | 2026-09-29 / PALA XCFramework 打包 / verified |
 
-### P36 · 开发机换到 macOS 13.7 / Xcode 15.2（AppleClang 15）后既有代码编译失败
+### P42 · 开发机换到 macOS 13.7 / Xcode 15.2（AppleClang 15）后既有代码编译失败
 - 现象：同一仓库在原机（macOS 15.4 / AppleClang 17，见各 baselines 条目）全绿，
   本机（macOS 13.7 / Xcode 15.2 / AppleClang 15，`xcodebuild -version` 确认）连
   既有 core 都编不过：① `core/src/base/log.cpp` 的 `std::va_list` 在旧 libc++
@@ -558,7 +654,7 @@
 - 教训：**「本机实测」结论绑机器**。之前 baselines 里 macOS 15.4 的实测数字
   全部来自另一台机器（cmake 默认路径是 /Users/zhuning/... 可证）；本机复核或
   引用数字时先核对环境。ADR-0010 §6 的"性能基线须标注采集机型"由此更重要。
-- **补充（同日，P36b）**：`build_core_apple.sh` 的 ios-device 切片在 Xcode 15.2
+- **补充（同日，P42b）**：`build_core_apple.sh` 的 ios-device 切片在 Xcode 15.2
   （iOS 17.2 SDK）编不过 —— `kVTVideoEncoderSpecification_EnableHardwareAcceleratedVideoEncoder`
   / `kVTCompressionPropertyKey_UsingHardwareAcceleratedVideoEncoder` 在 17.4 代际
   才进 iOS 头文件，`@available` 救不了"标识符不存在"。macOS 切片与桌面全量测试
@@ -567,7 +663,7 @@
   （`__IPHONE_OS_VERSION_MAX_ALLOWED`），语义退化为既有 kDegraded——独立小任务，勿顺手改。
 - 日期 / 来源 / 验证状态：2026-10-04 / CAM-001 / **verified**（修复后 40/40 全绿）
 
-### P37 · 构建脚本 CMAKE_BIN 默认路径指向他人 home，且本机无 cmake
+### P43 · 构建脚本 CMAKE_BIN 默认路径指向他人 home，且本机无 cmake
 - 现象：`build_core.sh` 默认 `CMAKE_BIN=/Users/zhuning/...`，本机不存在；
   本机也无 brew/cmakes（`which cmake` 空）。
 - 处理：`pip3 install --user cmake`（装到 ~/Library/Python/3.9/bin），构建时
@@ -575,7 +671,7 @@
 - 备注：若脚本要长期在多机使用，可把默认值改为"PATH 中找 cmake，找不到再落绝对路径"。
 - 日期 / 来源 / 验证状态：2026-10-04 / CAM-001 / **verified**
 
-### P38 · `AVCaptureMultiCamSession` 是 iOS 专属，macOS 编译直接 unavailable
+### P44 · `AVCaptureMultiCamSession` 是 iOS 专属，macOS 编译直接 unavailable
 - 现象：capabilities.mm 无条件引用 `AVCaptureMultiCamSession.isMultiCamSupported`
   在 macOS 切片报 `'AVCaptureMultiCamSession' is unavailable: not available on macOS`。
   （调研时误记为"macOS 10.15+ 可用"——那是文档里别的类的可用性，核验不严。）
@@ -586,10 +682,27 @@
   不变，未来在 macOS 上做相机相关代码仍会撞。
 - 日期 / 来源 / 验证状态：2026-10-04 / CAM-001 / **verified**
 
-### P39 · SharedUI 包在本机（Swift 5.9.2）连包清单都解析不了 + 可用的替身验证技法
+### P45 · 本机（Mac mini 2014）工具链与 HANDOFF 门禁环境不符 —— 验证命令会以 "tools version" 失败
+- 现象：SharedUI `swift test` 报 `package is using Swift tools version 6.1.0 but the
+  installed version is 5.5.0`。本机（Mac mini 2014 低配机：i5-4278U 双核 2.6GHz / 8GB / macOS 12.7.6）/usr/bin/swift 来自 Xcode 13.1，
+  SDK 只有 iOS 15 / macOS 12；HANDOFF-003 描述的 Xcode 26.x / Ruby 3.4 / CocoaPods /
+  xcodegen / 已构建内核（build/）在当前机器**全部不存在**（2026-10-04 盘点：工作区是
+  当天 18:52 整体落盘的，无任何本地构建产物）。
+- 影响：本机只能做 `swiftc -parse` 语法级检查与读码审阅；**类型检查与全部门禁必须
+  在真实构建机上跑**。PhotosPicker（UIA-011）等 iOS16/macOS13+ API 在本机 SDK 里
+  根本不存在，连 `-parse` 以外的验证都做不了。
+- 规则：换机器 / 新会话接手时，先 `swift --version` + `xcodebuild -showsdks` 核对
+  环境，再决定 HANDOFF 里的验证命令哪些本机可跑；否则会把"环境跑不了"误判成
+  "代码有问题"（反之亦然）。附注：Swift 5.7 简写（`if let x {}`）在 5.5 下报
+  "requires an initializer" —— 是工具链旧，不是代码错。
+- 关联：P42（开发机 macOS 13.7 / Xcode 15.2）同样跑不了 SharedUI swift test
+  （其 P42b：Swift 测试宿主需 Xcode 16+）—— UIA-011 的 swift test 与 CAM 的
+  Swift 验证同桶，都等「有 Xcode 16+ 的机器」。
+- 日期 / 来源 / 验证状态：2026-10-04 / UIA-011 / **verified**
+### P46 · SharedUI 包在本机（Swift 5.9.2）连包清单都解析不了 + 可用的替身验证技法
 - 现象：`apps/apple/packages/SharedUI/Package.swift` 声明 `swift-tools-version:6.1`，
   本机 Xcode 15.2 的 Swift 5.9.2 直接拒绝解析（工具链代际门槛，先于依赖解析失败）。
-  加上 bindings xcframework 在本机不存在（P36b：ios-device 切片需 Xcode 16+），
+  加上 bindings xcframework 在本机不存在（P42b：ios-device 切片需 Xcode 16+），
   **SharedUI 的 `swift build`/`swift test` 在本机双重死锁**——CAM-002~005 当时只跑
   `swiftc -parse` 兜底，而 **-parse 不做类型检查**，API 拼错全放行。
 - 本卡（CAM-011）实证：`-typecheck` 立刻抓出 4 个 -parse 查不出的真错误——
@@ -615,7 +728,7 @@
   harness 19/19；API 形状以 iphonesimulator 17.2 SDK 头文件 grep 对表为准）
 - 日期 / 来源 / 验证状态：2026-10-04 / CAM-012 / **verified**（探针 + harness 实跑）
 
-### P40 · iOS 17.2 SDK 的 CI Metal kernel 全套 API 事实（与常见文档记忆不符）
+### P47 · iOS 17.2 SDK 的 CI Metal kernel 全套 API 事实（与常见文档记忆不符）
 1. **CIKernel 没有源码串初始化器**：`CIKernel(functionName:from:)` 不存在，
    只有 `CIKernel(functionName:fromMetalLibraryData:)`（iOS 11+）。CI kernel
    必须 build 期用 `metal -fcikernel` 编成 metallib 入包，运行时从 bundle 取
@@ -630,20 +743,20 @@
    macOS 上试传 nil 会编译错。
 4. `CVPixelBufferPoolCreatePixelBuffer` 在本 SDK 桥接为 **3 参**
    （allocator, pool, &out）——头文件里的 auxAttributes 参数被 Swift 导入器吞掉；
-   `CVPixelBufferPoolCreateBuffer` 不存在（-parse 查不出这种错，见 P41）。
+   `CVPixelBufferPoolCreateBuffer` 不存在（-parse 查不出这种错，见 P48）。
 5. coreimage::sampler 只有 `sample(float2)`（无自定义 sampler state），
    边界行为未定义 → kernel 内手动 clamp 到 `extent().xy ~ xy+zw-1`。
 - 日期 / 来源 / 验证状态：2026-10-04 / CAM-012 / **verified**（typecheck 抓出后逐条修复）
 
-### P41 · A 期相机代码从未 typecheck 过，存量 7 处编译错误（-parse 的代价清单）
-CAM-012 首次对相机模块做全量 `-typecheck`（P39 技法），一次抓出 7 处 -parse
+### P48 · A 期相机代码从未 typecheck 过，存量 7 处编译错误（-parse 的代价清单）
+CAM-012 首次对相机模块做全量 `-typecheck`（P46 技法），一次抓出 7 处 -parse
 放行的真错误（已全部修复）：
 1. CameraRenderer：用了 MTKView/MTKViewDelegate 但没 `import MetalKit`；
 2. CameraRenderer：`private var latest` 与 `func latest()` 同类型内重声明；
-3. CameraRenderer：`render(_:to: CIRenderDestination)` 不存在（P40-3）；
+3. CameraRenderer：`render(_:to: CIRenderDestination)` 不存在（P47-3）；
 4. CameraRecorder：`sourceBufferAttributes:` 应为 `sourcePixelBufferAttributes:`；
-5. CameraRecorder：`CVPixelBufferPoolCreateBuffer` 不存在（P40-4）；
-6. CameraView：iOS 17 起的两参 `.onChange(of:)` 用于 iOS 16.0 部署目标（同 P39-③
+5. CameraRecorder：`CVPixelBufferPoolCreateBuffer` 不存在（P47-4）；
+6. CameraView：iOS 17 起的两参 `.onChange(of:)` 用于 iOS 16.0 部署目标（同 P46-③
    的"iOS 17 API 未门控"类型）；
 7. CameraViewModel：缺 `import UIKit`（UIImage）；wireCallbacks 闭包里
    recorderBox 隐式 self——已改局部 let 捕获（顺便消掉潜在保留环）。

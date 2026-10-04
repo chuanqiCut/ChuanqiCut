@@ -40,6 +40,9 @@ public:
     void SetSampler(SamplerHandle sampler, uint32_t binding) override {
         enc_->SetSampler(sampler, binding);
     }
+    void SetViewport(float x, float y, float width, float height) override {
+        enc_->SetViewport(x, y, width, height);
+    }
     void Draw(uint32_t vertex_count) override { enc_->Draw(vertex_count); }
     void DrawIndexed(uint32_t index_count) override { enc_->DrawIndexed(index_count); }
 
@@ -75,6 +78,22 @@ public:
         return pal_->CreateRenderTarget(desc, out);
     }
 
+    // 命令队列**按设备复用**（UIA-010 子步骤 5 改）。
+    //
+    // 原实现每帧 `CreateCommandQueue` 一次。两处代价：
+    //   (1) Metal 上等价于每帧 `-newCommandQueue`，纯属无谓开销；
+    //   (2) 更要命的是它让「UI 侧 blit 复用同一条队列」无从谈起 —— 队列每帧都在换，
+    //       跨队列的资源先后又得显式同步。复用之后，顺序由 commit 顺序天然保证。
+    Status EnsureQueue() {
+        if (queue_) return Status::Ok();
+        return pal_->CreateCommandQueue(queue_);
+    }
+
+    void* SharedQueueHandle() override {
+        if (!EnsureQueue().IsOk() || !queue_) return nullptr;
+        return queue_->NativeHandle();
+    }
+
     Status AcquireTexture(const TextureDesc& desc, PalPtr<ITexture>& out) override {
         // 未注入池 → 直连 PAL。**不做预算记账**（池化与预算属 GFX-002 余下部分）。
         if (pool_ != nullptr) return pool_->Acquire(desc, out);
@@ -108,14 +127,13 @@ public:
                        IFrameEncoderClient& client, const CancelToken& token) override {
         if (target == nullptr) return Status(StatusCode::kInvalidArgument);
 
-        // 每帧新建 queue/buffer/encoder：PAL 未提供"复用 queue"的接口约束，
-        // 先走最直白的路径（正确优先，性能留到有实测数据再优化）。
-        PalPtr<ICommandQueue> queue;
-        Status st = pal_->CreateCommandQueue(queue);
+        // queue 按设备复用（见 EnsureQueue 注释）；buffer/encoder 仍每帧新建 ——
+        // 命令缓冲本就是"一帧一个"的对象，池化它带来的收益远小于复杂度。
+        Status st = EnsureQueue();
         if (!st.IsOk()) return st;
 
         PalPtr<ICommandBuffer> cb;
-        st = queue->CreateCommandBuffer(cb);
+        st = queue_->CreateCommandBuffer(cb);
         if (!st.IsOk()) return st;
 
         PalPtr<ICommandEncoder> enc;
@@ -145,6 +163,7 @@ public:
 
 private:
     PalPtr<IGraphicsDevice> pal_;
+    PalPtr<ICommandQueue> queue_;  // 复用（UIA-010 子步骤 5）；同时供 UI 侧 blit 共享
     ITexturePool* pool_ = nullptr;
 
     // 清屏色。IGfxDevice 接口没有清屏色参数（GFX-001 定接口时未考虑），

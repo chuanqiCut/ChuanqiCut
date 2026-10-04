@@ -124,6 +124,71 @@ final class PreviewTests: XCTestCase {
         XCTAssertTrue(preview.lastHitClip)
     }
 
+    // MARK: 取帧泵（UIA-010 子步骤 5）
+
+    /// 共享命令队列的句柄必须能被**真的 reinterpret 成 MTLCommandQueue 并用**。
+    /// 只查非空的测试是伪绿（P20 的同族坑：句柄承诺可 reinterpret，就必须有人真 reinterpret）。
+    func testSharedQueueHandleIsUsableAsMetalQueue() throws {
+        let session = try XCTUnwrap(Session())
+        _ = try assembleTimeline(session)
+        guard let preview = Previewer(session: session, width: 64, height: 64) else {
+            return XCTFail("预览创建失败")
+        }
+        let handle = try XCTUnwrap(preview.sharedQueueHandle, "共享队列句柄非空")
+        let queue = unsafeBitCast(handle, to: (any MTLCommandQueue).self)
+        let buffer = try XCTUnwrap(queue.makeCommandBuffer(), "句柄 reinterpret 后能出命令缓冲")
+        buffer.commit()
+        buffer.waitUntilCompleted()
+        XCTAssertNotEqual(buffer.status, .error, "提交后未出错（句柄是真的队列）")
+    }
+
+    /// 泵把取帧搬到自己的线程：请求不阻塞，帧由泵产出，且走的是零拷贝链路。
+    func testPumpProducesFrameOffCallerThread() throws {
+        let session = try XCTUnwrap(Session())
+        _ = try assembleTimeline(session)
+        guard let preview = Previewer(session: session, width: 256, height: 256) else {
+            return XCTFail("预览创建失败")
+        }
+        guard let pump = PreviewPump(preview: preview) else {
+            return XCTFail("泵创建失败（线程起不来 / 预览器无效）")
+        }
+        let ts = RationalTime.projectTimescale
+        XCTAssertEqual(pump.request(pts: RationalTime(value: 60000, timescale: ts)), .ok)
+        XCTAssertEqual(pump.request(pts: RationalTime(value: 60000, timescale: 0)),
+                       .invalidArgument, "timescale=0 被拒")
+
+        var produced: PreviewPump.Frame?
+        let deadline = Date().addingTimeInterval(5)
+        while Date() < deadline {
+            if let f = pump.withLatestFrame({ $0 }), f.seq > 0 {
+                produced = f
+                break
+            }
+            Thread.sleep(forTimeInterval: 0.01)
+        }
+        let frame = try XCTUnwrap(produced, "泵应产出帧")
+        XCTAssertEqual(frame.pts.value, 60000, "泵发布的 pts == 请求的 0.5s")
+        XCTAssertNotNil(frame.texture, "泵发布的纹理句柄非空")
+        XCTAssertTrue(preview.lastHitClip, "泵路径仍命中片段")
+        XCTAssertFalse(preview.lastCpuFallback, "泵路径零拷贝仍成立")
+        XCTAssertGreaterThan(pump.stats.rendered, UInt64(0), "rendered 计数 > 0")
+
+        // resize 走泵 → 旧句柄作废（seq 前进 + 句柄清空）
+        let seqBefore = frame.seq
+        XCTAssertEqual(pump.requestResize(width: 128, height: 128), .ok)
+        let resizeDeadline = Date().addingTimeInterval(5)
+        var afterResize: PreviewPump.Frame?
+        while Date() < resizeDeadline {
+            if let f = pump.withLatestFrame({ $0 }), f.seq > seqBefore {
+                afterResize = f
+                break
+            }
+            Thread.sleep(forTimeInterval: 0.01)
+        }
+        let resized = try XCTUnwrap(afterResize, "resize 后 seq 应前进")
+        XCTAssertNil(resized.texture, "resize 后旧句柄作废（nil）")
+    }
+
     func testOverlapIsRejectedAsynchronously() throws {
         let session = try XCTUnwrap(Session())
         _ = try assembleTimeline(session)

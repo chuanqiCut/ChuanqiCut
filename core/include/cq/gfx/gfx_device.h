@@ -79,6 +79,10 @@ public:
     virtual void SetVertexBuffer(BufferHandle buffer, uint32_t slot) = 0;
     virtual void SetTexture(TextureHandle texture, uint32_t binding) = 0;
     virtual void SetSampler(SamplerHandle sampler, uint32_t binding) = 0;
+    // 视口矩形（像素，原点 = target 左上）。1:1 转发到 PAL ICommandEncoder::SetViewport，
+    // 语义（含「矩形可大于目标」「不调用 = 整目标」两条不变式）见 pal/gfx.h 同名方法。
+    // 引入缘由（预览宽高比适配）与备选取舍见 ADR-0018。
+    virtual void SetViewport(float x, float y, float width, float height) = 0;
     virtual void Draw(uint32_t vertex_count) = 0;
     virtual void DrawIndexed(uint32_t index_count) = 0;
     virtual void End() = 0;
@@ -166,11 +170,22 @@ public:
     // 失败退化为 CPU 拷贝的语义在 PAL INativeImageImporter::Import 内表达（out_cpu_fallback）。
     virtual Status CreateNativeImageImporter(PalPtr<INativeImageImporter>& out) = 0;
 
-    // 执行一帧（flush 模式，预览主线程用）：内部 CreateCommandBuffer/Encoder、调用
+    // 执行一帧（flush 模式）：内部 CreateCommandBuffer/Encoder、调用
     // client.Encode 填充命令、提交并等待完成。长任务接受 CancelToken；取消返回 kCancelled。
     // 此 seam 封装了 PAL CommandQueue/CommandBuffer/Fence 生命周期，RenderGraph 不感知。
+    //
+    // ⚠️ 线程：UIA-010 子步骤 5 起，预览渲染改由 `PreviewPump` 的泵线程调用本方法。
+    //    它内部会触碰解码会话与原生纹理缓存，故**同一时刻只能有一个线程**在渲染，
+    //    且不得与任何直接调 PAL 编码器的路径并发。
     virtual Status RenderFrame(const FrameContext& ctx, IRenderTarget* target,
                                IFrameEncoderClient& client, const CancelToken& token) = 0;
+
+    // 本设备复用的那条命令队列的**中性句柄**（Apple 上 reinterpret 为
+    // id<MTLCommandQueue>；语义见 `ICommandQueue::NativeHandle`）。
+    //
+    // UI 侧把离屏 RT 拷进 drawable 时**必须**用这条队列：跨队列时 Metal 不保证
+    // 「泵线程写完 → UI 线程读」的先后。未创建 / 后端不支持时返回 nullptr。
+    virtual void* SharedQueueHandle() = 0;
 
     // 注入纹理池（GFX-002）。不注入时 AcquireTexture 退化为 PAL 直分配。
     virtual void SetTexturePool(ITexturePool* pool) = 0;

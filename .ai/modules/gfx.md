@@ -99,6 +99,23 @@ virtual ICommandEncoder* PalEncoder() = 0;   // 返回底层的 PAL 编码器
 ⚠️ 这是**逃生口**，不是常规路径。日常 RenderNode 仍应只用 `IGfxEncoder` 的 GFX 方法
 （`SetPipeline` / `SetTexture` / `Draw` …），不要绕过。
 
+## `IGfxEncoder` 新增 `SetViewport`（UIA-014 / ADR-0018，2026-10-04）
+
+```cpp
+virtual void SetViewport(float x, float y, float width, float height) = 0;
+```
+
+PAL `ICommandEncoder` 同名方法（additive 扩展，语义见 pal/gfx.h 注释）的 1:1 转发。
+约定：**像素、原点 = target 左上**、矩形可大于目标（超出被光栅化丢弃）、
+**不调用 = 整目标**（Metal 默认 viewport 即 framebuffer，故 stretch 路径
+完全不触碰视口状态，与引入前逐字节一致）。Apple 实现直映射 `MTLViewport`
+（z 用 {0,1}）；未来 GLES `glViewport` / Vulkan `vkCmdSetViewport` 天然对应。
+
+引入缘由：预览宽高比适配（FitMode stretch/contain/cover 三种模式都能用
+「视口矩形」一个原语表达，不需要 shader 分支/uniform/第二 pass）。
+备选取舍（blit uniform / UI 层适配）见 ADR-0018。
+验收：`ctest -R gfx_device` 用例 C（视口内外像素断言）+ `preview_renderer` [8]。
+
 ## `IBlitPass` 已移出本层
 
 原 `core/include/cq/gfx/blit_pass.h` 的 `IBlitPass` 已移入 **`pal/gfx.h`**，

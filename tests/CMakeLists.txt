@@ -229,6 +229,20 @@ cq_require_cxx20(cq_tests_media_system_frame_provider)
 apply_cq_warnings(cq_tests_media_system_frame_provider)
 add_test(NAME media_system_frame_provider COMMAND cq_tests_media_system_frame_provider)
 
+# ---- MEDIA-021：顺序取帧快路径（不每帧 seek 重解 GOP）----
+# P38 修复的编排层单测：多 GOP Mock（4×IPBB）驱动，逐帧 pts 断言 + seek/flush
+# 计数（学习期后顺序请求不再 seek）。验收对照 TASK-MEDIA-021：顺序递进 / 同帧
+# 重复 / 回退 / 超阈值跳转 / 混合序列 vs 参照实现逐帧一致 / kKeyframeBefore 不受
+# 影响 / 取消恢复 / 显式 Seek 契约。平台无关，全平台可跑。
+add_executable(cq_tests_media_sequential_acquire
+    unit/test_media_sequential_acquire.cpp)
+target_include_directories(cq_tests_media_sequential_acquire PRIVATE
+    ${CMAKE_SOURCE_DIR}/core/include)
+target_link_libraries(cq_tests_media_sequential_acquire PRIVATE cq_core)
+cq_require_cxx20(cq_tests_media_sequential_acquire)
+apply_cq_warnings(cq_tests_media_sequential_acquire)
+add_test(NAME media_sequential_acquire COMMAND cq_tests_media_sequential_acquire)
+
 # ---- MEDIA-011：LruFrameCache 帧缓存池（LRU + 内存上界 + lease 保护）----
 # 跨平台，无平台后端。实测：插入超上界后 UsedBytes() <= 上界、LRU 淘汰最久未用、
 # 借出的帧不被淘汰（move-out）、接入 SystemFrameProvider 命中缓存跳过解码。
@@ -517,6 +531,22 @@ if(APPLE)
     cq_require_cxx20(cq_tests_frame_provider_apple)
     apply_cq_warnings(cq_tests_frame_provider_apple)
     add_test(NAME frame_provider_apple COMMAND cq_tests_frame_provider_apple)
+
+    # ---- MEDIA-021：顺序取帧快路径真实链路（P38 修复端到端验收）----
+    # golden long_gop_bframes（30fps/GOP60/B帧3）顺序 120 帧：逐帧 pts 严格递增 +
+    # 区间归属 + 与「每帧显式 seek」对照实例逐帧一致；输出两段 acquire 均值/最大值
+    # （写回 .ai/memory/baselines.md）。性能断言宽松（fast < slow），倍数不写死。
+    add_executable(cq_tests_media_sequential_real
+        unit/test_media_sequential_real_apple.cpp)
+    target_include_directories(cq_tests_media_sequential_real PRIVATE
+        ${CMAKE_SOURCE_DIR}/core/include
+        ${CMAKE_SOURCE_DIR}/pal/apple)
+    target_compile_definitions(cq_tests_media_sequential_real PRIVATE
+        CQ_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
+    target_link_libraries(cq_tests_media_sequential_real PRIVATE cq_core cq_pal_apple)
+    cq_require_cxx20(cq_tests_media_sequential_real)
+    apply_cq_warnings(cq_tests_media_sequential_real)
+    add_test(NAME media_sequential_real COMMAND cq_tests_media_sequential_real)
 endif()
 
 # ---- PALA-011：Apple 硬解后端（VideoToolbox）----

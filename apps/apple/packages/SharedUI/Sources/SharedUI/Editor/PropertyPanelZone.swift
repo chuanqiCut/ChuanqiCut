@@ -1,16 +1,18 @@
-// SharedUI — 右侧面板：素材库（UIA-009 子步骤 3 + UIA-011 相册入口）+ 属性桩（UIA-002/006）
+// SharedUI — 右侧面板：素材库（UIA-009 子步骤 3 + UIA-011/012 相册入口 + UIA-013 自研相册浏览器）+ 属性桩（UIA-002/006）
 //
 // 素材库两条导入入口，汇入同一 EditorViewModel.importMedia（Spec UIA-011 §2）：
 //   * 从文件导入：fileImporter（"文件"App 路径）
-//   * 从相册导入：PhotosPicker（系统进程外选择器，**无需** NSPhotoLibraryUsageDescription）
-// D3 决策不变：MVP 引用原路径不拷贝入库 —— 相册视频由系统落到 tmp 的 URL 在
-// App 重启后可能被清理，届时同样显示「已失效」，与文件路径行为一致；
-// 素材库整理（拷入沙箱）是后续任务，两条路径届时统一收口。
+//   * 从相册导入：UIA-013 起为自研相册浏览器（MediaPicker/，Spec UIA-013）——
+//     网格/相簿/多选序号/时长过滤/iCloud 拉取/受限模式；确认后交付文件 URL
+//     列表，走与 UIA-012 完全相同的 runBatch 批量汇入链路。UIA-011/012 的系统
+//     PhotosPicker 被替换（ADR-0015 决策 3），挂载点（按钮 + 胶水）形态不变。
+// D3 决策不变：MVP 引用 tmp/原路径不拷贝入库 —— 相册视频落盘的 URL 在 App
+// 重启后可能被清理，届时同样显示「已失效」，与文件路径行为一致；素材库整理
+// （拷入沙箱）是后续任务，两条路径届时统一收口。
 // 属性区仍是桩：UIA-006 接入真实参数（变更必须走 Command）。
 
 import SwiftUI
 import ChuanqiCut
-import PhotosUI
 import UniformTypeIdentifiers
 
 struct PropertyPanelZone: View {
@@ -19,9 +21,9 @@ struct PropertyPanelZone: View {
     @State private var showImporter = false
     @State private var importError: String?
 
-    // UIA-011：相册导入。selection 清空复用见 onChange 注释；加载态/错误自持在
-    // PhotoLibraryImporter（AppEntry 的 importMedia 及其 importInFlight 保持零改动）。
-    @State private var photoItem: PhotosPickerItem?
+    // UIA-013：自研相册浏览器（sheet）。批量加载态/错误汇总自持在
+    // PhotoLibraryImporter（AppEntry 的 importMedia 及其 importInFlight 零改动）。
+    @State private var showAlbumPicker = false
     @StateObject private var photosImporter = PhotoLibraryImporter()
 
     var body: some View {
@@ -43,8 +45,11 @@ struct PropertyPanelZone: View {
                 .buttonStyle(.bordered)
                 .controlSize(.small)
 
-                // 只选视频（与文件入口白名单 movie/video/mpeg4Movie 对齐）、单选。
-                PhotosPicker(selection: $photoItem, matching: .videos) {
+                // 从相册导入：自研浏览器（UIA-013）。只选视频、多选上限 20，
+                // 时长过滤等配置在 AlbumPickerConfiguration.standard。
+                Button {
+                    showAlbumPicker = true
+                } label: {
                     Label(photosImporter.isLoading ? "正在读取相册素材…" : "从相册导入",
                           systemImage: "photo.on.rectangle.angled")
                         .frame(maxWidth: .infinity)
@@ -161,19 +166,17 @@ struct PropertyPanelZone: View {
                 importError = "选择失败：\(error.localizedDescription)"
             }
         }
-        // 相册选取：item → 系统 tmp 文件 URL → 既有 importMedia（导入链路零分叉）。
-        // loadTransferable 挂起等系统出文件（iCloud 素材可能慢），不阻塞主线程。
-        .onChange(of: photoItem) { item in
-            guard let item else { return }
-            // onChange 闭包非 actor 隔离：显式跳 MainActor（同 applySnapshot 手法，
-            // Swift 6 并发模型不自动继承），状态变更与 @MainActor 胶水都在主线程。
-            Task { @MainActor in
-                await photosImporter.run(
-                    resolveURL: { try await item.loadTransferable(type: URL.self) },
-                    importURL: { viewModel.importMedia(url: $0) })
-                // 清空 selection：PhotosPickerItem 按 itemIdentifier 判等，
-                // 不清空则"再次选取同一条素材"不会触发 onChange。
-                photoItem = nil
+        // 自研相册浏览器（UIA-013，剪映式连续导入流）：**面板保持打开**，
+        // 单击插入 / 批量添加交付的 URL 列表（顺序 = 选取序号）直接汇入
+        // UIA-012 的 runBatch 批量链路 —— resolveURL 直接命中已落盘的 tmp
+        // 文件（浏览器确认阶段已完成 PHAssetResource 落盘 / iCloud 拉取）。
+        // async 回调：runBatch 返回后浏览器才解除 cell loading。
+        .sheet(isPresented: $showAlbumPicker) {
+            AlbumPickerScreen { urls in
+                await photosImporter.runBatch(
+                    count: urls.count,
+                    resolveURL: { urls[$0] },
+                    importURL: photosImporter.sequencedImport(into: viewModel))
             }
         }
     }
@@ -186,40 +189,89 @@ struct PropertyPanelZone: View {
     }
 }
 
-// MARK: - 相册导入胶水（UIA-011）
+// MARK: - 相册导入胶水（UIA-011 单选落地，UIA-012 扩为批量）
 
-/// 相册选取项 → 临时文件 URL → 既有 importMedia 的胶水，加载态 / 错误信息自持。
+/// 相册选取项 → 临时文件 URL → 既有 importMedia 的批量胶水，加载态 / 错误汇总自持。
 ///
 /// resolveURL / importURL 全部注入：loadTransferable 需要真实 PHAsset，
-/// XCTest 宿主没有相册数据 —— 注入后状态机（loading 翻转、失败不产生素材）
-/// 可以脱离相册单测（PhotoImportTests）。生产接线在 PropertyPanelZone.onChange。
+/// XCTest 宿主没有相册数据 —— 注入后批量状态机（loading 翻转、逐条顺序、
+/// 部分失败不中断、失败不产生素材）可以脱离相册单测（PhotoImportTests）。
+/// 生产接线在 PropertyPanelZone.onChange。
 ///
 /// @MainActor：两个闭包都是主线程语义（importMedia 是"用户动作、低频"的同步
 /// 调用，见 AppEntry.importMedia 注释）；错误与 loading 直接驱动 UI。
 @MainActor
 final class PhotoLibraryImporter: ObservableObject {
 
-    /// 正在把相册素材读成文件（iCloud 下载可能持续数秒）。按钮据此置灰防重复。
+    /// 正在把相册素材读成文件（iCloud 下载可能持续数秒；批量整体一个加载态）。
+    /// 按钮据此置灰防重复。
     @Published private(set) var isLoading = false
 
-    /// 最近一次相册导入的失败信息；nil = 无失败（含成功清空旧错误的语义）。
+    /// 最近一次批量导入的失败汇总；nil = 无失败（全部成功同样清空旧错误）。
+    /// 全失败 = 最后一条失败详情（文案前缀与单条路径一致）；部分失败 =
+    /// 「成功 M 条，失败 K 条（最后一条详情）」。
     @Published var errorMessage: String?
 
-    /// 执行一次相册导入。resolveURL 产出系统落盘的临时文件 URL；
-    /// importURL 把该 URL 汇入既有导入链路（生产 = viewModel.importMedia）。
-    /// 任何失败只置 errorMessage，不产生素材 / 片段（干净失败，同 importMedia 语义）。
-    func run(resolveURL: () async throws -> URL?, importURL: (URL) -> Status) async {
+    /// 批量导入：按序号逐条 resolve → import，条间 Task.yield 让出主线程
+    /// （红线 #8；importMedia 本体是同步调用，不 yield 整批会长时间独占）。
+    /// 部分失败不中断：失败条不产生素材，继续其余；有失败才汇总进
+    /// errorMessage，全部成功保持 nil（素材入表即反馈）。
+    /// - Parameters:
+    ///   - count: 选取条数（系统 sheet 的选取上限由调用方 maxSelectionCount 约束）。
+    ///   - resolveURL: 按序号产出系统落盘的临时文件 URL（nil = 类型不受支持）。
+    ///   - importURL: 把 URL 汇入既有导入链路（生产 = `sequencedImport(into:)` 产出）。
+    func runBatch(count: Int,
+                  resolveURL: (Int) async throws -> URL?,
+                  importURL: (URL) async -> Status) async {
         isLoading = true
         defer { isLoading = false }
-        do {
-            guard let url = try await resolveURL() else {
-                errorMessage = "相册素材无法读取（类型不受支持）"
-                return
+
+        var importedCount = 0
+        var failures: [String] = []
+        for index in 0..<max(count, 0) {
+            do {
+                guard let url = try await resolveURL(index) else {
+                    failures.append("相册素材无法读取（类型不受支持）")
+                    continue
+                }
+                let status = await importURL(url)
+                if status.isOK {
+                    importedCount += 1
+                } else {
+                    failures.append("导入失败：\(status.text)")
+                }
+            } catch {
+                failures.append("相册读取失败：\(error.localizedDescription)")
             }
-            let status = importURL(url)
-            errorMessage = status.isOK ? nil : "导入失败：\(status.text)"
-        } catch {
-            errorMessage = "相册读取失败：\(error.localizedDescription)"
+            await Task.yield()   // 条间让出主线程：整批不长时间独占（红线 #8）
+        }
+
+        if let lastFailure = failures.last {
+            errorMessage = importedCount == 0
+                ? lastFailure
+                : "成功 \(importedCount) 条，失败 \(failures.count) 条（\(lastFailure)）"
+        } else {
+            errorMessage = nil
+        }
+    }
+
+    /// 生产接线的导入闭包：importMedia 成功后**等本条片段在快照可见**再返回
+    /// —— 批量的追加顺序保证。下一条的追加起点取自快照里该轨末尾
+    /// （AppEntry.importMedia §4），不等落库就会用同一个 end 提交、被内核按
+    /// 重叠拒绝（单选无此问题）。等"clips 计数增加"而非"版本推进"：建轨
+    /// 也 bump 版本，只等版本会在片段未落库时提前放行。泵手法与 AppEntry
+    /// 建轨等待、golden 测试一致；5s 兜底，超时不失败（最坏由下一条的
+    /// 重叠拒绝兜住并计入失败汇总）。
+    func sequencedImport(into viewModel: EditorViewModel) -> (URL) async -> Status {
+        { url in
+            let clipsAtStart = viewModel.timeline.clips.count
+            let status = viewModel.importMedia(url: url)
+            guard status.isOK else { return status }
+            let deadline = Date().addingTimeInterval(5)
+            while viewModel.timeline.clips.count <= clipsAtStart && Date() < deadline {
+                RunLoop.main.run(until: Date().addingTimeInterval(0.01))
+            }
+            return status
         }
     }
 }

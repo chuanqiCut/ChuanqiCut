@@ -198,3 +198,101 @@ macOS 12.6，见 pitfalls P45），只做了 `swiftc -parse` 语法级检查；s
 > 待高配构建机 / 真机可用时恢复(HEVC / 4K / iCloud 素材届时一并验证);
 > 不作为 UIA-011 当前验收门槛。剩余验收缺口仅剩构建机上的编译门禁
 > (swift test + macOS/iOS 编译)。
+
+---
+
+# 相册导入后续规划(2026-10-04):UIA-012 / UIA-013 立项
+
+应"是否有好的三方相册库 / 自研可行性"的选型问题做了调研,分层选型固化在
+**ADR-0015**(系统过渡、不引三方、B 期自研)。调研时点结论:ZLPhotoBrowser
+(Apache-2.0,活跃)、HXPhotoPicker(MIT,活跃;**旧名 HXPHPicker 仓库已归档,
+勿引错**)、AnyImageKit(停滞);Android / 鸿蒙官方方向均为系统 picker。
+
+- **UIA-012(A 期,近期)**:系统 `PhotosPicker` 多选(`maxSelectionCount`=20),
+  逐条汇入 `importMedia`、部分失败不中断、条间 `Task.yield()`(红线 #8)。
+  仍是零权限零依赖;同文件(PropertyPanelZone)串行于 UIA-011 之后。
+  Spec UIA-012。
+- **UIA-013(B 期,伞任务)**:自研 SwiftUI 相册浏览器(网格 / 相簿 / 多选
+  序号徽标 / 时长过滤 / iCloud 未下载拉取 / `.limited` 受限模式),替换
+  UIA-011 挂载点(按钮 + item→URL 胶水保留,换选择器本体)。**显式偏离
+  零权限惯例**:新增 `NSPhotoLibraryUsageDescription` + 隐私标签申报
+  (ADR-0015 决策 3)。**方向锚**:core 的 probe/解码消费文件 URL,自研只换
+  选择 UI,不改变"选中项 → 文件 URL → importMedia"落盘路径(撞 PAL 红线
+  #2 的路不走)。Spec UIA-013。
+- **三端**:不强行统一相册选择 UI(Android 系统 Photo Picker / 鸿蒙
+  PhotoViewPicker),三端统一的是"选择结果 → importMedia → Command"链路
+  (ADR-0015 决策 4)。三方库仅作设计参考(读源码提炼边缘 case 清单,
+  不拷代码)。
+
+---
+
+# UIA-012 落地(2026-10-04):相册多选批量导入
+
+Spec UIA-012 / ADR-0015。分支 `mini.zhu/UIA-012-photo-multiselect`。
+
+- **入口**:`PhotosPicker(selection:matching:maxSelectionCount: 20)`
+  (常量 `maxPhotoImportCount`,Spec §6.2 可调),状态改为
+  `photoItems: [PhotosPickerItem]`,完成后清空数组(重选同批依赖
+  itemIdentifier 判等,语义同单选版)。
+- **批量胶水 `PhotoLibraryImporter.runBatch(count:resolveURL:importURL:)`**:
+  逐条 resolve→import,条间 `Task.yield()`(红线 #8);**部分失败不中断**,
+  有失败才写 errorMessage —— 全失败 = 最后一条详情(文案前缀同单条路径)、
+  部分失败 = 「成功 M 条,失败 K 条(最后详情)」、全成功 = nil(素材入表
+  即反馈)。UIA-011 单条语义以 count:1 特例保留(PhotoImportTests 前 5 用例)。
+- **批量顺序保证 `sequencedImport(into:)`**:importMedia 成功后等
+  **"clips 计数增加"(片段在快照可见)**再导下一条 —— 下一条的追加起点
+  取自快照该轨末尾(AppEntry.importMedia §4),不等就会用同一 end 提交、
+  被内核按重叠拒绝;**不能只等版本推进**(建轨也 bump 版本,会提前放行)。
+  泵手法同 AppEntry 建轨等待(5s 兜底,超时由下一条的重叠拒绝兜住并计入
+  失败汇总)。
+- **importMedia 不按路径去重**:同一文件导 N 次 = 素材表 N 条(批量 golden
+  用例按此断言,3 次导入 = 3 素材 3 片段首尾衔接)。
+- ⚠️ 门禁:本机 tools version 6.1 拒跑(P39);`swiftc -parse` 新代码零新增
+  错误(PropertyPanelZone 仅剩 UIA-011 既有 5.7 简写噪音 1 处);
+  swift test / 两平台编译待真实构建机执行。
+
+---
+
+# UIA-013 落地(2026-10-04,提前启动):自研相册浏览器 MediaPicker/
+
+Spec UIA-013 / ADR-0015(决策 3:B 期任务经用户决策提前)。**挂载点替换**:
+PropertyPanelZone 的系统 PhotosPicker 已移除,换 `AlbumPickerScreen` sheet;
+确认交付的 URL 列表走 UIA-012 同款 `runBatch(count:resolveURL:importURL:)`
+→ `sequencedImport` → importMedia,导入链路零分叉。权限:双端 project.yml
+新增 `NSPhotoLibraryUsageDescription`(显式偏离零权限,ADR-0015 批准)。
+
+- **分层**(MediaPicker/ 六文件,取数 seam 挡 PhotoKit):
+  `AlbumPickerModels`(纯逻辑:AssetDescriptor / AlbumSummary / 配置 /
+  SelectionState 有序多选状态机 / DurationFilter / 文案)→
+  `AlbumPermissionModel`(PHAuthorizationStatus 纯映射 + 注入式请求)→
+  `PhotoKitAlbumStore`(AlbumFetching 协议生产实现)→
+  `MediaPickerViewModel`(装配:装载/切换/选取反馈/确认导出)→
+  `MediaGridCell` + `AlbumPickerScreen`(视图)。测试注入夹具取数器
+  (AlbumPickerTests 12 用例),PhotoKit 运行时行为靠冒烟/真机。
+- **PhotoKit 两个关键处理**(承 ZL/HX 经验,见 store 头注释):
+  ① iCloud 判定 = 缩略图请求 `isNetworkAccessAllowed=false` + 
+  PHImageResultIsInCloudKey(云端 cell 显示占位 + 云徽标,不在此联网);
+  ② 选中项 → 文件 URL = PHAssetResourceManager.writeData 落我方 tmp
+  (确认导出时联网拉取,进度上抛给完成按钮)—— 不改"选中项落成文件 URL"
+  的导入落盘路径(Spec §2 方向锚),落盘优化归素材库整理任务。
+- **交互范式**(对齐 ZLPhotoBrowser/HXPhotoPicker):序号徽标(选取顺序
+  可视化,取消后序号前移)、满选置灰 + 抖动提示、时长角标 + 区间过滤
+  (超限灰化 + 原因)、底部已选托盘(跨相簿持久,点缩略图取消)、相簿切换
+  菜单(最近项目/智能相簿/用户相簿,剔除最近删除)、受限横幅、权限拒绝
+  引导(去设置)、iOS 轻触震动。暗色,强调色 PickerTheme.accent 与时间线
+  片段蓝同族。
+- **已知留白**(Spec §7,后续增量):.limited 的"管理可选照片"系统面板
+  只有 UIKit 入口(SwiftUI 接线待做,横幅暂为说明性);选择器内点击预览
+  播放器未做;PHFetchResult 变更增量刷新未做(MVP 整段 reload)。
+- ⚠️ 门禁:同 UIA-012(P39 拒跑);parse 零新增错误类别;构建机验收 +
+  真机项(权限弹窗/.limited/iCloud/滚动帧率)待执行。
+
+**v1.1 交互升级(同日,对齐剪映素材面板)**:默认**单击即插入**(点 cell →
+loading 覆盖 → 落 tmp → async 交付 → importMedia → loading 解除 + toast,
+面板保持打开,连续导入流);「多选」为显式模式(顶栏切换/长按 cell 直达,
+退出清空已选,批量按钮「添加（N）」,成功后托盘清空)。`MediaPickerViewModel`
+的交付回调改为 **async**(`onConfirm: ([URL]) async -> Void`)—— VM await
+父层 runBatch 完成才解除 cell loading,反馈闭环覆盖"落盘+进时间线"全程;
+`insertingIDs` 驱动 cell loading 覆盖层,`isPreparingFiles` 串行化快速连点
+(importInFlight 重入拒绝不触发)。iOS 半屏 detents(medium/large)+拖拽
+指示器(16.0 API),macOS 固定窗口。UIA-013 Spec 升 v1.1。

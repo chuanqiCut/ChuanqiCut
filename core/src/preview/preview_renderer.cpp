@@ -290,7 +290,7 @@ Status PreviewRenderer::RenderFrame(const RationalTime& pts, TextureHandle& out_
     FrameContext ctx;
     ctx.pts = pts;
     ctx.target = target_->Handle();
-    // 宽高比适配（UIA-012）：kStretch 时 viewport 为整目标 → 不设视口，
+    // 宽高比适配（UIA-014）：kStretch 时 viewport 为整目标 → 不设视口，
     // 与引入 FitMode 前的编码序列逐字节一致（既有像素断言不因此改变）。
     float viewport[4];
     const FitMode fit_mode = GetFitMode();

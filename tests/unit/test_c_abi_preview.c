@@ -161,7 +161,7 @@ int main(void) {
     Check(rc == 0, "Resize 后 render_frame 仍成功");
     Check(rc == 0 && cq_preview_last_hit_clip(p) == 1, "Resize 后仍命中片段");
 
-    /* ---- 宽高比适配（UIA-012 / ADR-0018）：ABI 契约 ----
+    /* ---- 宽高比适配（UIA-014 / ADR-0018）：ABI 契约 ----
      * 像素正确性由 test_preview_renderer.cpp [8] 覆盖；这里证明契约本身：
      * 合法值接受、非法值拒绝、空句柄拒绝。默认（不设置）= 拉伸铺满。 */
     Check(cq_preview_set_fit_mode(NULL, 1) == 7000, "set_fit_mode(NULL) 返回 7000");

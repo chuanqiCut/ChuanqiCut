@@ -63,10 +63,10 @@ golden 素材 `gf_1080p_h264.mp4` 是**静态**彩条，不同时刻的像素完
 - **多轨合成** —— 只渲染第一条命中的视频轨；叠加 / 转场合成等 RenderGraph
   （RENDER-001）落地后再补。
 - **变速 / retime** —— MODEL-001 无该字段，时间线时长与素材时长 1:1。
-- ~~**宽高比适配**~~ —— **已支持（UIA-012，2026-10-04）**：`FitMode`
+- ~~**宽高比适配**~~ —— **已支持（UIA-014，2026-10-04）**：`FitMode`
   stretch / contain / cover，见下文专节；片段级缩放/位移仍归 MODEL-003。
 
-## 6.5 宽高比适配 FitMode（UIA-012 / ADR-0018，2026-10-04）
+## 6.5 宽高比适配 FitMode（UIA-014 / ADR-0018，2026-10-04）
 
 源帧与画布比例不同时的映射，**实现接缝 = 编码器视口**（`IGfxEncoder::SetViewport`
 → PAL `ICommandEncoder::SetViewport`，ADR-0018）：

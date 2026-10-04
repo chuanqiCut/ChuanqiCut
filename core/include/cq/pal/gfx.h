@@ -172,7 +172,7 @@ public:
     //     自动丢弃（Metal 光栅化只在 attachment 内产生 fragment）。
     //   * 不调用 = 整目标（Metal 默认 viewport 即 framebuffer 大小），行为与
     //     引入本方法之前逐字节一致。
-    //   引入缘由与备选取舍见 ADR-0018（UIA-012 预览宽高比适配）。
+    //   引入缘由与备选取舍见 ADR-0018（UIA-014 预览宽高比适配）。
     virtual void SetViewport(float x, float y, float width, float height) = 0;
     virtual void Draw(uint32_t vertex_count) = 0;
     virtual void DrawIndexed(uint32_t index_count) = 0;

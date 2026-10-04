@@ -546,3 +546,42 @@
 | E8 | 「CVPixelBuffer(32BGRA) → `MTLPixelFormatBGRA8Unorm` 纹理，采样后需手动把 R/B 交换成 RGBA」 | **错误**。`BGRA8Unorm` 在 Metal 中是「按 BGRA 字节序存储、但逻辑通道仍是 .r=红/.b=蓝」的格式；采样返回的已经是逻辑 RGBA，无需交换。错误地写成 `float4(c.b,c.g,c.r,c.a)` 会让 R/B 反掉——绿条等 R==B 区域看不出，但彩条其余通道会暴露（PALA-002 初版即被底部采样检查抓出）。PALA-011 解码输出为 32BGRA，importer 必须用 BGRA8Unorm 才能直接复用其 IOSurface，且着色器直接 `return c` | 2026-09-26 / PALA-002 / verified |
 | E10 | HANDOFF-003 §1 把「BIND-003 子步骤 3 纹理导入（零拷贝）」标为**下一步** | **已做过**：PALA-002（2026-09-26，commit 76fce6b）已完成零拷贝导入，`pala_native_image` 用例含 IOSurface ID 一致性（源 193==纹理 193）、零拷贝/CPU 退化耗时代差（0.0033ms vs 4.5788ms ≈ 1407×）、真实解码帧渲染读回。**交接文档的任务状态要对着 commit 历史核，不能照抄上一版** | 2026-10-02 / BIND-003 / verified |
 | E9 | 「XCFramework 合并失败是 bitcode 段导致，加 `-fno-embed-bitcode` 可解」（HANDOFF-002 §3 的遗留推测） | **根因判错**：是 Release **LTO/IPO** 产出 bitcode-only `.o`，与 ENABLE_BITCODE 无关；`-fno-embed-bitcode` 该 clang 不识别且方向错误。教训：`0xb17c0de` 这个 magic 既可能来自 embed-bitcode 也可能来自 `-flto`，**必须抽 `.o` 看实际内容再定论**，不能靠 magic 字面猜。另：那次尝试的脏 flag 残留在 `build/apple/ios-device/CMakeCache.txt` 里未被发现，CMake 会持续复用——**CMakeCache 是隐式状态，撤销改动时不要只撤销源码** | 2026-09-29 / PALA XCFramework 打包 / verified |
+
+### P36 · 开发机换到 macOS 13.7 / Xcode 15.2（AppleClang 15）后既有代码编译失败
+- 现象：同一仓库在原机（macOS 15.4 / AppleClang 17，见各 baselines 条目）全绿，
+  本机（macOS 13.7 / Xcode 15.2 / AppleClang 15，`xcodebuild -version` 确认）连
+  既有 core 都编不过：① `core/src/base/log.cpp` 的 `std::va_list` 在旧 libc++
+  不存在；② `tests/unit/test_perf.cpp` 的 volatile 复合赋值触发
+  `-Wdeprecated-volatile`（C++20 P1152，AppleClang 15 更早把该警告拉进 -Werror 集）。
+- 处理：① log.cpp 改用全局 `::va_list` + `<cstdarg>`（新旧工具链都成立）；
+  ② `acc += i` → `acc = acc + i`。均为语义不变的兼容修复。
+- 教训：**「本机实测」结论绑机器**。之前 baselines 里 macOS 15.4 的实测数字
+  全部来自另一台机器（cmake 默认路径是 /Users/zhuning/... 可证）；本机复核或
+  引用数字时先核对环境。ADR-0010 §6 的"性能基线须标注采集机型"由此更重要。
+- **补充（同日，P36b）**：`build_core_apple.sh` 的 ios-device 切片在 Xcode 15.2
+  （iOS 17.2 SDK）编不过 —— `kVTVideoEncoderSpecification_EnableHardwareAcceleratedVideoEncoder`
+  / `kVTCompressionPropertyKey_UsingHardwareAcceleratedVideoEncoder` 在 17.4 代际
+  才进 iOS 头文件，`@available` 救不了"标识符不存在"。macOS 切片与桌面全量测试
+  不受影响（macOS 头自 10.9 就有）。**结论：iOS 切片/xcframework/Swift 测试宿主
+  需要 Xcode 16+ 的机器**；若确需旧 Xcode 支持，给两处 VT 探针加 SDK 代际守卫
+  （`__IPHONE_OS_VERSION_MAX_ALLOWED`），语义退化为既有 kDegraded——独立小任务，勿顺手改。
+- 日期 / 来源 / 验证状态：2026-10-04 / CAM-001 / **verified**（修复后 40/40 全绿）
+
+### P37 · 构建脚本 CMAKE_BIN 默认路径指向他人 home，且本机无 cmake
+- 现象：`build_core.sh` 默认 `CMAKE_BIN=/Users/zhuning/...`，本机不存在；
+  本机也无 brew/cmakes（`which cmake` 空）。
+- 处理：`pip3 install --user cmake`（装到 ~/Library/Python/3.9/bin），构建时
+  `export CMAKE_BIN=$(ls ~/Library/Python/*/bin/cmake | head -1)`。ctest 同目录自动推导。
+- 备注：若脚本要长期在多机使用，可把默认值改为"PATH 中找 cmake，找不到再落绝对路径"。
+- 日期 / 来源 / 验证状态：2026-10-04 / CAM-001 / **verified**
+
+### P38 · `AVCaptureMultiCamSession` 是 iOS 专属，macOS 编译直接 unavailable
+- 现象：capabilities.mm 无条件引用 `AVCaptureMultiCamSession.isMultiCamSupported`
+  在 macOS 切片报 `'AVCaptureMultiCamSession' is unavailable: not available on macOS`。
+  （调研时误记为"macOS 10.15+ 可用"——那是文档里别的类的可用性，核验不严。）
+- 处理：PAL 内 `#if TARGET_OS_IPHONE` 吸收平台差异，macOS 分支如实返回 kNo。
+  core 头仍零平台分支（红线 #3 不受影响——运行时查询的是能力**结果**，
+  PAL 内部怎么拿到结果是 PAL 的实现自由）。
+- **后记（同日）**：ADR-0014 转向后该实现随 CAM-001 契约一并回退，但 API 事实
+  不变，未来在 macOS 上做相机相关代码仍会撞。
+- 日期 / 来源 / 验证状态：2026-10-04 / CAM-001 / **verified**

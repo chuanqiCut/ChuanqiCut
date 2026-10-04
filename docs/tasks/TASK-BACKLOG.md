@@ -364,7 +364,10 @@ INFRA-001/002 → CORE-001~005 → CORE-006(PAL冻结) → PALA-001/010
 | CAM-003 | UI | 预览渲染链（MTKView + Core Image）+ 滤镜预设 | CAM-002 | `CameraVideoView/Renderer.swift`、SharedUI `CameraFilter.swift` | 滤镜单测；真机 ≥30fps |
 | CAM-004 | UI | 首页两入口 + 相机页 + EditorViewModel 惰性化 | CAM-002/003 | `HomeView.swift`、`CameraView.swift`、SharedUI `EditorScreen.swift` | SharedUI 全量；iOS 构建+权限 |
 | CAM-005 | UI | 录制（AVAssetWriter H.264+AAC）+ 存相册/进编辑器 | CAM-002~004 | `CameraRecorder.swift`、EditorScreen initialMedia | 产物校验 ≤2 帧偏差 |
-| CAM-011~014 | B 期 | Vision 检测 + ARKit 网格 / 磨皮美型(App 层 Metal) / 贴纸道具 | CAM-00x | 待 B 期任务卡 | 待细化 |
+| CAM-011 | B 期 | Vision 检测桥(人脸关键点/人体/动物)+ 帧间平滑 | CAM-002~004 | `Camera/Detection/`、SharedUI 平滑纯函数 | 观测/平滑单测;检测耗时真机入库 |
+| CAM-012 | B 期 | 磨皮升级 Metal kernel(替换 A 期高斯近似) | CAM-003 | `Camera/Effects/`、CameraBeauty 封装层 | 单调/off 恒等口径不变;≤8ms [E] |
+| CAM-013 | B 期 | 美型 MeshWarp(瘦脸/大眼/下巴,关键点驱动) | CAM-011 | `Camera/Effects/`、CameraReshapeParams | 无脸直通;真机无接缝/抖动 |
+| CAM-014 | B 期 | 贴纸 + 头部道具锚定(处理链最后一段) | CAM-011 | `Camera/Effects/`、StickerAnchor、资产 | 锚定纯函数锁定;资产许可干净 |
 | CAM-021~024 | C 期 | 双摄 MultiCam / MetalFX / 景深人像 / 宠物 / 美体 | CAM-011~ | 待 C 期任务卡 | 待细化 |
 
 **关键路径**：`CAM-002 → CAM-003 → CAM-004 → CAM-005`。

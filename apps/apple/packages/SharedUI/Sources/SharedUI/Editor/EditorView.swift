@@ -14,7 +14,10 @@ public struct EditorView: View {
     public var body: some View {
         EditorLayoutContainer(
             preview: {
-                PreviewZone(preview: viewModel.preview, playhead: viewModel.playhead)
+                PreviewZone(preview: viewModel.preview,
+                            pump: viewModel.previewPump,
+                            playhead: viewModel.playhead,
+                            continuous: viewModel.isPlaying)
             },
             timeline: {
                 TimelineZone()

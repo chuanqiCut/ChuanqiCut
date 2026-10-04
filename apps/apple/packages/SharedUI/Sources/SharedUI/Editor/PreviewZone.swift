@@ -8,11 +8,15 @@ import ChuanqiCut
 
 struct PreviewZone: View {
     let preview: Previewer?
+    let pump: PreviewPump?
     let playhead: RationalTime
+    /// 连续绘制（播放中）：主线程按 vsync 只做一次拷贝。
+    let continuous: Bool
 
     var body: some View {
         if let preview {
-            MetalPreviewView(preview: preview, pts: playhead)
+            MetalPreviewView(preview: preview, pump: pump, pts: playhead,
+                             continuous: continuous)
         } else {
             // 预览后端缺失（如该平台 PAL 未实现预览能力）：如实降级展示，不伪装可用。
             ZStack {

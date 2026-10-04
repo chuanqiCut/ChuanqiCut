@@ -317,6 +317,84 @@ int32_t cq_preview_last_cpu_fallback(const CQPreview* preview);
 int32_t cq_preview_last_frame_pts(const CQPreview* preview, int64_t* out_value,
                                   int32_t* out_timescale);
 
+/* 上一帧各阶段耗时（ns）。out 均可为 NULL。
+ *   acquire_ns —— 取帧整段（含按需 seek + 解码）；core 侧没有更细接缝，故不拆
+ *   import_ns  —— 原生图像 → 纹理（零拷贝路径下极短）
+ *   draw_ns    —— 离屏绘制 + **等 GPU 完成**（内核每帧 WaitUntilCompleted）
+ *   total_ns   —— 入口到返回；与前三段之差 = 快照加载等杂项
+ * ⚠️ 只统计成功路径的段耗时（失败路径含重试/恢复，混进均值会算歪"解码多快"）。 */
+int32_t cq_preview_last_timings(const CQPreview* preview, int64_t* out_acquire_ns,
+                                int64_t* out_import_ns, int64_t* out_draw_ns,
+                                int64_t* out_total_ns);
+
+/* ---- 预览取帧泵（UIA-010 子步骤 5）----
+ *
+ * 把「seek + 解码 + 导入 + 离屏绘制」搬到泵自己的线程：
+ *   UI 线程        —— 只做 request(pts) 与「把已完成的帧 blit 进 drawable + present」
+ *   泵线程         —— 上面那一整条链路
+ *
+ * ⚠️ 它**不提高帧率**。帧率上限仍是 1/单帧取帧耗时；它做的是把这份耗时从主线程
+ *    挪走，让 UI 不再被每帧堵一次。要提帧率得做 read-ahead 预解码 —— 那是另一件事。
+ *
+ * ⚠️ **挂上泵之后，禁止再从其它线程调 cq_preview_render_frame / cq_preview_resize**。
+ *    渲染器内部触碰解码会话与原生纹理缓存，两者都不可并发访问 —— 这不是"可能出错"，
+ *    是必然的数据竞争。渲染与改尺寸一律走 cq_preview_pump_request / _request_resize。
+ *
+ * 请求合并：请求速率 > 渲染速率时取最新，被覆盖的请求永不渲染（计入 coalesced）。
+ * 时刻由墙钟算（PlayerClock），丢帧只让画面少几张，不会让播放变快或变慢。
+ *
+ * 消费协议（**必须成对**）：
+ *     cq_preview_pump_lock(pump, &tex, &pts_v, &pts_ts, &seq);
+ *     // 用 tex 编码一次 blit（不要 waitUntilCompleted，那会把泵一起堵住）
+ *     cq_preview_pump_unlock(pump);
+ *   持锁期间泵线程不会发布新帧、不会 resize，故句柄稳定。
+ *
+ * 跨队列顺序：泵线程写离屏 RT、UI 线程读它。Metal 只保证**同一条队列内**按 commit
+ * 顺序执行，跨队列的先后必须显式同步（MTLSharedEvent / MTLFence）。故 UI 侧的 blit
+ * **必须**用 cq_preview_shared_queue() 返回的这条队列 —— 顺序由 commit 顺序天然保证。 */
+
+typedef struct CQPreviewPump CQPreviewPump;
+
+/* 创建并启动泵。失败返回 NULL（预览器无效 / 线程起不来）。
+ * ⚠️ 生命周期：必须在 preview **之前**销毁（泵持有指向渲染器的非拥有指针）。 */
+CQPreviewPump* cq_preview_pump_create(CQPreview* preview);
+
+/* 停止泵线程并释放。传 NULL 安全。 */
+void cq_preview_pump_destroy(CQPreviewPump* pump);
+
+/* 停止（可再 start 重启）。停止后 request 仍可入队，重启后会渲染最新的那个。 */
+int32_t cq_preview_pump_stop(CQPreviewPump* pump);
+
+/* 重启（已运行时返回 kOk，无副作用）。 */
+int32_t cq_preview_pump_start(CQPreviewPump* pump);
+
+/* 请求渲染 pts 处一帧。任意线程可调；不阻塞（只入队 + 通知）。 */
+int32_t cq_preview_pump_request(CQPreviewPump* pump, int64_t pts_value, int32_t pts_timescale);
+
+/* 请求改变离屏目标尺寸（在泵线程执行 —— RT 只能由持有它的线程销毁）。 */
+int32_t cq_preview_pump_request_resize(CQPreviewPump* pump, uint32_t width, uint32_t height);
+
+/* 消费端取帧并持锁（见上方「消费协议」）。返回状态码，帧数据经 out 参数给出。
+ * 尚未渲染出任何帧时 *out_texture = NULL 且 *out_seq = 0。 */
+int32_t cq_preview_pump_lock(CQPreviewPump* pump, void** out_texture, int64_t* out_pts_value,
+                             int32_t* out_pts_timescale, uint64_t* out_seq);
+
+/* 释放消费锁。必须与 lock 成对调用。 */
+int32_t cq_preview_pump_unlock(CQPreviewPump* pump);
+
+/* 统计（out 均可为 NULL）：
+ *   requested —— 收到的请求总数
+ *   rendered  —— 实际执行过的渲染次数
+ *   coalesced —— 被后续请求覆盖、从未进入渲染的请求数
+ *   non_ok    —— 非 Ok 返回的渲染次数（含空隙 kIoNotFound） */
+int32_t cq_preview_pump_stats(CQPreviewPump* pump, uint64_t* out_requested,
+                              uint64_t* out_rendered, uint64_t* out_coalesced,
+                              uint64_t* out_non_ok);
+
+/* 内核复用的命令队列的**中性句柄**（Apple 上 reinterpret 为 id<MTLCommandQueue>）。
+ * UI 侧的 blit 必须用它，理由见上方「跨队列顺序」。失败/不支持返回 NULL。 */
+void* cq_preview_shared_queue(CQPreview* preview);
+
 /* ==========================================================================
  * 播放时钟（UIA-010）
  * ==========================================================================

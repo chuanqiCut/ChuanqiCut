@@ -180,6 +180,19 @@ class ICommandQueue : public IPalResource {
 public:
     virtual Status CreateCommandBuffer(PalPtr<ICommandBuffer>& out_buffer) = 0;
     virtual Status Submit(ICommandBuffer* buffer) = 0;
+
+    // 本队列对应的**中性句柄**（Apple 上即 id<MTLCommandQueue>，消费者 reinterpret）。
+    //
+    // 为什么需要它（UIA-010 子步骤 5 引入，不是"顺手加个访问器"）：
+    //   把预览渲染挪到后台线程后，泵线程（写离屏 RT）与 UI 线程（把该 RT 拷进
+    //   drawable）会并发访问同一张纹理。Metal **只保证同一条队列内**命令缓冲按
+    //   commit 顺序执行；跨队列的资源先后必须显式同步（MTLSharedEvent / MTLFence）。
+    //   与其引入跨队列同步，不如让 UI 侧的 blit 复用内核这条队列 —— 顺序由 commit
+    //   顺序天然保证，且省掉每帧新建队列的开销。
+    //
+    // ⚠️ 返回的句柄**不转移所有权**，生命周期仍归本队列对象（消费者若要长期持有，
+    //    自行按平台语义 retain）。未实现/无对应概念的后端返回 nullptr。
+    virtual void* NativeHandle() = 0;
 };
 
 // ExternalImage 概念（ARCH-003 §3 / GFX-003）：把平台原生图像导入为可采样纹理。

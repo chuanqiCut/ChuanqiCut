@@ -530,6 +530,39 @@
   （脚本里已有同类"脏 cache 自愈"逻辑，可扩成检测 SDK 路径是否存在）。
 - 日期 / 来源 / 验证状态：2026-10-03 / UIA-010 / **verified**
 
+### P36 · 消费端持锁期间调 `PreviewPump::Request` → 死锁
+- 现象：`test_preview_pump.cpp` 第一版挂在 `[5] 消费锁` 段：主线程 `Lock()` 之后
+  又调 `pump.Request()`，进程卡死（无任何输出，只能被外部 kill）。
+- 原因：`Request` 也要拿同一把 `mtx_`；消费锁与它是**同一把锁**，自锁即死锁。
+- 规则：**先 Request，再 Lock → blit → Unlock**。已写进 `preview_pump.h` 的
+  「消费协议」注释与用例注释。同类：持锁期间也不要 `waitUntilCompleted`
+  （会把泵线程一起堵住）。
+- 日期 / 来源 / 验证状态：2026-10-04 / UIA-010 子步骤 5 / **verified（已复现并修）**
+
+### P37 · 跨 MTLCommandQueue 访问同一纹理没有顺序保证 —— 共享队列是刚需不是优化
+- 现象（推演后按文档定论，未做"随机花屏"复现实验）：把取帧渲染挪到泵线程后，
+  泵线程写离屏 RT、主线程读它若各用一条队列，Metal **只保证同一条队列内**按
+  commit 顺序执行，跨队列必须显式 `MTLSharedEvent` / `MTLFence`。
+- 处理：`gfx_device.cpp` 由「每帧 `CreateCommandQueue`」改为按设备复用一条；
+  新增 `ICommandQueue::NativeHandle()` + `IGfxDevice::SharedQueueHandle()` +
+  `cq_preview_shared_queue()`，UI 侧 blit 强制走这条队列。
+- 副作用（收益）：顺带去掉了每帧新建 `MTLCommandQueue` 的无谓开销。
+- 日期 / 来源 / 验证状态：2026-10-04 / UIA-010 子步骤 5 / **设计定论 + 链接/功能测试通过；
+  "不共享会花屏"未做对照实验**
+
+### P38 · 顺序播放每帧都精确 seek → 每帧重解一个 GOP（预览帧率的真瓶颈）
+- 现象：连续递进请求（每帧 +40ms）时单帧 `acquire` 均值 **93ms**（128x128、
+  Release），占单帧总耗时 94%；而孤立请求同一素材约 5~8ms。App 侧 1s 播放
+  只产出 **14 帧**（Release XCFramework；Debug 为 3）（1280x720，Debug XCFramework）。
+- 原因：`SystemFrameProvider::AcquireFrame` 见 `seek_target_ != req.at` 就
+  `Seek()`（demuxer seek + decoder Flush），随后 `AcquireExact` 从关键帧解码到
+  目标 —— 顺序播放时每帧都付一遍整个 GOP 的解码。
+- 状态：**未修**（属 MEDIA-020 取帧策略，不在 UIA-010 写集内）。
+  已开 `docs/tasks/TASK-MEDIA-021.md`。
+- 教训：修"帧率"之前先量各阶段耗时 —— 本次若不埋点，会误以为是"渲染太慢"
+  而去做 GPU 侧优化，方向全错。
+- 日期 / 来源 / 验证状态：2026-10-04 / UIA-010 子步骤 5 / **verified（实测，未修）**
+
 ---
 
 ## 已修正的历史错误（供参考，避免重犯）

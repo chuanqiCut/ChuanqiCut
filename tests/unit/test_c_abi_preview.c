@@ -12,6 +12,7 @@
  */
 
 #include <stdio.h>
+#include <time.h> /* nanosleep：等泵渲染完（真实链路，用挂钟步进而不是忙等） */
 
 #include "cq/cq_sdk.h"
 
@@ -159,6 +160,112 @@ int main(void) {
     rc = cq_preview_render_frame(p, 120000, TS, &tex);
     Check(rc == 0, "Resize 后 render_frame 仍成功");
     Check(rc == 0 && cq_preview_last_hit_clip(p) == 1, "Resize 后仍命中片段");
+
+    /* ---- 耗时埋点（UIA-010 子步骤 5：预览帧率的所有讨论都要有实测数字）---- */
+    {
+        int64_t acq = 0;
+        int64_t imp = 0;
+        int64_t drw = 0;
+        int64_t tot = 0;
+        Check(cq_preview_last_timings(p, &acq, &imp, &drw, &tot) == 0, "last_timings 可取回");
+        printf("  上一帧耗时(ns): acquire=%lld import=%lld draw=%lld total=%lld\n",
+               (long long)acq, (long long)imp, (long long)drw, (long long)tot);
+        Check(tot > 0, "total_ns > 0（埋点真的在计时）");
+        Check(acq > 0, "acquire_ns > 0（取帧段被计时）");
+        Check(tot >= acq + imp + drw, "total >= 各段之和（段耗时不越界）");
+        Check(cq_preview_last_timings(NULL, &acq, &imp, &drw, &tot) == 7000,
+              "last_timings(NULL) 返回 7000");
+    }
+
+    /* ---- 共享命令队列（跨队列顺序的前提，见 cq_sdk.h 的泵注释）---- */
+    Check(cq_preview_shared_queue(p) != NULL, "cq_preview_shared_queue 返回非空句柄");
+    Check(cq_preview_shared_queue(NULL) == NULL, "shared_queue(NULL) 返回 NULL");
+
+    /* ---- 取帧泵（UIA-010 子步骤 5）----
+     * ⚠️ 本段之后就不再直接调 cq_preview_render_frame / cq_preview_resize：
+     *    挂上泵后渲染只在泵线程发生，主线程再调是数据竞争。 */
+    {
+        struct timespec step;
+        uint64_t seq = 0;
+        void* ptex = NULL;
+        int64_t ppts = 0;
+        int32_t ppts_ts = 0;
+        step.tv_sec = 0;
+        step.tv_nsec = 2 * 1000 * 1000; /* 2ms */
+
+        /* 参数防御：NULL 一律 7000，不静默成功 */
+        Check(cq_preview_pump_request(NULL, 60000, TS) == 7000, "pump_request(NULL) 返回 7000");
+        Check(cq_preview_pump_lock(NULL, &ptex, &ppts, &ppts_ts, &seq) == 7000,
+              "pump_lock(NULL) 返回 7000");
+        Check(cq_preview_pump_unlock(NULL) == 7000, "pump_unlock(NULL) 返回 7000");
+        Check(cq_preview_pump_stats(NULL, NULL, NULL, NULL, NULL) == 7000,
+              "pump_stats(NULL) 返回 7000");
+        Check(cq_preview_pump_stop(NULL) == 7000, "pump_stop(NULL) 返回 7000");
+        Check(cq_preview_pump_start(NULL) == 7000, "pump_start(NULL) 返回 7000");
+        Check(cq_preview_pump_request_resize(NULL, 64, 64) == 7000,
+              "pump_request_resize(NULL) 返回 7000");
+        Check(cq_preview_pump_create(NULL) == NULL, "pump_create(NULL) 返回 NULL");
+
+        CQPreviewPump* pump = cq_preview_pump_create(p);
+        Check(pump != NULL, "cq_preview_pump_create（创建即启动）");
+        if (pump != NULL) {
+            Check(cq_preview_pump_lock(pump, &ptex, &ppts, &ppts_ts, &seq) == 0,
+                  "pump_lock 返回 0");
+            Check(seq == 0 && ptex == NULL, "尚无帧时 seq==0 且句柄为 NULL（不伪造）");
+            Check(cq_preview_pump_unlock(pump) == 0, "pump_unlock 返回 0");
+
+            Check(cq_preview_pump_request(pump, 60000, TS) == 0, "pump_request(0.5s)");
+            Check(cq_preview_pump_request(pump, 60000, 0) == 7000,
+                  "pump_request timescale=0 返回 7000");
+
+            /* 等泵渲染完（真实解码，给 5s 上限） */
+            for (int i = 0; i < 2500 && seq == 0; ++i) {
+                nanosleep(&step, NULL);
+                cq_preview_pump_lock(pump, &ptex, &ppts, &ppts_ts, &seq);
+                cq_preview_pump_unlock(pump);
+            }
+            Check(seq != 0, "泵渲染出了帧（seq 前进）");
+            Check(ptex != NULL, "泵发布的纹理句柄非空");
+            Check(ppts == 60000 && ppts_ts == TS, "泵发布的 pts == 请求的 0.5s");
+            Check(cq_preview_last_hit_clip(p) == 1, "泵路径仍命中片段");
+            Check(cq_preview_last_cpu_fallback(p) == 0, "泵路径零拷贝仍成立（无静默降级）");
+
+            {
+                uint64_t req = 0;
+                uint64_t ren = 0;
+                uint64_t coa = 0;
+                uint64_t nok = 0;
+                Check(cq_preview_pump_stats(pump, &req, &ren, &coa, &nok) == 0, "stats 可取回");
+                printf("  pump stats: requested=%llu rendered=%llu coalesced=%llu non_ok=%llu\n",
+                       (unsigned long long)req, (unsigned long long)ren,
+                       (unsigned long long)coa, (unsigned long long)nok);
+                Check(req >= 1 && ren >= 1, "requested/rendered 均 >= 1");
+            }
+
+            /* resize 走泵（RT 只能由持有它的线程销毁）→ 旧句柄必须作废 */
+            {
+                uint64_t seq_before = seq;
+                Check(cq_preview_pump_request_resize(pump, 128, 128) == 0,
+                      "pump_request_resize(128,128)");
+                Check(cq_preview_pump_request_resize(pump, 0, 0) == 7000,
+                      "pump_request_resize(0,0) 返回 7000");
+                for (int i = 0; i < 2500 && seq <= seq_before; ++i) {
+                    nanosleep(&step, NULL);
+                    cq_preview_pump_lock(pump, &ptex, &ppts, &ppts_ts, &seq);
+                    cq_preview_pump_unlock(pump);
+                }
+                Check(seq > seq_before, "resize 后 seq 前进");
+                Check(ptex == NULL, "resize 后旧句柄作废（texture == NULL）");
+            }
+
+            Check(cq_preview_pump_stop(pump) == 0, "pump_stop");
+            Check(cq_preview_pump_start(pump) == 0, "pump_start（可重启）");
+            /* 生命周期：泵必须先于 preview 销毁（持有指向渲染器的非拥有指针）。 */
+            cq_preview_pump_destroy(pump);
+        }
+        cq_preview_pump_destroy(NULL); /* 幂等，不得崩 */
+        Check(1, "pump_destroy(NULL) 幂等不崩");
+    }
 
     /* ---- 参数防御 & 幂等释放 ---- */
     Check(cq_preview_render_frame(p, 60000, 0, &tex) == 7000, "timescale=0 返回 7000");

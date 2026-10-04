@@ -161,6 +161,18 @@ cq_require_cxx20(cq_tests_core_player_clock)
 apply_cq_warnings(cq_tests_core_player_clock)
 add_test(NAME core_player_clock COMMAND cq_tests_core_player_clock)
 
+# ---- UIA-010 子步骤 5：预览取帧泵（并发语义；假帧源，只链 cq_core）----
+# 只链 cq_core：泵是平台无关的（std::thread + mutex + condvar），不需要 PAL 后端，
+# 故本用例在没有 Metal / 硬解后端的环境里也能跑 —— 这条是刻意的，别顺手加 cq_pal_apple。
+add_executable(cq_tests_core_preview_pump
+    unit/test_preview_pump.cpp)
+target_include_directories(cq_tests_core_preview_pump PRIVATE
+    ${CMAKE_SOURCE_DIR}/core/include)
+target_link_libraries(cq_tests_core_preview_pump PRIVATE cq_core)
+cq_require_cxx20(cq_tests_core_preview_pump)
+apply_cq_warnings(cq_tests_core_preview_pump)
+add_test(NAME core_preview_pump COMMAND cq_tests_core_preview_pump)
+
 # ---- UIA-010：播放时钟 + 时间线时长的 C ABI（真正的 C TU，只链 cq_core）----
 add_executable(cq_tests_c_abi_player
     unit/test_c_abi_player.c)

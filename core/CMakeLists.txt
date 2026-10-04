@@ -68,7 +68,11 @@ add_library(cq_core STATIC
     src/media/media_probe_abi.cpp
     # UIA-010：播放时钟 —— 时刻 = 墙钟的函数（非帧数累加），帧网格量化。
     # 平台无关（只用 steady_clock + 有理数），不碰 PAL / Metal。
-    src/preview/player_clock.cpp)
+    src/preview/player_clock.cpp
+    # UIA-010 子步骤 5：预览取帧泵 —— 把 seek+解码+导入+离屏绘制搬到自有线程，
+    # 主线程只做 blit + present。平台无关（只用 std::thread / mutex / condvar），
+    # 帧源走 IPreviewFrameSource 接缝，故可注入假实现做确定性并发测试。
+    src/preview/preview_pump.cpp)
 
 # 版本号由 CMake 注入，不在 cq_sdk.h 里硬编码（否则必然与 project VERSION 漂移）。
 target_compile_definitions(cq_core PRIVATE

@@ -90,9 +90,11 @@ final class PhotoImportTests: XCTestCase {
 
         XCTAssertNil(importer.errorMessage, "生产接线导入 golden 应成功")
         // 建轨 + 追加片段是异步提交：泵主队列等版本推进到 3（同 MediaImportTests）
+        // async 上下文禁 RunLoop.main.run(until:)（Swift 6 编译期拒绝）——用 Task.sleep 让出，
+        // observer 的 @MainActor Task 趁挂起推进 applySnapshot。
         let deadline = Date().addingTimeInterval(5)
         while viewModel.timeline.version < 3 && Date() < deadline {
-            RunLoop.main.run(until: Date().addingTimeInterval(0.01))
+            try? await Task.sleep(nanoseconds: 10_000_000)
         }
         XCTAssertEqual(viewModel.mediaLibrary.count, 1, "素材表应出现条目（D3：引用原路径）")
         XCTAssertEqual(viewModel.timeline.clips.count, 1, "视频轨自动创建并追加片段")

@@ -149,14 +149,22 @@ cd apps/apple/packages/SharedUI && swift test --disable-sandbox        # 20/20
 2. **iOS 编译与真机验证**（传哲本人做，iPhone 17 Pro）：本机无 iOS 运行时，
    自 2026-10-03 起 iOS 侧改动**只有 macOS 路径被编译过**。本轮取帧提速后，
    真机重点验证：顺序播放实际帧率、回退 seek（时间线反向拖动）正确性。
-3. **P33 定位 → 已修复（2026-10-04，本会话第二轮）**：根因三层叠加——
-   `loadValuesAsynchronouslyForKeys` 的 completion 只 signal 不查终态
+3. **P33 定位 → 已修复（2026-10-04，两轮会话收口）**：根因**两层**——
+   ① 内核：`loadValuesAsynchronouslyForKeys` 的 completion 只 signal 不查终态
    （Failed 也触发）→ invalid duration 被 ToRational 转成 {0,1} 骗过检查 →
-   probe 带 0 成功返回。另发现并修复**更危险的挂死隐患**：加载失败后重建
-   asset 的 completion 可能永不触发（URL 级污染），`DISPATCH_TIME_FOREVER`
-   无限等 = Open 挂死。修复 = 终态检查 + 5s 有限超时 + 文件不存在跳过重试 +
-   probe 补 `value<=0` 防御。详见 pitfalls P33。
-4. UIA-006 属性面板（需先定 MODEL-003）、letterbox/fit、多轨合成（等 RENDER-001）、
+   probe 带 0 成功返回；顺带发现并修复**更危险的挂死隐患**（重建 asset 的
+   completion 可能永不触发，`DISPATCH_TIME_FOREVER` = Open 挂死）。
+   ② Swift：`importMedia` 等 addTrack 的判据是「版本号推进」，但 registerAsset
+   也推版本（RegisterAsset 会 Publish）→ 等待提前通过 → 查不到视频轨 →
+   假失败 7000（上一轮「内核修复后 ×3 全绿」**不可复现**，复跑 6/3/0 失败实证）。
+   修复 = 轮询目标效果（`queryTracks` 出现视频轨）。两层修复后 SharedUI 全量
+   ×3 **20/20**（套件时长 14.8s→4.2s，失败用例不再烧 5s 超时）。详见 pitfalls P33。
+4. ~~letterbox/fit~~ **✅ 已完成（2026-10-04，UIA-011 / ADR-0015）**：
+   `FitMode` stretch/contain/cover，实现接缝 = 编码器视口原语（GFX/PAL additive，
+   不动 IBlitPass 与 MSL）。门禁：Debug 42/42、Release 42/42、
+   preview_renderer 51、c_abi_preview 78、gfx_device 30（含视口像素断言）、
+   swift 23/23、SharedUI ×3 20/20。产品装配 = AppEntry 显式 contain。
+   剩余：UIA-006 属性面板（需先定 MODEL-003）、多轨合成（等 RENDER-001）、
    素材库整理（拷入沙箱，D3）。
 5. （低优）取帧流水线优化：`WaitForAsynchronousFrames` 等全部在途帧，
    可改 per-frame 同步进一步提高吞吐（ADR-0014 §后果 4）。

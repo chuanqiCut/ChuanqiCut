@@ -3,8 +3,11 @@
 > 建立：2026-10-02
 > 覆盖：2026-09-29 ~ 2026-10-02（多 session 协作）
 > 前置阅读：`.ai/source/AGENTS.root.md`（真源）、`docs/HANDOFF-002-*.md`（更早的上下文）
-
-新会话**先读本文件 + `.ai/source/AGENTS.root.md`**，再动手。
+>
+> ⚠️ **状态已过期**：2026-10-04 之后请以 **`docs/HANDOFF-004-*.md`** 为准。
+> 本文件保留作历史参考（含 ADR-0011/0012 的来龙去脉与早期踩坑）。
+>
+> 新会话**先读 HANDOFF-004 + `.ai/source/AGENTS.root.md`**，再动手。
 
 ---
 

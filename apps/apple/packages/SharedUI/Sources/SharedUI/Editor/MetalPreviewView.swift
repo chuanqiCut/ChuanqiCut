@@ -1,16 +1,22 @@
-// SharedUI — MTKView 预览视图（UIA-003）
+// SharedUI — MTKView 预览视图（UIA-003；UIA-010 子步骤 5 改为「主线程只 blit」）
 //
-// 验收对应 TASK-UIA-003：预览画面不经 UI 合成路径 —— MTKView 直接绘制，
-// 内核渲染的离屏纹理经一次 GPU 拷贝进 drawable（无 CPU 往返）。
+// 渲染流程（分工见下，两步发生在**不同线程**）：
+//   泵线程（内核）  —— seek + 解码 + 零拷贝导入 + 离屏绘制（耗时的大头）
+//   主线程（本文件）—— 把泵已完成的帧 reinterpret 成 MTLTexture，一次 GPU 拷贝
+//                      进 currentDrawable 并 present
 //
-// 渲染流程（draw 回调内，全部主线程）：
-//   1. cq_preview_render_frame(pts) —— 内核完成 seek + 解码 + 零拷贝导入 + 离屏绘制
-//   2. 中性句柄 reinterpret 为 MTLTexture（不 retain，见 Preview.swift 约定）
-//   3. PreviewFrameRenderer 把该纹理恒等映射画进 currentDrawable 并 present
+// ⚠️ 主线程**不再**调用 preview.renderFrame：那会把整条取帧链路堵在主线程上。
+//    渲染一律经 `PreviewPump.request(pts:)`，尺寸变化经 `PreviewPump.requestResize`
+//    （离屏 RT 只能由持有它的线程销毁）。
 //
-// ⚠️ 本视图是「单帧按需渲染」（isPaused + enableSetNeedsDisplay）：
-//    播放头变化 / 视图尺寸变化才重绘。连续播放（定时推进 pts）必须由后续
-//    UIA 任务以异步任务驱动 setPlayhead，**不得**在本视图内加渲染循环。
+// ⚠️ 命令队列必须用内核共享的那条（`Previewer.sharedQueueHandle`）：跨队列时
+//    Metal 不保证「泵写完 → 主线程读」的先后。见 PreviewFrameRenderer 文件头。
+//
+// 两种绘制节奏：
+//   * 连续（播放中）—— MTKView 自己按 vsync 画，主线程每帧只做一次拷贝（亚毫秒）
+//   * 按需（暂停 / 拖拽）—— setNeedsDisplay 触发一次；因为泵是异步的，请求发出后
+//     画面要等一帧才到，故有「自驱重绘」：画完发现取到的还不是请求的那一帧，
+//     就再请求一次重绘，直到追上或有上限（防止渲染一直失败时无限转）。
 
 import SwiftUI
 import MetalKit
@@ -23,14 +29,35 @@ import ChuanqiCut
 final class PreviewMTKView: MTKView {
 
     private var renderer: PreviewFrameRenderer?
+    /// 创建 renderer 时用的队列句柄。内核换设备/换预览器时要重建 renderer。
+    private var rendererQueueHandle: UnsafeMutableRawPointer?
+    private var deviceRef: (any MTLDevice)?
 
     /// 内核预览门面。nil 时本视图不渲染（保持清屏黑）。
     var preview: Previewer?
 
-    /// 要渲染的时间线时刻。
+    /// 取帧泵。**渲染入口**：有它才走「主线程只 blit」路径。
+    var pump: PreviewPump?
+
+    /// 要显示的时间线时刻（泵据此取帧）。
     var pts: RationalTime = RationalTime(value: 0, timescale: RationalTime.projectTimescale)
 
-    init(preview: Previewer?, pts: RationalTime) {
+    /// 自驱重绘的剩余次数上限（防止渲染持续失败时以 vsync 频率空转）。
+    private static let selfDriveLimit = 90
+
+    private var selfDriveLeft = 0
+
+    /// 连续绘制（播放中）。false = 按需（setNeedsDisplay）。
+    var continuous: Bool = false {
+        didSet {
+            if oldValue != continuous {
+                isPaused = !continuous
+                if !continuous { selfDriveLeft = Self.selfDriveLimit }
+            }
+        }
+    }
+
+    init(preview: Previewer?, pump: PreviewPump?, pts: RationalTime) {
         // ⚠️ 不显式指定 device：MTKView 内部走 MTLCreateSystemDefaultDevice()，
         //    与内核 gfx_metal.mm 的设备是同一进程内缓存实例（hypothesis，
         //    2026-10-02 本机实测为真；论证见 Preview.swift 头注释）。
@@ -38,21 +65,34 @@ final class PreviewMTKView: MTKView {
         super.init(frame: .zero, device: device)
 
         self.preview = preview
+        self.pump = pump
         self.pts = pts
-        self.renderer = device.flatMap { PreviewFrameRenderer(device: $0) }
+        // renderer 在 ensureRenderer() 里创建：它必须绑到**内核共享队列**上，
+        // 而拿到队列要先有 preview。preview 为 nil（后端缺失）时 renderer 保持 nil，
+        // draw 回调随之不画（视图保持清屏黑）—— 与"预览不可用"的降级语义一致。
+        self.deviceRef = device
 
-        // 按需渲染：只在 setNeedsDisplay() 被调用时绘制一帧。
         isPaused = true
         enableSetNeedsDisplay = true
-        // 呈现失败 / 空隙的兜底色：黑（与内核「空隙清屏为黑」语义一致）。
         clearColor = MTLClearColor(red: 0, green: 0, blue: 0, alpha: 1)
 
         delegate = self
+        ensureRenderer()
     }
 
     @available(*, unavailable)
     required init(coder: NSCoder) {
         fatalError("PreviewMTKView 只支持代码创建（SwiftUI representable 宿主）")
+    }
+
+    /// renderer 必须绑到**内核共享队列**上。预览器替换 / 首次拿到预览器时重建。
+    private func ensureRenderer() {
+        guard let device = deviceRef, let preview else { return }
+        let handle = preview.sharedQueueHandle
+        if handle == rendererQueueHandle && renderer != nil { return }
+        rendererQueueHandle = handle
+        let queue = handle.map { unsafeBitCast($0, to: (any MTLCommandQueue).self) }
+        renderer = PreviewFrameRenderer(device: device, queue: queue)
     }
 
     /// 跨平台重绘请求：macOS 的 NSView.setNeedsDisplay 要传 rect（整视图失效），
@@ -66,17 +106,27 @@ final class PreviewMTKView: MTKView {
 #endif
     }
 
-    /// SwiftUI 更新入口：值变化才重绘（didSet 去抖在这里做，因为初始化期
+    /// SwiftUI 更新入口。值变化才重绘（didSet 去抖在这里做，因为初始化期
     /// 赋值不触发 didSet，且 SwiftUI 每 body 求值都会调 update*View）。
-    func sync(preview: Previewer?, pts: RationalTime) {
+    func sync(preview: Previewer?, pump: PreviewPump?, pts: RationalTime, continuous: Bool) {
         if self.preview !== preview {
             self.preview = preview
-            requestRedraw()
+            ensureRenderer()
+        }
+        if self.pump !== pump {
+            self.pump = pump
         }
         if self.pts != pts {
             self.pts = pts
-            requestRedraw()
+            // 请求新时刻的帧（异步，不阻塞）。
+            pump?.request(pts: pts)
+            // 按需模式下要自己把画面追上：泵是异步的，这一刻画到的多半还是旧帧。
+            if !self.continuous { selfDriveLeft = Self.selfDriveLimit }
         }
+        if self.continuous != continuous {
+            self.continuous = continuous
+        }
+        if !self.continuous { requestRedraw() }
     }
 }
 
@@ -87,26 +137,53 @@ extension PreviewMTKView: MTKViewDelegate {
     func mtkView(_ view: MTKView, drawableSizeWillChange size: CGSize) {
         // drawable 跟随视图尺寸变化 → 离屏 RT 同步重建（当前为拉伸铺满；
         // letterbox/fit 待 UI 需求明确后加，见 preview_renderer.h 的能力声明）。
-        preview?.resize(width: max(1, Int(size.width)), height: max(1, Int(size.height)))
-        requestRedraw()
+        // ⚠️ 走泵：RT 的销毁必须发生在持有它的那条线程（泵线程）。
+        let w = max(1, Int(size.width))
+        let h = max(1, Int(size.height))
+        if let pump {
+            _ = pump.requestResize(width: w, height: h)
+        } else {
+            preview?.resize(width: w, height: h)
+        }
+        // 尺寸变了通常也就该重取一帧（RT 已被清空为 nil 句柄）。
+        pump?.request(pts: pts)
+        if !continuous {
+            selfDriveLeft = PreviewMTKView.selfDriveLimit
+            requestRedraw()
+        }
     }
 
     func draw(in view: MTKView) {
-        guard let renderer, let preview else { return }
-
-        // 1) 内核渲染 pts 这一帧（同步：seek + 解码 + 导入 + 离屏绘制）。
-        //    空隙返回 .ioNotFound 但句柄有效（内核已清黑）—— 照常绘制，画面即黑帧；
-        //    句柄为 nil = 渲染失败（解码 / 导入 / 渲染出错）：清黑兜底，不留旧画面误导。
-        preview.renderFrame(pts: pts)
-        guard let handle = preview.textureHandle else {
+        guard let renderer else {
+            return
+        }
+        // 1) 从泵取「已完成的帧」（持锁期间泵不会发布新帧 / 不会 resize）。
+        //    泵为空（旧路径 / 无预览后端）时退回清黑，绝不在这里同步取帧。
+        guard let pump else {
             _ = renderer.clearToBlack(to: self)
             return
         }
+        let frame = pump.withLatestFrame { $0 }
+        guard let frame, let handle = frame.texture else {
+            // 尚无帧 / 该帧渲染失败 / 刚 resize 过 —— 清黑兜底，不留旧画面误导。
+            _ = renderer.clearToBlack(to: self)
+            return
+        }
+
+        // 2) 中性句柄 reinterpret 为 MTLTexture（不 retain，见 Previewer.swift 约定）。
         let sourceTexture = unsafeBitCast(handle, to: (any MTLTexture).self)
 
         // 3) 恒等映射 blit 进 drawable 并 present（GPU 拷贝，无 CPU 往返）。
         if !renderer.blit(source: sourceTexture, to: self) {
             _ = renderer.clearToBlack(to: self)
+        }
+
+        // 4) 按需模式下自驱追帧：还没画到请求的那一帧就再画一次（有上限）。
+        if !continuous && frame.pts != pts && selfDriveLeft > 0 {
+            selfDriveLeft -= 1
+            requestRedraw()
+        } else {
+            selfDriveLeft = 0
         }
     }
 }
@@ -116,27 +193,31 @@ extension PreviewMTKView: MTKViewDelegate {
 #if os(macOS)
 struct MetalPreviewView: NSViewRepresentable {
     let preview: Previewer?
+    let pump: PreviewPump?
     let pts: RationalTime
+    let continuous: Bool
 
     func makeNSView(context: Context) -> PreviewMTKView {
-        PreviewMTKView(preview: preview, pts: pts)
+        PreviewMTKView(preview: preview, pump: pump, pts: pts)
     }
 
     func updateNSView(_ view: PreviewMTKView, context: Context) {
-        view.sync(preview: preview, pts: pts)
+        view.sync(preview: preview, pump: pump, pts: pts, continuous: continuous)
     }
 }
 #elseif os(iOS)
 struct MetalPreviewView: UIViewRepresentable {
     let preview: Previewer?
+    let pump: PreviewPump?
     let pts: RationalTime
+    let continuous: Bool
 
     func makeUIView(context: Context) -> PreviewMTKView {
-        PreviewMTKView(preview: preview, pts: pts)
+        PreviewMTKView(preview: preview, pump: pump, pts: pts)
     }
 
     func updateUIView(_ view: PreviewMTKView, context: Context) {
-        view.sync(preview: preview, pts: pts)
+        view.sync(preview: preview, pump: pump, pts: pts, continuous: continuous)
     }
 }
 #endif

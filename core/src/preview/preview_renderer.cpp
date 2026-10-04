@@ -11,10 +11,31 @@
 
 #include "cq/preview/preview_renderer.h"
 
+#include <chrono>
 #include <utility>  // std::move
 
 namespace cq {
 namespace {
+
+using Clock = std::chrono::steady_clock;
+
+int64_t ElapsedNs(Clock::time_point from) {
+    return std::chrono::duration_cast<std::chrono::nanoseconds>(Clock::now() - from).count();
+}
+
+// 总耗时的 RAII 记账：提前返回的路径太多，逐条写 total_ns 必然漏。
+class TotalTimer {
+public:
+    explicit TotalTimer(PreviewRenderer::Timings& t) : t_(t) {}
+    ~TotalTimer() { t_.total_ns = ElapsedNs(t0_); }
+
+    TotalTimer(const TotalTimer&) = delete;
+    TotalTimer& operator=(const TotalTimer&) = delete;
+
+private:
+    PreviewRenderer::Timings& t_;
+    Clock::time_point t0_ = Clock::now();
+};
 
 // 把「一张纹理全屏画进当前 pass」适配成 IGfxDevice::RenderFrame 需要的编码器客户端。
 class BlitClient final : public IFrameEncoderClient {
@@ -118,6 +139,8 @@ Status PreviewRenderer::RenderFrame(const RationalTime& pts, TextureHandle& out_
                                     const CancelToken& token) {
     out_texture = nullptr;
     last_hit_clip_ = false;
+    timings_ = Timings{};
+    TotalTimer total(timings_);
     if (gfx_ == nullptr || snapshots_ == nullptr) return Status(StatusCode::kInvalidArgument);
 
     // ---- 0. 加载模型快照（UIA-009 子步骤 2）----
@@ -172,7 +195,11 @@ Status PreviewRenderer::RenderFrame(const RationalTime& pts, TextureHandle& out_
     req.at = src_time;
     req.policy = SeekPolicy::kExact;  // 预览也要精确：编辑正确性优先于速度
     MediaFrame frame;
+    const Clock::time_point t_acquire = Clock::now();
     s = provider->AcquireFrame(req, frame, token);
+    // ⚠️ 段耗时只记**成功**路径。失败路径的耗时是另一回事（含重试/恢复），
+    //    混进均值会把"解码多快"这个量算歪。失败次数由调用方的状态码统计。
+    if (s.IsOk()) timings_.acquire_ns = ElapsedNs(t_acquire);
     if (!s.IsOk()) return s;
     if (frame.type != MediaType::kVideo || frame.video.image == nullptr) {
         provider->ReleaseFrame(frame);
@@ -190,7 +217,9 @@ Status PreviewRenderer::RenderFrame(const RationalTime& pts, TextureHandle& out_
     }
     TextureHandle tex = nullptr;
     bool cpu_fallback = false;
+    const Clock::time_point t_import = Clock::now();
     s = importer_->Import(frame.video.image, TextureUsage::kSampled, tex, cpu_fallback);
+    if (s.IsOk()) timings_.import_ns = ElapsedNs(t_import);
     // 导入完成即可归还帧：零拷贝路径的纹理持 CVMetalTextureRef（锁住源 IOSurface），
     // CPU 退化路径已把像素拷进纹理——两条路径都不再依赖源 buffer 存活。
     provider->ReleaseFrame(frame);
@@ -203,11 +232,17 @@ Status PreviewRenderer::RenderFrame(const RationalTime& pts, TextureHandle& out_
     imported_ = tex;
 
     // ---- 5. 绘制到离屏 RT ----
+    // ⚠️ 这里的耗时不只是"编码"：gfx_device.cpp 的 RenderFrame 结尾是
+    //    WaitUntilCompleted，故含 GPU 执行时间（这是有意的 —— 预览每帧都要
+    //    等 GPU，否则解码与导入会无界地跑在 GPU 前面）。
     FrameContext ctx;
     ctx.pts = pts;
     ctx.target = target_->Handle();
     BlitClient client(blit_, tex);
-    return gfx_->RenderFrame(ctx, target_.get(), client, token);
+    const Clock::time_point t_draw = Clock::now();
+    s = gfx_->RenderFrame(ctx, target_.get(), client, token);
+    if (s.IsOk()) timings_.draw_ns = ElapsedNs(t_draw);
+    return s;
 }
 
 }  // namespace cq

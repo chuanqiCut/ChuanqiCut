@@ -371,6 +371,63 @@ int main() {
         Check(ColorNear(c, 0, 188, 0, 255, 12), "Resize 后中心像素仍为真值（未退化）");
     }
 
+    // =========================================================================
+    // 7. 单帧耗时实测（UIA-010 子步骤 5）
+    // =========================================================================
+    // 目的：把「预览帧率」从估算变成实测数字（.ai/memory/baselines.md 的数据来源）。
+    // 这里**不做**耗时断言 —— 阈值会随机器漂移，一断言就变成 flaky。
+    // 只断言"每一帧都成功且各段都被计时"，数字交给 baselines 记录。
+    //
+    // ⚠️ 顺序效应：第 1 帧含解码会话建立 / 管线创建 / GPU 唤醒，明显偏慢（实测
+    //    本机首帧 total 约为稳态的 2 倍）。故先跑 3 帧预热，只统计后面的。
+    std::printf("\n[7] 单帧耗时实测（256x256，30 帧，前 3 帧预热不计入）\n");
+    {
+        const int kTotal = 33;
+        const int kWarmup = 3;
+        int64_t sum_acq = 0, sum_imp = 0, sum_drw = 0, sum_tot = 0;
+        int64_t max_tot = 0, min_tot = INT64_MAX;
+        int ok_count = 0;
+        int timed = 0;
+        for (int i = 0; i < kTotal; ++i) {
+            const int64_t t = 300 + static_cast<int64_t>(i) * 40;  // 300 ~ 1580 ms
+            cq::TextureHandle o = nullptr;
+            const cq::Status rs = renderer.RenderFrame(Ms(t), o, token);
+            if (!rs.IsOk()) {
+                std::printf("  FAIL: t=%lldms code=%d\n", static_cast<long long>(t),
+                            static_cast<int>(rs.code));
+                continue;
+            }
+            ++ok_count;
+            if (i < kWarmup) continue;
+            const cq::PreviewRenderer::Timings& tm = renderer.LastTimings();
+            sum_acq += tm.acquire_ns;
+            sum_imp += tm.import_ns;
+            sum_drw += tm.draw_ns;
+            sum_tot += tm.total_ns;
+            if (tm.total_ns > max_tot) max_tot = tm.total_ns;
+            if (tm.total_ns < min_tot) min_tot = tm.total_ns;
+            ++timed;
+        }
+        Check(ok_count == kTotal, "33 帧全部渲染成功");
+        Check(timed == kTotal - kWarmup, "30 帧进入统计");
+        if (timed > 0) {
+            const double n = static_cast<double>(timed);
+            std::printf("  均值 ns : acquire=%lld import=%lld draw=%lld total=%lld\n",
+                        static_cast<long long>(static_cast<double>(sum_acq) / n),
+                        static_cast<long long>(static_cast<double>(sum_imp) / n),
+                        static_cast<long long>(static_cast<double>(sum_drw) / n),
+                        static_cast<long long>(static_cast<double>(sum_tot) / n));
+            std::printf("  单帧 total: min=%lld max=%lld ns（%.2f ms / %.2f ms）\n",
+                        static_cast<long long>(min_tot), static_cast<long long>(max_tot),
+                        static_cast<double>(min_tot) / 1e6,
+                        static_cast<double>(max_tot) / 1e6);
+            std::printf("  稳态上限帧率 ≈ %.1f fps（1 / 均值 total）\n",
+                        1e9 / (static_cast<double>(sum_tot) / n));
+            Check(sum_tot > 0, "total 有累计（埋点可用）");
+            Check(max_tot > 0, "max total > 0");
+        }
+    }
+
     std::printf("\n== 结果：%d 项检查，%d 项失败 ==\n", g_checks, g_failures);
     return g_failures == 0 ? 0 : 1;
 }

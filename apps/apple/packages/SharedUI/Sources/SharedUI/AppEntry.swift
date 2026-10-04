@@ -41,6 +41,14 @@ public final class EditorViewModel: ObservableObject {
     /// 图形 / 解码后端），预览区据此**运行时**降级展示（红线 #3，不用编译期判断）。
     public private(set) var preview: Previewer?
 
+    /// 取帧泵（UIA-010 子步骤 5）：取帧/渲染在泵线程，主线程只 blit + present。
+    /// nil = 预览后端缺失（与 preview 同进退）。
+    ///
+    /// ⚠️ 生命周期：泵持有指向渲染器的非拥有指针，故属性顺序上它在 preview 之后
+    ///    声明 —— 但 Swift 的 deinit 顺序不受声明顺序保证，故两者都由本对象强持有，
+    ///    且 Pump 内部强持有 Previewer（见 PreviewPump.swift），销毁顺序由此确定。
+    public private(set) var previewPump: PreviewPump?
+
     /// 播放头。预览视图按需渲染该时刻的画面（有理数时间，红线 #4）。
     @Published public private(set) var playhead: RationalTime = RationalTime(
         value: 0, timescale: RationalTime.projectTimescale)
@@ -83,6 +91,8 @@ public final class EditorViewModel: ObservableObject {
     /// 渲染，解码与渲染都在主线程。帧率受解码速度限制（未实测），
     /// 把取帧/渲染挪到播放线程是下一步（见任务卡「剩余风险」）。
     private var playbackTimer: Timer?
+    /// 定时器节拍计数（用于把「取帧请求」与「UI 发布」分成两个频率）。
+    private var tickCount = 0
 
     public init() throws {
         guard let session = Session() else {
@@ -93,6 +103,9 @@ public final class EditorViewModel: ObservableObject {
         self.knownVersion = session.currentSnapshot.version
         // UIA-009 子步骤 2 收口后预览挂 session 快照（单一真源），并强持有 session。
         self.preview = Previewer(session: session, width: 1280, height: 720)
+        // UIA-010 子步骤 5：取帧泵（把 seek+解码+导入+离屏绘制搬离主线程）。
+        // 预览后端缺失时 preview 为 nil，泵也随之不可建 —— 预览区据此走降级展示。
+        self.previewPump = self.preview.flatMap { PreviewPump(preview: $0) }
         // UIA-010：播放时钟（纯计算对象，内核侧无后端依赖）。
         self.player = Player()
         // 版本 0 不触发 observer 回流，初始时间线状态主动查一次。
@@ -130,9 +143,13 @@ public final class EditorViewModel: ObservableObject {
 
     /// 播放 / 暂停切换。播放前同步一次边界（时间线可能刚变）。
     ///
-    /// ⚠️ MVP 的驱动方式：`Timer` 推 playhead → MTKView 按需渲染，
-    ///    **解码与渲染都在主线程**，帧率取决于单帧耗时（未实测）。
-    ///    把取帧/渲染挪到播放线程是下一子步骤（那时才能真正脱离主线程）。
+    /// 驱动方式（UIA-010 子步骤 5）：`Timer` 推进时刻 → 时刻喂给**取帧泵**
+    /// （后台线程完成 seek + 解码 + 导入 + 离屏绘制）→ 主线程只把已完成的帧
+    /// 拷进 drawable 并 present。
+    ///
+    /// ⚠️ 帧率上限仍是 1/单帧取帧耗时（实测见 .ai/memory/baselines.md）：
+    ///    挪线程换来的是**主线程不再被每帧堵住**，不是"播放变快"。
+    ///    泵跟不上请求速率就丢帧 —— 时刻由墙钟算，丢帧不会让播放变快或变慢。
     public func togglePlayback() {
         guard let player else { return }
         // 无片段 = 没有可播内容（UI 按钮同样置灰）。播空时间线没有意义，
@@ -164,9 +181,10 @@ public final class EditorViewModel: ObservableObject {
 
     private func startPlaybackLoop() {
         playbackTimer?.invalidate()
-        // 30Hz 驱动：与预览渲染节奏对齐（渲染比这慢时会自然丢帧 —— 时刻由
-        // 墙钟算，丢帧不会让播放变慢或变快）。
-        let timer = Timer.scheduledTimer(withTimeInterval: 1.0 / 30.0, repeats: true) {
+        tickCount = 0
+        // 60Hz 驱动取帧请求；UI 发布（playhead）降频到 30Hz —— 见 tickPlayback 注释。
+        // 泵跟不上就丢帧，时刻由墙钟算，丢帧不影响播放节奏的正确性。
+        let timer = Timer.scheduledTimer(withTimeInterval: 1.0 / 60.0, repeats: true) {
             [weak self] _ in
             // Timer 在主 run loop 回调，但 Swift 6 并发模型不认识
             // "main run loop == MainActor" —— 跳一次（同 applySnapshot 的手法）。
@@ -180,12 +198,21 @@ public final class EditorViewModel: ObservableObject {
         playbackTimer = nil
     }
 
-    /// 推进一帧：tick 判定边界 → 取当前时刻 → 推进播放头（触发预览重绘）。
+    /// 推进一帧：tick 判定边界 → 取当前时刻 → 喂给取帧泵 → 发布播放头。
+    ///
+    /// ⚠️ **两个频率是故意分开的**：
+    ///   * 取帧请求（60Hz）—— 泵自己会合并，跟不上就丢帧，多请求没有副作用；
+    ///   * `playhead` 发布（30Hz）—— 它是 @Published，变一次 SwiftUI 就要重算
+    ///     整个编辑器 body（时间线画布会跟着重绘）。60Hz 全文重算是纯浪费，
+    ///     而画面呈现由 MTKView 的连续绘制负责，不依赖 playhead 的发布频率。
     private func tickPlayback() {
         guard let player, isPlaying else { return }
         _ = player.tick()
         if player.isPlaying {
-            setPlayhead(player.currentTime)
+            let now = player.currentTime
+            previewPump?.request(pts: now)
+            tickCount += 1
+            if tickCount % 2 == 0 { playhead = now }
         } else {
             // 播完自然结束：内核把状态置为停止、时刻归 0（语义见 player_clock.h）
             stopPlaybackLoop()
@@ -236,9 +263,13 @@ public final class EditorViewModel: ObservableObject {
 
     // MARK: 预览（BIND-003 子步骤 6）
 
-    /// 推进播放头（预览视图按需重绘该时刻）。时间值由调用方以整数给出。
+    /// 推进播放头（暂停 / 拖拽场景）。时间值由调用方以整数给出。
+    ///
+    /// 同时向取帧泵请求该时刻的帧 —— 泵是异步的，视图会自驱重绘直到追上
+    /// （见 MetalPreviewView 的 selfDrive 说明）。
     public func setPlayhead(_ t: RationalTime) {
         playhead = t
+        previewPump?.request(pts: t)
     }
 
 #if DEBUG

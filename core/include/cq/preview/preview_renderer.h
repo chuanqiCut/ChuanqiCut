@@ -36,15 +36,34 @@
 #include "cq/model/timeline.h"                   // Timeline
 #include "cq/pal/common.h"                       // TextureHandle / TextureFormat / PalPtr
 #include "cq/pal/gfx.h"                          // IRenderTarget / INativeImageImporter
+#include "cq/preview/preview_frame_source.h"      // IPreviewFrameSource（预览泵的接缝）
 
 namespace cq {
 
-class PreviewRenderer {
+class PreviewRenderer : public IPreviewFrameSource {
 public:
     struct Config {
         uint32_t width = 1920;
         uint32_t height = 1080;
         TextureFormat format = TextureFormat::kRGBA8;
+    };
+
+    // ---- 单帧各阶段耗时（ns，steady_clock）----
+    // 传哲要求「日志与埋点必须先行做扎实」：预览帧率的所有讨论都要有实测数字，
+    // 否则就只能靠猜。故在这里把耗时做成渲染器的一等产物，而不是临时插桩。
+    //
+    // ⚠️ 阶段划分是**诚实**的（不要把猜测当事实）：
+    //   acquire_ns —— `FrameProvider::AcquireFrame` 整段：内部含按需 seek + 解码，
+    //                 core 侧没有更细的接缝，故**不**拆成 seek/decode（拆了也是编的）。
+    //   import_ns  —— `INativeImageImporter::Import`（CVPixelBuffer → 纹理）。
+    //   draw_ns    —— `IGfxDevice::RenderFrame`：编码 + 提交 + **等待 GPU 完成**
+    //                 （gfx_device.cpp 结尾是 WaitUntilCompleted，故含 GPU 执行时间）。
+    //   total_ns   —— 入口到返回的全部（与上面三段之差 = 快照加载等杂项）。
+    struct Timings {
+        int64_t acquire_ns = 0;
+        int64_t import_ns = 0;
+        int64_t draw_ns = 0;
+        int64_t total_ns = 0;
     };
 
     // 依赖全部为**注入的非拥有指针**，生命周期由装配方持有（本类不 delete 它们）。
@@ -69,13 +88,22 @@ public:
     //     kInvalidArgument    —— 命中了片段但 asset_id 未注册（素材表缺失）
     //     其它                 —— 解码/导入/渲染失败的原样透传
     //   ⚠️ 空隙返回 kIoNotFound 而非伪造 kOk：调用方需要能区分「黑帧」与「渲染失败」。
+    //
+    //   ⚠️ 线程归属（UIA-010 子步骤 5 起的**硬约束**）：本方法会触碰解码会话与
+    //      CVMetalTextureCache，两者都不可并发访问。挂上 `PreviewPump` 之后，本方法
+    //      **只允许**在泵线程被调用 —— 主线程再调一次就是数据竞争（不是"可能出错"，
+    //      是必然出错）。未挂泵时沿用旧约定：单一线程使用。
     Status RenderFrame(const RationalTime& pts, TextureHandle& out_texture,
-                       const CancelToken& token);
+                       const CancelToken& token) override;
 
     // 重建离屏渲染目标（预览分辨率变化时）。会丢弃当前 RT 与其纹理句柄。
-    Status Resize(uint32_t width, uint32_t height);
+    // 线程约定同上（挂泵后只由泵线程调用，走 `PreviewPump::RequestResize`）。
+    Status Resize(uint32_t width, uint32_t height) override;
 
-    IRenderTarget* Target() { return target_.get(); }
+    IRenderTarget* Target() override { return target_.get(); }
+
+    // 上一帧的各阶段耗时（见 Timings 注释）。首帧之前全 0。
+    const Timings& LastTimings() const { return timings_; }
 
     // ---- 上一帧的可观测量（供单测与运行时诊断，不是渲染结果本身）----
     bool LastHitClip() const { return last_hit_clip_; }
@@ -122,6 +150,7 @@ private:
     bool last_cpu_fallback_ = false;
     RationalTime last_source_time_{0, 1};
     RationalTime last_frame_pts_{0, 1};
+    Timings timings_{};
 };
 
 }  // namespace cq

@@ -69,9 +69,9 @@ void TestEnabledRecordsDurationAndPts() {
     const cq::RationalTime pts(3000, cq::kProjectTimeScale);
     {
         CQ_PERF_SCOPE(cq::PerfStage::kDecode, pts);
-        // 制造一点可测量的耗时
+        // 制造一点可测量的耗时（volatile 复合赋值在 C++20 已弃用，用普通赋值）
         volatile int64_t acc = 0;
-        for (int i = 0; i < 20000; ++i) acc += i;
+        for (int i = 0; i < 20000; ++i) acc = acc + i;
         (void)acc;
     }
     cq::SetPerfEnabled(false);

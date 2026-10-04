@@ -28,7 +28,7 @@
 | UI | UIA-003 预览嵌入、UIA-004 时间线自绘、UIA-005 拖拽裁剪 | ✅ |
 | UI | UIA-009 素材导入（三个子步骤全完成） | ✅ |
 | 播放 | UIA-010 子步骤 1~5 全部完成（时钟 + 播放入口 + 取帧泵） | ✅（2026-10-04） |
-| 取帧 | **MEDIA-021 顺序取帧快路径 ✅**（P38 修复 + P39/P40/P41 正确性修复；acquire 93.3ms → 4.45ms Release，14.8x；ADR-0014） | ✅（2026-10-04） |
+| 取帧 | **MEDIA-021 顺序取帧快路径 ✅**（P38 修复 + P39/P40/P41 正确性修复；acquire 93.3ms → 4.45ms Release，14.8x；ADR-0017） | ✅（2026-10-04） |
 | 相机链路 | BACKLOG 中**不存在**；由传哲本人在另一台设备并行开发 | ➖ 不在本机写集 |
 
 **并行开发的写集边界（已与传哲确认）**：
@@ -39,7 +39,7 @@
 
 ## 2. UIA-010 子步骤 5（本轮工作）：取帧搬到泵线程
 
-**决策：`docs/decisions/ADR-0013-预览取帧的线程归属与共享命令队列.md`**
+**决策：`docs/decisions/ADR-0016-预览取帧的线程归属与共享命令队列.md`**
 
 装配形状：
 
@@ -103,7 +103,7 @@ SharedUI 的 `MetalPreviewView` / `PreviewFrameRenderer` / `PreviewZone` /
 
 ## 3.5 MEDIA-021：顺序取帧快路径（本轮第二轮工作，2026-10-04）
 
-**决策：`docs/decisions/ADR-0014-顺序取帧快路径与解码器显示序重排.md`**
+**决策：`docs/decisions/ADR-0017-顺序取帧快路径与解码器显示序重排.md`**
 
 - `SystemFrameProvider` 新增顺序快路径（`TrySequentialAcquire` + 自适应阈值
   `proven_span_`，无固定常量）+ `consumed_` 语义修复（同目标重复请求重新 seek）。
@@ -142,7 +142,7 @@ cd apps/apple/packages/SharedUI && swift test --disable-sandbox        # 20/20
 ## 5. 下一步（按优先级）
 
 1. ~~TASK-MEDIA-021~~ **✅ 已完成（2026-10-04）**：顺序取帧快路径落地
-   （ADR-0014）。acquire 93.3ms → 4.45ms（Release，GOP60/B帧3 素材），
+   （ADR-0017）。acquire 93.3ms → 4.45ms（Release，GOP60/B帧3 素材），
    与旧语义逐帧 pts 一致；顺带修复 P39/P40/P41 三个 B 帧正确性 bug
    （修复前 kExact 在 B 帧素材上系统性差帧）。数字见 `.ai/memory/baselines.md`
    「MEDIA-021」段；**预览端到端帧率 App 侧数字待真机**。
@@ -159,7 +159,7 @@ cd apps/apple/packages/SharedUI && swift test --disable-sandbox        # 20/20
    假失败 7000（上一轮「内核修复后 ×3 全绿」**不可复现**，复跑 6/3/0 失败实证）。
    修复 = 轮询目标效果（`queryTracks` 出现视频轨）。两层修复后 SharedUI 全量
    ×3 **20/20**（套件时长 14.8s→4.2s，失败用例不再烧 5s 超时）。详见 pitfalls P33。
-4. ~~letterbox/fit~~ **✅ 已完成（2026-10-04，UIA-011 / ADR-0015）**：
+4. ~~letterbox/fit~~ **✅ 已完成（2026-10-04，UIA-012 / ADR-0018）**：
    `FitMode` stretch/contain/cover，实现接缝 = 编码器视口原语（GFX/PAL additive，
    不动 IBlitPass 与 MSL）。门禁：Debug 42/42、Release 42/42、
    preview_renderer 51、c_abi_preview 78、gfx_device 30（含视口像素断言）、
@@ -167,7 +167,7 @@ cd apps/apple/packages/SharedUI && swift test --disable-sandbox        # 20/20
    剩余：UIA-006 属性面板（需先定 MODEL-003）、多轨合成（等 RENDER-001）、
    素材库整理（拷入沙箱，D3）。
 5. （低优）取帧流水线优化：`WaitForAsynchronousFrames` 等全部在途帧，
-   可改 per-frame 同步进一步提高吞吐（ADR-0014 §后果 4）。
+   可改 per-frame 同步进一步提高吞吐（ADR-0017 §后果 4）。
 
 ---
 
@@ -176,7 +176,7 @@ cd apps/apple/packages/SharedUI && swift test --disable-sandbox        # 20/20
 - **P36** 消费端持锁期间调 `Request` → 死锁（第一版单测直接挂死）。
 - **P37** 跨 `MTLCommandQueue` 访问同一纹理没有顺序保证 → 共享队列是刚需。
 - **P38** 顺序播放每帧 seek = 每帧重解 GOP。→ **已修（MEDIA-021）**。
-- **P39** VT 回调按完成序非显示序，B 帧必错帧 → 重排判据（ADR-0014 D4）。
+- **P39** VT 回调按完成序非显示序，B 帧必错帧 → 重排判据（ADR-0017 D4）。
 - **P40** 首帧时长兜底用 pts 差 → B 帧素材区间报宽 4 倍 → 改 dts 差。
 - **P41** decoder Flush 后旧在途回调帧污染新序列首弹 → Flush 先等在途落地。
 - 附：CocoaPods 的 Pods target 是显式 `-fno-exceptions`，**连 `try` 都编译不过**

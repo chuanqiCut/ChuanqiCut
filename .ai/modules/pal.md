@@ -181,7 +181,7 @@ kMultiCamCapture/kVisionDetection/kAnimalBodyPose 能力枚举与相应 Apple �
 App 层），不经 PAL/C ABI。
 
 保留的**事实性知识**（防重查）：
-- `AVCaptureMultiCamSession` **仅 iOS**（macOS 编译报 unavailable，pitfalls P38）；
+- `AVCaptureMultiCamSession` **仅 iOS**（macOS 编译报 unavailable，pitfalls P44）；
   双摄能力运行时查 `isMultiCamSupported`。
 - 相机帧过零拷贝链路的能力已具备：CVPixelBuffer(32BGRA+MetalCompat) 走
   `INativeImageImporter`（PALA-002），App 层也可直接用 `CVMetalTextureCache`。

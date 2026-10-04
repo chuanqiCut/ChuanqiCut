@@ -81,7 +81,7 @@ public:
     virtual void SetSampler(SamplerHandle sampler, uint32_t binding) = 0;
     // 视口矩形（像素，原点 = target 左上）。1:1 转发到 PAL ICommandEncoder::SetViewport，
     // 语义（含「矩形可大于目标」「不调用 = 整目标」两条不变式）见 pal/gfx.h 同名方法。
-    // 引入缘由（预览宽高比适配）与备选取舍见 ADR-0015。
+    // 引入缘由（预览宽高比适配）与备选取舍见 ADR-0018。
     virtual void SetViewport(float x, float y, float width, float height) = 0;
     virtual void Draw(uint32_t vertex_count) = 0;
     virtual void DrawIndexed(uint32_t index_count) = 0;

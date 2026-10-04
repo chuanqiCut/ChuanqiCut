@@ -583,7 +583,7 @@
 - 原因：`SystemFrameProvider::AcquireFrame` 见 `seek_target_ != req.at` 就
   `Seek()`（demuxer seek + decoder Flush），随后 `AcquireExact` 从关键帧解码到
   目标 —— 顺序播放时每帧都付一遍整个 GOP 的解码。
-- 状态：**已修（2026-10-04，MEDIA-021 / ADR-0014）**。顺序快路径 +
+- 状态：**已修（2026-10-04，MEDIA-021 / ADR-0017）**。顺序快路径 +
   自适应阈值（实证学习），同口径实测 14.8~22.8x；过程中暴露 P39/P40/P41。
 - 教训：修"帧率"之前先量各阶段耗时 —— 本次若不埋点，会误以为是"渲染太慢"
   而去做 GPU 侧优化，方向全错。
@@ -595,10 +595,10 @@
 - 原因：`media_decode.h` 原注释「VideoToolbox 已在显示序回调」是错误假设——
   VT 回调按解码完成序（≈dts 序），B 帧在其参考 P 帧之后完成；且旧「弹不出才喂」
   循环在 B 尚未喂入时只能弹 P，任何重排判据都无信息可用。
-- 处理：① 编排层三个 Acquire* 循环改「先喂后弹」（ADR-0014 D3）；
+- 处理：① 编排层三个 Acquire* 循环改「先喂后弹」（ADR-0017 D3）；
   ② decoder `PopFrame` 按「显示序连续性」重排：队列最小 pts 帧可弹当且仅当
   `pts == 上一弹出帧 pts + duration`，不匹配时等在途帧或返回 kIoNotFound
-  让 provider 继续喂（ADR-0014 D4）——无需知道 B 帧深度，对 VFR 成立。
+  让 provider 继续喂（ADR-0017 D4）——无需知道 B 帧深度，对 VFR 成立。
 - 教训：**"解码器输出什么序"必须实测，不能信文档注释/直觉**；逐帧 pts 断言
   是唯一能抓住这类问题的验收手段（静态彩条看不出差一帧）。
 - 日期 / 来源 / 验证状态：2026-10-04 / MEDIA-021 / **verified（已修，120/120 断言过）**
@@ -643,7 +643,7 @@
 | E10 | HANDOFF-003 §1 把「BIND-003 子步骤 3 纹理导入（零拷贝）」标为**下一步** | **已做过**：PALA-002（2026-09-26，commit 76fce6b）已完成零拷贝导入，`pala_native_image` 用例含 IOSurface ID 一致性（源 193==纹理 193）、零拷贝/CPU 退化耗时代差（0.0033ms vs 4.5788ms ≈ 1407×）、真实解码帧渲染读回。**交接文档的任务状态要对着 commit 历史核，不能照抄上一版** | 2026-10-02 / BIND-003 / verified |
 | E9 | 「XCFramework 合并失败是 bitcode 段导致，加 `-fno-embed-bitcode` 可解」（HANDOFF-002 §3 的遗留推测） | **根因判错**：是 Release **LTO/IPO** 产出 bitcode-only `.o`，与 ENABLE_BITCODE 无关；`-fno-embed-bitcode` 该 clang 不识别且方向错误。教训：`0xb17c0de` 这个 magic 既可能来自 embed-bitcode 也可能来自 `-flto`，**必须抽 `.o` 看实际内容再定论**，不能靠 magic 字面猜。另：那次尝试的脏 flag 残留在 `build/apple/ios-device/CMakeCache.txt` 里未被发现，CMake 会持续复用——**CMakeCache 是隐式状态，撤销改动时不要只撤销源码** | 2026-09-29 / PALA XCFramework 打包 / verified |
 
-### P36 · 开发机换到 macOS 13.7 / Xcode 15.2（AppleClang 15）后既有代码编译失败
+### P42 · 开发机换到 macOS 13.7 / Xcode 15.2（AppleClang 15）后既有代码编译失败
 - 现象：同一仓库在原机（macOS 15.4 / AppleClang 17，见各 baselines 条目）全绿，
   本机（macOS 13.7 / Xcode 15.2 / AppleClang 15，`xcodebuild -version` 确认）连
   既有 core 都编不过：① `core/src/base/log.cpp` 的 `std::va_list` 在旧 libc++
@@ -654,7 +654,7 @@
 - 教训：**「本机实测」结论绑机器**。之前 baselines 里 macOS 15.4 的实测数字
   全部来自另一台机器（cmake 默认路径是 /Users/zhuning/... 可证）；本机复核或
   引用数字时先核对环境。ADR-0010 §6 的"性能基线须标注采集机型"由此更重要。
-- **补充（同日，P36b）**：`build_core_apple.sh` 的 ios-device 切片在 Xcode 15.2
+- **补充（同日，P42b）**：`build_core_apple.sh` 的 ios-device 切片在 Xcode 15.2
   （iOS 17.2 SDK）编不过 —— `kVTVideoEncoderSpecification_EnableHardwareAcceleratedVideoEncoder`
   / `kVTCompressionPropertyKey_UsingHardwareAcceleratedVideoEncoder` 在 17.4 代际
   才进 iOS 头文件，`@available` 救不了"标识符不存在"。macOS 切片与桌面全量测试
@@ -663,7 +663,7 @@
   （`__IPHONE_OS_VERSION_MAX_ALLOWED`），语义退化为既有 kDegraded——独立小任务，勿顺手改。
 - 日期 / 来源 / 验证状态：2026-10-04 / CAM-001 / **verified**（修复后 40/40 全绿）
 
-### P37 · 构建脚本 CMAKE_BIN 默认路径指向他人 home，且本机无 cmake
+### P43 · 构建脚本 CMAKE_BIN 默认路径指向他人 home，且本机无 cmake
 - 现象：`build_core.sh` 默认 `CMAKE_BIN=/Users/zhuning/...`，本机不存在；
   本机也无 brew/cmakes（`which cmake` 空）。
 - 处理：`pip3 install --user cmake`（装到 ~/Library/Python/3.9/bin），构建时
@@ -671,7 +671,7 @@
 - 备注：若脚本要长期在多机使用，可把默认值改为"PATH 中找 cmake，找不到再落绝对路径"。
 - 日期 / 来源 / 验证状态：2026-10-04 / CAM-001 / **verified**
 
-### P38 · `AVCaptureMultiCamSession` 是 iOS 专属，macOS 编译直接 unavailable
+### P44 · `AVCaptureMultiCamSession` 是 iOS 专属，macOS 编译直接 unavailable
 - 现象：capabilities.mm 无条件引用 `AVCaptureMultiCamSession.isMultiCamSupported`
   在 macOS 切片报 `'AVCaptureMultiCamSession' is unavailable: not available on macOS`。
   （调研时误记为"macOS 10.15+ 可用"——那是文档里别的类的可用性，核验不严。）
@@ -682,7 +682,7 @@
   不变，未来在 macOS 上做相机相关代码仍会撞。
 - 日期 / 来源 / 验证状态：2026-10-04 / CAM-001 / **verified**
 
-### P39 · 本机（Mac mini 2014）工具链与 HANDOFF 门禁环境不符 —— 验证命令会以 "tools version" 失败
+### P45 · 本机（Mac mini 2014）工具链与 HANDOFF 门禁环境不符 —— 验证命令会以 "tools version" 失败
 - 现象：SharedUI `swift test` 报 `package is using Swift tools version 6.1.0 but the
   installed version is 5.5.0`。本机（Mac mini 2014 低配机：i5-4278U 双核 2.6GHz / 8GB / macOS 12.7.6）/usr/bin/swift 来自 Xcode 13.1，
   SDK 只有 iOS 15 / macOS 12；HANDOFF-003 描述的 Xcode 26.x / Ruby 3.4 / CocoaPods /
@@ -695,7 +695,7 @@
   环境，再决定 HANDOFF 里的验证命令哪些本机可跑；否则会把"环境跑不了"误判成
   "代码有问题"（反之亦然）。附注：Swift 5.7 简写（`if let x {}`）在 5.5 下报
   "requires an initializer" —— 是工具链旧，不是代码错。
-- 关联：P36（开发机 macOS 13.7 / Xcode 15.2）同样跑不了 SharedUI swift test
-  （其 P36b：Swift 测试宿主需 Xcode 16+）—— UIA-011 的 swift test 与 CAM 的
+- 关联：P42（开发机 macOS 13.7 / Xcode 15.2）同样跑不了 SharedUI swift test
+  （其 P42b：Swift 测试宿主需 Xcode 16+）—— UIA-011 的 swift test 与 CAM 的
   Swift 验证同桶，都等「有 Xcode 16+ 的机器」。
 - 日期 / 来源 / 验证状态：2026-10-04 / UIA-011 / **verified**

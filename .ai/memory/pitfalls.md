@@ -492,23 +492,36 @@
   负 start**（只校验重叠），UI 不夹就会把语义外的片段提交进去。
 - 日期 / 来源 / 验证状态：2026-10-03 / UIA-005 / **verified**
 
-### P33 · MediaImportTests 偶发失败（flaky，约 50%），根因**未定位**
+### P33 · MediaImportTests 偶发失败（flaky，约 50%）→ 根因定位（AVAsset 加载终态/超时）
 - 现象：`importMedia` 返回 `7000 (kInvalidArgument)`，素材库为空，随后
   `mediaLibrary[0]` 越界 → Fatal error → 整个 xctest 进程以 signal 4 退出。
   **单独跑 `--filter MediaImportTests` 全绿；全量跑时约一半概率失败。**
-  复现序列（同一份代码、连续 4 次全量）：失败 → 绿 → 失败 → 绿。
-- 已排除：TaskRunner 启动竞态（`Start()` 先置 `running_=true` 再建线程，
-  `Post()` 在 Start 返回后不可能看到未启动状态）。
-- 当前最可能（**hypothesis，未证实**）：`cq_media_probe_duration` **成功返回但
-  时长为 0**，于是 `importMedia` 在 `duration.value > 0` 处返回 invalidArgument。
-  证据：把该分支改成返回 2000（decodeError）后，症状的**语义**才对得上
-  「文件能打开但读不到时长」—— 但 0 时长的内核侧成因仍未知（疑与同进程内
-  前序用例残留的解码会话 / PAL 初始化竞争有关）。
-- 影响面：这是**真缺陷不是测试问题** —— 真机上"导入后无反应"会是同一症状。
-- 待办：给 probe 加返回 0 时的诊断（日志 + 状态区分），并在内核侧定位
-  「容器打开成功但 duration=0」的路径。在此之前**不要**把 importMedia 的失败
-  一律当"用户选了坏文件"处理。
-- 日期 / 来源 / 验证状态：2026-10-03 / UIA-010 / **unverified（root cause 未证）**
+- **根因链（2026-10-04 定位，三层叠加）**：
+  1. `AppleDemuxer::Open` 用 `loadValuesAsynchronouslyForKeys` + 信号量收敛
+     同步，但 completionHandler **只 signal 不查状态** —— 它对所有 key 到
+     **终态**时触发，终态含 **Failed/Cancelled**。加载失败时
+     `[asset duration]` 返回 invalid。
+  2. invalid CMTime 经 demuxer `ToRational` 变 **`{0, 1}`**——timescale=1
+     骗过 probe 的 `timescale <= 0` 检查 → **probe 以 kOk 返回 value=0**
+     （hypothesis 证实，机制如上）。
+  3. Swift `importMedia` 在 `duration.value > 0` 处失败 → 导入失败、素材库空
+     → 测试越界崩溃。
+- **排障中的新发现（比 flaky 更危险）**：加载失败后**重建 AVURLAsset 重试，
+  其 completion 可能永不触发**（同 URL 的 AVFoundation 进程级加载状态被污染，
+  实测：新实例 5s 内无回调）——原代码 `DISPATCH_TIME_FOREVER` 无限等会让
+  probe **挂死**（比返回错误严重得多）。首版修复（重试 + 无限等）即被
+  `testImportInvalidFileFailsCleanly` 抓到挂死（xctest 10 分钟无响应）。
+- **修复**：① completion 后逐 key 查 `statusOfValue`（Failed/Cancelled 诚实
+  失败）；② 信号量 wait 改 **5s 有限超时**（正常加载 40~400ms ×10 余量），
+  超时/失败返回 kIoError；③ 文件已不存在（stat）跳过重试（确定性失败省 5s），
+  存在的文件才重建 asset 重试一次；④ probe 补 `value <= 0` → kDecodeError。
+- 教训：**「completion 触发」≠「加载成功」**（终态三义性）；**任何
+  DISPATCH_TIME_FOREVER 等 AVFoundation 回调都是挂死隐患**（回调可能不触发）。
+- **验证（2026-10-04）**：SharedUI 全量 ×3 连续 **20/20 全绿**（4.2~6.1s，
+  无失败无挂死），此前 50% 概率失败未再复现；Debug 门禁 42/42。
+  真机（iPhone 17 Pro）导入路径待传哲验证。
+- 日期 / 来源 / 验证状态：2026-10-03 UIA-010 发现 / 2026-10-04 MEDIA-021 会话定位修复 /
+  **verified（根因 + 修复 + 全量 ×3 flaky 消除）**
 
 ### P34 · CocoaPods 工程看不到新增的 Swift 源文件 → 需重新 pod install
 - 现象：给 `bindings/swift/Sources/ChuanqiCut/` 新增 `Player.swift` 后，

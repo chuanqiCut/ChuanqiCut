@@ -20,6 +20,7 @@
 #import <dispatch/dispatch.h>
 
 #include <cstdint>
+#include <sys/stat.h>
 #include <vector>
 
 #include "cq/base/time.h"        // RationalTime / Rescale / RoundMode / kProjectTimeScale
@@ -321,16 +322,66 @@ public:
         asset_ = [AVURLAsset URLAssetWithURL:url options:nil];
         if (asset_ == nil) return Status{StatusCode::kIoError};
 
-        // 现代异步加载（避免 deprecated 同步阻塞 API）。用信号量把异步收敛成同步 Open。
-        dispatch_semaphore_t sem = dispatch_semaphore_create(0);
-        __block BOOL loaded = NO;
-        [asset_ loadValuesAsynchronouslyForKeys:@[ @"tracks", @"duration" ]
-                              completionHandler:^{
-                                  loaded = YES;
-                                  dispatch_semaphore_signal(sem);
-                              }];
-        dispatch_semaphore_wait(sem, DISPATCH_TIME_FOREVER);
-        if (!loaded) return Status{StatusCode::kIoError};
+        // 加载 tracks + duration（异步加载 + 信号量收敛成同步 Open）。
+        // ⚠️ completionHandler 触发 ≠ 加载成功：它在所有 key 到**终态**时调用，
+        // 终态含 Failed/Cancelled。不查 statusOfValue 会把「加载失败」漏成
+        // 「Open 成功 + duration=0」——invalid CMTime 经 ToRational 变 {0,1}，
+        // timescale=1 骗过 timescale<=0 检查，probe 带 0 成功返回（P33）。
+        // ⚠️ 必须**有限超时**：实测（P33 排障）加载失败后重建的新 asset 的
+        // completion 可能**永不触发**（AVFoundation 同进程同 URL 加载状态被
+        // 污染），无限等 = Open 挂死。超时按「正常加载 40~400ms × 10 余量」取
+        // 5s；超时/失败返回 kIoError，上层按「文件无法解析」处理。
+        // 瞬态失败重建 asset 重试一次：新实例不受前实例失败状态影响。
+        constexpr int64_t kLoadTimeoutNs = 5LL * 1000 * 1000 * 1000;  // 5s
+        Status load_status{StatusCode::kUnknown};
+        for (int attempt = 0;; ++attempt) {
+            dispatch_semaphore_t sem = dispatch_semaphore_create(0);
+            [asset_ loadValuesAsynchronouslyForKeys:@[ @"tracks", @"duration" ]
+                                  completionHandler:^{
+                                      dispatch_semaphore_signal(sem);
+                                  }];
+            const bool completed =
+                dispatch_semaphore_wait(
+                    sem, dispatch_time(DISPATCH_TIME_NOW, kLoadTimeoutNs)) == 0;
+            sem = nil;
+
+            BOOL loaded = NO;
+            if (completed) {
+                loaded = YES;
+                for (NSString* key in @[ @"tracks", @"duration" ]) {
+                    NSError* err = nil;
+                    AVKeyValueStatus st = [asset_ statusOfValueForKey:key error:&err];
+                    if (st != AVKeyValueStatusLoaded) {
+                        loaded = NO;
+                        std::printf(
+                            "[AppleDemuxer] load '%s' attempt %d -> status=%ld err='%s'\n",
+                            key.UTF8String, attempt, static_cast<long>(st),
+                            err.localizedDescription.UTF8String ?: "(nil)");
+                        break;
+                    }
+                }
+            } else {
+                std::printf("[AppleDemuxer] load attempt %d -> timeout (5s)\n", attempt);
+            }
+            if (loaded) {
+                load_status = Status::Ok();
+                break;
+            }
+            if (attempt >= 1) {
+                load_status = Status{StatusCode::kIoError};
+                break;
+            }
+            // 文件已不存在 = 确定性失败，重试无意义（省一次 5s 超时）。
+            // 存在的文件偶发加载失败（P33）才值得重建 asset 重试。
+            struct stat st_buf{};
+            if (::stat(url.fileSystemRepresentation, &st_buf) != 0) {
+                std::printf("[AppleDemuxer] file gone, skip retry\n");
+                load_status = Status{StatusCode::kIoError};
+                break;
+            }
+            asset_ = nil;  // 重建 asset 重试（绕开前实例的失败状态）
+        }
+        if (!load_status.IsOk()) return load_status;
 
         // 记录时长（Rescale 到 120000，kRound）。
         duration_ = ToRational([asset_ duration], RoundMode::kRound);

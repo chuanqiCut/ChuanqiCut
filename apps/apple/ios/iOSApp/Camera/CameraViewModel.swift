@@ -22,6 +22,11 @@ final class CameraViewModel: ObservableObject {
         case running        // 会话运行中
     }
 
+    enum CaptureMode {
+        case photo
+        case video
+    }
+
     enum Position {
         case back
         case front
@@ -36,7 +41,15 @@ final class CameraViewModel: ObservableObject {
     @Published private(set) var phase: Phase = .preparing
     @Published private(set) var position: Position = .back
     @Published private(set) var isRecording = false
+    @Published private(set) var isCapturing = false   // 拍照瞬间（快门反馈/防连点）
     @Published private(set) var micAvailable = true
+    /// 拍照/视频模式（默认照片，相机 App 惯例）。
+    @Published var mode: CaptureMode = .photo
+    /// 美颜参数（磨皮/美白）。实时预览即时生效；拍照按拍摄瞬间值处理；
+    /// 录制在开始时锁定（录制中面板已禁用）。
+    @Published var beauty = CameraBeautyParams() {
+        didSet { renderer?.setBeauty(beauty) }
+    }
     @Published var filter: CameraFilterPreset = .none {
         didSet { renderer?.setFilter(filter) }  // 录制中由视图层禁用滤镜条（锁定语义）
     }
@@ -123,8 +136,9 @@ final class CameraViewModel: ObservableObject {
             .appendingPathComponent("cq_rec_\(Int(Date().timeIntervalSince1970 * 1000)).mp4")
         let recorder = CameraRecorder(
             outputURL: url,
-            ciContext: ciContext,
+            ciContext: ciContext!,
             preset: filter,       // 录制开始时锁定滤镜（WYSIWYG）
+            beauty: beauty,       // 美颜同步锁定
             withAudio: micAvailable)
         recorderBox.set(recorder)
         isRecording = true
@@ -170,6 +184,70 @@ final class CameraViewModel: ObservableObject {
                     if ok {
                         self.errorMessage = nil
                         self.recordedURL = nil  // 已入库，收起面板
+                    } else {
+                        self.errorMessage = "保存失败：\(error?.localizedDescription ?? "未知")"
+                    }
+                }
+            }
+        }
+    }
+
+    // MARK: 拍照（CAM-003 追加）
+
+    /// 拍照：原始帧 → 美颜/滤镜（与预览同一条 process 链，WYSIWYG）→ 存相册。
+    func capturePhoto() {
+        guard phase == .running, !isCapturing, let ciContext, renderer != nil else { return }
+        isCapturing = true
+        let failure = NSError(domain: "cq.camera", code: 1,
+                              userInfo: [NSLocalizedDescriptionKey: "未取到照片数据"])
+        manager.capturePhoto { [weak self] buffer in
+            // 回调在采集队列；单张照片的一次性处理在这里做，不抢主线程。
+            // ciContext 线程安全，与预览/录制复用同一实例。
+            var processed: Result<CGImage, Error> = .failure(failure)
+            if let buffer {
+                do {
+                    var image = CIImage(cvPixelBuffer: buffer)
+                    if let renderer = self?.renderer {
+                        image = renderer.process(image)
+                    }
+                    if let cgImage = ciContext.createCGImage(image, from: image.extent) {
+                        processed = .success(cgImage)
+                    } else {
+                        throw NSError(domain: "cq.camera", code: 2,
+                                      userInfo: [NSLocalizedDescriptionKey: "照片处理失败"])
+                    }
+                } catch {
+                    processed = .failure(error)
+                }
+            }
+            Task { @MainActor in
+                guard let self else { return }
+                self.isCapturing = false
+                switch processed {
+                case .success(let cgImage):
+                    self.savePhotoToPhotos(cgImage)
+                case .failure(let error):
+                    self.errorMessage = "拍照失败：\(error.localizedDescription)"
+                }
+            }
+        }
+    }
+
+    private func savePhotoToPhotos(_ image: CGImage) {
+        PHPhotoLibrary.requestAuthorization(for: .addOnly) { status in
+            guard status == .authorized || status == .limited else {
+                Task { @MainActor in
+                    self.errorMessage = "相册保存被拒绝（可在系统设置中开启）"
+                }
+                return
+            }
+            PHPhotoLibrary.shared().performChanges {
+                PHAssetChangeRequest.creationRequestForAsset(
+                    from: UIImage(cgImage: image))
+            } completionHandler: { ok, error in
+                Task { @MainActor in
+                    if ok {
+                        self.errorMessage = nil
                     } else {
                         self.errorMessage = "保存失败：\(error?.localizedDescription ?? "未知")"
                     }

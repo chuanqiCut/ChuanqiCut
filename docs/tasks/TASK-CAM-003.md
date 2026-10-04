@@ -30,3 +30,18 @@ parallel:    false
 - 滤镜预设：CIPhotoEffect 系（Mono/Chrome/Fade/Instant/Noir/Process/Transfer）+ 原图，
   纯函数 `apply(to:) -> CIImage` 放 SharedUI（平台无关，可测）。
 - B 期接入自写 Metal kernel（磨皮/美型）时从同一插槽插 CIImage 链。
+
+---
+
+## 2026-10-04 晚追加（传哲需求：拍照 + 基础美颜提前到 A 期）
+
+- **拍照**：`AVCapturePhotoOutput` 进会话；原始帧走与预览同一条 `process` 链
+  （美颜→滤镜，WYSIWYG）→ CGImage → 存相册（addOnly 权限已声明）。
+  UI：照片/视频模式切换 + 双态快门。
+- **基础美颜（真实生效，非占位）**：`SharedUI/Camera/CameraBeauty.swift` 纯函数
+  （磨皮=高斯模糊+亮度锐化保边近似；美白=小步长曝光+亮度；参数单调、off 恒等直通）
+  + 单测 `CameraBeautyTests`；预览/拍照/录制三路共用，录制开始时与滤镜一并锁定。
+  UI：美颜面板（磨皮/美白滑杆）。
+- **美型不进本档**：瘦脸/大眼需人脸关键点驱动的 Metal 网格形变，仍归
+  CAM-012/013（B 期）；UI 中以禁用行如实标注「B 期上线」，不做假滑杆。
+- 验证：swiftc -parse 全过；真机项归 A5/A6 口径不变。

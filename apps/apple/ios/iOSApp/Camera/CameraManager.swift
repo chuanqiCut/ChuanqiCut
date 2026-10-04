@@ -37,6 +37,8 @@ final class CameraManager: NSObject {
     private let videoQueue = DispatchQueue(label: "cq.camera.video")
     private let audioQueue = DispatchQueue(label: "cq.camera.audio")
     private let relay = FrameRelay()
+    private let photoRelay = PhotoRelay()
+    private let photoOutput = AVCapturePhotoOutput()
 
     private var videoInput: AVCaptureDeviceInput?
     private var audioInput: AVCaptureDeviceInput?
@@ -120,6 +122,30 @@ final class CameraManager: NSObject {
         }
     }
 
+    // MARK: 拍照（CAM-003 追加）
+
+    /// 拍一张静态照片。完成回调带回**未处理的**原始像素缓冲（美颜/滤镜由上层
+    /// 统一走 process 链，保证与预览同序），错误/失败以 nil 上抛（诚实暴露）。
+    /// 可在视频录制中调用（AVFoundation 支持拍录并发）。
+    func capturePhoto(onDone: @escaping (_ pixelBuffer: CVImageBuffer?) -> Void) {
+        sessionQueue.async { [weak self] in
+            guard let self, self.configured, self.session.outputs.contains(self.photoOutput) else {
+                onDone(nil)
+                return
+            }
+            self.photoRelay.onPhoto = onDone
+            let settings = AVCapturePhotoSettings()
+            // 竖屏/镜像沿用 connection 的呈现设置（photoOutput 的 connection 一并设置）。
+            if let connection = self.photoOutput.connection(with: .video) {
+                self.applyPortraitOrientation(connection)
+                if self.currentPosition == .front && connection.isVideoMirroringSupported {
+                    connection.isVideoMirrored = true
+                }
+            }
+            self.photoOutput.capturePhoto(with: settings, delegate: self.photoRelay)
+        }
+    }
+
     // MARK: 内部配置（必须在 sessionQueue 上调用）
 
     private func configureLocked(position: Position) {
@@ -158,6 +184,11 @@ final class CameraManager: NSObject {
             audioInput = input
         }
 
+        // 静态拍照输出（CAM-003 追加：拍照模式）。加输出需在 commitConfiguration 前。
+        if session.canAddOutput(photoOutput) {
+            session.addOutput(photoOutput)
+        }
+
         reconfigureVideoInputLocked(position: position)
     }
 
@@ -177,8 +208,7 @@ final class CameraManager: NSObject {
         videoInput = input
         // 新 input 生效后 connection 需重设方向/镜像（addInput 会重建 connection）。
         for output in session.outputs {
-            guard let videoOutput = output as? AVCaptureVideoDataOutput,
-                  let connection = videoOutput.connection(with: .video) else { continue }
+            guard let connection = output.connection(with: .video) else { continue }
             applyPortraitOrientation(connection)
             if position == .front && connection.isVideoMirroringSupported {
                 connection.isVideoMirrored = true
@@ -218,5 +248,24 @@ private final class FrameRelay: NSObject, AVCaptureVideoDataOutputSampleBufferDe
         } else if output is AVCaptureAudioDataOutput {
             onAudio?(sampleBuffer)
         }
+    }
+}
+
+// MARK: - 拍照中继（AVCapturePhotoCaptureDelegate 回调在系统队列）
+
+private final class PhotoRelay: NSObject, AVCapturePhotoCaptureDelegate {
+
+    var onPhoto: ((_ pixelBuffer: CVImageBuffer?) -> Void)?
+
+    func photoOutput(_ output: AVCapturePhotoOutput,
+                     didFinishProcessingPhoto photo: AVCapturePhoto,
+                     error: Error?) {
+        guard error == nil, let buffer = photo.pixelBuffer else {
+            onPhoto?(nil)
+            onPhoto = nil
+            return
+        }
+        onPhoto?(buffer)
+        onPhoto = nil
     }
 }

@@ -17,11 +17,11 @@ SHAREDUI_CAM="$REPO/apps/apple/packages/SharedUI/Sources/SharedUI/Camera"
 WORK="$(mktemp -d /tmp/cq_beauty_harness.XXXXXX)"
 trap 'rm -rf "$WORK"' EXIT
 
-echo "==> [1/4] metal -fcikernel 一步编出 metallib（CI kernel 必须 -fcikernel，P40；"
+echo "==> [1/4] metal -fcikernel 一步编出 metallib（CI kernel 必须 -fcikernel，P47；"
 echo "    本机工具链「-c 出 air 再 metallib 链接」会得到空库，须一步 -o）"
 xcrun metal -fcikernel "$EFFECTS/beauty_bilateral.metal" -o "$WORK/beauty.metallib"
 
-echo "==> [2/4] SharedUI stub 模块（真 CameraBeauty.swift，P39 技法）"
+echo "==> [2/4] SharedUI stub 模块（真 CameraBeauty.swift，P46 技法）"
 mkdir -p "$WORK/stub"
 xcrun swiftc -parse-as-library -emit-module -module-name SharedUI \
     "$SHAREDUI_CAM/CameraBeauty.swift" -o "$WORK/stub/SharedUI.swiftmodule"

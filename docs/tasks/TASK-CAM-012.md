@@ -32,7 +32,7 @@ parallel:    false
 
 | 子步骤 | 状态 |
 |---|---|
-| CIKernel API 对表（ObjC 头 + typecheck 探针） | 完成——iOS 17.2 SDK **无源码串初始化器**，只有 `CIKernel(functionName:fromMetalLibraryData:)`；落地方修正为 `.metal` 随 Xcode 编译期内建（原卡 output 写法即此意，P40） |
+| CIKernel API 对表（ObjC 头 + typecheck 探针） | 完成——iOS 17.2 SDK **无源码串初始化器**，只有 `CIKernel(functionName:fromMetalLibraryData:)`；落地方修正为 `.metal` 随 Xcode 编译期内建（原卡 output 写法即此意，P47） |
 | `Effects/beauty_bilateral.metal`（双 pass 亮度域双边） | 完成；`metal -fcikernel` 一步编译通过，kernel 名可加载 |
 | `Effects/BeautyKernel.swift`（metallib 加载 + profile 映射 + 引擎闭包） | 完成 |
 | SharedUI `CameraBeauty.swift` 薄封装 + `CameraBeautyEngine` 注入点 | 完成；默认 CI 高斯保留为兜底（macOS/引擎放弃时走），公开语义（单调/off 恒等）不变 |
@@ -44,16 +44,16 @@ parallel:    false
 ### 写集追加（超出原卡的改动与原因）
 
 - `CameraViewModel.swift`（+8 行）：引擎安装一行 + `import UIKit` + wireCallbacks
-  引用局部化（后者为存量编译错误修复，见 P41）。
+  引用局部化（后者为存量编译错误修复，见 P48）。
 - `CameraRenderer.swift` / `CameraRecorder.swift` / `CameraView.swift`：**A 期存量
   编译错误修复**（这些文件此前只过过 `-parse`，从未 typecheck；本卡首次全量
-  typecheck 抓出 7 处，任何机器首编必挂，清单见 pitfalls P41）。无行为变更
+  typecheck 抓出 7 处，任何机器首编必挂，清单见 pitfalls P48）。无行为变更
   （render API 换成 SDK 实际存在的等价变体）。
 - `tools/qa/beauty_harness/`（新增）：宿主验证 harness，可重复执行。
 
 ### 验证证据（2026-10-04，第二开发机 macOS 13.7 / Xcode 15.2）
 
-1. **iOS typecheck（P39 技法）**：相机模块 9 文件 + SharedUITests 全量 `-typecheck`
+1. **iOS typecheck（P46 技法）**：相机模块 9 文件 + SharedUITests 全量 `-typecheck`
    （iphonesimulator 17.2 SDK / ios16.0 目标，stub SharedUI + EditorScreen shim），
    **0 错**（修复 7 处存量错误后）。
 2. **宿主 GPU harness**（真 .metal + 真 BeautyKernel.swift + 真 CameraBeauty.swift，
@@ -64,7 +64,7 @@ parallel:    false
    - 平台对比度保持率：101.6% / 103.3%（门限 85%）
    - 1080p 单帧耗时（best-of-3，render→GPU 完成，不含回读）：kernel 引擎
      s=0.5 → **9.85ms**、s=1.0 → 18.01ms；A 期默认 CI 高斯 s=0.5 → 19.12ms（对照）
-3. **swift test / iOS 构建：本机阻塞**（P39/P36b，同 CAM-011 口径），用例与工程侧
+3. **swift test / iOS 构建：本机阻塞**（P46/P42b，同 CAM-011 口径），用例与工程侧
    已就绪；首次真机构建需确认 default.metallib 入包（xcodegen 对 .metal 的
    sources 相机自动归类，冒烟时核对 bundle）。
 

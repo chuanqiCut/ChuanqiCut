@@ -5,7 +5,7 @@
 //
 // 加载路径：beauty_bilateral.metal 由 Xcode Metal 编译期内建为
 // default.metallib（iOS 17.2 SDK 的 CIKernel 只有
-// fromMetalLibraryData:，没有源码串初始化器 —— P40），本类从
+// fromMetalLibraryData:，没有源码串初始化器 —— P47），本类从
 // Bundle 扫出 metallib → CIKernel(functionName:fromMetalLibraryData:)。
 // 加载失败 / kernel 缺失 → init 返回 nil → SharedUI 默认 CI 实现兜底
 //（能力缺失降级，不悄悄假装升级）。

@@ -40,6 +40,10 @@ int32_t cq_media_probe_duration(const char* path, int64_t* out_value,
     s = provider->GetDuration(duration);
     if (!s.IsOk()) return static_cast<int32_t>(s.code);
     if (duration.timescale <= 0) return static_cast<int32_t>(cq::StatusCode::kDecodeError);
+    // 容器打开但时长为 0 = 解析失败（如 P33：AVAsset 加载失败/取消时
+    // [asset duration] 返回 invalid/0，被 ToRational 转成 {0, 120000}）。
+    // 必须如实报错，否则上层拿 0 时长建 0 长度片段。
+    if (duration.value <= 0) return static_cast<int32_t>(cq::StatusCode::kDecodeError);
 
     *out_value = duration.value;
     *out_timescale = duration.timescale;

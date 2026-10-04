@@ -24,6 +24,7 @@
 #include "cq/media/pal_frame_provider.h"
 #include "cq/model/model_snapshot.h"
 #include "cq/pal/gfx.h"
+#include "cq/preview/preview_pump.h"
 #include "cq/preview/preview_renderer.h"
 #include "../cq_session_impl.h"
 
@@ -162,6 +163,21 @@ int32_t cq_preview_resize(CQPreview* preview, uint32_t width, uint32_t height) {
     return CodeOf(preview->renderer->Resize(width, height));
 }
 
+int32_t cq_preview_set_fit_mode(CQPreview* preview, int32_t fit_mode) {
+    if (preview == nullptr || preview->renderer == nullptr) {
+        return CodeOfEnum(cq::StatusCode::kInvalidArgument);
+    }
+    switch (fit_mode) {
+        case 0:  // kStretch
+        case 1:  // kContain
+        case 2:  // kCover
+            preview->renderer->SetFitMode(static_cast<cq::FitMode>(fit_mode));
+            return CodeOf(cq::Status::Ok());
+        default:
+            return CodeOfEnum(cq::StatusCode::kInvalidArgument);
+    }
+}
+
 int32_t cq_preview_last_hit_clip(const CQPreview* preview) {
     if (preview == nullptr || preview->renderer == nullptr) return 0;
     return preview->renderer->LastHitClip() ? 1 : 0;
@@ -180,5 +196,108 @@ int32_t cq_preview_last_frame_pts(const CQPreview* preview, int64_t* out_value,
     const cq::RationalTime t = preview->renderer->LastFramePts();
     if (out_value != nullptr) *out_value = t.value;
     if (out_timescale != nullptr) *out_timescale = t.timescale;
+    return CodeOfEnum(cq::StatusCode::kOk);
+}
+
+int32_t cq_preview_last_timings(const CQPreview* preview, int64_t* out_acquire_ns,
+                                int64_t* out_import_ns, int64_t* out_draw_ns,
+                                int64_t* out_total_ns) {
+    if (preview == nullptr || preview->renderer == nullptr) {
+        return CodeOfEnum(cq::StatusCode::kInvalidArgument);
+    }
+    const cq::PreviewRenderer::Timings& t = preview->renderer->LastTimings();
+    if (out_acquire_ns != nullptr) *out_acquire_ns = t.acquire_ns;
+    if (out_import_ns != nullptr) *out_import_ns = t.import_ns;
+    if (out_draw_ns != nullptr) *out_draw_ns = t.draw_ns;
+    if (out_total_ns != nullptr) *out_total_ns = t.total_ns;
+    return CodeOfEnum(cq::StatusCode::kOk);
+}
+
+void* cq_preview_shared_queue(CQPreview* preview) {
+    if (preview == nullptr || preview->gfx == nullptr) return nullptr;
+    return preview->gfx->SharedQueueHandle();
+}
+
+// ===========================================================================
+// 预览取帧泵（UIA-010 子步骤 5）
+// ===========================================================================
+// ⚠️ 生命周期：CQPreviewPump 持有指向 CQPreview::renderer 的**非拥有**指针，
+//    故必须**先于** preview 销毁。Swift 侧由对象图保证（PreviewPump 强持有 Previewer）。
+struct CQPreviewPump {
+    cq::PreviewPump impl;
+
+    explicit CQPreviewPump(cq::PreviewRenderer* renderer) : impl(renderer) {}
+};
+
+CQPreviewPump* cq_preview_pump_create(CQPreview* preview) {
+    if (preview == nullptr || preview->renderer == nullptr) return nullptr;
+
+    CQPreviewPump* p = new (std::nothrow) CQPreviewPump(preview->renderer.get());
+    if (p == nullptr) return nullptr;
+    // 创建即启动：不启动的泵只会静默黑屏，这种"能创建却不能用"的状态最难排查。
+    if (!p->impl.Start().IsOk()) {
+        delete p;
+        return nullptr;
+    }
+    return p;
+}
+
+void cq_preview_pump_destroy(CQPreviewPump* pump) {
+    if (pump == nullptr) return;
+    // 析构前先停线程：Stop() 会等当前这一帧渲染完（≤1 帧），不是在半帧处强杀。
+    pump->impl.Stop();
+    delete pump;
+}
+
+int32_t cq_preview_pump_stop(CQPreviewPump* pump) {
+    if (pump == nullptr) return CodeOfEnum(cq::StatusCode::kInvalidArgument);
+    pump->impl.Stop();
+    return CodeOfEnum(cq::StatusCode::kOk);
+}
+
+int32_t cq_preview_pump_start(CQPreviewPump* pump) {
+    if (pump == nullptr) return CodeOfEnum(cq::StatusCode::kInvalidArgument);
+    return CodeOf(pump->impl.Start());
+}
+
+int32_t cq_preview_pump_request(CQPreviewPump* pump, int64_t pts_value, int32_t pts_timescale) {
+    if (pump == nullptr) return CodeOfEnum(cq::StatusCode::kInvalidArgument);
+    if (pts_timescale <= 0) return CodeOfEnum(cq::StatusCode::kInvalidArgument);
+    pump->impl.Request(cq::RationalTime{pts_value, pts_timescale});
+    return CodeOfEnum(cq::StatusCode::kOk);
+}
+
+int32_t cq_preview_pump_request_resize(CQPreviewPump* pump, uint32_t width, uint32_t height) {
+    if (pump == nullptr) return CodeOfEnum(cq::StatusCode::kInvalidArgument);
+    return CodeOf(pump->impl.RequestResize(width, height));
+}
+
+int32_t cq_preview_pump_lock(CQPreviewPump* pump, void** out_texture, int64_t* out_pts_value,
+                             int32_t* out_pts_timescale, uint64_t* out_seq) {
+    if (pump == nullptr) return CodeOfEnum(cq::StatusCode::kInvalidArgument);
+    pump->impl.Lock();
+    const cq::PreviewPump::Frame& f = pump->impl.LatestLocked();
+    if (out_texture != nullptr) *out_texture = static_cast<void*>(f.texture);
+    if (out_pts_value != nullptr) *out_pts_value = f.pts.value;
+    if (out_pts_timescale != nullptr) *out_pts_timescale = f.pts.timescale;
+    if (out_seq != nullptr) *out_seq = f.seq;
+    return CodeOfEnum(cq::StatusCode::kOk);
+}
+
+int32_t cq_preview_pump_unlock(CQPreviewPump* pump) {
+    if (pump == nullptr) return CodeOfEnum(cq::StatusCode::kInvalidArgument);
+    pump->impl.Unlock();
+    return CodeOfEnum(cq::StatusCode::kOk);
+}
+
+int32_t cq_preview_pump_stats(CQPreviewPump* pump, uint64_t* out_requested,
+                              uint64_t* out_rendered, uint64_t* out_coalesced,
+                              uint64_t* out_non_ok) {
+    if (pump == nullptr) return CodeOfEnum(cq::StatusCode::kInvalidArgument);
+    const cq::PreviewPump::Stats s = pump->impl.GetStats();
+    if (out_requested != nullptr) *out_requested = s.requested;
+    if (out_rendered != nullptr) *out_rendered = s.rendered;
+    if (out_coalesced != nullptr) *out_coalesced = s.coalesced;
+    if (out_non_ok != nullptr) *out_non_ok = s.non_ok;
     return CodeOfEnum(cq::StatusCode::kOk);
 }

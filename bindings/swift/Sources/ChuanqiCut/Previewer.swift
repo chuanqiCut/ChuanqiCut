@@ -31,7 +31,9 @@ import Foundation
 
 public final class Previewer {
 
-    private var handle: OpaquePointer?
+    /// internal 而非 private：PreviewPump 要用它构造自己的 CQPreviewPump
+    /// （内核侧 CQPreviewPump 持有指向本对象的渲染器）。不对外公开。
+    var handle: OpaquePointer?
     /// 强持有：CQPreview 不拥有 session（生命周期由对象图保证，见文件头）。
     private let session: Session
 
@@ -78,6 +80,23 @@ public final class Previewer {
         return Status(rawValue: cq_preview_resize(h, UInt32(width), UInt32(height)))
     }
 
+    // MARK: 宽高比适配（UIA-014）
+
+    /// 源帧与画布比例不同时的映射模式（语义以 cq_sdk.h 的 cq_preview_set_fit_mode
+    /// 注释为契约）。内部 atomic，可在泵运行期间调用。
+    public enum FitMode: Int32, Sendable {
+        case stretch = 0  // 拉伸铺满（默认，历史行为）
+        case contain = 1  // 内切居中：letterbox/pillarbox，不裁内容
+        case cover = 2    // 外接居中：裁剪铺满
+    }
+
+    /// 设置宽高比适配模式。非法值由内核拒绝（返回 7000）。
+    @discardableResult
+    public func setFitMode(_ mode: FitMode) -> Status {
+        guard let h = handle else { return .invalidArgument }
+        return Status(rawValue: cq_preview_set_fit_mode(h, mode.rawValue))
+    }
+
     // MARK: 诊断量（不是渲染结果；静态素材像素相同，靠它们证明「取对了帧」）
 
     /// 上一帧是否命中片段。
@@ -90,6 +109,35 @@ public final class Previewer {
     public var lastCpuFallback: Bool {
         guard let h = handle else { return false }
         return cq_preview_last_cpu_fallback(h) != 0
+    }
+
+    /// 内核复用的命令队列的**中性句柄**（Apple 上 reinterpret 为 MTLCommandQueue）。
+    ///
+    /// UI 侧把离屏 RT 拷进 drawable 时**必须**用这条队列：泵线程写 RT、UI 线程读它，
+    /// 而 Metal **只保证同一条队列内**按 commit 顺序执行（跨队列需显式
+    /// MTLSharedEvent / MTLFence）。共用一条队列即可由 commit 顺序天然保证先后。
+    /// 后端缺失时返回 nil。
+    public var sharedQueueHandle: UnsafeMutableRawPointer? {
+        guard let h = handle else { return nil }
+        return cq_preview_shared_queue(h)
+    }
+
+    /// 上一帧各阶段耗时（纳秒）。埋点用途 —— 预览帧率的所有讨论都要有实测数字。
+    public struct Timings {
+        public let acquireNs: Int64  // 取帧整段（含按需 seek + 解码）
+        public let importNs: Int64   // 原生图像 → 纹理
+        public let drawNs: Int64     // 离屏绘制 + 等 GPU 完成
+        public let totalNs: Int64
+    }
+
+    public var lastTimings: Timings {
+        guard let h = handle else { return Timings(acquireNs: 0, importNs: 0, drawNs: 0, totalNs: 0) }
+        var acq: Int64 = 0
+        var imp: Int64 = 0
+        var drw: Int64 = 0
+        var tot: Int64 = 0
+        _ = cq_preview_last_timings(h, &acq, &imp, &drw, &tot)
+        return Timings(acquireNs: acq, importNs: imp, drawNs: drw, totalNs: tot)
     }
 
     /// 上一帧**实际取到的**解码帧 pts。

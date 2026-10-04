@@ -75,26 +75,43 @@ RationalTime VideoToolboxDecoder::ToRational(CMTime t) const {
 }
 
 // ---------------------------------------------------------------------------
-// 输出回调（显示序）：把 CVPixelBuffer 入队
+// 输出回调（完成序，≈dts 序，非显示序！）：完成登记 + 把 CVPixelBuffer 入队，
+// 显示序重排在 PopFrame 内做（见 media_decode.h 设计要点）。
 // ---------------------------------------------------------------------------
 void VideoToolboxDecoder::OutputCallback(void* ref_con, void* source_ref_con, OSStatus status,
                                          VTDecodeInfoFlags info_flags, CVImageBufferRef image_buffer,
                                          CMTime pts, CMTime duration) {
-    (void)source_ref_con;
     (void)info_flags;
     (void)duration;
     auto* self = static_cast<VideoToolboxDecoder*>(ref_con);
+    // source_ref_con = DecodeFrame 传入的源 CMSampleBuffer（已 CFRetain）：取 dts 后释放。
+    RationalTime dts{0, 0};  // timescale=0 = 无效（无 dts 可用时不得登记/参与重排）
+    CMSampleBufferRef sbuf = static_cast<CMSampleBufferRef>(source_ref_con);
+    if (sbuf != nullptr) {
+        CMTime dts_cm = CMSampleBufferGetDecodeTimeStamp(sbuf);
+        if (CMTIME_IS_NUMERIC(dts_cm)) dts = self->ToRational(dts_cm);
+        CFRelease(sbuf);
+    }
+    if (self == nullptr) return;
+    // 完成登记：无论成败都从 pending 移除 —— 丢帧/解错的包不能永远压住重排等待。
+    if (dts.timescale != 0) self->MarkDecoded(dts);
     if (status != noErr) return;
     if (image_buffer == nullptr) return;
     CVPixelBufferRef pb = reinterpret_cast<CVPixelBufferRef>(image_buffer);
-    self->Enqueue(pb, self->ToRational(pts));
+    self->Enqueue(pb, self->ToRational(pts), dts);
 }
 
-void VideoToolboxDecoder::Enqueue(CVPixelBufferRef pb, const RationalTime& pts) {
+void VideoToolboxDecoder::Enqueue(CVPixelBufferRef pb, const RationalTime& pts,
+                                  const RationalTime& dts) {
     if (pb == nullptr) return;
     CFRetain(pb);  // 取所有权（回调的 imageBuffer 由 VT 持有，须保留）
     std::lock_guard<std::mutex> lk(queue_mutex_);
-    output_queue_.push_back({pb, pts});
+    output_queue_.push_back({pb, pts, dts});
+}
+
+void VideoToolboxDecoder::MarkDecoded(const RationalTime& dts) {
+    std::lock_guard<std::mutex> lk(queue_mutex_);
+    pending_dts_pts_.erase(dts.value);
 }
 
 // ---------------------------------------------------------------------------
@@ -110,6 +127,10 @@ Status VideoToolboxDecoder::Open(const StreamInfo& info) {
     }
     has_prev_ = false;
     prev_popped_pts_ = RationalTime{0, 0};
+    {
+        std::lock_guard<std::mutex> lk(queue_mutex_);
+        pending_dts_pts_.clear();
+    }
     fed_first_ = false;
     fed_second_ = false;
     popped_count_ = 0;
@@ -233,13 +254,17 @@ Status VideoToolboxDecoder::Feed(const MediaPacket& pkt) {
         return Status::Ok();  // 跳过空包（参数集/priming，PALA-010 已在 demux 侧过滤，双保险）
     }
 
-    // 记录前两个喂入包的显示序差，作为首帧时长兜底（假定恒定帧率）。
+    // 记录前两个喂入包的 dts 差，作为首帧时长兜底（假定恒定帧率）。
+    // ⚠️ 必须用 dts 差而非 pts 差（MEDIA-021 实测暴露）：喂入是解码序，B 帧存在时
+    // 前两个包是 I 和其后的参考帧，pts 差 = (bframes+1) 帧（本 golden = 4 帧）——
+    // 首帧展示区间被报宽 4 倍，kExact 的「区间归属」会在关键帧上提前命中，
+    // 画面差 1~3 帧。CFR 下解码序相邻 dts 间隔恒为一帧，与 B 帧排布无关。
     if (!fed_first_) {
-        first_fed_pts_ = pkt.pts;
+        first_fed_dts_ = pkt.dts;
         fed_first_ = true;
     } else if (!fed_second_) {
         RationalTime d{0, kProjectTimeScale};
-        if (SubRational(pkt.pts, first_fed_pts_, d).IsOk() && d.value > 0) {
+        if (SubRational(pkt.dts, first_fed_dts_, d).IsOk() && d.value > 0) {
             nominal_duration_ = d;
         }
         fed_second_ = true;
@@ -270,16 +295,39 @@ Status VideoToolboxDecoder::Feed(const MediaPacket& pkt) {
     CFRelease(block);  // sbuf 已 retain block
     if (st != noErr || sbuf == nullptr) return Status{StatusCode::kDecodeError};
 
+    // 登记未完成包（重排依据）——必须在 DecodeFrame **之前**：回调可能在另一线程
+    // 立即完成并 erase，若先提交后登记会产生永不清理的幽灵条目。
+    pending_dts_pts_[pkt.dts.value] = pkt.pts;
+
     VTDecodeInfoFlags info = 0;
-    st = VTDecompressionSessionDecodeFrame(
-        session_, sbuf, kVTDecodeFrame_EnableAsynchronousDecompression, nullptr, &info);
+    // sourceFrameRefCon 传 CFRetain(sbuf)：回调从中取 dts 做完成登记，并负责释放。
+    void* source_ref = const_cast<void*>(CFRetain(sbuf));
+    st = VTDecompressionSessionDecodeFrame(session_, sbuf,
+                                           kVTDecodeFrame_EnableAsynchronousDecompression,
+                                           source_ref, &info);
     CFRelease(sbuf);
-    if (st != noErr) return Status{StatusCode::kDecodeError};
+    if (st != noErr) {
+        // 提交失败：回调不会发生，完成登记须在本线程补齐，否则重排会永远等待。
+        {
+            std::lock_guard<std::mutex> lk(queue_mutex_);
+            pending_dts_pts_.erase(pkt.dts.value);
+        }
+        return Status{StatusCode::kDecodeError};
+    }
     return Status::Ok();
 }
 
 // ---------------------------------------------------------------------------
-// PopFrame：按显示序弹出一个已重建的展示帧
+// PopFrame：重排后按显示序弹出一个已重建的展示帧
+//
+// VT 回调按完成序（≈dts 序）入队，B 帧在其参考 P 之后完成 —— 直接弹队首会把
+// P 当作显示序下一帧交付（kExact 差帧 + 负 duration，MEDIA-021 逐帧 pts 断言
+// 实测暴露）。重排判据（精确，无需知道 B 帧深度）：
+//   显示序连续性 —— 上一弹出帧 pts + duration = 本帧期望 pts（duration 即相邻
+//   pts 差，CFR/VFR 皆成立）。队列最小 pts ≠ 期望 ⇒ 显示序下一帧尚未入队：
+//   在途帧（pending 非空）可能补上 → 等待；无在途帧 → 返回 kIoNotFound，
+//   由 provider 继续喂包（「B 未喂入」正是靠这个揭示的）。
+// 流尾丢帧（demux 尽后仍缺帧）时 provider 走 drain 分支交付 before，会话不挂死。
 // ---------------------------------------------------------------------------
 Status VideoToolboxDecoder::PopFrame(MediaFrame& out) {
     out = MediaFrame{};
@@ -287,19 +335,49 @@ Status VideoToolboxDecoder::PopFrame(MediaFrame& out) {
     RationalTime pts{0, kProjectTimeScale};
     {
         std::unique_lock<std::mutex> lk(queue_mutex_);
-        if (output_queue_.empty()) {
-            lk.unlock();
-            // 异步帧可能尚未解码完成：等其落地后再判定是否真耗尽（避免提前报告 kIoNotFound）。
-            if (session_ != nullptr) {
-                VTDecompressionSessionWaitForAsynchronousFrames(session_);
-            }
-            lk.lock();
+        size_t best = 0;
+        for (;;) {
             if (output_queue_.empty()) {
-                return Status{StatusCode::kIoNotFound};  // 当前无可用帧（需继续 Feed / 已 drain）
+                lk.unlock();
+                // 异步帧可能尚未解码完成：等其落地后再判定是否真耗尽（避免提前报告 kIoNotFound）。
+                if (session_ != nullptr) {
+                    VTDecompressionSessionWaitForAsynchronousFrames(session_);
+                }
+                lk.lock();
+                if (output_queue_.empty()) {
+                    return Status{StatusCode::kIoNotFound};  // 当前无可用帧（需继续 Feed / 已 drain）
+                }
             }
+            // 队列内 pts 最小帧（完成序乱序窗口有限，O(n) 扫描开销可忽略）。
+            best = 0;
+            for (size_t i = 1; i < output_queue_.size(); ++i) {
+                if (CompareRational(output_queue_[i].pts, output_queue_[best].pts) < 0) best = i;
+            }
+            if (!has_prev_) break;  // 流首 / Flush 后：无显示序连续性约束，队列最小帧即首帧
+            // 显示序连续性检查。
+            RationalTime expected{0, 1};
+            if (!AddRational(prev_popped_pts_, prev_duration_, expected).IsOk()) {
+                break;  // 期望算不出（溢出）：放弃约束，宁弹不错
+            }
+            if (CompareRational(output_queue_[best].pts, expected) == 0) break;  // 匹配，安全弹出
+            if (!pending_dts_pts_.empty()) {
+                // 有在途帧：它完成后可能填补缺口 → 等待后重查。
+                lk.unlock();
+                if (session_ != nullptr) {
+                    VTDecompressionSessionWaitForAsynchronousFrames(session_);
+                }
+                lk.lock();
+                if (output_queue_.empty()) {
+                    return Status{StatusCode::kIoNotFound};
+                }
+                continue;
+            }
+            // 无在途帧且队列最小帧不匹配期望：显示序下一帧尚未 Feed（或已丢失）。
+            // 报告缺输入，由 provider 继续喂包揭示后续帧。
+            return Status{StatusCode::kIoNotFound};
         }
-        OutputFrame of = output_queue_.front();
-        output_queue_.pop_front();
+        OutputFrame of = output_queue_[best];
+        output_queue_.erase(output_queue_.begin() + static_cast<long>(best));
         pb = of.pb;
         pts = of.pts;
 
@@ -308,6 +386,7 @@ Status VideoToolboxDecoder::PopFrame(MediaFrame& out) {
             RationalTime d{0, kProjectTimeScale};
             if (SubRational(pts, prev_popped_pts_, d).IsOk()) dur = d;
         }
+        prev_duration_ = dur;  // 下一帧的显示序期望 = pts + dur
         prev_popped_pts_ = pts;
         has_prev_ = true;
 
@@ -335,7 +414,17 @@ Status VideoToolboxDecoder::PopFrame(MediaFrame& out) {
 // Flush：清空待出队帧 + 复位时长跟踪（新 GOP 以 IDR 起，VT 内部 DPB 自动复位）
 // ---------------------------------------------------------------------------
 void VideoToolboxDecoder::Flush() {
+    // 先等在途帧落地再清队：异步回调可能在 Flush 后才到达（B 帧晚于其参考帧
+    // 完成），若不清会把上一解码区间的旧帧漏进新序列的首弹（MEDIA-021 实测：
+    // Seek 后首弹弹出旧 GOP 的 128000）。provider 串行调用 Flush/Feed，无并发。
+    if (session_ != nullptr) {
+        VTDecompressionSessionWaitForAsynchronousFrames(session_);
+    }
     ReleaseOutputQueue();
+    {
+        std::lock_guard<std::mutex> lk(queue_mutex_);
+        pending_dts_pts_.clear();  // 重排等待依据随队列一并失效
+    }
     if (last_returned_ != nullptr) {
         if (last_returned_->refcount.fetch_sub(1) == 1) delete last_returned_;
         last_returned_ = nullptr;

@@ -17,6 +17,14 @@
 // 呈现目标 MTKView 的 currentDrawable / currentRenderPassDescriptor 也是
 // MainActor 隔离的（Swift 6 强制）。离屏 blitAndWait 供测试使用时，
 // 测试同样标 @MainActor 即可（见 MetalPreviewViewTests）。
+//
+// ⚠️ 命令队列（UIA-010 子步骤 5）：呈现路径**必须**用内核共享的那条队列
+//    （`Previewer.sharedQueueHandle`），不能自建。取帧渲染已在泵线程发生，
+//    泵写离屏 RT、本类读它；Metal 只保证**同一条队列内**按 commit 顺序执行，
+//    跨队列的先后要显式同步（MTLSharedEvent / MTLFence）。共用一条队列后，
+//    顺序由 commit 顺序天然保证。
+//    不传 queue 时（测试 / 无预览后端的降级路径）退回自建队列 —— 那种情况下
+//    没有并发写入方，也就没有顺序问题。
 
 import Metal
 import MetalKit
@@ -51,10 +59,12 @@ final class PreviewFrameRenderer {
         }
         """
 
-    init?(device: any MTLDevice) {
-        guard let queue = device.makeCommandQueue() else { return nil }
+    /// - Parameter queue: 内核共享的命令队列。**呈现路径必须传它**，理由见文件头。
+    ///   传 nil 时自建（测试 / 无并发写入方的降级路径）。
+    init?(device: any MTLDevice, queue: (any MTLCommandQueue)? = nil) {
+        guard let resolved = queue ?? device.makeCommandQueue() else { return nil }
         self.device = device
-        self.queue = queue
+        self.queue = resolved
     }
 
     // MARK: 呈现路径（MTKView）

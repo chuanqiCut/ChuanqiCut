@@ -37,7 +37,7 @@ struct CameraView: View {
             }
         }
         .onAppear { model.prepare() }
-        // iOS 16 兼容的单参 onChange（两参重载 iOS 17 起，P41 抓出；项目部署目标 16.0）
+        // iOS 16 兼容的单参 onChange（两参重载 iOS 17 起，P48 抓出；项目部署目标 16.0）
         .onChange(of: scenePhase) { newPhase in
             if newPhase == .background || newPhase == .inactive {
                 model.handleSceneInactive()

@@ -289,6 +289,16 @@ public:
         }
     }
 
+    // 契约见 pal/gfx.h：像素、原点 = target 左上、可大于目标。Metal 的 MTLViewport
+    // 正是左上原点 + 像素，1:1 直映；z 范围用全量 {0,1}（本层无深度语义）。
+    void SetViewport(float x, float y, float width, float height) override {
+        if (enc_ != nil) {
+            [enc_ setViewport:MTLViewport{static_cast<double>(x), static_cast<double>(y),
+                                          static_cast<double>(width),
+                                          static_cast<double>(height), 0.0, 1.0}];
+        }
+    }
+
     void Draw(uint32_t vertex_count) override {
         if (enc_ != nil) {
             [enc_ drawPrimitives:MTLPrimitiveTypeTriangle
@@ -370,6 +380,13 @@ public:
     Status Submit(ICommandBuffer* buffer) override {
         if (buffer == nullptr) return Status(StatusCode::kInvalidArgument);
         return static_cast<CqCommandBuffer*>(buffer)->Commit();
+    }
+
+    // 中性句柄（UIA-010 子步骤 5）：UI 侧的 blit 复用本队列，以 commit 顺序保证
+    // 「泵线程写完 → UI 线程再读」的先后（跨队列 Metal 不做此保证）。
+    // 所有权仍归本对象（queue_ 强引用），故这里用 __bridge，不额外 +1。
+    void* NativeHandle() override {
+        return queue_ == nil ? nullptr : (__bridge void*)queue_;
     }
 };
 

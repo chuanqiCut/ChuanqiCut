@@ -126,7 +126,7 @@ final class MediaPickerViewModel: ObservableObject {
         defer { insertingIDs.remove(descriptor.id) }
 
         do {
-            let url = try await fetcher.resolveFileURL(assetID: descriptor.id) { _ in }
+            let url = try await fetcher.resolveFileURL(assetID: descriptor.id, progress: { @Sendable _ in })
             await onConfirm([url])
             return .delivered
         } catch {

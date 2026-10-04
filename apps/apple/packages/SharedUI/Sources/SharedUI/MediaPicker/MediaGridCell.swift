@@ -134,10 +134,6 @@ struct MediaGridCell: View {
             assetID: assetDescriptor.id, fetcher: fetcher))
     }
 
-    private let descriptor: AssetDescriptor
-    private let onTap: () -> Void
-    private let onLongPress: (() -> Void)?
-
     // ---- 单击插入的 loading 覆盖层 ----
 
     @ViewBuilder

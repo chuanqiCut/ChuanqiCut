@@ -269,7 +269,7 @@ final class PhotoLibraryImporter: ObservableObject {
             guard status.isOK else { return status }
             let deadline = Date().addingTimeInterval(5)
             while viewModel.timeline.clips.count <= clipsAtStart && Date() < deadline {
-                RunLoop.main.run(until: Date().addingTimeInterval(0.01))
+                try? await Task.sleep(nanoseconds: 10_000_000)
             }
             return status
         }

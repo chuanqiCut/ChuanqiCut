@@ -213,7 +213,8 @@ final class AlbumPickerTests: XCTestCase {
 
         XCTAssertEqual(fetcher.resolveOrder, ["c", "a", "b"], "按选取序号顺序落盘")
         XCTAssertEqual(delivered.count, 3)
-        XCTAssertEqual(delivered[1], urlB, "交付顺序同样 = 选取序号顺序")
+        // 选取序 [c,a,b] → delivered[2] 才是 b 的自定义 URL（[0]=c 默认、[1]=a 默认）
+        XCTAssertEqual(delivered[2], urlB, "交付顺序同样 = 选取序号顺序")
         XCTAssertFalse(model.isPreparingFiles, "交付后加载态复位")
         XCTAssertNil(model.preparingError)
         XCTAssertTrue(model.selection.isEmpty, "批量添加成功后清空选取（可紧接着选下一批）")
@@ -323,8 +324,8 @@ final class AlbumPickerTests: XCTestCase {
         model.loadAlbums()
 
         // 时长过滤在单击路径同样生效（不进入落盘）
-        XCTAssertEqual(await model.insertSingle(model.assets[0]),
-                       .rejectedDuration("时长不足 1 秒"))
+        let rejectedOutcome = await model.insertSingle(model.assets[0])
+        XCTAssertEqual(rejectedOutcome, .rejectedDuration("时长不足 1 秒"))
         XCTAssertTrue(delivered.isEmpty)
 
         // 落盘失败：不交付、不崩溃，错误上抛给 toast

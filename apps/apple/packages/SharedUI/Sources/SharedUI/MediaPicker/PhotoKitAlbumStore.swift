@@ -13,11 +13,11 @@
 //    落盘路径，落盘优化归素材库整理任务。
 
 import Foundation
-import Photos
+@preconcurrency import Photos
 
 // MARK: - 取数协议（测试 seam）
 
-protocol AlbumFetching {
+@MainActor protocol AlbumFetching {
 
     /// 相簿列表（首项固定为合成条目"最近项目"）。
     func fetchAlbums() -> [AlbumSummary]
@@ -40,7 +40,7 @@ protocol AlbumFetching {
 
 // MARK: - PhotoKit 生产实现
 
-final class PhotoKitAlbumStore: AlbumFetching {
+@MainActor final class PhotoKitAlbumStore: AlbumFetching {
 
     /// "最近项目"的合成相簿 ID（fetchAssets 对它走全库视频查询）。
     static let recentAlbumID = "__cq_recent__"
@@ -68,9 +68,9 @@ final class PhotoKitAlbumStore: AlbumFetching {
         let smartAlbums = PHAssetCollection.fetchAssetCollections(
             with: .smartAlbum, subtype: .any, options: nil)
         smartAlbums.enumerateObjects { collection, _, _ in
-            // 最近项目已合成；最近删除（回收站）没有选取意义，一并排除
-            guard collection.assetCollectionSubtype != .smartAlbumUserLibrary,
-                  collection.assetCollectionSubtype != .smartAlbumRecentlyDeleted else { return }
+            // 最近项目已合成。最近删除（回收站）不在公开 PHAssetCollectionSubtype 里
+            // （第三方 PhotoKit 天然拿不到），fetch 结果不会出现，无需排除
+            guard collection.assetCollectionSubtype != .smartAlbumUserLibrary else { return }
             let count = PHAsset.fetchAssets(in: collection, options: videoOptions).count
             guard count > 0 else { return }
             albums.append(AlbumSummary(id: collection.localIdentifier,
@@ -142,7 +142,7 @@ final class PhotoKitAlbumStore: AlbumFetching {
 
     func cancelThumbnail(assetID: String) {
         guard let asset = PHAsset.fetchAssets(withLocalIdentifiers: [assetID], options: nil).firstObject else { return }
-        cachingImageManager.stopCachingImages(for: asset, targetSize: Self.thumbnailTargetSize,
+        cachingImageManager.stopCachingImages(for: [asset], targetSize: Self.thumbnailTargetSize,
                                               contentMode: .aspectFill, options: nil)
     }
 

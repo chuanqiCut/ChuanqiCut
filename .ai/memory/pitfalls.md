@@ -585,3 +585,31 @@
 - **后记（同日）**：ADR-0014 转向后该实现随 CAM-001 契约一并回退，但 API 事实
   不变，未来在 macOS 上做相机相关代码仍会撞。
 - 日期 / 来源 / 验证状态：2026-10-04 / CAM-001 / **verified**
+
+### P39 · SharedUI 包在本机（Swift 5.9.2）连包清单都解析不了 + 可用的替身验证技法
+- 现象：`apps/apple/packages/SharedUI/Package.swift` 声明 `swift-tools-version:6.1`，
+  本机 Xcode 15.2 的 Swift 5.9.2 直接拒绝解析（工具链代际门槛，先于依赖解析失败）。
+  加上 bindings xcframework 在本机不存在（P36b：ios-device 切片需 Xcode 16+），
+  **SharedUI 的 `swift build`/`swift test` 在本机双重死锁**——CAM-002~005 当时只跑
+  `swiftc -parse` 兜底，而 **-parse 不做类型检查**，API 拼错全放行。
+- 本卡（CAM-011）实证：`-typecheck` 立刻抓出 4 个 -parse 查不出的真错误——
+  ① 不存在 `VNAnimalObservation` 类（`VNRecognizeAnimalsRequest.results` 是
+  `[VNRecognizedObjectObservation]`）；② `VNConfidence` 是 Float 不是 Double；
+  ③ iOS 17 专属类型出现在无门控作用域；④ 动物关节名是 `nose`/`leftEarTop`
+  （无 `snout`/裸 `ear`）。
+- **替身验证技法（本机可用，比 -parse 强得多）**：
+  1. SharedUI 纯函数文件编成同名 stub 模块：
+     `xcrun swiftc -emit-module -module-name SharedUI -sdk $(xcrun -sdk iphonesimulator -show-sdk-path) -target x86_64-apple-ios16.0-simulator <纯函数文件>.swift -o <dir>/SharedUI.swiftmodule`
+  2. iOS 文件全量类型检查（含 @available 门控验证）：
+     `xcrun swiftc -typecheck -sdk <同上SDK> -target x86_64-apple-ios16.0-simulator -I <dir> <文件...>`
+  3. 纯函数数学真实执行：macOS 宿主 `xcrun swiftc main.swift <纯函数文件>.swift`
+     编译运行（多文件时顶层语句必须叫 **main.swift**）。
+  4. 断言写 1e-12 容差，**禁止 CGRect/CGFloat 精确相等**（0.5+(0.1−0.5)≠0.1 的
+     机器精度假失败，XCTAssertEqual(CGRect) 默认精确相等，一样会踩）。
+  5. 测试文件本身也能 typecheck：stub 模块 emit 时加 `-enable-testing`
+     （`@testable` 要求），再 `-I "$PLAT/Developer/usr/lib" -F "$PLAT/Developer/Library/Frameworks"`
+     解析 XCTest（PLAT=`xcrun -show-sdk-platform-path`）。本卡由此抓出
+     `XCTAssertEqual(CGFloat?, CGFloat?, accuracy:)` 不成立——accuracy 重载要求
+     非可选 FloatingPoint，可选分量要自行解包比较，否则新机器 swift test 必挂。
+- 日期 / 来源 / 验证状态：2026-10-04 / CAM-011 / **verified**（typecheck 0 错 +
+  harness 19/19；API 形状以 iphonesimulator 17.2 SDK 头文件 grep 对表为准）

@@ -191,6 +191,7 @@ parallel:    false          # 是否与同批次其他任务并行
 | UIA-007 | UI | 导出界面与进度/取消 | EXPORT-001 | SharedUI | 可取消，进度准确 |
 | UIA-008 | UI | Undo/Redo 入口（含 Mac 快捷键） | MODEL-002 | SharedUI | iOS 摇一摇 + Mac Cmd+Z |
 | UIA-009 | UI | 素材导入流程（含 Session 级素材表收口：文件选择 → 入表 → Command 建片段 → 时间线/预览可见） | UIA-004, MODEL-002 ✅ | `SharedUI` + `cq_sdk.h` + `core/session` | 导入的片段重启前可见；素材表 Session 级共享 |
+| UIA-011 | UI | 相册素材导入（PhotosPicker → 既有 importMedia 链路，不引第三方；Spec UIA-011） | UIA-009 ✅ | `SharedUI`（PropertyPanelZone + PhotoImportTests） | 相册选视频追加进时间线；与文件导入汇入同一入口；内核/绑定零改动 |
 
 ### 3.6 导出
 

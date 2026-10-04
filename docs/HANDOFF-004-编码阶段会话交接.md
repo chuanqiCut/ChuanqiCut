@@ -159,7 +159,7 @@ cd apps/apple/packages/SharedUI && swift test --disable-sandbox        # 20/20
    假失败 7000（上一轮「内核修复后 ×3 全绿」**不可复现**，复跑 6/3/0 失败实证）。
    修复 = 轮询目标效果（`queryTracks` 出现视频轨）。两层修复后 SharedUI 全量
    ×3 **20/20**（套件时长 14.8s→4.2s，失败用例不再烧 5s 超时）。详见 pitfalls P33。
-4. ~~letterbox/fit~~ **✅ 已完成（2026-10-04，UIA-012 / ADR-0018）**：
+4. ~~letterbox/fit~~ **✅ 已完成（2026-10-04，UIA-014 / ADR-0018）**：
    `FitMode` stretch/contain/cover，实现接缝 = 编码器视口原语（GFX/PAL additive，
    不动 IBlitPass 与 MSL）。门禁：Debug 42/42、Release 42/42、
    preview_renderer 51、c_abi_preview 78、gfx_device 30（含视口像素断言）、

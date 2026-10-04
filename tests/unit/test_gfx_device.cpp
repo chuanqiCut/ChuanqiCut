@@ -93,7 +93,7 @@ public:
                cq::SamplerHandle sampler)
         : pipeline_(pipeline), vbuf_(vbuf), tex_(tex), sampler_(sampler) {}
 
-    // 可选视口（UIA-012 用例 C）：设置后 Encode 先 SetViewport 再 Draw。
+    // 可选视口（UIA-014 用例 C）：设置后 Encode 先 SetViewport 再 Draw。
     void UseViewport(float x, float y, float w, float h) {
         vp_x_ = x; vp_y_ = y; vp_w_ = w; vp_h_ = h; has_vp_ = true;
     }
@@ -264,7 +264,7 @@ int main() {
             Check(br[0] > 200 && br[1] > 200 && br[2] < 55, "右下 = 黄");
 
             // =================================================================
-            // 用例 C：视口限定绘制（UIA-012 契约验收，ADR-0018）
+            // 用例 C：视口限定绘制（UIA-014 契约验收，ADR-0018）
             // 同一套资源，把绘制限制进 (16,16,32,32)：视口内正常采样，
             // 视口外保持清屏色 —— 证明 SetViewport 真的约束了写入区域。
             // =================================================================

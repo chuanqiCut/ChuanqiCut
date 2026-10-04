@@ -99,7 +99,7 @@ virtual ICommandEncoder* PalEncoder() = 0;   // 返回底层的 PAL 编码器
 ⚠️ 这是**逃生口**，不是常规路径。日常 RenderNode 仍应只用 `IGfxEncoder` 的 GFX 方法
 （`SetPipeline` / `SetTexture` / `Draw` …），不要绕过。
 
-## `IGfxEncoder` 新增 `SetViewport`（UIA-012 / ADR-0018，2026-10-04）
+## `IGfxEncoder` 新增 `SetViewport`（UIA-014 / ADR-0018，2026-10-04）
 
 ```cpp
 virtual void SetViewport(float x, float y, float width, float height) = 0;

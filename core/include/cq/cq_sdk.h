@@ -303,7 +303,7 @@ int32_t cq_preview_render_frame(CQPreview* preview, int64_t pts_value, int32_t p
 /* 改变离屏目标尺寸。会丢弃当前目标纹理（此前返回的 out_texture 失效）。 */
 int32_t cq_preview_resize(CQPreview* preview, uint32_t width, uint32_t height);
 
-/* 设置宽高比适配模式（UIA-012 / ADR-0018）。源帧与画布比例不同时的映射：
+/* 设置宽高比适配模式（UIA-014 / ADR-0018）。源帧与画布比例不同时的映射：
  *   0 = 拉伸铺满（默认，行为与引入本接口前一致）
  *   1 = contain：内切居中，letterbox/pillarbox（bar 区为黑），不裁内容
  *   2 = cover：外接居中，裁剪铺满，不留 bar

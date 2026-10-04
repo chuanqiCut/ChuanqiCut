@@ -149,8 +149,13 @@ cd apps/apple/packages/SharedUI && swift test --disable-sandbox        # 20/20
 2. **iOS 编译与真机验证**（传哲本人做，iPhone 17 Pro）：本机无 iOS 运行时，
    自 2026-10-03 起 iOS 侧改动**只有 macOS 路径被编译过**。本轮取帧提速后，
    真机重点验证：顺序播放实际帧率、回退 seek（时间线反向拖动）正确性。
-3. **P33 定位**：`MediaImportTests` 偶发失败（probe 成功但时长 0），根因未证 ——
-   真机"导入无反应"会是同一症状，别拖。
+3. **P33 定位 → 已修复（2026-10-04，本会话第二轮）**：根因三层叠加——
+   `loadValuesAsynchronouslyForKeys` 的 completion 只 signal 不查终态
+   （Failed 也触发）→ invalid duration 被 ToRational 转成 {0,1} 骗过检查 →
+   probe 带 0 成功返回。另发现并修复**更危险的挂死隐患**：加载失败后重建
+   asset 的 completion 可能永不触发（URL 级污染），`DISPATCH_TIME_FOREVER`
+   无限等 = Open 挂死。修复 = 终态检查 + 5s 有限超时 + 文件不存在跳过重试 +
+   probe 补 `value<=0` 防御。详见 pitfalls P33。
 4. UIA-006 属性面板（需先定 MODEL-003）、letterbox/fit、多轨合成（等 RENDER-001）、
    素材库整理（拷入沙箱，D3）。
 5. （低优）取帧流水线优化：`WaitForAsynchronousFrames` 等全部在途帧，

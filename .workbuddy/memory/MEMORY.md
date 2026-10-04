@@ -163,3 +163,12 @@ iOS 平台差异五处修复、门禁命令、红线摘录、下一步优先级�
 之类选项绕过（该 Xcode 的 clang 不识别，已撤销）。XCFramework 合并这最后一步待新会话处理，
 且接手时**先确认 .a 是否真的含 bitcode 段**——若未开 bitcode 却仍报 `Unknown header: 0xb17c0de`，
 说明根因不是 bitcode，需重新定位，不要沿用旧推测。
+
+## 构建环境约定（2026-10-04 起，多机事实）
+- **开发机不止一台**：此前所有"本机实测"来自 macOS 15.4 / AppleClang 17 的机器；
+  2026-10-04 起新机为 macOS 13.7 / Xcode 15.2（AppleClang 15）。引用 baselines
+  数字必须连同环境一起引用；跨机兼容写法见 pitfalls P36。
+- 新机构建：`pip3 install --user cmake` 后
+  `export CMAKE_BIN=$(ls ~/Library/Python/*/bin/cmake | head -1)` 再跑 build_core.sh。
+- 代码跨工具链兼容规则：不用 `std::va_list`（用全局 `::va_list` + `<cstdarg>`）；
+  不对 volatile 做复合赋值/自增（C++20 已弃用）。

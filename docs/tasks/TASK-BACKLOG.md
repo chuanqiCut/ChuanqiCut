@@ -347,3 +347,26 @@ INFRA-001/002 → CORE-001~005 → CORE-006(PAL冻结) → PALA-001/010
 - 进展追踪用项目管理系统（Issue/PR），**不要用聊天记录**
 - 任务完成判定由门禁决定，不由执行者自述（见 ARCH-001 §10）
 - 每次任务结束必须回写：架构事实变更 → ADR/模块文档；失败教训 → `.ai/memory/pitfalls.md`
+
+---
+
+## 9. 相机与首页（CAM，2026-10-04 新增；**同日架构转向 iOS 原生，ADR-0014**）
+
+> 用户需求：首页两入口 + 相机采集 + 实时特效（美颜/美型/美体/宠物/贴纸/滤镜/头部道具）+ 前后同开。
+> **ADR-0014**：相机域为 iOS 原生功能域（AVFoundation + Vision/ARKit + Core Image/Metal），
+> 不经 PAL/C ABI；编辑器内核维持 C++ 跨端。CAM-001 曾冻结的 PAL 契约当日回退。
+> 分 A/B/C 三期（SPEC-CAM-001 v1.1 §3）。
+
+| ID | 层 | 任务 | 依赖 | 写集 | 验收 |
+|---|---|---|---|---|---|
+| CAM-001 | SDK | ~~PAL 契约冻结~~ **已回退留档** | — | — | 39/39 门禁（回退后） |
+| CAM-002 | UI | 相机采集管理器（AVCaptureSession 前后摄/权限） | — | `iOSApp/Camera/CameraManager.swift` | 授权状态机单测；iOS 构建 |
+| CAM-003 | UI | 预览渲染链（MTKView + Core Image）+ 滤镜预设 | CAM-002 | `CameraVideoView/Renderer.swift`、SharedUI `CameraFilter.swift` | 滤镜单测；真机 ≥30fps |
+| CAM-004 | UI | 首页两入口 + 相机页 + EditorViewModel 惰性化 | CAM-002/003 | `HomeView.swift`、`CameraView.swift`、SharedUI `EditorScreen.swift` | SharedUI 全量；iOS 构建+权限 |
+| CAM-005 | UI | 录制（AVAssetWriter H.264+AAC）+ 存相册/进编辑器 | CAM-002~004 | `CameraRecorder.swift`、EditorScreen initialMedia | 产物校验 ≤2 帧偏差 |
+| CAM-011~014 | B 期 | Vision 检测 + ARKit 网格 / 磨皮美型(App 层 Metal) / 贴纸道具 | CAM-00x | 待 B 期任务卡 | 待细化 |
+| CAM-021~024 | C 期 | 双摄 MultiCam / MetalFX / 景深人像 / 宠物 / 美体 | CAM-011~ | 待 C 期任务卡 | 待细化 |
+
+**关键路径**：`CAM-002 → CAM-003 → CAM-004 → CAM-005`。
+**注意**：相机特效与编辑器特效是两套实现（ADR-0014 代价）——时间线滤镜仍等
+RENDER-001/红线 #6 路线，勿把相机滤镜直接当 SDK 能力引用。

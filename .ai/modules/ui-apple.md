@@ -286,3 +286,13 @@ PropertyPanelZone 的系统 PhotosPicker 已移除,换 `AlbumPickerScreen` sheet
   播放器未做;PHFetchResult 变更增量刷新未做(MVP 整段 reload)。
 - ⚠️ 门禁:同 UIA-012(P39 拒跑);parse 零新增错误类别;构建机验收 +
   真机项(权限弹窗/.limited/iCloud/滚动帧率)待执行。
+
+**v1.1 交互升级(同日,对齐剪映素材面板)**:默认**单击即插入**(点 cell →
+loading 覆盖 → 落 tmp → async 交付 → importMedia → loading 解除 + toast,
+面板保持打开,连续导入流);「多选」为显式模式(顶栏切换/长按 cell 直达,
+退出清空已选,批量按钮「添加（N）」,成功后托盘清空)。`MediaPickerViewModel`
+的交付回调改为 **async**(`onConfirm: ([URL]) async -> Void`)—— VM await
+父层 runBatch 完成才解除 cell loading,反馈闭环覆盖"落盘+进时间线"全程;
+`insertingIDs` 驱动 cell loading 覆盖层,`isPreparingFiles` 串行化快速连点
+(importInFlight 重入拒绝不触发)。iOS 半屏 detents(medium/large)+拖拽
+指示器(16.0 API),macOS 固定窗口。UIA-013 Spec 升 v1.1。

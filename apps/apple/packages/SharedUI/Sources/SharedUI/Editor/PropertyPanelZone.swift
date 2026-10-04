@@ -166,18 +166,17 @@ struct PropertyPanelZone: View {
                 importError = "选择失败：\(error.localizedDescription)"
             }
         }
-        // 自研相册浏览器（UIA-013）：确认交付的文件 URL 列表（顺序 = 选取序号）
-        // 走 UIA-012 同款 runBatch 批量汇入 —— resolveURL 直接命中已落盘的 tmp
+        // 自研相册浏览器（UIA-013，剪映式连续导入流）：**面板保持打开**，
+        // 单击插入 / 批量添加交付的 URL 列表（顺序 = 选取序号）直接汇入
+        // UIA-012 的 runBatch 批量链路 —— resolveURL 直接命中已落盘的 tmp
         // 文件（浏览器确认阶段已完成 PHAssetResource 落盘 / iCloud 拉取）。
+        // async 回调：runBatch 返回后浏览器才解除 cell loading。
         .sheet(isPresented: $showAlbumPicker) {
             AlbumPickerScreen { urls in
-                showAlbumPicker = false
-                Task { @MainActor in
-                    await photosImporter.runBatch(
-                        count: urls.count,
-                        resolveURL: { urls[$0] },
-                        importURL: photosImporter.sequencedImport(into: viewModel))
-                }
+                await photosImporter.runBatch(
+                    count: urls.count,
+                    resolveURL: { urls[$0] },
+                    importURL: photosImporter.sequencedImport(into: viewModel))
             }
         }
     }

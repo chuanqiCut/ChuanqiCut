@@ -59,6 +59,21 @@ parallel:    true(新目录为主,唯一高冲突点 project.yml 开工时协调
   已知留白(Spec §7):.limited 的"管理可选照片"系统面板 SwiftUI 接线、
   选择器内点击预览播放器,均为后续增量。
 
+## 状态补充（2026-10-04,v1.1 交互升级:对齐剪映）
+
+用户要求"对比主流如剪映的交互",Spec 升 v1.1,当轮完成:
+- **单击即插入**(默认模式):点 cell → loading 覆盖 → 落 tmp → async 交付
+  → importMedia → loading 解除 + toast,面板保持打开(连续导入流);
+  `onConfirm` 改 **async 回调**,VM await 到导入链路返回才复位 —— 反馈闭环
+  覆盖"落盘+进时间线"全程。`isPreparingFiles` 串行化快速连点。
+- **「多选」显式模式**:顶栏切换(长按 cell 单击模式直达);退出清空已选;
+  批量按钮文案「添加（N）」,成功后托盘清空。
+- **iOS 半屏面板**:presentationDetents medium/large + 拖拽指示器
+  (16.0 内 API;16.4+ 的 backgroundInteraction 不用)。
+- 新增 VM 用例 3 个(插入全链路 / 时长过滤与失败路径 / 模式切换清空),
+  AlbumPickerTests 共 15 用例;PropertyPanelZone 的 sheet 交付改 async 且
+  不再关闭面板。
+
 ## 背景
 
 Spec:`docs/specs/UIA-013-自研相册浏览器.md`;决策:ADR-0015(B 期自研、

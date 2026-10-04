@@ -121,7 +121,7 @@ final class AlbumPickerTests: XCTestCase {
 
     private func makeModel(fetcher: FixtureFetcher,
                            configuration: AlbumPickerConfiguration = .standard,
-                           onConfirm: @escaping ([URL]) -> Void = { _ in }) -> MediaPickerViewModel {
+                           onConfirm: @escaping ([URL]) async -> Void = { _ in }) -> MediaPickerViewModel {
         MediaPickerViewModel(fetcher: fetcher,
                              configuration: configuration,
                              onConfirm: onConfirm)
@@ -216,6 +216,8 @@ final class AlbumPickerTests: XCTestCase {
         XCTAssertEqual(delivered[1], urlB, "交付顺序同样 = 选取序号顺序")
         XCTAssertFalse(model.isPreparingFiles, "交付后加载态复位")
         XCTAssertNil(model.preparingError)
+        XCTAssertTrue(model.selection.isEmpty, "批量添加成功后清空选取（可紧接着选下一批）")
+        XCTAssertTrue(model.selectedInOrder.isEmpty, "托盘快照同步清空")
     }
 
     func testConfirmPartialFailureDeliversSuccesses() async {
@@ -277,6 +279,82 @@ final class AlbumPickerTests: XCTestCase {
         model.clearSelection()
         XCTAssertTrue(model.selection.isEmpty)
         XCTAssertTrue(model.selectedInOrder.isEmpty, "清空必须连托盘快照一起复位")
+    }
+
+    // MARK: 剪映式交互（v1.1：单击即插入 / 多选显式模式）
+
+    func testInsertSingleDeliversAndCoversFullPipeline() async {
+        let fetcher = FixtureFetcher(
+            albums: [AlbumSummary(id: "recent", title: "最近项目", assetCount: 1)],
+            assetsByAlbum: ["recent": [descriptor("a")]])
+        let urlA = URL(fileURLWithPath: "/tmp/cq_inserted.mov")
+        fetcher.resolveURLs["a"] = urlA
+        var delivered: [URL] = []
+        let model = makeModel(fetcher: fetcher) { urls in
+            delivered = urls
+            // 模拟父层导入耗时：交付回调在 runBatch 完成后才返回
+        }
+        model.loadAlbums()
+
+        let outcome = await model.insertSingle(model.assets[0])
+
+        XCTAssertEqual(outcome, .delivered)
+        XCTAssertEqual(delivered, [urlA], "单击即交付单条（无需多选确认）")
+        XCTAssertFalse(model.isPreparingFiles, "await 导入完成后 loading 才复位")
+        XCTAssertTrue(model.insertingIDs.isEmpty, "cell loading 覆盖层随交付移除")
+    }
+
+    func testInsertSingleAppliesDurationFilterAndBusyGuard() async {
+        struct Boom: Error, LocalizedError {
+            var errorDescription: String? { "Boom" }
+        }
+        var configuration = AlbumPickerConfiguration.standard
+        configuration.allowedDuration = 1...300
+        let fetcher = FixtureFetcher(
+            albums: [AlbumSummary(id: "recent", title: "最近项目", assetCount: 3)],
+            assetsByAlbum: ["recent": [descriptor("short", duration: 0.5),
+                                       descriptor("bad", duration: 30),
+                                       descriptor("ok", duration: 30)]])
+        fetcher.resolveErrors["bad"] = Boom()
+        var delivered: [URL] = []
+        let model = makeModel(fetcher: fetcher, configuration: configuration) {
+            delivered = $0
+        }
+        model.loadAlbums()
+
+        // 时长过滤在单击路径同样生效（不进入落盘）
+        XCTAssertEqual(await model.insertSingle(model.assets[0]),
+                       .rejectedDuration("时长不足 1 秒"))
+        XCTAssertTrue(delivered.isEmpty)
+
+        // 落盘失败：不交付、不崩溃，错误上抛给 toast
+        let failed = await model.insertSingle(model.assets[1])
+        XCTAssertEqual(failed, .failed("Boom"))
+        XCTAssertTrue(delivered.isEmpty)
+        XCTAssertTrue(model.insertingIDs.isEmpty, "失败后 cell loading 必须移除")
+
+        let ok = await model.insertSingle(model.assets[2])
+        XCTAssertEqual(ok, .delivered)
+        XCTAssertEqual(delivered.count, 1)
+    }
+
+    func testMultiSelectModeToggleClearsSelectionOnExit() {
+        let fetcher = FixtureFetcher(
+            albums: [AlbumSummary(id: "recent", title: "最近项目", assetCount: 2)],
+            assetsByAlbum: ["recent": [descriptor("a"), descriptor("b")]])
+        let model = makeModel(fetcher: fetcher)
+        model.loadAlbums()
+        XCTAssertFalse(model.isMultiSelectMode, "默认单击即插入模式")
+
+        model.setMultiSelectMode(true)
+        XCTAssertTrue(model.isMultiSelectMode)
+        model.toggleSelect(model.assets[0])
+        XCTAssertEqual(model.selection.count, 1)
+
+        model.setMultiSelectMode(false)
+        XCTAssertFalse(model.isMultiSelectMode)
+        XCTAssertTrue(model.selection.isEmpty, "退出多选清空已选（可预期语义）")
+        XCTAssertTrue(model.selectedInOrder.isEmpty)
     }
 
     // MARK: 角标文案（纯逻辑）

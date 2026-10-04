@@ -1,13 +1,19 @@
 // SharedUI — 自研相册浏览器主屏（UIA-013，Spec docs/specs/UIA-013-自研相册浏览器.md）
 //
-// 结构：顶栏（取消 / 相簿切换菜单 / 已选计数）→ 受限横幅 → 网格（或权限引导 /
-// 空态）→ 底部已选托盘（缩略图 + 序号 + 清空 + 完成）。
-// 交付链路：确认 → ViewModel 逐条落 tmp（iCloud 在此联网拉取）→ onDeliver 交付
-// 文件 URL 列表 → PropertyPanelZone 的 runBatch 汇入 importMedia（导入链路零
-// 分叉，D3 语义不变）。
+// 交互（v1.1，对齐剪映素材面板的连续导入流）：
+//   * **默认单击即插入**：点 cell → loading 覆盖 → 素材进时间线 → toast
+//     反馈，面板保持打开（半屏抽屉可拖拽收起），可连续点选 —— 选择与插入
+//     同步完成，无需"完成"确认。
+//   * **「多选」显式模式**：右上角切换；序号徽标 + 底部托盘 + 批量"添加"。
+//     长按 cell 直接进入多选并选中（相册 App 经典手势）。
+// 结构：顶栏（取消 / 相簿切换菜单 / 多选切换与计数）→ 受限横幅 → 网格 →
+// 底部托盘（多选模式）。
+// 交付链路：VM 逐条落 tmp（iCloud 在此联网拉取）→ **async** onDeliver 交付
+// 文件 URL 列表 → PropertyPanelZone 的 runBatch 汇入 importMedia（面板保持
+// 打开，VM await 到导入完成才结束 loading —— 反馈闭环）。
 //
-// 已知留白（Spec §7）：受限模式"管理可选照片"系统面板只有 UIKit 入口，SwiftUI
-// 接线留后续增量，横幅暂为说明性；选择器内点击预览播放器为后续增量。
+// 已知留白（Spec §7）：受限模式"管理可选照片"系统面板只有 UIKit 入口；
+// 选择器内点击预览播放器为后续增量。
 
 import SwiftUI
 
@@ -19,14 +25,16 @@ struct AlbumPickerScreen: View {
     @StateObject private var permission = AlbumPermissionModel()
     @Environment(\.dismiss) private var dismiss
 
-    /// 交付成功的文件 URL（顺序 = 选取序号顺序）。父层关闭 sheet 并汇入 importMedia。
-    private let onDeliver: ([URL]) -> Void
+    /// 交付成功的文件 URL（顺序 = 选取序号顺序）。async：父层在此完成导入
+    /// （runBatch），VM await 到返回才解除 loading。**面板不在此关闭** ——
+    /// 剪映式连续导入流，收起靠拖拽指示器 / 取消按钮。
+    private let onDeliver: ([URL]) async -> Void
 
-    init(onDeliver: @escaping ([URL]) -> Void) {
+    init(onDeliver: @escaping ([URL]) async -> Void) {
         self.onDeliver = onDeliver
         _model = StateObject(wrappedValue: MediaPickerViewModel(
             fetcher: PhotoKitAlbumStore(),
-            onConfirm: { urls in onDeliver(urls) }))
+            onConfirm: { urls in await onDeliver(urls) }))
     }
 
     // 提示浮层（满选 / 时长超限 / 部分失败）
@@ -41,14 +49,16 @@ struct AlbumPickerScreen: View {
             }
             Divider().overlay(Theme.divider)
             content
-            if !model.selection.isEmpty {
+            if model.isMultiSelectMode && !model.selection.isEmpty {
                 bottomTray.transition(.move(edge: .bottom).combined(with: .opacity))
             }
         }
         .background(Theme.editorBackground)
         .animation(.spring(response: 0.32, dampingFraction: 0.82), value: model.selection)
+        .animation(.spring(response: 0.32, dampingFraction: 0.82), value: model.isMultiSelectMode)
         .animation(.easeOut(duration: 0.18), value: permission.access)
         .pickerSheetFrame()
+        .mediaPickerPanelPresentation()
         .overlay(alignment: .bottom) { toast }
         .task {
             await permission.requestIfNeeded()
@@ -77,9 +87,26 @@ struct AlbumPickerScreen: View {
 
             Spacer()
 
-            Text("\(model.selection.count)/\(model.selection.maxCount)")
-                .font(.callout.monospacedDigit())
-                .foregroundStyle(model.selection.isFull ? Color.orange : Theme.secondaryText)
+            // 右侧：多选切换 + 计数（剪映范式：默认单击即插入，多选显式开启）
+            if model.isMultiSelectMode {
+                Text("\(model.selection.count)/\(model.selection.maxCount)")
+                    .font(.callout.monospacedDigit())
+                    .foregroundStyle(model.selection.isFull ? Color.orange : Theme.secondaryText)
+            }
+            Button {
+                withAnimation(.spring(response: 0.32, dampingFraction: 0.82)) {
+                    model.setMultiSelectMode(!model.isMultiSelectMode)
+                }
+            } label: {
+                HStack(spacing: 3) {
+                    Image(systemName: model.isMultiSelectMode
+                          ? "checkmark.circle.fill" : "checkmark.circle")
+                    Text("多选")
+                }
+                .font(.callout.weight(.medium))
+                .foregroundStyle(model.isMultiSelectMode ? PickerTheme.accent : Theme.secondaryText)
+            }
+            .disabled(model.isPreparingFiles)
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 10)
@@ -179,12 +206,23 @@ struct AlbumPickerScreen: View {
                     MediaGridCell(
                         assetDescriptor: descriptor,
                         fetcher: model.fetcher,
-                        orderNumber: model.selection.orderNumber(of: descriptor.id),
-                        dimmedByFull: model.selection.isFull,
+                        // 徽标/满选置灰只在多选模式出现；单击模式的反馈是 loading 覆盖层
+                        orderNumber: model.isMultiSelectMode
+                            ? model.selection.orderNumber(of: descriptor.id) : nil,
+                        dimmedByFull: model.isMultiSelectMode && model.selection.isFull,
                         rejectionReason: DurationFilter.rejectionReason(
                             durationSeconds: descriptor.durationSeconds,
                             allowed: model.configuration.allowedDuration),
-                        onTap: { handleTap(descriptor) })
+                        isLoading: model.insertingIDs.contains(descriptor.id),
+                        onTap: { handleTap(descriptor) },
+                        // 长按：单击模式直接进入多选并选中（相册 App 经典手势）
+                        onLongPress: model.isMultiSelectMode ? nil : {
+                            withAnimation(.spring(response: 0.32, dampingFraction: 0.82)) {
+                                model.setMultiSelectMode(true)
+                            }
+                            _ = model.toggleSelect(descriptor)
+                            PickerFeedback.selectionChanged()
+                        })
                 }
             }
             .padding(.bottom, 8)
@@ -227,7 +265,7 @@ struct AlbumPickerScreen: View {
             Task { await model.confirm() }
         } label: {
             Text(model.isPreparingFiles ? (model.preparingText ?? "准备中…")
-                 : (model.selection.isEmpty ? "完成" : "完成（\(model.selection.count)）"))
+                 : "添加（\(model.selection.count)）")
                 .font(.callout.weight(.semibold))
                 .foregroundStyle(.white)
                 .padding(.horizontal, 18)
@@ -238,21 +276,39 @@ struct AlbumPickerScreen: View {
                                    : PickerTheme.accent))
         }
         .disabled(model.selection.isEmpty || model.isPreparingFiles)
+        .accessibilityLabel("添加 \(model.selection.count) 个所选视频到时间线")
     }
 
     // MARK: 交互
 
     private func handleTap(_ descriptor: AssetDescriptor) {
         guard !model.isPreparingFiles else { return }
-        let feedback = model.toggleSelect(descriptor)
-        PickerFeedback.selectionChanged()
-        switch feedback {
-        case .selected, .deselected:
-            break
-        case .rejectedFull:
-            showToast("最多选择 \(model.selection.maxCount) 个视频")
-        case .rejectedDuration(let reason):
-            showToast(reason)
+        if model.isMultiSelectMode {
+            let feedback = model.toggleSelect(descriptor)
+            PickerFeedback.selectionChanged()
+            switch feedback {
+            case .selected, .deselected:
+                break
+            case .rejectedFull:
+                showToast("最多选择 \(model.selection.maxCount) 个视频")
+            case .rejectedDuration(let reason):
+                showToast(reason)
+            }
+        } else {
+            // 单击即插入（剪映式）：loading 覆盖在 cell 上，await 导入完成后 toast
+            Task {
+                let outcome = await model.insertSingle(descriptor)
+                switch outcome {
+                case .delivered:
+                    showToast("已添加到时间线")
+                case .rejectedDuration(let reason):
+                    showToast(reason)
+                case .failed(let detail):
+                    showToast("添加失败：\(detail)")
+                case .busy:
+                    showToast("正在处理上一条…")
+                }
+            }
         }
     }
 
@@ -414,13 +470,26 @@ enum PickerFeedback {
     }
 }
 
-// MARK: - sheet 尺寸（macOS 给定合理窗口，iOS 全屏自适应）
+// MARK: - sheet 尺寸与呈现形态（macOS 固定窗口；iOS 半屏抽屉可拉满 —— 剪映式素材面板）
 
 private extension View {
     @ViewBuilder
     func pickerSheetFrame() -> some View {
         #if canImport(AppKit)
         frame(minWidth: 720, idealWidth: 880, minHeight: 560, idealHeight: 640)
+        #else
+        self
+        #endif
+    }
+
+    /// iOS：medium/large 两档 detents + 拖拽指示器（iOS 16 基线内；
+    /// presentationBackgroundInteraction 需 16.4+，超出基线不用）。
+    /// macOS：窗口形态，无需 detents。
+    @ViewBuilder
+    func mediaPickerPanelPresentation() -> some View {
+        #if canImport(UIKit)
+        presentationDetents([.medium, .large])
+            .presentationDragIndicator(.visible)
         #else
         self
         #endif

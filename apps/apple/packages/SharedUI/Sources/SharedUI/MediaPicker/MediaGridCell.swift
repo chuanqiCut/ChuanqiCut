@@ -69,13 +69,17 @@ struct PlatformImageView: View {
 struct MediaGridCell: View {
 
     let descriptor: AssetDescriptor
-    /// 徽标序号；nil = 未选中。
+    /// 徽标序号；nil = 未选中（或非多选模式 —— 徽标只在多选模式出现）。
     let orderNumber: Int?
-    /// 满选导致的置灰（未选中且已达上限）。
+    /// 满选导致的置灰（仅多选模式会出现）。
     let dimmedByFull: Bool
     /// 时长过滤的不可选原因；非 nil = 灰化 + 文案 + 不可点。
     let rejectionReason: String?
+    /// 单击插入进行中（剪映式：loading 覆盖"落 tmp + 进时间线"全程）。
+    let isLoading: Bool
     let onTap: () -> Void
+    /// 长按进多选并选中本条（仅单击模式提供；nil = 无长按行为）。
+    let onLongPress: (() -> Void)?
 
     var body: some View {
         GeometryReader { proxy in
@@ -96,8 +100,10 @@ struct MediaGridCell: View {
             .overlay(alignment: .bottomTrailing) { durationBadge }
             .overlay(alignment: .bottomLeading) { cloudBadge }
             .overlay(alignment: .center) { rejectionOverlay }
+            .overlay { insertingOverlay }
             .contentShape(Rectangle())
             .onTapGesture(perform: onTap)
+            .onLongPressGesture(minimumDuration: 0.45) { onLongPress?() }
             .onAppear { if rejectionReason == nil { loader.load() } }
             .onDisappear { loader.cancel() }
         }
@@ -114,18 +120,38 @@ struct MediaGridCell: View {
          orderNumber: Int?,
          dimmedByFull: Bool,
          rejectionReason: String?,
-         onTap: @escaping () -> Void) {
+         isLoading: Bool = false,
+         onTap: @escaping () -> Void,
+         onLongPress: (() -> Void)? = nil) {
         self.descriptor = assetDescriptor
         self.orderNumber = orderNumber
         self.dimmedByFull = dimmedByFull
         self.rejectionReason = rejectionReason
+        self.isLoading = isLoading
         self.onTap = onTap
+        self.onLongPress = onLongPress
         _loader = StateObject(wrappedValue: ThumbnailLoader(
             assetID: assetDescriptor.id, fetcher: fetcher))
     }
 
     private let descriptor: AssetDescriptor
     private let onTap: () -> Void
+    private let onLongPress: (() -> Void)?
+
+    // ---- 单击插入的 loading 覆盖层 ----
+
+    @ViewBuilder
+    private var insertingOverlay: some View {
+        if isLoading {
+            ZStack {
+                Theme.editorBackground.opacity(0.5)
+                ProgressView()
+                    .tint(.white)
+                    .scaleEffect(0.85)
+            }
+            .allowsHitTesting(false)
+        }
+    }
 
     // ---- 缩略图 / 占位 ----
 

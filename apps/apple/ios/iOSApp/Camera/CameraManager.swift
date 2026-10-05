@@ -11,6 +11,10 @@
 //
 // 双摄（AVCaptureMultiCamSession）按 SPEC-CAM-001 v1.1 归 CAM-021，本类留接口不实现：
 // isMultiCamSupported 运行时查询（pitfalls P38：该类仅 iOS）。
+//
+// @unchecked Sendable：可变状态的线程安全由上面的队列独占纪律担保（sessionQueue
+// 串行 + 帧回调闭包在会话启动前接线）；Swift 6 严格并发下 DispatchQueue.async
+// 的 @Sendable 闭包捕获 self 依赖该声明（P49）。
 
 import AVFoundation
 import CoreMedia
@@ -134,16 +138,18 @@ final class CameraManager: NSObject, @unchecked Sendable {
     /// 统一走 process 链，保证与预览同序），错误/失败以 nil 上抛（诚实暴露）。
     /// 可在视频录制中调用（AVFoundation 支持拍录并发）。
     func capturePhoto(onDone: @escaping (_ pixelBuffer: CVImageBuffer?) -> Void) {
-        // onDone 的签名含 CVImageBuffer（CF 类型，不 Sendable），整体闭包因此在
-        // @Sendable 的 sessionQueue 闭包里被拒。安全性依据：闭包**强捕获** buffer，
-        // CVPixelBuffer 引用计数不会被池回收；消费方（CameraViewModel）只读渲染。
-        nonisolated(unsafe) let done = onDone
+        // onDone 的签名含 CVImageBuffer（CF 类型，不 Sendable），保持非 @Sendable，
+        // 经 PhotoRelay（@unchecked Sendable）转交——@Sendable 的 async 闭包只捕获
+        // relay，不捕获 onDone 本体（P49）。失败路径（设备缺失/未配置）同样回调 nil。
+        // 跨线程安全性依据：闭包**强捕获** buffer，CVPixelBuffer 引用计数不会被
+        // 池回收；消费方（CameraViewModel）只读渲染。
+        let relay = photoRelay
+        relay.onPhoto = onDone
         sessionQueue.async { [weak self] in
             guard let self, self.configured, self.session.outputs.contains(self.photoOutput) else {
-                done(nil)
+                relay.deliver(nil)
                 return
             }
-            self.photoRelay.onPhoto = done
             let settings = AVCapturePhotoSettings()
             // 竖屏/镜像沿用 connection 的呈现设置（photoOutput 的 connection 一并设置）。
             if let connection = self.photoOutput.connection(with: .video) {
@@ -227,10 +233,9 @@ final class CameraManager: NSObject, @unchecked Sendable {
     }
 
     /// 竖屏旋转：iOS 17+ 用 videoRotationAngle（旧 API 已弃用），16 走旧 API。
+    /// 支持性检查必须各走各的分支：isVideoRotationAngleSupported 本身是 iOS 17+ API，
+    /// 不能放在门控之前统一判断（编译错 + iOS 16 真机 unrecognized selector 崩溃）。
     private func applyPortraitOrientation(_ connection: AVCaptureConnection) {
-        guard connection.isVideoRotationAngleSupported(90) || connection.isVideoOrientationSupported else {
-            return
-        }
         if #available(iOS 17.0, *) {
             if connection.isVideoRotationAngleSupported(90) {
                 connection.videoRotationAngle = 90
@@ -263,19 +268,24 @@ private final class FrameRelay: NSObject, AVCaptureVideoDataOutputSampleBufferDe
 
 // MARK: - 拍照中继（AVCapturePhotoCaptureDelegate 回调在系统队列）
 
-private final class PhotoRelay: NSObject, AVCapturePhotoCaptureDelegate {
+private final class PhotoRelay: NSObject, AVCapturePhotoCaptureDelegate, @unchecked Sendable {
 
     var onPhoto: ((_ pixelBuffer: CVImageBuffer?) -> Void)?
+
+    /// 派发一次性拍照回调并清空（拍照单发，不重复触发）。
+    func deliver(_ buffer: CVImageBuffer?) {
+        let callback = onPhoto
+        onPhoto = nil
+        callback?(buffer)
+    }
 
     func photoOutput(_ output: AVCapturePhotoOutput,
                      didFinishProcessingPhoto photo: AVCapturePhoto,
                      error: Error?) {
         guard error == nil, let buffer = photo.pixelBuffer else {
-            onPhoto?(nil)
-            onPhoto = nil
+            deliver(nil)
             return
         }
-        onPhoto?(buffer)
-        onPhoto = nil
+        deliver(buffer)
     }
 }

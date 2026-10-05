@@ -27,7 +27,7 @@ write_set:   core/include/cq/pal/gfx.h, core/include/cq/gfx/gfx_device.h,
              tests/unit/test_c_abi_preview.c
 read_set:    core/include/cq/preview/preview_pump.h, core/src/gfx/*（其余）,
              pal/apple/blit_pass.mm, bindings/swift 其余, SharedUI 其余,
-             docs/HANDOFF-004, .ai/modules/{preview,gfx,pal-apple}.md
+             docs/handoff/HANDOFF-004, .ai/modules/{preview,gfx,pal-apple}.md
 deps:        []（无前置任务；相机链路写集边界明确避开 cq_sdk.h / SharedUI，无冲突）
 acceptance:
   - 默认行为不变：FitMode 默认 kStretch，既有全部像素断言不改一字通过

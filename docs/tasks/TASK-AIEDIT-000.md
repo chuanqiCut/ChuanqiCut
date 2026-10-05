@@ -2,7 +2,7 @@
 
 > 日期：2026-10-04
 > Spec：`docs/specs/AIEDIT-001-智能成片.md`
-> 架构：`docs/decisions/ADR-0019-智能成片与大模型接入边界.md`
+> 架构：`docs/decisions/ADR-0020-智能成片与大模型接入边界.md`
 > 调研：`docs/research/RESEARCH-003-智能成片竞品调研.md`
 > 批次编号：AIEDIT-001~011（P0）+ AIEDIT-010（P1 占位）
 
@@ -34,7 +34,7 @@ P1                       010 脚本分镜制作（单列入口，伞占位）
 
 | 批次 | 任务 | 并行依据（写集互不相交） |
 |---|---|---|
-| 1 | 001 | 串行先行：schema/接口是一切下游的契约（ADR-0019 决策 2/3） |
+| 1 | 001 | 串行先行：schema/接口是一切下游的契约（ADR-0020 决策 2/3） |
 | 2 | 002、003、004、006、011 | 五路并行；003 触碰 `third_party/manifest.toml`（高冲突，本批次内唯一触碰者）；006 触碰 `core/include/cq/command/command.h`（高冲突，同前）；其余全为新目录 |
 | 3 | 005 | 依赖 001+004；与批次 2 后段串行 |
 | 4 | 007 | `cq_sdk.h` 高冲突 + bindings，Integrator 性质，独占批次 |

@@ -3,7 +3,7 @@
 > 版本：v1.0（2026-10-04 立项）
 > 日期：2026-10-04
 > 调研依据：`docs/research/RESEARCH-003-智能成片竞品调研.md`（竞品对比与差异化定位）
-> 架构决策：`docs/decisions/ADR-0019-智能成片与大模型接入边界.md`（**先读它**，本 Spec 的分层全部由它约束）
+> 架构决策：`docs/decisions/ADR-0020-智能成片与大模型接入边界.md`（**先读它**，本 Spec 的分层全部由它约束）
 > 上游依赖现状：UIA-011/012/013（导入链）、MODEL-002（Command 底座）、UIA-009/010（Session/预览）
 > 任务拆解：`docs/tasks/TASK-AIEDIT-000.md`（伞卡 + DAG）
 
@@ -38,7 +38,7 @@
 
 ### 2.2 完全缺失（本批次新建）
 
-1. **网络层**：core/pal 零网络设施，manifest 无网络依赖 → ADR-0019 决策 2：`pal/<platform>/net/`（Apple 用 URLSession 原生，不引第三方）。
+1. **网络层**：core/pal 零网络设施，manifest 无网络依赖 → ADR-0020 决策 2：`pal/<platform>/net/`（Apple 用 URLSession 原生，不引第三方）。
 2. **LLM 接入**：全仓无任何大模型代码/文档/任务 → `ILlmClient` 抽象 + Prompt 管线 + EditPlan 校验。
 3. **特征提取**：无人脸/场景切分/运动/音频分析代码（CAM-011 Vision 桥是相机实时域 UI 层，不覆盖导入素材分析；AI-010 系列在 backlog 未排期）→ `core/src/ai/analysis/`。
 4. **文件音频解码**：FFmpeg 仅 demux 档（无 decode），"文件→PCM"不可用 → AIEDIT-003 内扩档（走 cq-dependency-governance）。
@@ -127,7 +127,7 @@
 }
 ```
 
-- 特征全部为**聚合统计**，不含帧图像、不含可逆还原素材的信息——这是"素材不出设备"承诺的技术基础（ADR-0019 决策 1）。
+- 特征全部为**聚合统计**，不含帧图像、不含可逆还原素材的信息——这是"素材不出设备"承诺的技术基础（ADR-0020 决策 1）。
 - 人脸只报 `count/area_ratio/front_facing` 布尔级信息，**不做识别**、不报身份特征。
 - P0 的视觉特征用经典算法实现（帧差/直方图/拉普拉斯方差 + 已规划的 AI-010 人脸检测模型若就绪则替换人脸项），**不引入新模型资产**（不触发 dependency-governance 重评审；模型替换是 P1 优化）。
 
@@ -150,7 +150,7 @@
 
 ## 6. EditPlan（大模型决策契约，schema v1）
 
-### 6.1 设计原则（ADR-0019 决策 3）
+### 6.1 设计原则（ADR-0020 决策 3）
 
 LLM 输出**有界动词集的 action 列表**，不是时间线。动词集 P0 共 8 个：
 `select_intro / select_highlight / select_outro`（语义标注，辅助叙事）、`place_clip`、`remove_range`、`trim_clip`、`reorder`、`set_transition`、`set_bgm_placeholder`（P0 仅记录意图，P0.5 执行）。
@@ -210,7 +210,7 @@ LLM 输出**有界动词集的 action 列表**，不是时间线。动词集 P0 
 
 - **接口**：`ILlmClient::Complete(LlmRequest) -> LlmResult`（同步语义、内部异步）；`INetTransport::PostJson/PostSse`。Apple 实现：URLSession + `AsyncSequence` 解析 SSE。
 - **配置**：`cq_ai_llm_config{endpoint, model, api_key_ref, temperature, max_tokens}`——key 不落盘明文（iOS Keychain，绑定层职责）；配置为空 → 直接走降级引擎。
-- **供应商**：协议收敛 OpenAI-compatible（ADR-0019 决策 5）。P0 只验证一家 [开放问题 §12.1]。
+- **供应商**：协议收敛 OpenAI-compatible（ADR-0020 决策 5）。P0 只验证一家 [开放问题 §12.1]。
 - **超时与重试**：连接 10s / 总 60s [E]，网络错误重试 1 次；用户可随时取消（CancelToken，与 inference.h 同款模式）。
 - **降级规则引擎**（AIEDIT-011）：静音剔除 → 质量排序 → 高光优先 → 固定节奏模板（快-慢-快）→ 输出**同 schema** EditPlan（`"generator": "local_rules"` 标注，UI 显示"离线模式"）。无网也能出片（对标 iMovie 的离线可用，RESEARCH-003 §2.2）。
 
@@ -242,7 +242,7 @@ HomeView 新增入口卡「智能成片」(route: .smartCut)
 
 ## 11. 非目标（明确不做）
 
-- ❌ **不上传原始素材/原始帧**（可选增强帧描述需显式授权，本期不实现，ADR-0019 决策 1）。
+- ❌ **不上传原始素材/原始帧**（可选增强帧描述需显式授权，本期不实现，ADR-0020 决策 1）。
 - ❌ 不做人脸识别/身份特征，只做检测计数（隐私红线）。
 - ❌ 不做生成式视频/图像填充（Runway/即梦类；脚本分镜的缺口素材本期用"素材库匹配 + 占位卡"解决）。
 - ❌ 不做 TTS 配音（P1 随脚本成片评估）。

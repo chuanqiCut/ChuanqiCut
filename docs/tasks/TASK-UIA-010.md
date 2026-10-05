@@ -4,7 +4,7 @@
 id:          TASK-UIA-010
 layer:       SDK + 绑定 + UI
 goal:        时间线能真正播放：播放头由内核时钟推进，画面随之前进
-input:       [docs/HANDOFF-003 §2「播放驱动」, docs/tasks/TASK-UIA-005.md, .ai/modules/{preview,ui-apple}.md]
+input:       [docs/handoff/HANDOFF-003 §2「播放驱动」, docs/tasks/TASK-UIA-005.md, .ai/modules/{preview,ui-apple}.md]
 output:      [PlayerClock（内核）+ C ABI + Swift 封装 + SharedUI 播放入口 + 测试
              + PreviewPump（取帧泵，把取帧/渲染搬离主线程）]
 write_set:   core/include/cq/preview/player_clock.h（新）, core/src/preview/player_clock.cpp（新）,

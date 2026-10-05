@@ -763,19 +763,37 @@ CAM-012 首次对相机模块做全量 `-typecheck`（P46 技法），一次抓�
 **规则**：相机模块新文件合入前必须过 iphonesimulator SDK 全量 -typecheck
 （-parse 只验语法不验类型/API/可用性）；harness 已是固定工具。
 
-### P49 · skill/文档描述"目标态"脚本不存在 —— 新会话照文档跑必失败
-- 现象：`cq-build-test` skill 引用 `tools/ci/run_gate.sh`、`tools/qa/golden_compare.sh`、
-  `tools/shaders/build.sh`、`tools/build/clean.sh`，四个全不存在（`tools/compliance/`、
-  `tools/shaders/` 只有 .gitkeep）；新会话按 skill 执行直接报错，此前无人发现
-  因为没人真照着跑过。
-- 根因：skill 写的是设计目标态（BACKLOG 的 INFRA-006/QA-002 未落地），文档没区分
-  "现状 / 目标"。
-- 修复：`run_gate.sh` 已落地（INFRA-010，2026-10-05）；golden 命令改指真实的
-  `tests/golden/verify.py`；shader / clean 显式标注未实现。
-- 防复发规则：**文档/skill 里出现的每个命令路径必须真实存在**；引用未实现脚本
-  必须标"（未实现，BACKLOG <ID>）"。已写进 `docs/CODESTYLE.md` §5 与
-  cq-code-review 巡检清单。
-- 日期 / 来源 / 验证状态：2026-10-05 / CODE-001 全库巡检 / **verified**（脚本逐个 ls 核实）
+### P49 · App 目标（ChuanqiCutApp）从未整体编译过，HomeView 首页三连错（Swift 6.1 语言模式）
+用户在构建机报"主分支首页编译不通过"。App 目标 SWIFT_VERSION=6.1（Swift 6 语言
+模式严格并发），而既有验证（-parse / 默认模式 -typecheck）都查不出语言模式错误。
+本轮静态审查（无编译机，未实测编译，**hypothesis→构建机验收**）定位并修复：
+1. HomeView.swift：用了 `ChuanqiCut.version` 但缺 `import ChuanqiCut`（SharedUI
+   无 @_exported 转发，Swift 不允许传递依赖取符号）→ `cannot find 'ChuanqiCut'
+   in scope`，正中"首页编译不通过"；
+2. CameraManager.applyPortraitOrientation：`isVideoRotationAngleSupported(90)`
+   （iOS 17+）在 `#available(iOS 17.0,*)` 门控之前调用——编译错，且 iOS 16 真机
+   unrecognized selector 运行时崩溃；已改为门控内各分支自查支持性；
+3. CameraViewModel.capturePhoto：`var processed` 被 `Task { @MainActor in }`
+   （@Sendable）捕获 → `reference to captured var in concurrently-executing
+   code`；改 `let` 确定初始化；
+4. CameraManager（普通 final class NSObject）被 4 处 `DispatchQueue.async`
+   @Sendable 闭包捕获 → Swift 6 必报 non-sendable capture；类标
+   `@unchecked Sendable`（队列独占纪律担保），capturePhoto 的 onDone 经
+   PhotoRelay（@unchecked Sendable，新增 deliver()）转交，@Sendable 闭包不再捕获
+   非 Sendable 的 onDone。
+5. SharedUI `AlbumPickerScreen.PickerFeedback`：nonisolated static func 的
+   `#if canImport(UIKit)` 分支里用 UIImpactFeedbackGenerator / UIApplication.shared
+   （全部 @MainActor）→ iOS 编译路径必报 main actor-isolated call；macOS 走
+   AppKit 分支（NSWorkspace 无整类标注）故 swift test 从未暴露。enum 标
+   @MainActor（调用点全在 View 内，零改动）。SharedUI 其余 20 文件 iOS 16 视角
+   静态审查无可编译级问题。
+**规则**：App 目标级 typecheck 必须带 `-swift-version 6` 跑（与 SWIFT_VERSION=6.1
+一致），否则严格并发错误全部放行；**且 `#if canImport(UIKit)` 分支是 macOS
+验证的盲区，iOS-only 代码至少做一次 iOS 目标 typecheck**。
+本批修复只过了 -parse（本机 Swift 5.5 无 iOS 16 SDK），类型级验证待构建机。
+- 日期 / 来源 / 验证状态：2026-10-05 / 双机集成修复（用户报首页编译失败）/
+  **未实测**：静态审查 + -parse；-typecheck/xcodebuild 待构建机
+
 
 ### P50 · bash 3.2（macOS 自带）下 `$var` 紧跟全角字符 = unbound variable
 - 现象：run_gate.sh 首版在步骤失败的分支报
@@ -876,3 +894,18 @@ CAM-012 首次对相机模块做全量 `-typecheck`（P46 技法），一次抓�
   风险**，不能因为编译过就放着；注入式依赖改签名 = 改 API，必须连带跑测试。
 - 日期 / 来源 / 验证状态：2026-10-05 / SharedUI 相册优化 / **verified**
   （5 条警告清零；SharedUI swift test 71/71；iOSApp 构建 0 error 0 项目警告）
+
+### P58 · skill/文档描述"目标态"脚本不存在 —— 新会话照文档跑必失败
+> ⚠️ 2026-10-05 编号更正（双机合并收口）：本条原编 P49，与集成机同号条目（App 目标从未整体编译）撞号，按让位纪律改号 P58。
+- 现象：`cq-build-test` skill 引用 `tools/ci/run_gate.sh`、`tools/qa/golden_compare.sh`、
+  `tools/shaders/build.sh`、`tools/build/clean.sh`，四个全不存在（`tools/compliance/`、
+  `tools/shaders/` 只有 .gitkeep）；新会话按 skill 执行直接报错，此前无人发现
+  因为没人真照着跑过。
+- 根因：skill 写的是设计目标态（BACKLOG 的 INFRA-006/QA-002 未落地），文档没区分
+  "现状 / 目标"。
+- 修复：`run_gate.sh` 已落地（INFRA-010，2026-10-05）；golden 命令改指真实的
+  `tests/golden/verify.py`；shader / clean 显式标注未实现。
+- 防复发规则：**文档/skill 里出现的每个命令路径必须真实存在**；引用未实现脚本
+  必须标"（未实现，BACKLOG <ID>）"。已写进 `docs/CODESTYLE.md` §5 与
+  cq-code-review 巡检清单。
+- 日期 / 来源 / 验证状态：2026-10-05 / CODE-001 全库巡检 / **verified**（脚本逐个 ls 核实）

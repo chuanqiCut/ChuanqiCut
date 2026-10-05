@@ -256,3 +256,17 @@ iOS 平台差异五处修复、门禁命令、红线摘录、下一步优先级�
   fromMetalLibraryData:)`，加载失败静默降级，不抛错不崩。
 - **相机模块 Swift 文件合入前必须过 iphonesimulator SDK 全量 -typecheck**
   （P46/P48：-parse 已两次证明会放行真错误；A 期 4 文件 7 处存量错误即证据）。
+
+## 智能成片硬规则（2026-10-04 定，ADR-0016）
+
+- **原始素材默认不出设备**：上云只有 FeatureReport（KB 级聚合统计）+ 用户消息；
+  人脸只报 count/area_ratio，不做识别。可选帧上传须显式授权，默认关闭。
+- **LLM 输出 = EditPlan（`cq.editplan/1`）action 列表**（8 动词封顶），不是时间线；
+  时间字段一律 `{value, timescale}` 且 timescale==120000，**浮点秒一律非法**；
+  未知 schema 版本拒绝并降级，不猜测解析。C++ 校验器是唯一权威。
+- **AI 产物全走 Command**：与人手编辑同一撤销栈，一次应用 = 一个可撤销批次；
+  AI 链路禁止直接改 ModelSnapshot。
+- **离线降级是产品能力**：无网/无 key/解析三连失败 → 本地规则引擎出同 schema
+  plan（`generator: local_rules`），UI 明示"离线模式"。
+- 供应商协议收敛 OpenAI-compatible（可插拔）；语音输入走各端系统 STT（UI 层），
+  音频不上传。合规备案问题上线前过法务（HANDOFF-005 §6）。

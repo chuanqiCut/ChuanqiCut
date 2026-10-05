@@ -12,7 +12,7 @@ Metal kernel。iOS 上 `CIKernel(source:)` 不可用，只能走
 `CIKernel(functionName:fromMetalLibraryData:)`，即编译期必须产出一个合法的 metallib
 并打进 bundle。
 
-该文件此前**从未被编译过**（11 个源文件因工程产物陈旧被漏收录，见 P51），
+该文件此前**从未被编译过**（11 个源文件因工程产物陈旧被漏收录，见 P54），
 首次编译即暴露整条链路不成立。
 
 ## 决策

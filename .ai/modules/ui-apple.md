@@ -83,18 +83,22 @@ cd apps/apple/mac && xcodegen generate && bundle install && bundle exec pod inst
 xcodebuild build -workspace ChuanqiCut.xcworkspace -scheme ChuanqiCutMacApp \
     -destination 'platform=macOS' CODE_SIGNING_ALLOWED=NO
 
-# iOS App：编译用 -sdk iphoneos18.4（platform runtime 缺失时 destination 解析不了；
-# legacy -target 模式绕过 destination，需把 pod 目标与 app 目标建到同一 BUILD_DIR）
+# iOS App（INFRA-009 起，workspace 编译）
 cd apps/apple/ios && xcodegen generate && bundle install && bundle exec pod install
 xcodebuild build -workspace ChuanqiCut.xcworkspace -scheme ChuanqiCutApp \
-    -sdk iphoneos18.4 CODE_SIGNING_ALLOWED=NO
-# 上式 destination 报"not installed"时的等价 legacy 链（BUILD_DIR 三者一致）：
-#   for T in ChuanqiCut SharedUI Pods-ChuanqiCutApp; do \
-#     SYMROOT="$PWD/build" BUILD_DIR="$PWD/build" xcodebuild build \
-#       -project Pods/Pods.xcodeproj -target $T -sdk iphoneos18.4; done
-#   xcodebuild build -project ChuanqiCut.xcodeproj -target ChuanqiCutApp \
-#     -sdk iphoneos18.4 CODE_SIGNING_ALLOWED=NO
+    -sdk iphoneos -destination 'generic/platform=iOS' CODE_SIGNING_ALLOWED=NO
+# 模拟器侧（不需要真机/签名，日常门禁用这个）：
+#   -sdk iphonesimulator -destination 'generic/platform=iOS Simulator'
 # 运行仅在真机可用时（xcodebuild -destination 'platform=iOS'）
+
+# ⚠️ 生成顺序必须是 xcodegen generate **先于** pod install：
+#    generate 会重写 xcodeproj，把 pod install 注入的 Pods 引用清掉（P51/P53）。
+# ⚠️ 多人/多会话共用机器时务必加 -derivedDataPath 隔离，否则撞
+#    `unable to attach DB ... database is locked`。
+
+# CIKernel 产物验收（ADR-0021）：编译绿 ≠ metallib 可用
+strings .../ChuanqiCutApp.app/beauty_bilateral.metallib | grep cq_beauty   # 两个 kernel 名
+ls -l   .../ChuanqiCutApp.app/beauty_bilateral.metallib                    # ~8.4KB；96B = 空壳
 ```
 
 ## 相关
@@ -358,7 +362,7 @@ loading 覆盖 → 落 tmp → async 交付 → importMedia → loading 解除 +
 
 # AIEDIT 立项（2026-10-04）：智能成片入口（SmartCut/ 域）
 
-Spec AIEDIT-001 / ADR-0016 / TASK-AIEDIT-000。首页 `HomeView.swift` 新增第三张
+Spec AIEDIT-001 / ADR-0019 / TASK-AIEDIT-000。首页 `HomeView.swift` 新增第三张
 入口卡「智能成片」（Route: `.smartCut`），新域目录
 `SharedUI/Sources/SharedUI/SmartCut/`（Wizard / Result / Chat / Voice 四子域，
 组织方式照 MediaPicker：纯逻辑抽可测类型 + SwiftUI 接线冒烟）。

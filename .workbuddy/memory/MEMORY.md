@@ -257,7 +257,7 @@ iOS 平台差异五处修复、门禁命令、红线摘录、下一步优先级�
 - **相机模块 Swift 文件合入前必须过 iphonesimulator SDK 全量 -typecheck**
   （P46/P48：-parse 已两次证明会放行真错误；A 期 4 文件 7 处存量错误即证据）。
 
-## 智能成片硬规则（2026-10-04 定，ADR-0016）
+## 智能成片硬规则（2026-10-04 定，ADR-0019）
 
 - **原始素材默认不出设备**：上云只有 FeatureReport（KB 级聚合统计）+ 用户消息；
   人脸只报 count/area_ratio，不做识别。可选帧上传须显式授权，默认关闭。
@@ -286,3 +286,19 @@ iOS 平台差异五处修复、门禁命令、红线摘录、下一步优先级�
   巡检记录落 `docs/reviews/`。
 - **文档/skill 里出现的命令路径必须真实存在**（P49）；仓库脚本里 `$var`
   一律写 `${var}`（bash 3.2 全角解析坑，P50）。
+
+## Apple 端工程与构建硬规则（2026-10-05 定，P51-P53 / ADR-0021）
+
+- **"cannot find X in scope"先查工程引用，不要先怀疑没提交**。xcodeproj 是
+  xcodegen 生成产物、不入库，极易陈旧（曾只剩 1/12 源文件引用，11 个文件从未编译）。
+  核对法：`git ls-files <dir>` vs `find` vs `grep .swift project.pbxproj`。
+- **xcodegen 装法**：本机无 brew，取 GitHub Release 二进制（2.46.0）放到
+  `/usr/local/bin`。改工程一律改 `project.yml` 真源 → `xcodegen generate`
+  → `bundle exec pod install`（**顺序不能反，generate 会清掉 Pods 注入**）。
+- **xcodegen 2.46 三坑**：不写 `PRODUCT_NAME`（→ `Multiple commands produce .../.app`）；
+  `excludes` 必须用 glob（`**/x.metal`，相对路径不生效）；Metal 编译 flag 塞不进去
+  （`MTL_OTHER_FLAGS` / source 级 `compilerFlags` 都不落地）。
+- **CoreImage CIKernel 不走 Xcode 内建 Metal 阶段**：编译和链接**都要** `-fcikernel`
+  且都用 `metal`（不是 `metallib`）。只给编译阶段加 + 用 `xcrun metallib` 链接，
+  会产出 96 字节**空壳**（链接退出码 0、编译全绿，运行时查不到 kernel → 静默降级）。
+  验收必须 `strings` 查 kernel 名 + 看大小（正常 ~8.4KB）。见 ADR-0021。

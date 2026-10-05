@@ -206,7 +206,8 @@ final class CameraViewModel: ObservableObject {
         manager.capturePhoto { [weak self] buffer in
             // 回调在采集队列；单张照片的一次性处理在这里做，不抢主线程。
             // ciContext 线程安全，与预览/录制复用同一实例。
-            var processed: Result<CGImage, Error> = .failure(failure)
+            // let（确定初始化）而非 var：Task 闭包是 @Sendable，捕获 var 直接编译错（P49）。
+            let processed: Result<CGImage, Error>
             if let buffer {
                 do {
                     var image = CIImage(cvPixelBuffer: buffer)
@@ -222,6 +223,8 @@ final class CameraViewModel: ObservableObject {
                 } catch {
                     processed = .failure(error)
                 }
+            } else {
+                processed = .failure(failure)
             }
             Task { @MainActor in
                 guard let self else { return }

@@ -6,6 +6,7 @@
 
 import SwiftUI
 import SharedUI
+import ChuanqiCut
 
 struct HomeView: View {
 

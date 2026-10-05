@@ -256,6 +256,9 @@ iOS 平台差异五处修复、门禁命令、红线摘录、下一步优先级�
   fromMetalLibraryData:)`，加载失败静默降级，不抛错不崩。
 - **相机模块 Swift 文件合入前必须过 iphonesimulator SDK 全量 -typecheck**
   （P46/P48：-parse 已两次证明会放行真错误；A 期 4 文件 7 处存量错误即证据）。
+  且 typecheck 必须带 **`-swift-version 6`**（App 目标 SWIFT_VERSION=6.1，默认
+  语言模式查不出严格并发错误——P49：var 被 @Sendable 捕获、非 Sendable 类跨
+  DispatchQueue 全部放行）。
 
 ## 智能成片硬规则（2026-10-04 定，ADR-0020）
 

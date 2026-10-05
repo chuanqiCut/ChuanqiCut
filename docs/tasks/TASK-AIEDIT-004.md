@@ -4,7 +4,7 @@
 id:          AIEDIT-004
 layer:       SDK
 goal:        实现 INetTransport 的 Apple 端传输（JSON POST + SSE 流式）与 ILlmClient 的 OpenAI-compatible 客户端
-input:       [AIEDIT-001 契约（ILlmClient/INetTransport 头）, ADR-0016 决策 2/5, SPEC §8]
+input:       [AIEDIT-001 契约（ILlmClient/INetTransport 头）, ADR-0019 决策 2/5, SPEC §8]
 output:      [pal/apple/net 实现, LLM 客户端实现, 单测（含假服务器）, baselines 回填位]
 write_set:   pal/apple/net/*(新: net_transport_apple.{h,mm}, sse_parser.{h,cpp})、
              core/src/ai/llm/openai_client.{h,cpp}(新)、core/tests/test_llm_client.cpp(新)、
@@ -26,7 +26,7 @@ parallel:    true（批次 2）
 
 ## 背景
 
-ADR-0016 决策 2/5：传输在 PAL（Apple 用 URLSession 原生），客户端协议收敛 OpenAI-compatible。core 内的 `openai_client` 是纯 C++（组装/解析/重试），与传输解耦——换供应商不动传输，换平台不动客户端。
+ADR-0019 决策 2/5：传输在 PAL（Apple 用 URLSession 原生），客户端协议收敛 OpenAI-compatible。core 内的 `openai_client` 是纯 C++（组装/解析/重试），与传输解耦——换供应商不动传输，换平台不动客户端。
 
 ## 实现要点
 

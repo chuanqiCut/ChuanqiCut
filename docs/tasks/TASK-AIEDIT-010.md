@@ -4,7 +4,7 @@
 id:          AIEDIT-010
 layer:       SDK + UI
 goal:        单列入口「AI 脚本成片」：文案/主题 → LLM 生成脚本与分镜表 → 分镜与用户素材库匹配 → 按分镜成片（缺口素材用占位卡，生成式填充仅预留接口）
-input:       [SPEC AIEDIT-001 §10(P1), RESEARCH-003 §2.1/§2.4（剪映图文成片、必剪口播成片对标）, ADR-0016 决策 7（无状态多轮）]
+input:       [SPEC AIEDIT-001 §10(P1), RESEARCH-003 §2.1/§2.4（剪映图文成片、必剪口播成片对标）, ADR-0019 决策 7（无状态多轮）]
 output:      [StoryBoard schema（cq.storyboard/1）, 分镜匹配器, 脚本成片向导 UI, 单测]
 write_set:   启动时冻结（预计 core/include/cq/ai/storyboard.h(新)、core/src/ai/story/*(新)、
              SharedUI/Sources/SharedUI/SmartCut/Script/*(新)、HomeView.swift(高冲突)）
@@ -28,7 +28,7 @@ parallel:    false（P1 单独批次）
 
 1. StoryBoard 与 EditPlan 的关系：storyboard 是"意图层"（镜号/描述/时长/情绪/旁白），成片时编译为 EditPlan——复用 001 契约与 006 执行器，不另起执行通道。
 2. 旁白/TTS 是 P1 内的独立决策点（依赖音频域进度），进启动拆解。
-3. 生成式填充（Runway/即梦类）只留 `gap_fill_policy` 扩展字段（ADR-0016 反转条件之外的新能力，届时另立 ADR）。
+3. 生成式填充（Runway/即梦类）只留 `gap_fill_policy` 扩展字段（ADR-0019 反转条件之外的新能力，届时另立 ADR）。
 
 ## 回写
 

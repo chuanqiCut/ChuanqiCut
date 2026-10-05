@@ -4,7 +4,7 @@
 id:          AIEDIT-011
 layer:       SDK
 goal:        无网/无 key/LLM 三连失败时的本地成片引擎：静音剔除 + 质量排序 + 高光优先 + 固定节奏模板 → 合法 EditPlan（generator=local_rules）
-input:       [AIEDIT-001 契约, SPEC §8 降级段, RESEARCH-003 §2.2（iMovie 离线对标）/§4.6, ADR-0016 决策 6]
+input:       [AIEDIT-001 契约, SPEC §8 降级段, RESEARCH-003 §2.2（iMovie 离线对标）/§4.6, ADR-0019 决策 6]
 output:      [规则引擎实现, 单测, 与 005 编排器的接缝]
 write_set:   core/src/ai/fallback/*(新: rule_engine.{h,cpp}, rhythm_template.{h,cpp})、
              core/tests/test_rule_engine.cpp(新)、core/CMakeLists.txt(登记)
@@ -25,7 +25,7 @@ parallel:    true（批次 2；建议排在 002 后启动以便用真特征调�
 
 ## 背景
 
-ADR-0016 决策 6 的落地：能力缺失降级是红线精神（中端机也可能缺能力，同理断网/无 key 不是少数场景）。规则引擎与 LLM 走同一条校验/执行链（005/006 不感知来源）。
+ADR-0019 决策 6 的落地：能力缺失降级是红线精神（中端机也可能缺能力，同理断网/无 key 不是少数场景）。规则引擎与 LLM 走同一条校验/执行链（005/006 不感知来源）。
 
 ## 实现要点
 

@@ -1,21 +1,22 @@
-// SharedUI — 右侧面板：素材库（UIA-009 子步骤 3 + UIA-011/012 相册入口 + UIA-013 自研相册浏览器）+ 属性桩（UIA-002/006）
+// SharedUI — 媒体抽屉：素材库面板（UIA-015，自 PropertyPanelZone 迁移）
 //
 // 素材库两条导入入口，汇入同一 EditorViewModel.importMedia（Spec UIA-011 §2）：
 //   * 从文件导入：fileImporter（"文件"App 路径）
-//   * 从相册导入：UIA-013 起为自研相册浏览器（MediaPicker/，Spec UIA-013）——
-//     网格/相簿/多选序号/时长过滤/iCloud 拉取/受限模式；确认后交付文件 URL
-//     列表，走与 UIA-012 完全相同的 runBatch 批量汇入链路。UIA-011/012 的系统
-//     PhotosPicker 被替换（ADR-0015 决策 3），挂载点（按钮 + 胶水）形态不变。
-// D3 决策不变：MVP 引用 tmp/原路径不拷贝入库 —— 相册视频落盘的 URL 在 App
-// 重启后可能被清理，届时同样显示「已失效」，与文件路径行为一致；素材库整理
-// （拷入沙箱）是后续任务，两条路径届时统一收口。
-// 属性区仍是桩：UIA-006 接入真实参数（变更必须走 Command）。
+//   * 从相册导入：UIA-013 自研相册浏览器（MediaPicker/）——确认后交付文件 URL
+//     列表，走与 UIA-012 完全相同的 runBatch 批量汇入链路
+// D3 决策不变：MVP 引用 tmp/原路径不拷贝入库；素材库整理是后续任务。
+//
+// 本视图同时是两个宿主的内容层（ARCH-005「共享状态不共享 UI」的最小实践）：
+//   * iOS：EditorBottomToolbar 的 bottom sheet（detents medium/large）
+//   * macOS：编辑器右栏（原 PropertyPanelZone 位置，行为等价迁移，UIA-017 再惯例化）
+// 属性参数区不在此（UIA-006 接真实参数时再进面板框架 UIA-019）。
 
 import SwiftUI
 import ChuanqiCut
 import UniformTypeIdentifiers
 
-struct PropertyPanelZone: View {
+/// 素材库内容面板（宿主无关）。
+struct MediaLibraryPanel: View {
     @EnvironmentObject private var viewModel: EditorViewModel
 
     @State private var showImporter = false
@@ -31,11 +32,11 @@ struct PropertyPanelZone: View {
             Text("素材库")
                 .font(.headline)
                 .foregroundStyle(Theme.primaryText)
-                .padding(.horizontal, 16)
-                .padding(.vertical, 12)
+                .padding(.horizontal, Theme.Space.l)
+                .padding(.vertical, Theme.Space.m)
 
             // 导入入口：文件 / 相册（两条路汇入同一 importMedia）
-            VStack(spacing: 8) {
+            VStack(spacing: Theme.Space.s) {
                 Button {
                     showImporter = true
                 } label: {
@@ -45,8 +46,6 @@ struct PropertyPanelZone: View {
                 .buttonStyle(.bordered)
                 .controlSize(.small)
 
-                // 从相册导入：自研浏览器（UIA-013）。只选视频、多选上限 20，
-                // 时长过滤等配置在 AlbumPickerConfiguration.standard。
                 Button {
                     showAlbumPicker = true
                 } label: {
@@ -58,22 +57,14 @@ struct PropertyPanelZone: View {
                 .controlSize(.small)
                 .disabled(photosImporter.isLoading)
             }
-            .padding(.horizontal, 16)
-            .padding(.bottom, 8)
+            .padding(.horizontal, Theme.Space.l)
+            .padding(.bottom, Theme.Space.s)
 
             if let importError {
-                Text(importError)
-                    .font(.caption2)
-                    .foregroundStyle(.red)
-                    .padding(.horizontal, 16)
-                    .padding(.bottom, 6)
+                errorText(importError)
             }
             if let photoError = photosImporter.errorMessage {
-                Text(photoError)
-                    .font(.caption2)
-                    .foregroundStyle(.red)
-                    .padding(.horizontal, 16)
-                    .padding(.bottom, 6)
+                errorText(photoError)
             }
 
             // 素材列表（失效标记：exists == false）
@@ -81,12 +72,12 @@ struct PropertyPanelZone: View {
                 Text("尚未导入素材")
                     .font(.caption)
                     .foregroundStyle(Theme.tertiaryText)
-                    .padding(.horizontal, 16)
-                    .padding(.bottom, 8)
+                    .padding(.horizontal, Theme.Space.l)
+                    .padding(.bottom, Theme.Space.s)
             } else {
                 ForEach(viewModel.mediaLibrary) { asset in
                     VStack(alignment: .leading, spacing: 1) {
-                        HStack(spacing: 4) {
+                        HStack(spacing: Theme.Space.xs) {
                             Image(systemName: asset.exists ? "film" : "film.fill.slash")
                                 .foregroundStyle(asset.exists ? Theme.secondaryText : .red)
                             Text("素材 \(asset.id)")
@@ -104,52 +95,13 @@ struct PropertyPanelZone: View {
                             .lineLimit(2)
                             .truncationMode(.middle)
                     }
-                    .padding(.horizontal, 16)
+                    .padding(.horizontal, Theme.Space.l)
                     .padding(.vertical, 6)
                     Divider()
                 }
             }
 
-            Divider()
-
-            Text("属性")
-                .font(.headline)
-                .foregroundStyle(Theme.primaryText)
-                .padding(.horizontal, 16)
-                .padding(.vertical, 12)
-
-            Divider()
-
-            // 占位分组；UIA-006 替换为真实参数模型。
-            ForEach(["变换", "调色", "滤镜"], id: \.self) { group in
-                HStack {
-                    Text(group)
-                        .font(.subheadline)
-                        .foregroundStyle(Theme.secondaryText)
-                    Spacer()
-                    Text("—")
-                        .font(.subheadline.monospaced())
-                        .foregroundStyle(Theme.tertiaryText)
-                }
-                .padding(.horizontal, 16)
-                .padding(.vertical, 10)
-
-                Divider()
-            }
-
             Spacer(minLength: 0)
-
-            // 诊断页脚：快照版本 + 硬解能力（中端机降级提示的挂载点）
-            VStack(alignment: .leading, spacing: 2) {
-                Text("v\(viewModel.snapshot.version)")
-                    .font(.caption2.monospaced())
-                    .foregroundStyle(Theme.tertiaryText)
-                Text(capabilitySummary)
-                    .font(.caption2.monospaced())
-                    .foregroundStyle(Theme.tertiaryText)
-            }
-            .padding(.horizontal, 16)
-            .padding(.bottom, 10)
         }
         .background(Theme.panelBackground)
         .fileImporter(isPresented: $showImporter,
@@ -157,20 +109,13 @@ struct PropertyPanelZone: View {
             switch result {
             case .success(let url):
                 let status = viewModel.importMedia(url: url)
-                if !status.isOK {
-                    importError = "导入失败：\(status.text)"
-                } else {
-                    importError = nil
-                }
+                importError = status.isOK ? nil : "导入失败：\(status.text)"
             case .failure(let error):
                 importError = "选择失败：\(error.localizedDescription)"
             }
         }
-        // 自研相册浏览器（UIA-013，剪映式连续导入流）：**面板保持打开**，
-        // 单击插入 / 批量添加交付的 URL 列表（顺序 = 选取序号）直接汇入
-        // UIA-012 的 runBatch 批量链路 —— resolveURL 直接命中已落盘的 tmp
-        // 文件（浏览器确认阶段已完成 PHAssetResource 落盘 / iCloud 拉取）。
-        // async 回调：runBatch 返回后浏览器才解除 cell loading。
+        // 自研相册浏览器（UIA-013，剪映式连续导入流）：面板保持打开，单击插入 /
+        // 批量添加交付的 URL 列表（顺序 = 选取序号）直接汇入 runBatch。
         .sheet(isPresented: $showAlbumPicker) {
             AlbumPickerScreen { urls in
                 await photosImporter.runBatch(
@@ -181,22 +126,38 @@ struct PropertyPanelZone: View {
         }
     }
 
-    private var capabilitySummary: String {
-        let caps = viewModel.capabilities
-        guard !caps.isEmpty else { return "caps: pending" }
-        let hwDecode = caps[.hwDecodeH264] ?? .no
-        return "hw264: \(hwDecode == .yes ? "yes" : "no")"
+    private func errorText(_ text: String) -> some View {
+        Text(text)
+            .font(.caption2)
+            .foregroundStyle(.red)
+            .padding(.horizontal, Theme.Space.l)
+            .padding(.bottom, 6)
     }
 }
 
-// MARK: - 相册导入胶水（UIA-011 单选落地，UIA-012 扩为批量）
+/// iOS 底部抽屉壳（UIA-015）：半屏 detents + 拖拽指示器；macOS 不用本壳
+/// （右栏直嵌 MediaLibraryPanel，无 sheet）。
+struct MediaSheet: View {
+    var body: some View {
+        #if os(iOS)
+        MediaLibraryPanel()
+            .presentationDetents([.medium, .large])
+            .presentationDragIndicator(.visible)
+        #else
+        MediaLibraryPanel()
+        #endif
+    }
+}
+
+// MARK: - 相册导入胶水（UIA-011 单选落地，UIA-012 扩为批量；UIA-015 自
+//        PropertyPanelZone 迁移至此 —— 内容随素材库面板走，语义零改动）
 
 /// 相册选取项 → 临时文件 URL → 既有 importMedia 的批量胶水，加载态 / 错误汇总自持。
 ///
 /// resolveURL / importURL 全部注入：loadTransferable 需要真实 PHAsset，
 /// XCTest 宿主没有相册数据 —— 注入后批量状态机（loading 翻转、逐条顺序、
 /// 部分失败不中断、失败不产生素材）可以脱离相册单测（PhotoImportTests）。
-/// 生产接线在 PropertyPanelZone.onChange。
+/// 生产接线在 MediaLibraryPanel 的 AlbumPickerScreen 回调。
 ///
 /// @MainActor：两个闭包都是主线程语义（importMedia 是"用户动作、低频"的同步
 /// 调用，见 AppEntry.importMedia 注释）；错误与 loading 直接驱动 UI。

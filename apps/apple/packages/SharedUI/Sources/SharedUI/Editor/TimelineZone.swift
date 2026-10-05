@@ -1,72 +1,70 @@
-// SharedUI — 时间线区（UIA-004）：宿主 Canvas 自绘视图 + 撤销/重做入口（UIA-005）
+// SharedUI — 时间线区容器（UIA-004 宿主；UIA-015 重构）
 //
 // 自绘本体在 Timeline/EditorTimelineView.swift（单 Canvas，几何在 TimelineLayout）。
-// 头部保留快照版本指示（与 UIA-002 桩的行为连续，便于肉眼确认刷新）。
+//
+// UIA-015 变更：
+//   * 播放/暂停与撤销/重做入口迁出 —— 播放进 EditorTransportBar（预览正下方），
+//     撤销/重做 iOS 进 EditorBottomToolbar、macOS 保留在本区头部（Cmd+Z 快捷键
+//     挂在按钮上，进菜单栏归 UIA-017）。
+//   * `showsHeader` 参数：平台差异经 EditorLayout 的 EditorPlatform 常量决定，
+//     业务视图不写条件编译（ui-apple.md 硬约束 #6）。
+//   * 快照版本指示（UIA-002 调试残留，RESEARCH-004 §2 点名）移入 #if DEBUG。
 
 import SwiftUI
 import ChuanqiCut
 
 struct TimelineZone: View {
+    /// macOS = true（头部撤销/重做 + 调试版本号）；iOS = false（底部工具栏接管）。
+    let showsHeader: Bool
+
     @EnvironmentObject private var viewModel: EditorViewModel
 
     var body: some View {
         VStack(spacing: 0) {
-            HStack(spacing: 12) {
-                Text("时间线")
-                    .font(.caption)
-                    .foregroundStyle(Theme.secondaryText)
-
-                Spacer()
-
-                // 播放 / 暂停（UIA-010）。无片段时不可播（播空时间线没意义）。
-                Button {
-                    viewModel.togglePlayback()
-                } label: {
-                    Image(systemName: viewModel.isPlaying ? "pause.fill" : "play.fill")
+            if showsHeader {
+                HStack(spacing: Theme.Space.m) {
+                    Text("时间线")
                         .font(.caption)
-                }
-                .buttonStyle(.plain)
-                .disabled(viewModel.timeline.clips.isEmpty)
-                .foregroundStyle(viewModel.timeline.clips.isEmpty
-                                  ? Theme.tertiaryText : Theme.primaryText)
-                .help(viewModel.isPlaying ? "暂停" : "播放")
+                        .foregroundStyle(Theme.secondaryText)
 
-                // 撤销 / 重做入口（UIA-008 的一部分随 UIA-005 落地）。
-                // 按钮形态两端通用；macOS 额外吃 Cmd+Z / Cmd+Shift+Z。
-                // ⚠️ **iOS 摇一摇撤销本期未实现**（要靠 UIViewController 代表层，
-                //    SharedUI 是纯 SwiftUI）—— 写死在注释里，不假装支持。
-                Button {
-                    viewModel.undo()
-                } label: {
-                    Image(systemName: "arrow.uturn.backward")
-                        .font(.caption)
-                }
-                .buttonStyle(.plain)
-                .disabled(!viewModel.canUndo)
-                .foregroundStyle(viewModel.canUndo ? Theme.primaryText : Theme.tertiaryText)
-                .keyboardShortcut("z", modifiers: .command)
-                .help("撤销（Cmd+Z）")
+                    Spacer()
 
-                Button {
-                    viewModel.redo()
-                } label: {
-                    Image(systemName: "arrow.uturn.forward")
-                        .font(.caption)
-                }
-                .buttonStyle(.plain)
-                .disabled(!viewModel.canRedo)
-                .foregroundStyle(viewModel.canRedo ? Theme.primaryText : Theme.tertiaryText)
-                .keyboardShortcut("z", modifiers: [.command, .shift])
-                .help("重做（Cmd+Shift+Z）")
+                    Button {
+                        viewModel.undo()
+                    } label: {
+                        Image(systemName: "arrow.uturn.backward")
+                            .font(.caption)
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(!viewModel.canUndo)
+                    .foregroundStyle(viewModel.canUndo ? Theme.primaryText : Theme.tertiaryText)
+                    .keyboardShortcut("z", modifiers: .command)
+                    .help("撤销（Cmd+Z）")
 
-                Text("v\(viewModel.snapshot.version)")
-                    .font(.caption2.monospaced())
-                    .foregroundStyle(Theme.tertiaryText)
+                    Button {
+                        viewModel.redo()
+                    } label: {
+                        Image(systemName: "arrow.uturn.forward")
+                            .font(.caption)
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(!viewModel.canRedo)
+                    .foregroundStyle(viewModel.canRedo ? Theme.primaryText : Theme.tertiaryText)
+                    .keyboardShortcut("z", modifiers: [.command, .shift])
+                    .help("重做（Cmd+Shift+Z）")
+
+                    #if DEBUG
+                    // 调试指示（RESEARCH-004 §6.4 点 4：不进正式界面）
+                    Text("v\(viewModel.snapshot.version)")
+                        .font(.caption2.monospaced())
+                        .foregroundStyle(Theme.tertiaryText)
+                    #endif
+                }
+                .padding(.horizontal, Theme.Space.m)
+                .frame(height: 24)
+
+                Divider()
             }
-            .padding(.horizontal, 12)
-            .frame(height: 24)
-
-            Divider()
 
             EditorTimelineView()
         }

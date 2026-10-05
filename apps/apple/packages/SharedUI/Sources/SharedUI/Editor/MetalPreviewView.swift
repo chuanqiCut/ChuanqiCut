@@ -15,12 +15,30 @@
 // 两种绘制节奏：
 //   * 连续（播放中）—— MTKView 自己按 vsync 画，主线程每帧只做一次拷贝（亚毫秒）
 //   * 按需（暂停 / 拖拽）—— setNeedsDisplay 触发一次；因为泵是异步的，请求发出后
-//     画面要等一帧才到，故有「自驱重绘」：画完发现取到的还不是请求的那一帧，
-//     就再请求一次重绘，直到追上或有上限（防止渲染一直失败时无限转）。
+//     画面要等一帧才到，故有「自驱重绘」：画完发现请求的那帧还没发布，就再请求
+//     重绘一次，直到追上或有上限（防止渲染一直失败时无限转）。收敛判定见
+//     PreviewSettleRule（UIA-020：seq 比较，pts 比较在「同 pts 重渲染」下永不收敛）。
 
 import SwiftUI
 import MetalKit
 import ChuanqiCut
+
+// MARK: - 追帧收敛判定（UIA-020，纯函数可测）
+
+/// 按需模式追帧的收敛判定。
+///
+/// 装载追帧时记录泵内**最新帧的 seq**（可能为 0 = 尚无任何帧）；此后任一次绘制
+/// 看到的 seq **前进过**（> seqAtArm）即说明装载的那次请求已发布 —— 成功帧 /
+/// 空隙黑帧 / 失败 nil 纹理帧都会发布并推 seq（泵的发布语义，见 PreviewPump.Frame.seq）。
+/// seq 未前进 = 看到的还是装载前的旧帧，继续追（上限由调用方持有，防空转）。
+///
+/// 旧实现比较 `frame.pts != pts`：同 pts 重渲染（模型变了、播放头没动 —— 导入/
+/// 撤销/移动/裁剪落地）时旧帧与新帧 pts 相同，判定永不成立，预览停在旧画面。
+enum PreviewSettleRule {
+    static func shouldKeepDriving(seqAtArm: UInt64, currentSeq: UInt64) -> Bool {
+        currentSeq <= seqAtArm
+    }
+}
 
 // MARK: - MTKView 子类（持有渲染状态，MTKViewDelegate 由自身实现）
 
@@ -46,6 +64,13 @@ final class PreviewMTKView: MTKView {
     private static let selfDriveLimit = 90
 
     private var selfDriveLeft = 0
+
+    /// 装载追帧时的渲染代数（UIA-020）。nil = 从未装载过；ViewModel 每次
+    /// 模型推进 bump 一次 renderEpoch，据此触发「同 pts 重渲染」。
+    private var lastArmEpoch: UInt64?
+
+    /// 装载追帧时泵内最新帧的 seq（PreviewSettleRule 的收敛基准）。
+    private var seqAtArm: UInt64 = 0
 
     /// 连续绘制（播放中）。false = 按需（setNeedsDisplay）。
     var continuous: Bool = false {
@@ -108,7 +133,12 @@ final class PreviewMTKView: MTKView {
 
     /// SwiftUI 更新入口。值变化才重绘（didSet 去抖在这里做，因为初始化期
     /// 赋值不触发 didSet，且 SwiftUI 每 body 求值都会调 update*View）。
-    func sync(preview: Previewer?, pump: PreviewPump?, pts: RationalTime, continuous: Bool) {
+    ///
+    /// 触发重渲染的两条路（UIA-020）：
+    ///   * pts 变化 —— 播放头动了（拖拽 / 播放推进 / 停止归零）；
+    ///   * renderEpoch 变化 —— 模型推进（导入 / 命令落地 / 撤销），同 pts 也要重取。
+    func sync(preview: Previewer?, pump: PreviewPump?, pts: RationalTime,
+              continuous: Bool, renderEpoch: UInt64) {
         if self.preview !== preview {
             self.preview = preview
             ensureRenderer()
@@ -118,15 +148,24 @@ final class PreviewMTKView: MTKView {
         }
         if self.pts != pts {
             self.pts = pts
-            // 请求新时刻的帧（异步，不阻塞）。
-            pump?.request(pts: pts)
-            // 按需模式下要自己把画面追上：泵是异步的，这一刻画到的多半还是旧帧。
-            if !self.continuous { selfDriveLeft = Self.selfDriveLimit }
+            armRerender(pts: pts, epoch: renderEpoch)
+        } else if lastArmEpoch != renderEpoch {
+            armRerender(pts: pts, epoch: renderEpoch)
         }
         if self.continuous != continuous {
             self.continuous = continuous
         }
         if !self.continuous { requestRedraw() }
+    }
+
+    /// 装载一次追帧：记录装载时刻的最新帧 seq → 发请求 → 武装自驱。
+    /// ⚠️ seq 必须在 request **之前**读：请求发布后 seq 会前进，先请求再读
+    ///    会把「新帧已就绪」误判成「未就绪」（反而多追一轮，语义照样对，但白画）。
+    private func armRerender(pts: RationalTime, epoch: UInt64) {
+        seqAtArm = pump?.withLatestFrame { $0.seq } ?? 0
+        pump?.request(pts: pts)
+        selfDriveLeft = Self.selfDriveLimit
+        lastArmEpoch = epoch
     }
 }
 
@@ -135,9 +174,8 @@ final class PreviewMTKView: MTKView {
 extension PreviewMTKView: MTKViewDelegate {
 
     func mtkView(_ view: MTKView, drawableSizeWillChange size: CGSize) {
-        // drawable 跟随视图尺寸变化 → 离屏 RT 同步重建（当前为拉伸铺满；
-        // letterbox/fit 待 UI 需求明确后加，见 preview_renderer.h 的能力声明）。
-        // ⚠️ 走泵：RT 的销毁必须发生在持有它的那条线程（泵线程）。
+        // drawable 跟随视图尺寸变化 → 离屏 RT 同步重建（FitMode 见 preview_renderer
+        // 的能力声明）。⚠️ 走泵：RT 的销毁必须发生在持有它的那条线程（泵线程）。
         let w = max(1, Int(size.width))
         let h = max(1, Int(size.height))
         if let pump {
@@ -145,10 +183,10 @@ extension PreviewMTKView: MTKViewDelegate {
         } else {
             preview?.resize(width: w, height: h)
         }
-        // 尺寸变了通常也就该重取一帧（RT 已被清空为 nil 句柄）。
-        pump?.request(pts: pts)
+        // 尺寸变了通常也就该重取一帧（RT 已被清空为 nil 句柄）；同走装载追帧
+        // （resize 会发布 nil 纹理帧推 seq，不装载的话下一次绘制可能立即"收敛"）。
+        armRerender(pts: pts, epoch: lastArmEpoch ?? 0)
         if !continuous {
-            selfDriveLeft = PreviewMTKView.selfDriveLimit
             requestRedraw()
         }
     }
@@ -178,8 +216,9 @@ extension PreviewMTKView: MTKViewDelegate {
             _ = renderer.clearToBlack(to: self)
         }
 
-        // 4) 按需模式下自驱追帧：还没画到请求的那一帧就再画一次（有上限）。
-        if !continuous && frame.pts != pts && selfDriveLeft > 0 {
+        // 4) 按需模式下自驱追帧：请求的那帧还没发布就再画一次（有上限，判定纯函数化）。
+        if !continuous && selfDriveLeft > 0
+            && PreviewSettleRule.shouldKeepDriving(seqAtArm: seqAtArm, currentSeq: frame.seq) {
             selfDriveLeft -= 1
             requestRedraw()
         } else {
@@ -196,13 +235,16 @@ struct MetalPreviewView: NSViewRepresentable {
     let pump: PreviewPump?
     let pts: RationalTime
     let continuous: Bool
+    /// 模型推进代数（UIA-020）：变化即对当前 pts 重取帧。
+    let renderEpoch: UInt64
 
     func makeNSView(context: Context) -> PreviewMTKView {
         PreviewMTKView(preview: preview, pump: pump, pts: pts)
     }
 
     func updateNSView(_ view: PreviewMTKView, context: Context) {
-        view.sync(preview: preview, pump: pump, pts: pts, continuous: continuous)
+        view.sync(preview: preview, pump: pump, pts: pts, continuous: continuous,
+                  renderEpoch: renderEpoch)
     }
 }
 #elseif os(iOS)
@@ -211,13 +253,16 @@ struct MetalPreviewView: UIViewRepresentable {
     let pump: PreviewPump?
     let pts: RationalTime
     let continuous: Bool
+    /// 模型推进代数（UIA-020）：变化即对当前 pts 重取帧。
+    let renderEpoch: UInt64
 
     func makeUIView(context: Context) -> PreviewMTKView {
         PreviewMTKView(preview: preview, pump: pump, pts: pts)
     }
 
     func updateUIView(_ view: PreviewMTKView, context: Context) {
-        view.sync(preview: preview, pump: pump, pts: pts, continuous: continuous)
+        view.sync(preview: preview, pump: pump, pts: pts, continuous: continuous,
+                  renderEpoch: renderEpoch)
     }
 }
 #endif

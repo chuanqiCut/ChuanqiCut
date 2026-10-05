@@ -47,5 +47,42 @@ enum Theme {
         static let timelineHeight: CGFloat = 220
         static let panelWidth: CGFloat = 280
         static let panelMinWidth: CGFloat = 200
+        /// iOS 竖屏时间线固定条高（UIA-015 剪映式；调高/缩放留后续任务）。
+        static let timelineHeightCompact: CGFloat = 140
+        static let transportBarHeight: CGFloat = 44
+        static let bottomToolbarHeight: CGFloat = 58
+    }
+
+    // MARK: - 编辑页语义常量（UIA-016 增量；全量令牌清扫待批，RESEARCH-004 §6.0）
+
+    /// 播放控制条底色（预览正下方）：比预览背景略抬升一级。
+    static let transportBackground = Color(red: 0.09, green: 0.09, blue: 0.11)
+
+    /// 底部工具栏底色：比时间线背景再抬升一级，收拢拇指区。
+    static let toolbarBackground = Color(red: 0.11, green: 0.11, blue: 0.13)
+
+    /// 品牌强调色：与时间线片段蓝同族（UIA-013 PickerTheme.accent 合并目标）。
+    static let accent = Color(red: 0.30, green: 0.55, blue: 0.95)
+
+    /// 强调色上的文字/图标。
+    static let accentText = Color.white
+
+    /// 间距阶梯（RESEARCH-004 §6.0）。
+    enum Space {
+        static let xs: CGFloat = 4
+        static let s: CGFloat = 8
+        static let m: CGFloat = 12
+        static let l: CGFloat = 16
+        static let xl: CGFloat = 24
+        static let xxl: CGFloat = 32
+    }
+
+    /// 圆角阶梯。
+    enum Radius {
+        static let s: CGFloat = 8
+        static let m: CGFloat = 12
+        static let l: CGFloat = 16
+        /// 胶囊（工具位图标底、按钮）。
+        static let capsule: CGFloat = 999
     }
 }

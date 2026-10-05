@@ -104,6 +104,47 @@ public final class EditorViewModel: ObservableObject {
     /// 定时器节拍计数（用于把「取帧请求」与「UI 发布」分成两个频率）。
     private var tickCount = 0
 
+    #if DEBUG
+    // MARK: 播放性能剖面（阶段 0，RESEARCH-006；DEBUG only，不进 Release）
+    private var debugTickCosts: [UInt64] = []
+    private var debugTickSamples = 0
+    private var debugTickCostP95Nanos: UInt64 = 0
+    /// 泵统计基线（startPlaybackLoop 时快照，报告时取差值）。
+    private var debugPumpBaseline: (rendered: UInt64, requested: UInt64) = (0, 0)
+
+    private func debugRecordTickCost(start: DispatchTime) {
+        let nanos = DispatchTime.now().uptimeNanoseconds &- start.uptimeNanoseconds
+        debugTickCosts.append(nanos)
+        debugTickSamples += 1
+        // 每 120 tick（2s）出一份汇总：tick 耗时 p95 + 泵吞吐 + 呈现帧率。
+        if debugTickSamples % 120 == 0 {
+            debugTickCosts.sort()
+            let p95 = debugTickCosts[min(debugTickCosts.count - 1, debugTickCosts.count * 95 / 100)]
+            debugTickCostP95Nanos = p95
+            let st = previewPump?.stats
+            let renderedPerSec = st.map { $0.rendered &- debugPumpBaseline.rendered } ?? 0
+            let requestedPerSec = st.map { $0.requested &- debugPumpBaseline.requested } ?? 0
+            if let st {
+                debugPumpBaseline = (st.rendered, st.requested)
+            }
+            let drawsPerSec = PlaybackDrawCounter.shared.count
+            PlaybackDrawCounter.shared.reset()
+            // DEBUG 剖面输出走双通道：os.Logger（常规）+ print（`devicectl device
+            // process launch --console` 可见；Release 不编译，不违反 CODESTYLE §3）。
+            // ⚠️ stdout 接管道是全缓冲，必须 fflush 否则两行汇总永远憋在缓冲区。
+            let line = "playback-perf: tick_p95=\(self.ms(p95))ms pump_req/s=\(requestedPerSec) pump_rendered/s=\(renderedPerSec) mtk_draw/s=\(drawsPerSec)"
+            log.info("\(line, privacy: .public)")
+            // stderr 无缓冲：`devicectl device process launch --console` 必现。
+            fputs(("[perf] \(line)\n"), stderr)
+            fflush(stderr)
+        }
+    }
+
+    private func ms(_ nanos: UInt64) -> Int64 {
+        Int64(nanos / 1_000_000)
+    }
+    #endif
+
     public init() throws {
         guard let session = Session() else {
             throw EditorError.sessionCreationFailed
@@ -195,8 +236,17 @@ public final class EditorViewModel: ObservableObject {
     private func startPlaybackLoop() {
         playbackTimer?.invalidate()
         tickCount = 0
-        // 60Hz 驱动取帧请求；UI 发布（playhead）降频到 30Hz —— 见 tickPlayback 注释。
-        // 泵跟不上就丢帧，时刻由墙钟算，丢帧不影响播放节奏的正确性。
+        #if DEBUG
+        // 阶段 0 性能剖面（RESEARCH-006 §1）：每 2s 汇总一行 —— Timer tick 耗时
+        // p95（主线程占用）、泵 rendered/s（解码吞吐）、MTKView draw/s（呈现帧率，
+        // 由 PreviewMTKView 经 `PlaybackDrawCounter` 回填）。真机数据回填 baselines。
+        debugTickCostP95Nanos = 0
+        debugTickSamples = 0
+        debugTickCosts = []
+        if let st = previewPump?.stats {
+            debugPumpBaseline = (st.rendered, st.requested)
+        }
+        #endif
         let timer = Timer.scheduledTimer(withTimeInterval: 1.0 / 60.0, repeats: true) {
             [weak self] _ in
             // Timer 在主 run loop 回调，但 Swift 6 并发模型不认识
@@ -220,6 +270,10 @@ public final class EditorViewModel: ObservableObject {
     ///     而画面呈现由 MTKView 的连续绘制负责，不依赖 playhead 的发布频率。
     private func tickPlayback() {
         guard let player, isPlaying else { return }
+        #if DEBUG
+        let tickStart = DispatchTime.now()
+        defer { debugRecordTickCost(start: tickStart) }
+        #endif
         _ = player.tick()
         if player.isPlaying {
             let now = player.currentTime
@@ -334,8 +388,20 @@ public final class EditorViewModel: ObservableObject {
     ///    RunLoop 泵主队列等待，正式 UI 走 observer 回流，不这样等）。
     @discardableResult
     public func installDemoClipFromEnvironment() -> Bool {
-        guard let path = ProcessInfo.processInfo.environment["CQ_DEMO_VIDEO"],
-              FileManager.default.fileExists(atPath: path) else {
+        guard var path = ProcessInfo.processInfo.environment["CQ_DEMO_VIDEO"] else {
+            return false
+        }
+        // 真机剖面（阶段 0）：设备沙盒里没有 Mac 侧绝对路径 —— 支持传**文件名**，
+        // 依次相对 Documents、tmp 解析（相册导入落盘在 tmp/，devicectl 推的文件
+        // 可落任一处）。绝对路径（Mac 模拟器冒烟）语义不变。
+        if !path.hasPrefix("/") {
+            let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+            let candidates = [docs.appendingPathComponent(path).path,
+                              FileManager.default.temporaryDirectory.appendingPathComponent(path).path]
+            path = candidates.first { FileManager.default.fileExists(atPath: $0) }
+                ?? candidates[0]
+        }
+        guard FileManager.default.fileExists(atPath: path) else {
             return false
         }
         let ts = RationalTime.projectTimescale

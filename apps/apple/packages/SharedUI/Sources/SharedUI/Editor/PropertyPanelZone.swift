@@ -112,7 +112,7 @@ struct PropertyPanelZone: View {
 
             Divider()
 
-            Text("Properties")
+            Text("属性")
                 .font(.headline)
                 .foregroundStyle(Theme.primaryText)
                 .padding(.horizontal, 16)

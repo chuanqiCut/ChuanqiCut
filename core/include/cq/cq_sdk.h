@@ -1,5 +1,5 @@
-#ifndef CQ_SDK_H
-#define CQ_SDK_H
+#ifndef CQ_SDK_H_
+#define CQ_SDK_H_
 
 /* ChuanqiCut — 对外 C ABI（BIND-001 冻结）
  *
@@ -157,7 +157,7 @@ int32_t cq_session_register_asset(CQSession* session, uint64_t asset_id, const c
 /* 新增轨道。kind：0 = 视频，1 = 音频。 */
 int32_t cq_session_add_track(CQSession* session, int32_t kind);
 
-/* 新增片段（可撤销 —— 经 CommandHistory）。参数语义与 cq_preview_add_clip 相同：
+/* 新增片段（可撤销 —— 经 CommandHistory）。
  * 轨道不存在 / 类型不匹配 / 时长非正 / 同轨重叠 → session 线程校验失败。 */
 int32_t cq_session_add_clip(CQSession* session, uint64_t track_id, uint64_t asset_id,
                             int64_t start_value, int32_t start_timescale,
@@ -474,4 +474,4 @@ int32_t cq_session_timeline_duration(const CQSession* session, int64_t* out_valu
 } /* extern "C" */
 #endif
 
-#endif /* CQ_SDK_H */
+#endif /* CQ_SDK_H_ */

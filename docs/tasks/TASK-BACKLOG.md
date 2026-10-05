@@ -80,6 +80,22 @@ parallel:    false          # 是否与同批次其他任务并行
 | INFRA-007 | 基建 | 警告即错误（-Werror）与静态检查接入 | INFRA-002 | CI | 新代码零警告 |
 | INFRA-008 | 基建 | `pal/ohos/` 接口编译检查 target（ADR-0007） | CORE-006 | `pal/ohos/` | 接口签名变更时该 target 失败 |
 | INFRA-009 | 基建 | Apple 双工程拆分 + CocoaPods 源码集成（owner 决策 2026-10-02，替代 INFRA-005 的单工程形态） | UIA-002 | `apps/apple/**`, `ChuanqiCut.podspec` | 双工程 `pod install` 成功且 macOS/iOS 均编译通过 |
+| INFRA-010 | 基建 | 本机总门禁脚本 `tools/ci/run_gate.sh`（多机守门入口，cq-code-review 流程 A 依赖）✅ 2026-10-05 | INFRA-002 | `tools/ci/run_gate.sh` | 一条命令跑完 deps 校验/头纯净性/Debug+Release 全量单测/XCFramework+Swift/golden，一票否决，日志落 `build/gate-logs/` |
+| INFRA-011 | 基建 | DEPS-004 落地：静态库符号泄漏扫描（nm 全局符号 + `cq_/CQ_` 前缀白名单） | INFRA-010 | `tools/compliance/*`, `tools/ci/run_gate.sh` | 公共符号含非 `cq_/CQ_` 前缀时门禁失败 |
+| INFRA-012 | 基建 | `.clang-format`/`.clang-tidy` 固化 CODESTYLE §1~2 并接入门禁 | INFRA-010 | `.clang-format`, `.clang-tidy`, `tools/ci/run_gate.sh` | 现有代码零 diff（或一次性整形提交单独走） |
+
+### 2.1.1 代码风格统一（CODE-001，2026-10-05 全库巡检产出）
+
+> 风格判定唯一标准 = `docs/CODESTYLE.md`；审查流程 = `.agents/skills/cq-code-review`。
+> 巡检明细（每条带 file:line 证据）见 `docs/reviews/REVIEW-2026-10-05-全库风格巡检.md`。
+
+| ID | 层 | 任务 | 依赖 | 写集 | 验收 |
+|---|---|---|---|---|---|
+| STYLE-001 | 基建 | C++ 测试辅助收敛：新建 `tests/unit/test_util.h` 收编 32 份 `Check()` 复制体（已漂移：test_cache 打印 ok、test_time 不打印） | INFRA-002 | `tests/unit/*` | 全部测试用共享头，失败输出格式唯一 |
+| STYLE-002 | 基建 | Swift 测试辅助收敛：`waitForVersion`×6 复制体、TestPaths/RepoPath 命名统一 | — | `bindings/swift/Tests/*`, `apps/apple/packages/SharedUI/Tests/*` | 每包一份共享 helper；测试文件内禁止私有复制 |
+| STYLE-003 | UI | `PickerTheme` 并入 `Theme`（消除调色常量双真源与 AlbumPickerScreen.swift:107 混用） | — | `SharedUI/Sources/SharedUI/MediaPicker/*` | Theme 常量单一来源，双端渲染不变 |
+| STYLE-004 | 基建 | 「等待内核落地」原语收口（RunLoop 版 / async 版各一），替换三处生产忙等与多处测试手写轮询 | STYLE-002 | `bindings/swift/Sources/*`, `SharedUI/Sources/*` | 等待判据统一为「目标效果」型（P33），超时显式 |
+| STYLE-005 | UI | 相机模块风格收敛（**相机线执行**）：FaceObservation 去无意义 `public`、CameraViewModel 去 `ciContext!`、`NSError(domain:"cq.camera")` 收敛为枚举 | — | `apps/apple/ios/iOSApp/Camera/*` | App target 内零 public、零 force unwrap |
 
 ### 2.2 内核基础（跨平台层）
 

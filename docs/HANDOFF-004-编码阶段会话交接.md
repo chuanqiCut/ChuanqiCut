@@ -1,7 +1,7 @@
 # HANDOFF-004：编码阶段会话交接
 
 > 建立：2026-10-04
-> 覆盖：2026-10-03 ~ 2026-10-04
+> 覆盖：2026-10-03 ~ 2026-10-05
 > 前置阅读：`.ai/source/AGENTS.root.md`（真源）→ 本文件
 > 上一版：`docs/HANDOFF-003-*.md`（仍可作历史参考，但**状态以本文件为准**）
 
@@ -191,3 +191,42 @@ cd apps/apple/packages/SharedUI && swift test --disable-sandbox        # 54/54�
 - 附（MEDIA-021 实测教训）：**测试请求网格必须整数 ticks 构造**——浮点
   `ms*120` 截断出 3999/4000 交替步长，大量请求落回同一帧区间，污染"严格
   递增"断言与性能均值（首版 120 请求仅 31 个不同 pts，即此因）。
+
+---
+
+## 7. 2026-10-05 第二轮：全库风格巡检 + 三线并行立项（CODE-001）
+
+传哲要求"整体过一遍、统一风格与命名前缀、引入 code review skill、拆三线任务"。
+本轮产出（新会话接手先看这四份）：
+
+| 产物 | 位置 |
+|---|---|
+| 风格唯一标准 | `docs/CODESTYLE.md` |
+| 审查 skill（合并守门/自审/巡检三场景） | `.agents/skills/cq-code-review/` |
+| 本机总门禁（INFRA-010） | `tools/ci/run_gate.sh`（日志落 `build/gate-logs/`） |
+| 巡检报告（22 项发现，全部带 file:line） | `docs/reviews/REVIEW-2026-10-05-全库风格巡检.md` |
+| 三线并行方案（写集/号段/守门节奏） | `docs/tasks/PLAN-三线并行.md` |
+
+**巡检总结论**：命名与前缀纪律整体优秀（C ABI 61 函数 100% `cq_` 模式、
+guard/宏全 `CQ_`、namespace cq 全覆盖、与 ffmpeg 零冲突路径）；
+真正的问题 = 测试辅助复制漂移（`Check()`×32、`waitForVersion`×6）+ 少量违例
++ 工具链文档与现实落差（skill 引用 4 个不存在脚本，P49）。
+
+**本轮已修**（P0×1 + P1×9，明细见报告 §2）：`gfx_device.cpp` nothrow 分配、
+guard 统一尾下划线、陈旧注释（time.h 60000→120000、cq_sdk.h 幽灵函数引用）、
+Swift `Status.decodeError` 命名语义码（替代裸 2000）、AppEntry print→Logger、
+去 force unwrap、测试路径改走 TestPaths/RepoPath（P30 违例清零）、
+UI 文案中文化（时间线/属性）。
+
+**挂卡**：STYLE-001~005（BACKLOG §2.1.1）、INFRA-011（DEPS-004 符号扫描）、
+INFRA-012（clang-format）。STYLE-005 归相机线（避免写集冲突）。
+
+**下一步（按优先级）**：
+1. 传哲确认三线分工与号段（PLAN-三线并行 §2）→ 各线开工。
+2. STYLE-001（test_util.h 收编 32 份 Check()）是下一个纯内核侧首选任务。
+3. 集成机按 PLAN §4 节奏守门：fetch → run_gate.sh → cq-code-review 流程 A。
+
+**本轮坑**：P49（skill 幽灵脚本）、P50（bash 3.2 `$var`+全角 = unbound variable）。
+另：并行会话当日实锤 `StatusCode::kResource` 不是合法枚举名（应为
+`kResourceExhausted`，status.h:72），已用于修正本轮 gfx_device 修复——
+**枚举名以 status.h 为准，别凭分类枚举 StatusCategory 的名字推 StatusCode**。

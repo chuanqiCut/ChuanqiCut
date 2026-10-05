@@ -61,6 +61,8 @@ public struct Status: RawRepresentable, Equatable, Sendable {
     public init(rawValue: Int32) { self.rawValue = rawValue }
 
     public static let ok = Status(rawValue: 0)
+    /// 通用解码失败（2000）：打不开容器 / 解析不了。
+    public static let decodeError = Status(rawValue: 2000)
     /// 取消：**不是错误**（内核语义：独立的停止信号）。
     public static let cancelled = Status(rawValue: 6000)
     /// 队列满 / 资源耗尽 —— 背压信号，调用方应降速或重试（内核不内置重试）。

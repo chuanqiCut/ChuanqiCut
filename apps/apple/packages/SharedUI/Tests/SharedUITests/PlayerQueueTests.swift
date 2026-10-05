@@ -110,6 +110,35 @@ final class PlayerQueueTests: XCTestCase {
         XCTAssertEqual(vm.feedback, "已清空播放队列")
     }
 
+    // MARK: 源类型与缓冲（UIA-024）
+
+    func testRemoteSourcePolicyClassification() {
+        let https = URL(string: "https://example.com/a.m3u8") ?? URL(fileURLWithPath: "/f")
+        let http = URL(string: "http://example.com/a.mp4") ?? URL(fileURLWithPath: "/f")
+        let ftp = URL(string: "ftp://example.com/a.mp4") ?? URL(fileURLWithPath: "/f")
+        let local = URL(fileURLWithPath: "/tmp/a.mp4")
+
+        XCTAssertTrue(AVPlayerEngine.isRemoteMediaURL(https), "https = 远程")
+        XCTAssertTrue(AVPlayerEngine.isRemoteMediaURL(http), "http = 远程")
+        XCTAssertFalse(AVPlayerEngine.isRemoteMediaURL(ftp), "非 http(s) 不视为远程（拒绝面外）")
+        XCTAssertFalse(AVPlayerEngine.isRemoteMediaURL(local), "本地文件 = 非远程")
+    }
+
+    func testRemoteAndBufferingStatesSyncFromEngine() {
+        let (vm, engine) = makePlayerViewModel()
+        XCTAssertFalse(vm.isRemoteSource)
+        XCTAssertFalse(vm.isBuffering)
+
+        engine.isRemoteSource = true
+        engine.onStateChange?(.ready)
+        XCTAssertTrue(vm.isRemoteSource, "源类型随状态广播同步")
+
+        engine.onBufferingChange?(true)
+        XCTAssertTrue(vm.isBuffering, "缓冲态上抛控制层")
+        engine.onBufferingChange?(false)
+        XCTAssertFalse(vm.isBuffering)
+    }
+
     // MARK: 最近播放
 
     func testRecentStoreRecordDedupsCapsAndPersists() {

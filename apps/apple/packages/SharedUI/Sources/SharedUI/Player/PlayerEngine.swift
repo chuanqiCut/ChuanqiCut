@@ -68,6 +68,8 @@ protocol PlayerEngine: AnyObject {
     var subtitleTracks: [PlayerTrackOption] { get }
     /// 当前字幕轨 id（nil = 关闭字幕）。
     var currentSubtitleTrackID: Int? { get }
+    /// 当前源是否为远程（http/https）。远程源走差异化策略（缓冲等待、禁缩略图预热）。
+    var isRemoteSource: Bool { get }
 
     // MARK: 回调（主隔离域）
 
@@ -79,6 +81,8 @@ protocol PlayerEngine: AnyObject {
     var onEnded: (() -> Void)? { get set }
     /// 播放/暂停状态变化回调（含耳机拔出、来电中断等引擎自动暂停）。
     var onPlayStateChange: ((Bool) -> Void)? { get set }
+    /// 网络源缓冲状态回调（waitingToMinimizeStalling 进出；本地源恒 false）。
+    var onBufferingChange: ((Bool) -> Void)? { get set }
 
     // MARK: 动作
 

@@ -10,6 +10,11 @@
 
 import SwiftUI
 import UniformTypeIdentified
+#if canImport(UIKit)
+import UIKit
+#elseif canImport(AppKit)
+import AppKit
+#endif
 
 // MARK: - 播放页
 
@@ -114,6 +119,8 @@ public struct PlayerScreen: View {
                     vm.pip.attach(layer: layer)
                 }
             )
+            .scaleEffect(vm.zoomScale)          // 捏合缩放（UIA-017，纯视觉变换）
+            .offset(x: vm.zoomOffset.width, y: vm.zoomOffset.height)
             .ignoresSafeArea(edges: vm.isExpanded ? .all : [])
         } else {
             Color.black
@@ -178,6 +185,8 @@ private extension View {
 public struct PlayerLauncherScreen: View {
     @State private var urls: [URL] = []
     @State private var showsImporter = false
+    @State private var urlString = ""
+    @State private var urlError: String?
     @ObservedObject private var recent = PlayerRecentStore.shared
 
     public init() {}
@@ -231,6 +240,7 @@ public struct PlayerLauncherScreen: View {
                             .background(Color.white.opacity(0.12), in: Capsule())
                     }
                     .buttonStyle(.plain)
+                    urlEntry
                     if !recent.items.isEmpty {
                         recentList
                     }
@@ -239,6 +249,62 @@ public struct PlayerLauncherScreen: View {
                 .frame(maxWidth: 640)
             }
         }
+    }
+
+    /// 网址入口（UIA-024）：仅 http/https 点播；剪贴板一键粘贴。
+    private var urlEntry: some View {
+        VStack(spacing: 8) {
+            HStack(spacing: 10) {
+                TextField("粘贴视频网址（http/https）", text: $urlString)
+                    .textFieldStyle(.roundedBorder)
+                    .autocorrectionDisabled()
+                    .onSubmit {
+                        openURLString()
+                    }
+                Button {
+                    openURLString()
+                } label: {
+                    Image(systemName: "play.fill")
+                        .foregroundStyle(.white)
+                        .padding(10)
+                        .background(Color.white.opacity(0.12), in: Circle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("播放网址")
+                Button {
+                    urlString = Self.clipboardString() ?? ""
+                } label: {
+                    Image(systemName: "doc.on.doc")
+                        .font(.footnote)
+                        .foregroundStyle(.white)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("从剪贴板粘贴网址")
+            }
+            if let urlError = urlError {
+                Text(urlError)
+                    .font(.caption)
+                    .foregroundStyle(.red)
+            }
+        }
+    }
+
+    private func openURLString() {
+        let trimmed = urlString.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let parsed = URL(string: trimmed), AVPlayerEngine.isRemoteMediaURL(parsed) else {
+            urlError = "请输入 http/https 开头的视频网址"
+            return
+        }
+        urlError = nil
+        urls = [parsed]
+    }
+
+    static func clipboardString() -> String? {
+        #if canImport(UIKit)
+        UIPasteboard.general.string
+        #elseif canImport(AppKit)
+        NSPasteboard.general.string(forType: .string)
+        #endif
     }
 
     /// 最近播放（UIA-021）：失效条目点击即剔除。

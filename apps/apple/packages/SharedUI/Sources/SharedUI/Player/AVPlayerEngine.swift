@@ -27,6 +27,7 @@ final class AVPlayerEngine: PlayerEngine {
     private(set) var duration: TimeInterval = 0
     private(set) var videoSize: CGSize?
     private(set) var frameDuration: TimeInterval = 1.0 / 30.0
+    private(set) var isRemoteSource = false
     private(set) var audioTracks: [PlayerTrackOption] = []
     private(set) var currentAudioTrackID: Int?
     private(set) var subtitleTracks: [PlayerTrackOption] = []
@@ -64,6 +65,7 @@ final class AVPlayerEngine: PlayerEngine {
     var onStateChange: ((PlayerEngineState) -> Void)?
     var onEnded: (() -> Void)?
     var onPlayStateChange: ((Bool) -> Void)?
+    var onBufferingChange: ((Bool) -> Void)?
 
     // MARK: 观察者（load 时重建，invalidate 时拆除）
 
@@ -84,8 +86,13 @@ final class AVPlayerEngine: PlayerEngine {
         // 播放状态观察（挂 avPlayer，跨 load 存活，init 建 / deinit 拆）：
         // 覆盖引擎自动暂停（耳机拔出、来电中断）等外部状态变化，VM 据此同步 UI。
         self.playbackObservation = player.observe(\.timeControlStatus, options: [.new]) { [weak self] observed, _ in
-            let playing = observed.timeControlStatus != .paused
-            Task { @MainActor [weak self] in self?.onPlayStateChange?(playing) }
+            let status = observed.timeControlStatus
+            let playing = status != .paused
+            let buffering = status == .waitingToMinimizeStalling
+            Task { @MainActor [weak self] in
+                self?.onPlayStateChange?(playing)
+                self?.onBufferingChange?(buffering)
+            }
         }
     }
 
@@ -101,6 +108,10 @@ final class AVPlayerEngine: PlayerEngine {
         currentSubtitleTrackID = nil
         audioGroup = nil
         subtitleGroup = nil
+
+        // 源类型策略（UIA-024）：本地零等待起播；远程走系统缓冲策略。
+        isRemoteSource = Self.isRemoteMediaURL(url)
+        avPlayer.automaticallyWaitsToMinimizeStalling = !isRemoteSource
 
         let asset = AVURLAsset(url: url)
         let item = AVPlayerItem(asset: asset)
@@ -140,7 +151,11 @@ final class AVPlayerEngine: PlayerEngine {
             guard let self = self else { return }
             do {
                 let duration = try await asset.load(.duration)
-                guard duration.seconds.isFinite else { return }
+                guard duration.seconds.isFinite else {
+                    // 无限时长 = 直播流（范围外，PLAN-播放器进阶 §3：仅点播）
+                    self.setState(.failed("暂不支持直播流，请使用点播视频地址"))
+                    return
+                }
                 self.duration = duration.seconds
                 // 元数据可能晚于 item.status=ready 到达；同值重发 = "元数据有刷新"信号。
                 self.onStateChange?(self.state)
@@ -255,6 +270,12 @@ final class AVPlayerEngine: PlayerEngine {
     #endif
 
     // MARK: 内部
+
+    /// 源类型判定（UIA-024 纯函数）：仅 http/https 视为远程。
+    static func isRemoteMediaURL(_ url: URL) -> Bool {
+        guard let scheme = url.scheme?.lowercased() else { return false }
+        return scheme == "http" || scheme == "https"
+    }
 
     /// 组 → UI 条目（displayName 空串回退"轨道 N"；id = 组内下标）。
     private static func trackOptions(from group: AVMediaSelectionGroup?) -> [PlayerTrackOption] {

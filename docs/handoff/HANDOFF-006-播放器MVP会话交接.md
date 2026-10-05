@@ -66,6 +66,13 @@
 
 ## 实施进度（P1/P2 开工后滚动更新）
 
+- **UIA-024 / UIA-017 ✅ 代码落地（2026-10-05 Batch B）**：网络流点播
+  （`isRemoteMediaURL` 纯函数 + 远程恢复系统缓冲 + 直播流拒绝 + onBufferingChange
+  → spinner + 远程禁预热/气泡 + Launcher 网址入口含剪贴板粘贴）+ 捏合缩放
+  （PlayerZoomMath 纯函数 + MagnificationGesture + 缩放态 pan 拖移 + 双击复位 +
+  aspect/换片复位）。PlayerTests +3、PlayerQueueTests +2 用例（累计 33）。
+  **待构建机**：MagnificationGesture 与 pan/长按消歧、远程 AVPlayer 行为；
+  **待真机**：HLS 样本、捏合手感。
 - **UIA-021 / UIA-022 ✅ 代码落地（2026-10-05 Batch A）**：最近播放存储
   （`PlayerRecentStore`，shared 单例 + tests 注入）+ 队列状态机（分派链
   AB > 循环 > 队列 > 停止；失败跳片）+ Launcher 多选/最近列表 + 队列 sheet。

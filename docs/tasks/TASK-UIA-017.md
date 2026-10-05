@@ -2,6 +2,14 @@
 > 前置：构建机门禁 PASS（TASK-UIA-015）；开工前 git fetch 核对号（PLAN-播放器进阶 §5）。
 # TASK-UIA-017：播放器画面捏合缩放与拖移
 
+> **状态**：✅ 代码落地（2026-10-05，Batch B）；手势消歧真机项待验证。
+> 落地：`PlayerZoomMath` 纯函数（钳制 1x–3x/回弹阈值 1.15/拖移边界=半幅×(scale-1)）
+> + VM 缩放状态机（updateZoomScale/settleZoom/updateZoomOffset/resetZoom，
+> containerSize 由手势层传参不存视图尺寸）+ MagnificationGesture + 缩放态 pan
+> 拖移画面（PanMode.picture 分流，亮度/音量让位）+ 双击缩放态=复位/1x 态=快进快退
+> + surface scaleEffect/offset 纯视觉变换 + aspect 切换与换片复位。
+> 本机 parse 全绿。
+
 ```yaml
 id:          TASK-UIA-017
 layer:       UI

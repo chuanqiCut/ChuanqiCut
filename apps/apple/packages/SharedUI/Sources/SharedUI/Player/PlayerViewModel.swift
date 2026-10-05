@@ -55,6 +55,13 @@ final class PlayerViewModel: ObservableObject {
     @Published private(set) var abEnd: TimeInterval = 0
     /// 长按倍速进行中（松手恢复原速率）。
     @Published private(set) var isBoosting = false
+    /// 当前源是否远程（UIA-024；引擎随状态广播同步）。
+    @Published private(set) var isRemoteSource = false
+    /// 网络源缓冲中（waitingToMinimizeStalling；控制层显示 spinner）。
+    @Published private(set) var isBuffering = false
+    /// 捏合缩放（UIA-017）：1x–3x，纯 UI 变换不碰引擎。
+    @Published private(set) var zoomScale: CGFloat = 1.0
+    @Published private(set) var zoomOffset: CGSize = .zero
     /// 可选音轨/字幕（引擎装载后经状态广播同步；空 = 无多轨）。
     @Published private(set) var audioTracks: [PlayerTrackOption] = []
     @Published private(set) var currentAudioTrackID: Int?
@@ -141,6 +148,7 @@ final class PlayerViewModel: ObservableObject {
         engine.onStateChange = { [weak self] newState in self?.engineDidChangeState(newState) }
         engine.onEnded = { [weak self] in self?.engineDidEnd() }
         engine.onPlayStateChange = { [weak self] playing in self?.enginePlayStateDidChange(playing) }
+        engine.onBufferingChange = { [weak self] buffering in self?.isBuffering = buffering }
         rewireThumbnailHandler()
         pip.onPossibleChange = { [weak self] possible in self?.isPipPossible = possible }
 
@@ -228,6 +236,8 @@ final class PlayerViewModel: ObservableObject {
         currentSubtitleTrackID = nil
         resetABLoop()
         warmedUp = false
+        resetZoom()
+        isBuffering = false
         state = .loading
         recordedRecentForCurrentMedia = false
         engine.load(url: newURL)
@@ -350,6 +360,7 @@ final class PlayerViewModel: ObservableObject {
 
     func setAspectFill(_ fill: Bool) {
         isAspectFill = fill
+        resetZoom()   // 填充/适合切换复位缩放（UIA-017）
     }
 
     // MARK: 循环与长按倍速
@@ -412,6 +423,32 @@ final class PlayerViewModel: ObservableObject {
         if target < abStart - 0.25 || target > abEnd + 0.25 {
             resetABLoop()
         }
+    }
+
+    // MARK: 捏合缩放（UIA-017）
+
+    /// 捏合进行中：钳制档位并同步钳制拖移（containerSize 由手势层传入，VM 不存视图尺寸）。
+    func updateZoomScale(_ scale: CGFloat, containerSize: CGSize) {
+        zoomScale = PlayerZoomMath.clampScale(scale)
+        zoomOffset = PlayerZoomMath.clampOffset(zoomOffset, scale: zoomScale, containerSize: containerSize)
+    }
+
+    /// 松手回弹：低于回弹阈值回 1x（防"半放大"悬挂态）。
+    func settleZoom(containerSize: CGSize) {
+        updateZoomScale(PlayerZoomMath.settledScale(zoomScale), containerSize: containerSize)
+        if zoomScale == PlayerZoomMath.minScale {
+            zoomOffset = .zero
+        }
+    }
+
+    /// 缩放态拖移画面。
+    func updateZoomOffset(_ offset: CGSize, scale: CGFloat, containerSize: CGSize) {
+        zoomOffset = PlayerZoomMath.clampOffset(offset, scale: scale, containerSize: containerSize)
+    }
+
+    func resetZoom() {
+        zoomScale = PlayerZoomMath.minScale
+        zoomOffset = .zero
     }
 
     // MARK: 音轨 / 字幕
@@ -524,6 +561,7 @@ final class PlayerViewModel: ObservableObject {
         duration = engine.duration
         videoSize = engine.videoSize
         // 轨道元数据随同值广播刷新（装载后异步到达）。
+        isRemoteSource = engine.isRemoteSource
         audioTracks = engine.audioTracks
         currentAudioTrackID = engine.currentAudioTrackID
         subtitleTracks = engine.subtitleTracks
@@ -589,14 +627,17 @@ final class PlayerViewModel: ObservableObject {
     /// 就绪后批量预热均匀分布的缩略图（拖动气泡就近命中缓存）。
     /// 短片按 5s/桶收紧，长片封顶 24 桶；错峰发起在 loader 内部。
     private func scheduleWarmupIfNeeded() {
-        guard !warmedUp, engine.duration > 0 else { return }
+        guard !warmedUp else { return }
         warmedUp = true
+        // 远程源禁预热（UIA-024）：AVAssetImageGenerator 远程取帧过慢 [E]，气泡退化纯时间。
+        guard engine.duration > 0, !engine.isRemoteSource else { return }
         let count = min(24, max(6, Int(engine.duration / 5)))
         thumbnails?.warmup(duration: engine.duration, count: count)
     }
 
     private func requestScrubThumbnail() {
-        guard let thumbnails = thumbnails else { return }
+        // 远程源不做拖动气泡缩略图（UIA-024：现取过慢，降级纯时间气泡）。
+        guard let thumbnails = thumbnails, !engine.isRemoteSource else { return }
         if let cached = thumbnails.cachedThumbnail(atSecond: scrubPosition) {
             scrubThumbnail = cached
             return

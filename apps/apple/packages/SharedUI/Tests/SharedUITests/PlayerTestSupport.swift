@@ -27,6 +27,7 @@ final class StubPlayerEngine: PlayerEngine {
     var currentAudioTrackID: Int?
     var subtitleTracks: [PlayerTrackOption] = []
     var currentSubtitleTrackID: Int?
+    var isRemoteSource = false
     private(set) var selectedAudioID: Int?
     private(set) var selectedSubtitleID: Int?
 
@@ -34,6 +35,7 @@ final class StubPlayerEngine: PlayerEngine {
     var onStateChange: ((PlayerEngineState) -> Void)?
     var onEnded: (() -> Void)?
     var onPlayStateChange: ((Bool) -> Void)?
+    var onBufferingChange: ((Bool) -> Void)?
 
     private(set) var loadCalls: [URL] = []
     private(set) var seeks: [(target: TimeInterval, precise: Bool)] = []

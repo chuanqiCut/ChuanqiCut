@@ -274,6 +274,42 @@ final class PlayerTests: XCTestCase {
         vm.cycleABLoop()
     }
 
+    // MARK: 缩放几何（UIA-017）
+
+    func testZoomScaleClampAndSettle() {
+        XCTAssertEqual(PlayerZoomMath.clampScale(0.5), 1.0, "下限 1x")
+        XCTAssertEqual(PlayerZoomMath.clampScale(2.0), 2.0)
+        XCTAssertEqual(PlayerZoomMath.clampScale(5.0), 3.0, "上限 3x")
+
+        XCTAssertEqual(PlayerZoomMath.settledScale(1.1), 1.0, "低于回弹阈值回 1x（防半放大悬挂）")
+        XCTAssertEqual(PlayerZoomMath.settledScale(1.2), 1.2)
+        XCTAssertEqual(PlayerZoomMath.settledScale(5.0), 3.0)
+    }
+
+    func testZoomOffsetClampedInsideContainer() {
+        let container = CGSize(width: 1000, height: 500)
+        XCTAssertTrue(PlayerZoomMath.maxOffset(for: 1.0, containerSize: container) == .zero, "1x 不可拖移")
+        let limit = PlayerZoomMath.maxOffset(for: 2.0, containerSize: container)
+        XCTAssertTrue(limit == CGSize(width: 500, height: 250), "半幅 × (scale-1)")
+
+        let clamped = PlayerZoomMath.clampOffset(CGSize(width: 999, height: -999),
+                                                 scale: 2.0, containerSize: container)
+        XCTAssertTrue(clamped == CGSize(width: 500, height: -250), "拖移钳制在画面边界内")
+    }
+
+    func testZoomResetsOnAspectToggleAndSwap() {
+        let (vm, _) = makePlayerViewModel()
+        vm.updateZoomScale(2.0, containerSize: CGSize(width: 1000, height: 500))
+        XCTAssertEqual(vm.zoomScale, 2.0)
+
+        vm.setAspectFill(true)
+        XCTAssertEqual(vm.zoomScale, 1.0, "适合/填充切换复位缩放")
+
+        vm.updateZoomScale(2.0, containerSize: CGSize(width: 1000, height: 500))
+        vm.swapMedia(to: URL(fileURLWithPath: "/tmp/cq-other.mp4"), force: true)
+        XCTAssertEqual(vm.zoomScale, 1.0, "换片复位缩放")
+    }
+
     // MARK: 纯函数
 
     func testClockFormatting() {

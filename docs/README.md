@@ -54,7 +54,7 @@ cat docs/handoff/HANDOFF-004-*.md      # 3. 最近交接（状态以最新一份
 
 ---
 
-## 三、决策记录（decisions/，ADR-0001 ~ 0020）
+## 三、决策记录（decisions/，ADR-0001 ~ 0021）
 
 | ADR | 决策 |
 |---|---|
@@ -78,6 +78,7 @@ cat docs/handoff/HANDOFF-004-*.md      # 3. 最近交接（状态以最新一份
 | [0018](decisions/ADR-0018-预览宽高比的视口接缝.md) | 预览宽高比的视口接缝 |
 | [0019](decisions/ADR-0019-文档体系分层与归档规则.md) | **文档体系分层与归档规则**（本地图的权威定义） |
 | [0020](decisions/ADR-0020-智能成片与大模型接入边界.md) | 智能成片与大模型（LLM）接入边界（特征上云/素材不出设备/EditPlan 校验） |
+| [0021](decisions/ADR-0021-CoreImage-kernel不走Xcode内建Metal阶段.md) | CIKernel 构建链路：`.metal` 用 `metal -fcikernel` 编，不走 Xcode 内建 Metal 阶段 |
 
 **规则**：改变既有惯例/架构约束必须新增 ADR；取号前先 `git fetch`（双机并行撞号纪律见 ADR-0019 §4）。
 
@@ -139,10 +140,14 @@ cat docs/handoff/HANDOFF-004-*.md      # 3. 最近交接（状态以最新一份
 
 ---
 
-## 八、构建运维（docs/ 根）
+## 八、工程规范与审查（docs/ 根 + reviews/）
 
 - [`BUILD.md`](BUILD.md) — 构建指南（core 门禁命令、Apple 双工程）
 - [`COCOAPODS.md`](COCOAPODS.md) — CocoaPods 源码集成说明
+- [`CODESTYLE.md`](CODESTYLE.md) — **代码风格唯一标准**（CODE-001 成文，`cq-code-review` skill 据此执行）
+- [`reviews/`](reviews/) — 审查记录（如 [REVIEW-2026-10-05 全库风格巡检](reviews/REVIEW-2026-10-05-全库风格巡检.md)）
+- [`../tools/ci/run_gate.sh`](../tools/ci/run_gate.sh) — 统一门禁脚本（本机总门禁入口）
+- [`tasks/PLAN-三线并行.md`](tasks/PLAN-三线并行.md) — 相机/编辑器/智能成片三线并行的号段与写集规划
 
 ---
 

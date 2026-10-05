@@ -144,7 +144,7 @@ baselines → 当日日志 → MEMORY.md（新硬规则写这里，不留在日�
 - 跨工具链兼容：不用 `std::va_list`（用 `::va_list` + `<cstdarg>`）；不对 volatile 复合赋值/自增。
 - **Apple 端没有 brew**：xcodegen 取 GitHub Release 二进制放 `/usr/local/bin`（见下节）。
 
-## Apple 端工程与构建硬规则（2026-10-05 定，P51-P53 / ADR-0021）
+## Apple 端工程与构建硬规则（2026-10-05 定，P54-P56 / ADR-0021）
 - **"cannot find X in scope"先查工程引用，不要先怀疑没提交**。xcodeproj 是 xcodegen 生成产物、
   不入库，极易陈旧（曾只剩 1/12 源文件引用，11 个文件从未编译）。
   核对法：`git ls-files <dir>` vs `find` vs `grep .swift project.pbxproj`。

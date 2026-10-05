@@ -791,7 +791,7 @@ CAM-012 首次对相机模块做全量 `-typecheck`（P46 技法），一次抓�
 - 日期 / 来源 / 验证状态：2026-10-05 / INFRA-010 首跑 / **verified**
   （修后 deps 失败分支正常打印 tail + 摘要并 exit 1；通过分支见 run_gate 实跑）
 
-### P51 · Xcode 工程是生成产物却没人重新生成 → 源码全在仓库、target 里一个都没有
+### P54 · Xcode 工程是生成产物却没人重新生成 → 源码全在仓库、target 里一个都没有
 - 现象：`ChuanqiCutApp.swift:23: cannot find 'HomeView' in scope`。第一反应是
   "HomeView 没提交"，但 `git ls-files` 与磁盘 11 .swift + 1 .metal **完全一致**，
   `git status` 干净。
@@ -810,7 +810,7 @@ CAM-012 首次对相机模块做全量 `-typecheck`（P46 技法），一次抓�
 - 日期 / 来源 / 验证状态：2026-10-05 / HomeView 编译不过排障 / **verified**
   （generate 后 12/12 引用齐全；simulator + device 双端 BUILD SUCCEEDED）
 
-### P52 · CIKernel 的 metallib：编译和链接都得 -fcikernel，`xcrun metallib` 会产出能用的**空壳**
+### P55 · CIKernel 的 metallib：编译和链接都得 -fcikernel，`xcrun metallib` 会产出能用的**空壳**
 - 现象：`beauty_bilateral.metal`（CoreImage kernel）走 Xcode 内建 Metal 阶段时
   `air-lld: symbol(s) not found for target 'air64_v25-apple-ios16.0.0-simulator'`
   （`coreimage::sampler` 的 sample/coord/extent）。
@@ -832,7 +832,7 @@ CAM-012 首次对相机模块做全量 `-typecheck`（P46 技法），一次抓�
 - 日期 / 来源 / 验证状态：2026-10-05 / CAM-012 首次编译 / **verified**
   （产物与手工链接的 8399B 样本 `cmp` IDENTICAL；simulator/device 双端均有）
 
-### P53 · xcodegen 2.46 三个不显然的行为（PRODUCT_NAME / excludes / metal flags）
+### P56 · xcodegen 2.46 三个不显然的行为（PRODUCT_NAME / excludes / metal flags）
 - （a）**不写 `PRODUCT_NAME`**：生成的工程缺该设置，Xcode 解析出空产品名，报
   `Multiple commands produce '.../Build/Products/Debug-iphonesimulator/.app'`
   （注意路径里 `.app` 前是空的）。→ project.yml 的 `settings.base` 必须显式写
@@ -842,7 +842,7 @@ CAM-012 首次对相机模块做全量 `-typecheck`（P46 技法），一次抓�
 - （c）**Metal 编译 flag 塞不进去**：`MTL_OTHER_FLAGS = -fcikernel` 在
   `xcodebuild -showBuildSettings` 里看得到，但**不会出现在 metal 命令行**；
   source 级的 `compilerFlags` 也不落地（PBXBuildFile 无 settings 段）。
-  → 真要给 .metal 加 flag，别指望 build setting，用脚本自己编（见 P52）。
+  → 真要给 .metal 加 flag，别指望 build setting，用脚本自己编（见 P55）。
 - 排障：`xcodebuild ... -showBuildSettings | grep MTL_` 能确认设置存在，但
   **存在 ≠ 生效**；要回到编译日志里 grep 实际命令行验证。
 - 日期 / 来源 / 验证状态：2026-10-05 / HomeView 排障（工程重建三次）/ **verified**

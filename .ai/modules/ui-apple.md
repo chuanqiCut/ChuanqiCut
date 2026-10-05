@@ -92,7 +92,7 @@ xcodebuild build -workspace ChuanqiCut.xcworkspace -scheme ChuanqiCutApp \
 # 运行仅在真机可用时（xcodebuild -destination 'platform=iOS'）
 
 # ⚠️ 生成顺序必须是 xcodegen generate **先于** pod install：
-#    generate 会重写 xcodeproj，把 pod install 注入的 Pods 引用清掉（P51/P53）。
+#    generate 会重写 xcodeproj，把 pod install 注入的 Pods 引用清掉（P54/P56）。
 # ⚠️ 多人/多会话共用机器时务必加 -derivedDataPath 隔离，否则撞
 #    `unable to attach DB ... database is locked`。
 

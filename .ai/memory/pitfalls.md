@@ -781,8 +781,15 @@ CAM-012 首次对相机模块做全量 `-typecheck`（P46 技法），一次抓�
    `@unchecked Sendable`（队列独占纪律担保），capturePhoto 的 onDone 经
    PhotoRelay（@unchecked Sendable，新增 deliver()）转交，@Sendable 闭包不再捕获
    非 Sendable 的 onDone。
+5. SharedUI `AlbumPickerScreen.PickerFeedback`：nonisolated static func 的
+   `#if canImport(UIKit)` 分支里用 UIImpactFeedbackGenerator / UIApplication.shared
+   （全部 @MainActor）→ iOS 编译路径必报 main actor-isolated call；macOS 走
+   AppKit 分支（NSWorkspace 无整类标注）故 swift test 从未暴露。enum 标
+   @MainActor（调用点全在 View 内，零改动）。SharedUI 其余 20 文件 iOS 16 视角
+   静态审查无可编译级问题。
 **规则**：App 目标级 typecheck 必须带 `-swift-version 6` 跑（与 SWIFT_VERSION=6.1
-一致），否则严格并发错误全部放行；本批修复只过了 -parse（本机 Swift 5.5 无
-iOS 16 SDK），类型级验证待构建机。
+一致），否则严格并发错误全部放行；**且 `#if canImport(UIKit)` 分支是 macOS
+验证的盲区，iOS-only 代码至少做一次 iOS 目标 typecheck**。
+本批修复只过了 -parse（本机 Swift 5.5 无 iOS 16 SDK），类型级验证待构建机。
 - 日期 / 来源 / 验证状态：2026-10-05 / 双机集成修复（用户报首页编译失败）/
   **未实测**：静态审查 + -parse；-typecheck/xcodebuild 待构建机

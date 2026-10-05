@@ -475,6 +475,33 @@ Spec UIA-020 / ADR-0022 / RESEARCH-006。**内核 = AVPlayer 过渡实现 +
 - **第二轮测试**：PlayerTests 8 → 14 用例（boost 恢复/循环续播/AB 回跳/
   短区间取消/区间外清除/倍速记忆/换片复位）。parse 全绿。
 
+## 播放器进阶版实施（2026-10-05 深夜，Batch A–E，PLAN 十卡落地）
+
+提交链：d2122f8（A：021 最近播放 + 022 队列）→ cc7267a（B：024 网络流 + 017 缩放）→
+a7d197d（C：ADR-0023 + 018/025 字幕）→ 7fa0826（D：016 章节/PiP 占位/AirPlay）→
+935b4d8（E：023 设置页 + 026 素材库联动 + 027 mini player）。
+
+- **域形状新增**：`PlayerRecentStore`（shared 单例 + tests 注入 suite；iOS bookmark
+  与 macOS 路径双分支）、`PlayerController`（public 门面：App 级共享 VM，
+  objectWillChange 合并转发 = 关窗续播；open/playStandalone）、`PlayerMiniBar`
+  （MenuBarExtra .window）、`PlayerSettingsView`、`SubtitleParser`/
+  `SubtitleOverlayView`（ADR-0023：值类型接缝，解析下沉 C++ 时渲染零改动）、
+  `PlayerScreenBody`（internal 共享 body；teardownOnDisappear 区分自管/控制器双模式）、
+  `PlayerTestSupport`（StubPlayerEngine + makePlayerViewModel 跨测试类共用）。
+- **PlayerEngine 协议累计增量**：onPlayStateChange、chapters（PlayerChapter）、
+  isRemoteSource、onBufferingChange——控制语义全在接缝内，AVPlayer 替换面不变。
+- **域边界更新**：AVKit 的 AVRoutePickerView 落 PlayerSurfaceView（"画面/系统播控"
+  域文件）；AVFoundation 名义引用新增文件 = SubtitleParser/OverlayView（纯 Foundation
+  + CoreGraphics + SwiftUI，无 AV 依赖——Overlay 只吃值类型）。
+- **测试**：PlayerTests 20 + PlayerQueueTests 19 + PlayerSubtitleTests 9 = **48 用例**
+  （stub 引擎全状态机覆盖；ASS 样式切换切段 bug 在写测试时暴露并修复——纯函数
+  全量单测策略的价值实证）。
+- **未落项**：UIA-023 的 macOS PiP 按钮 + F/S/A 快捷键（系统行为待真机，卡内标注）。
+- **待构建机（共性）**：swift test 48、双平台 xcodebuild 0 警告、Swift 6 风险点
+  （AVMediaSelectionGroup/AVAssetImageGenerator Sendable、PiP delegate 线程、
+  MenuBarExtra 注入、requestGeometryUpdate）；**待真机**：HLS 样本、bookmark 跨会话、
+  连播间隙、捏合手感、章节/字幕真实样本。
+
 ## UIA-015 第三轮（2026-10-05 深夜，V1 收尾）
 
 - **音轨/字幕选择**：`PlayerEngine` 协议扩展（+`PlayerTrackOption`

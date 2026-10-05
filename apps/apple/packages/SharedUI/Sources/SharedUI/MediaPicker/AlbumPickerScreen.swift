@@ -451,6 +451,11 @@ private struct PermissionGuideView: View {
 
 // MARK: - 系统交互（震动 / 设置跳转；平台分支为 UI 管道，非能力推断）
 
+// @MainActor：UIKit 侧 API（UIImpactFeedbackGenerator / UIApplication.shared）
+// 全部主线程隔离，nonisolated 函数引用它们在 iOS 编译路径直接报错（P49）——
+// macOS 分支（NSWorkspace）无此约束，故 swift test 从未暴露。调用点均在
+// View（MainActor）内，标注后调用侧零改动。
+@MainActor
 enum PickerFeedback {
 
     // UIImpactFeedbackGenerator / UIApplication.shared 在 Swift 6 里是

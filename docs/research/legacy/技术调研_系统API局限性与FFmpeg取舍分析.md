@@ -1,3 +1,5 @@
+> 🗄️ **历史素材（第一代调研）**：本文档已经 [`RESEARCH-001`](../RESEARCH-001-现有调研文档批判性评审与事实核验.md) 批判性评审，其结论被 ADR 与 ARCH 方案**吸收、修正或废弃**。其中的性能数字一律为估算 [E]、选型结论不得直接引用；有效结论以 `docs/research/RESEARCH-001` §5 处置表、`docs/specs/`、`docs/decisions/` 为准。
+
 # 系统 API 的局限性分析 & FFmpeg 取舍
 
 > 核心问题：纯 Apple 系统 API 在 Seek 和变速场景下到底够不够用，

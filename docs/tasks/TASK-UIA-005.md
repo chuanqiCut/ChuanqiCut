@@ -5,7 +5,7 @@ id:          TASK-UIA-005
 layer:       UI + BIND
 goal:        时间线上的片段可拖拽移动、右边缘可裁剪，结束手势时提交 Command；undo/redo 有 C ABI 与 UI 入口
 input:       [docs/tasks/TASK-BACKLOG.md §3.5 UIA-005/UIA-008, docs/tasks/TASK-UIA-004.md,
-              docs/tasks/TASK-MODEL-002.md, docs/HANDOFF-003 §2, .ai/modules/{model,session,ui-apple}.md]
+              docs/tasks/TASK-MODEL-002.md, docs/handoff/HANDOFF-003 §2, .ai/modules/{model,session,ui-apple}.md]
 output:      [move/trim/undo/redo C ABI + C TU 测试, Swift 封装, SharedUI 拖拽/裁剪交互, undo/redo 入口, 测试]
 write_set:   core/include/cq/cq_sdk.h, core/src/cq_sdk.cpp,
              core/include/cq/session/editor_session.h, core/src/session/editor_session.cpp,

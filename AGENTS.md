@@ -39,6 +39,7 @@ ChuanqiCut 是**跨平台视频编辑 SDK + 各端原生 App**：
 
 ## 动手之前
 
+0. 文档地图与分层规则：`docs/README.md` + `ADR-0019`（六层结构、根目录不放内容文档、legacy 只读、编号纪律）。
 1. 读 `.ai/modules/<你负责的模块>.md`。
 2. 读你的 `docs/tasks/TASK-<ID>.md`（若无，先跑 `cq-task-planning` 生成）。
 3. 读相关 `docs/decisions/ADR-*.md`。
@@ -89,7 +90,7 @@ tools/qa/golden_compare.sh --case=<case>                # golden 对比（渲染
 | 1 | `.ai/modules/<模块>.md` | 接口新增/变更、分层调整、装配形状 | 存在对应段落；新模块要新建文件 |
 | 2 | `docs/decisions/ADR-*.md` | **改变了既有惯例/架构约束**时必须新增 | 有 ADR 编号并被任务卡引用 |
 | 3 | `docs/tasks/TASK-<ID>.md` | 子步骤进度表、写集、新增文件清单 | 状态与实际一致 |
-| 4 | `docs/HANDOFF-*.md` | 下一步是谁、装配形状、坑 | 新会话照它能接手 |
+| 4 | `docs/handoff/HANDOFF-*.md` | 下一步是谁、装配形状、坑 | 新会话照它能接手 |
 | 5 | `.ai/memory/pitfalls.md` | 本轮踩的坑（日期+来源+**验证状态**） | 有条目，不是只在回复里说 |
 | 6 | `.ai/memory/baselines.md` | 实测数据，**替换估算数字** | 无实测就明确写"未实测" |
 | 7 | `.workbuddy/memory/YYYY-MM-DD.md` | 当日工作日志（append-only） | 有本轮记录 |

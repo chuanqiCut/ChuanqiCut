@@ -4,7 +4,7 @@
 id:          AIEDIT-007
 layer:       SDK
 goal:        将 002/004/005/006/011 的能力以 C ABI 暴露并接通 Swift 绑定，形成"analyze → generate → apply"可调用链
-input:       [AIEDIT-001 契约, AIEDIT-002/004/005/006/011 产物, ADR-0019, .ai/modules/session.md（observer 模式）]
+input:       [AIEDIT-001 契约, AIEDIT-002/004/005/006/011 产物, ADR-0020, .ai/modules/session.md（observer 模式）]
 output:      [cq_sdk.h 新函数组, Swift 绑定, C ABI 测试, SharedUI 侧可消费的句柄/回调]
 write_set:   core/include/cq/cq_sdk.h(高冲突——独占批次)、core/src/abi/(新文件 ai 段)、
              bindings/swift/Source/(新 AiPlan.swift 等)、bindings 测试、core/tests/test_c_abi_ai.c(新)

@@ -27,6 +27,13 @@ final class AVPlayerEngine: PlayerEngine {
     private(set) var duration: TimeInterval = 0
     private(set) var videoSize: CGSize?
     private(set) var frameDuration: TimeInterval = 1.0 / 30.0
+    private(set) var audioTracks: [PlayerTrackOption] = []
+    private(set) var currentAudioTrackID: Int?
+    private(set) var subtitleTracks: [PlayerTrackOption] = []
+    private(set) var currentSubtitleTrackID: Int?
+    /// 选择组的引擎侧持有（select 时按 id 取回 option）。
+    private var audioGroup: AVMediaSelectionGroup?
+    private var subtitleGroup: AVMediaSelectionGroup?
 
     /// 画面 sink 绑定用（ADR-0022 已登记的 MVP 类型耦合点：仅
     /// PlayerScreen 的 `as? AVPlayerEngine` 分支使用，不得扩散）。
@@ -86,6 +93,14 @@ final class AVPlayerEngine: PlayerEngine {
 
     func load(url: URL) {
         teardownObservers()
+
+        // 轨道元数据随新源重建（旧列表先清，防换片后闪现上一片的轨道）。
+        audioTracks = []
+        subtitleTracks = []
+        currentAudioTrackID = nil
+        currentSubtitleTrackID = nil
+        audioGroup = nil
+        subtitleGroup = nil
 
         let asset = AVURLAsset(url: url)
         let item = AVPlayerItem(asset: asset)
@@ -152,6 +167,26 @@ final class AVPlayerEngine: PlayerEngine {
                 self.log.error("load video metadata 失败: \(String(describing: error), privacy: .public)")
             }
         }
+        Task { @MainActor [weak self] in
+            guard let self = self else { return }
+            do {
+                async let audible = asset.loadMediaSelectionGroup(for: .audible)
+                async let legible = asset.loadMediaSelectionGroup(for: .legible)
+                let audibleGroup = try await audible
+                let legibleGroup = try await legible
+                self.audioGroup = audibleGroup
+                self.subtitleGroup = legibleGroup
+                self.audioTracks = Self.trackOptions(from: audibleGroup)
+                self.subtitleTracks = Self.trackOptions(from: legibleGroup)
+                let current = self.item?.currentMediaSelection
+                self.currentAudioTrackID = Self.optionID(current?.audioMediaSelectionOption, in: audibleGroup)
+                self.currentSubtitleTrackID = Self.optionID(current?.legibleMediaSelectionOption, in: legibleGroup)
+                // 同值重发 = "轨道元数据有刷新"信号（与时长广播同机制）。
+                self.onStateChange?(self.state)
+            } catch {
+                self.log.error("load media selection 失败: \(String(describing: error), privacy: .public)")
+            }
+        }
 
         // 周期时刻回调（0.25s 粒度：进度条平滑下限，UI 发布再由 VM 去抖）。
         timeObserver = avPlayer.addPeriodicTimeObserver(
@@ -184,6 +219,20 @@ final class AVPlayerEngine: PlayerEngine {
         }
     }
 
+    func selectAudioTrack(id: Int?) {
+        guard let group = audioGroup else { return }
+        let option = id.flatMap { id in group.options.indices.contains(id) ? group.options[id] : nil }
+        item?.selectMediaOption(option, in: group)
+        currentAudioTrackID = id
+    }
+
+    func selectSubtitleTrack(id: Int?) {
+        guard let group = subtitleGroup else { return }
+        let option = id.flatMap { id in group.options.indices.contains(id) ? group.options[id] : nil }
+        item?.selectMediaOption(option, in: group)
+        currentSubtitleTrackID = id
+    }
+
     func invalidate() {
         teardownObservers()
         avPlayer.pause()
@@ -206,6 +255,20 @@ final class AVPlayerEngine: PlayerEngine {
     #endif
 
     // MARK: 内部
+
+    /// 组 → UI 条目（displayName 空串回退"轨道 N"；id = 组内下标）。
+    private static func trackOptions(from group: AVMediaSelectionGroup?) -> [PlayerTrackOption] {
+        guard let group = group else { return [] }
+        return group.options.enumerated().map { index, option in
+            let name = option.displayName.isEmpty ? "轨道 \(index + 1)" : option.displayName
+            return PlayerTrackOption(id: index, name: name)
+        }
+    }
+
+    private static func optionID(_ option: AVMediaSelectionOption?, in group: AVMediaSelectionGroup?) -> Int? {
+        guard let option = option, let group = group else { return nil }
+        return group.options.firstIndex { $0 === option }
+    }
 
     private func setState(_ newState: PlayerEngineState) {
         if newState == state && newState != .loading { return }

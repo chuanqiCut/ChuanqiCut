@@ -26,6 +26,15 @@ final class PlayerTests: XCTestCase {
         var isMuted = false
         var videoSize: CGSize? = CGSize(width: 1920, height: 1080)
         var frameDuration: TimeInterval = 1.0 / 30.0
+        var audioTracks: [PlayerTrackOption] = [
+            PlayerTrackOption(id: 0, name: "国语"),
+            PlayerTrackOption(id: 1, name: "粤语"),
+        ]
+        var currentAudioTrackID: Int?
+        var subtitleTracks: [PlayerTrackOption] = []
+        var currentSubtitleTrackID: Int?
+        private(set) var selectedAudioID: Int?
+        private(set) var selectedSubtitleID: Int?
 
         var onTick: ((TimeInterval) -> Void)?
         var onStateChange: ((PlayerEngineState) -> Void)?
@@ -58,6 +67,16 @@ final class PlayerTests: XCTestCase {
         }
 
         func invalidate() {}
+
+        func selectAudioTrack(id: Int?) {
+            selectedAudioID = id
+            currentAudioTrackID = id
+        }
+
+        func selectSubtitleTrack(id: Int?) {
+            selectedSubtitleID = id
+            currentSubtitleTrackID = id
+        }
     }
 
     private func makeViewModel(duration: TimeInterval = 0,
@@ -282,6 +301,49 @@ final class PlayerTests: XCTestCase {
         XCTAssertEqual(vm.abLoopState, .off, "换片清除 A-B 循环")
         XCTAssertTrue(vm.loopEnabled, "循环开关跨片保留")
         XCTAssertEqual(vm.state, .loading)
+    }
+
+    // MARK: 音轨 / 字幕
+
+    func testTrackListingSyncsFromEngineBroadcast() {
+        let (vm, engine) = makeViewModel()
+        XCTAssertTrue(vm.audioTracks.isEmpty, "装载前轨道列表为空")
+
+        engine.onStateChange?(.ready)
+        XCTAssertEqual(vm.audioTracks.count, 2, "轨道列表随引擎广播同步")
+        XCTAssertEqual(vm.audioTracks.first?.name, "国语")
+        XCTAssertNil(vm.currentAudioTrackID, "默认轨道 = nil")
+
+        engine.subtitleTracks = [PlayerTrackOption(id: 0, name: "中文")]
+        engine.onStateChange?(.ready)
+        XCTAssertEqual(vm.subtitleTracks.count, 1, "字幕轨列表同步")
+    }
+
+    func testTrackSelectionPassesThroughToEngine() {
+        let (vm, engine) = makeViewModel()
+        vm.selectAudioTrack(id: 1)
+        XCTAssertEqual(engine.selectedAudioID, 1, "音轨选择透传引擎")
+        XCTAssertEqual(vm.currentAudioTrackID, 1)
+
+        vm.selectSubtitleTrack(id: nil)
+        XCTAssertNil(engine.selectedSubtitleID, "字幕 nil = 关闭")
+        XCTAssertNil(vm.currentSubtitleTrackID)
+    }
+
+    // MARK: 双击步长
+
+    func testDoubleTapSecondsPersistAcrossInstances() {
+        let suiteName = "PlayerTests.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName) ?? .standard
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        let (vm1, _) = makeViewModel(defaults: defaults)
+        XCTAssertEqual(vm1.doubleTapSeconds, 10, "默认步长 10 秒")
+        vm1.doubleTapSeconds = 15
+        XCTAssertEqual(defaults.double(forKey: PlayerViewModel.doubleTapDefaultsKey), 15, "步长变更写入 UserDefaults")
+
+        let (vm2, _) = makeViewModel(defaults: defaults)
+        XCTAssertEqual(vm2.doubleTapSeconds, 15, "新实例恢复步长")
     }
 
     // MARK: tick/设 A 辅助（engine 的 onTick 是 VM 接线的唯一入口）

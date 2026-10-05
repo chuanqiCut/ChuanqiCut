@@ -62,7 +62,7 @@ struct PlayerControlsOverlay: View {
         }
         .onTapGesture(count: 2, coordinateSpace: .local) { location in
             singleTapTask?.cancel()
-            vm.skip(relative: location.x < size.width / 2 ? -10 : 10)
+            vm.skip(relative: location.x < size.width / 2 ? -vm.doubleTapSeconds : vm.doubleTapSeconds)
         }
         .onTapGesture(count: 1) {
             // 双击仲裁：SwiftUI 本身会消歧，这里再兜一层（先等 220ms，
@@ -181,21 +181,21 @@ struct PlayerControlsOverlay: View {
             }
             .accessibilityLabel(vm.isPlaying ? "暂停" : "播放")
             Button {
-                vm.skip(relative: -10)
+                vm.skip(relative: -vm.doubleTapSeconds)
             } label: {
-                Image(systemName: "gobackward.10")
+                Image(systemName: "gobackward.\(Int(vm.doubleTapSeconds))")
                     .font(.title3)
                     .foregroundStyle(.white)
             }
-            .accessibilityLabel("快退 10 秒")
+            .accessibilityLabel("快退 \(Int(vm.doubleTapSeconds)) 秒")
             Button {
-                vm.skip(relative: 10)
+                vm.skip(relative: vm.doubleTapSeconds)
             } label: {
-                Image(systemName: "goforward.10")
+                Image(systemName: "goforward.\(Int(vm.doubleTapSeconds))")
                     .font(.title3)
                     .foregroundStyle(.white)
             }
-            .accessibilityLabel("快进 10 秒")
+            .accessibilityLabel("快进 \(Int(vm.doubleTapSeconds)) 秒")
             rateMenu
             moreMenu
             Spacer()
@@ -249,6 +249,73 @@ struct PlayerControlsOverlay: View {
                 vm.cycleABLoop()
             } label: {
                 Label(Self.abLoopMenuTitle(vm.abLoopState), systemImage: "arrow.2.squarepath")
+            }
+            if !vm.audioTracks.isEmpty {
+                Menu {
+                    Button {
+                        vm.selectAudioTrack(id: nil)
+                    } label: {
+                        if vm.currentAudioTrackID == nil {
+                            Label("默认", systemImage: "checkmark")
+                        } else {
+                            Text("默认")
+                        }
+                    }
+                    ForEach(vm.audioTracks, id: \.id) { track in
+                        Button {
+                            vm.selectAudioTrack(id: track.id)
+                        } label: {
+                            if vm.currentAudioTrackID == track.id {
+                                Label(track.name, systemImage: "checkmark")
+                            } else {
+                                Text(track.name)
+                            }
+                        }
+                    }
+                } label: {
+                    Label("音轨", systemImage: "waveform")
+                }
+            }
+            if !vm.subtitleTracks.isEmpty {
+                Menu {
+                    Button {
+                        vm.selectSubtitleTrack(id: nil)
+                    } label: {
+                        if vm.currentSubtitleTrackID == nil {
+                            Label("关闭", systemImage: "checkmark")
+                        } else {
+                            Text("关闭")
+                        }
+                    }
+                    ForEach(vm.subtitleTracks, id: \.id) { track in
+                        Button {
+                            vm.selectSubtitleTrack(id: track.id)
+                        } label: {
+                            if vm.currentSubtitleTrackID == track.id {
+                                Label(track.name, systemImage: "checkmark")
+                            } else {
+                                Text(track.name)
+                            }
+                        }
+                    }
+                } label: {
+                    Label("字幕", systemImage: "captions.bbox")
+                }
+            }
+            Menu {
+                ForEach(PlayerViewModel.doubleTapOptions, id: \.self) { option in
+                    Button {
+                        vm.doubleTapSeconds = option
+                    } label: {
+                        if vm.doubleTapSeconds == option {
+                            Label("\(Int(option)) 秒", systemImage: "checkmark")
+                        } else {
+                            Text("\(Int(option)) 秒")
+                        }
+                    }
+                }
+            } label: {
+                Label("双击快进快退 \(Int(vm.doubleTapSeconds)) 秒", systemImage: "hand.tap")
             }
         } label: {
             Image(systemName: "ellipsis.circle")
@@ -436,9 +503,9 @@ struct PlayerScrubber: View {
         .accessibilityAdjustableAction { direction in
             switch direction {
             case .increment:
-                vm.skip(relative: 10)
+                vm.skip(relative: vm.doubleTapSeconds)
             case .decrement:
-                vm.skip(relative: -10)
+                vm.skip(relative: -vm.doubleTapSeconds)
             @unknown default:
                 break
             }

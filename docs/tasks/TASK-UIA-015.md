@@ -10,7 +10,7 @@ write_set:   apps/apple/packages/SharedUI/Sources/SharedUI/Player/**, apps/apple
 read_set:    [docs/CODESTYLE.md, .ai/memory/pitfalls.md, .ai/modules/preview.md, bindings/swift/Sources/ChuanqiCut/Player.swift, SharedUI/AppEntry.swift, SharedUI/Editor/MetalPreviewView.swift]
 deps:        []   # UIA-014 已收口；与在飞任务写集不相交
 acceptance:
-  - swift test（SharedUI）PlayerTests 全绿（MVP 8 + V1 批次 6 = 14 用例）：拖动不 seek/松手一次零容差 seek 且恢复静音；skip 越界钳制；倍速透传；播完停止；时间码格式化；逐帧步进帧时长；长按倍速松手恢复；循环续播；A-B 回跳/短区间取消/区间外清除；倍速记忆；换片复位
+  - swift test（SharedUI）PlayerTests 全绿（MVP 8 + V1 批次 6 + V1 收尾 3 = 17 用例）：拖动不 seek/松手一次零容差 seek 且恢复静音；skip 越界钳制；倍速透传；播完停止；时间码格式化；逐帧步进帧时长；长按倍速松手恢复；循环续播；A-B 回跳/短区间取消/区间外清除；倍速记忆；换片复位
   - 构建机 xcodebuild iOSApp + MacApp 0 error、项目代码 0 警告（Swift 6 严格并发）
   - 行为清单（SPEC-UIA-020 §6.4）真机/构建机逐项可观察通过
   - 既有 SharedUI 测试套（PlaybackTests/AlbumPickerTests 等）不回归
@@ -41,6 +41,8 @@ parallel:   false   # 伞任务一次成域，子步骤串行（同文件族）
 | 7 | 本机静态验证 + 回写（modules/baselines/workbuddy/HANDOFF） | ✅（门禁数字待构建机） |
 | 8 | **第二轮（V1 批次，同日）**：长按倍速 2x（PickerFeedback 触觉）、单片循环 + A-B 循环（三态轮转/区间标记/区间外自动清除/播完回 A）、倍速跨会话记忆（UserDefaults 注入）、缩略图批量预热（≤24 桶错峰）、换片 swapMedia + macOS 拖放打开 | ✅ |
 | 9 | 第二轮测试（+6 用例：boost 恢复/循环续播/AB 回跳/AB 短区间取消/区间外清除/倍速记忆/换片复位） | ✅ |
+| 10 | **第三轮（V1 收尾，同日）**：音轨/字幕选择（PlayerEngine 协议扩展 +4 属性 +2 动作；AVMediaSelectionGroup 装载后发布、组内下标为 id、nil=默认/关闭；moreMenu 子菜单）、双击步长可设 5/10/15/30s（持久化，skip 按钮图标随步长变） | ✅ |
+| 11 | 第三轮测试（轨道列表同步/选择透传/步长持久化） | ✅ |
 
 ## 实现要点
 

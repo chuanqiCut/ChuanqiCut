@@ -6,6 +6,7 @@
 
 import SwiftUI
 import SharedUI
+import ChuanqiCut  // 页脚展示 SDK 版本号（ChuanqiCut.version）
 
 struct HomeView: View {
 

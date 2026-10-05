@@ -66,6 +66,12 @@ public final class EditorViewModel: ObservableObject {
     /// 是否正在播放（UIA-010）。
     @Published public private(set) var isPlaying = false
 
+    /// 渲染代数（UIA-020）。模型每次推进（快照回流 / 初始装载 / 提交后回查真值）
+    /// 自增并伴随一次对当前播放头的取帧请求 —— 同一 pts 的画面会因时间线变化而
+    /// 失效，「模型变了」必须和「播放头变了」一样触发重渲染。预览视图据此装载
+    /// 追帧（seq 判定，见 MetalPreviewView）。
+    @Published public private(set) var renderEpoch: UInt64 = 0
+
     /// 素材库显示状态（UIA-009 子步骤 3）：内核素材表 + 本地存活标记。
     /// `exists == false` = 文件已不在原路径（D3：MVP 引用原路径，不拷贝入库）。
     public struct LibraryAsset: Identifiable, Equatable {
@@ -228,6 +234,29 @@ public final class EditorViewModel: ObservableObject {
         }
     }
 
+    // MARK: 时间码（UIA-015）
+
+    /// 播放条时间码「当前」。有理数 → 字符串换算的唯一位置（红线 #4：UI 其余
+    /// 位置只读本值，不自己除 timescale）。
+    public var timecodeCurrent: String {
+        Self.formatTimecode(playhead)
+    }
+
+    /// 播放条时间码「总时长」。边界由内核时间线算（UI 不自己累加片段，UIA-010 语义）。
+    public var timecodeDuration: String {
+        if let duration = session.timelineDuration(), duration.value > 0 {
+            return Self.formatTimecode(duration)
+        }
+        return Self.formatTimecode(RationalTime(value: 0,
+                                                timescale: RationalTime.projectTimescale))
+    }
+
+    private static func formatTimecode(_ t: RationalTime) -> String {
+        let seconds = Double(t.value) / Double(t.timescale)
+        let total = Int(seconds.rounded())
+        return String(format: "%d:%02d", total / 60, total % 60)
+    }
+
     // MARK: 片段编辑与撤销（UIA-005）
 
     /// 移动片段起点（同轨）。**异步**：Ok 只代表入队，与同轨片段重叠时
@@ -261,6 +290,19 @@ public final class EditorViewModel: ObservableObject {
             clips: session.queryClips(),
             version: session.currentSnapshot.version)
         refreshHistoryFlags()
+        // 提交被拒（重叠 / duration ≤ 0）不触发 observer 回流，这里就是回到真值的
+        // 唯一途径 —— 时间线可能变了，当前播放头的画面同样可能失效（UIA-020）。
+        requestPreviewRerender()
+    }
+
+    /// 对当前播放头补一次取帧请求并推进渲染代数（UIA-020）。
+    ///
+    /// 预览视图（MetalPreviewView）以 renderEpoch 为触发装载追帧：请求发出后泵
+    /// 异步渲染，视图侧按 seq 判定收敛，见 MetalPreviewView 的自驱重绘说明。
+    private func requestPreviewRerender() {
+        guard let previewPump else { return }
+        previewPump.request(pts: playhead)
+        renderEpoch += 1
     }
 
     private func refreshHistoryFlags() {
@@ -331,6 +373,7 @@ public final class EditorViewModel: ObservableObject {
             version: snap.version)
         refreshMediaLibrary()
         refreshHistoryFlags()
+        requestPreviewRerender()
     }
 
     /// 主动刷新一次时间线与素材库状态（初始加载用：版本 0 不触发 observer 回流）。
@@ -341,6 +384,9 @@ public final class EditorViewModel: ObservableObject {
             version: session.currentSnapshot.version)
         refreshMediaLibrary()
         refreshHistoryFlags()
+        // 初始装载也要把播放头 0 的画面请求出来（UIA-020）：否则首帧要等
+        // 视图布局期的 resize 请求，时机与内容都不可控。
+        requestPreviewRerender()
     }
 
     private func refreshMediaLibrary() {

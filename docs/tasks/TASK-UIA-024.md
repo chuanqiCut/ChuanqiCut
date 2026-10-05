@@ -3,6 +3,12 @@
 > 拍板：2026-10-05 用户确认进阶版四项开放问题"均需要"，本卡为落地卡（PLAN §3 P2）。
 # TASK-UIA-024：播放器网络流播放（URL / HLS 点播）
 
+> **状态**：✅ 代码落地（2026-10-05，Batch B）；HLS 样本真机项与远程 seek 延迟实测待执行。
+> 落地：`AVPlayerEngine.isRemoteMediaURL` 纯函数 + 源策略（远程恢复系统缓冲等待）
+> + 无限时长拒绝（"暂不支持直播流"）+ `onBufferingChange` 协议回调 → VM.isBuffering
+> spinner + 远程禁缩略图预热/拖动气泡 + Launcher 网址入口（校验/粘贴/onSubmit）。
+> 本机 parse 全绿。
+
 ```yaml
 id:          TASK-UIA-024
 layer:       UI

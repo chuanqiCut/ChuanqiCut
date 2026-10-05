@@ -30,10 +30,13 @@ struct PlayerControlsOverlay: View {
     @State private var panBaseVolume: Double = 1.0
     @State private var panFeedback: String?
     @State private var panFeedbackTask: Task<Void, Never>?
+    @State private var magnifyBase: CGFloat?
+    @State private var panBaseOffset: CGSize?
 
     private enum PanMode {
         case brightness
         case volume
+        case picture   // 缩放态拖移画面（UIA-017）
         case ignored   // 横向拖动（留给进度条/系统手势）
     }
 
@@ -64,7 +67,11 @@ struct PlayerControlsOverlay: View {
         }
         .onTapGesture(count: 2, coordinateSpace: .local) { location in
             singleTapTask?.cancel()
-            vm.skip(relative: location.x < size.width / 2 ? -vm.doubleTapSeconds : vm.doubleTapSeconds)
+            if vm.zoomScale > PlayerZoomMath.minScale {
+                vm.resetZoom()   // 缩放态双击 = 复位（UIA-017）
+            } else {
+                vm.skip(relative: location.x < size.width / 2 ? -vm.doubleTapSeconds : vm.doubleTapSeconds)
+            }
         }
         .onTapGesture(count: 1) {
             // 双击仲裁：SwiftUI 本身会消歧，这里再兜一层（先等 220ms，
@@ -77,6 +84,23 @@ struct PlayerControlsOverlay: View {
             }
         }
         .gesture(panGesture(size: size))
+        .gesture(zoomGesture(size: size))
+    }
+
+    /// 捏合缩放（UIA-017）：1x–3x，松手低于回弹阈值回 1x。
+    private func zoomGesture(size: CGSize) -> some Gesture {
+        MagnificationGesture()
+            .onChanged { value in
+                let base = magnifyBase ?? vm.zoomScale
+                if magnifyBase == nil {
+                    magnifyBase = vm.zoomScale
+                }
+                vm.updateZoomScale(base * value, containerSize: size)
+            }
+            .onEnded { _ in
+                vm.settleZoom(containerSize: size)
+                magnifyBase = nil
+            }
     }
 
     private func controlsStack(size: CGSize) -> some View {
@@ -99,6 +123,12 @@ struct PlayerControlsOverlay: View {
                 ProgressView()
                     .tint(.white)
                     .accessibilityLabel("加载中")
+            }
+            if vm.isBuffering, vm.isPlaying {
+                // 网络源缓冲中（UIA-024）；与 loading 态区分
+                ProgressView()
+                    .tint(.white)
+                    .accessibilityLabel("缓冲中")
             }
         }
     }
@@ -425,20 +455,34 @@ struct PlayerControlsOverlay: View {
             .onChanged { value in
                 vm.keepControlsVisible()
                 #if os(iOS)
+                if magnifyBase != nil {
+                    return   // 捏合进行中：不让单指拖动误触亮度/音量
+                }
                 if panMode == nil {
-                    let horizontalDominant = abs(value.translation.width) > abs(value.translation.height)
-                    if horizontalDominant {
-                        panMode = .ignored
-                    } else if value.startLocation.x < size.width / 2 {
-                        panMode = .brightness
-                        panBaseBrightness = Double(activeScreen?.brightness ?? 0.5)
+                    if vm.zoomScale > PlayerZoomMath.minScale {
+                        panMode = .picture   // 缩放态：拖移画面（UIA-017）
+                        panBaseOffset = vm.zoomOffset
                     } else {
-                        panMode = .volume
-                        panBaseVolume = vm.volume
+                        let horizontalDominant = abs(value.translation.width) > abs(value.translation.height)
+                        if horizontalDominant {
+                            panMode = .ignored
+                        } else if value.startLocation.x < size.width / 2 {
+                            panMode = .brightness
+                            panBaseBrightness = Double(activeScreen?.brightness ?? 0.5)
+                        } else {
+                            panMode = .volume
+                            panBaseVolume = vm.volume
+                        }
                     }
                 }
                 let delta = -value.translation.height / 400
                 switch panMode {
+                case .picture:
+                    let base = panBaseOffset ?? vm.zoomOffset
+                    vm.updateZoomOffset(CGSize(width: base.width + value.translation.width,
+                                               height: base.height + value.translation.height),
+                                        scale: vm.zoomScale,
+                                        containerSize: size)
                 case .brightness:
                     let newBrightness = min(max(panBaseBrightness + delta, 0.05), 1)
                     activeScreen?.brightness = CGFloat(newBrightness)
@@ -457,6 +501,7 @@ struct PlayerControlsOverlay: View {
             }
             .onEnded { _ in
                 panMode = nil
+                panBaseOffset = nil
             }
     }
 

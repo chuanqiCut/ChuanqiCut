@@ -28,7 +28,7 @@ parallel:    true（批次 2，command.h 独占）
 
 ## 背景
 
-AI 产物与人手编辑必须同一撤销栈（ADR-0016 决策 4）。既有 6 命令不够表达 plan 的 remove_range/set_transition；新增命令同样服务手动编辑（转场 UI 复用）。
+AI 产物与人手编辑必须同一撤销栈（ADR-0020 决策 4）。既有 6 命令不够表达 plan 的 remove_range/set_transition；新增命令同样服务手动编辑（转场 UI 复用）。
 
 ## 实现要点
 

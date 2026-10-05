@@ -63,12 +63,12 @@ ADR-0005、ARCH-004 §1
 
 ---
 
-# 智能成片管线（2026-10-04 立项；ADR-0016 / SPEC AIEDIT-001 / TASK-AIEDIT-000）
+# 智能成片管线（2026-10-04 立项；ADR-0020 / SPEC AIEDIT-001 / TASK-AIEDIT-000）
 
 > 全仓首个大模型接入域。与"端侧推理效果链"（上文）是**两个独立子域**：
 > 上文 = 帧级实时效果（人脸/磨皮），本节 = 素材级离线理解与决策。
 
-## 分层（ADR-0016 决策 2）
+## 分层（ADR-0020 决策 2）
 
 ```
 core/include/cq/ai/     feature_report.h / edit_plan.h / llm_client.h   ← 契约（AIEDIT-001 冻结）

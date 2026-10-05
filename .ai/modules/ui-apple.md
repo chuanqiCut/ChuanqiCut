@@ -358,7 +358,7 @@ loading 覆盖 → 落 tmp → async 交付 → importMedia → loading 解除 +
 
 # AIEDIT 立项（2026-10-04）：智能成片入口（SmartCut/ 域）
 
-Spec AIEDIT-001 / ADR-0016 / TASK-AIEDIT-000。首页 `HomeView.swift` 新增第三张
+Spec AIEDIT-001 / ADR-0020 / TASK-AIEDIT-000。首页 `HomeView.swift` 新增第三张
 入口卡「智能成片」（Route: `.smartCut`），新域目录
 `SharedUI/Sources/SharedUI/SmartCut/`（Wizard / Result / Chat / Voice 四子域，
 组织方式照 MediaPicker：纯逻辑抽可测类型 + SwiftUI 接线冒烟）。

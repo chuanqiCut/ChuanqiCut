@@ -1,6 +1,9 @@
-# 本机工具链环境（ChuanqiCut 开发机）
+# 工具链环境（ChuanqiCut 开发机，**多机**）
 
 > 这里的路径绕过 BM：这些工具**不在 PATH 里**，脚本与文档引用时必须写绝对路径。
+>
+> ⚠️ **开发机不止一台**（2026-10-05 确认至少三台）。下面的「机器」表与工具路径是
+> **机器 A** 的实测；**机器 B / C 见文末多机表**。引用 baselines 数字必须连同环境。
 
 ## 机器
 
@@ -46,6 +49,20 @@
 
 ## 缺失 / 待定
 
-- **ffmpeg / ffprobe**：尚未装上。尝试过的路径：无 brew/port/conda；evermeet.cx 已迁移到 deolaha.ca 且 404。
-  未装上则 golden 样本的编码类维度（H.264/HEVC/B帧/VFR/旋转/音轨）无法合成。
-- 无 Homebrew —— 是否安装待传哲决定（会影响后续所有工具获取）
+- **无 Homebrew（三台都没有）** —— 已决策**不装 brew**，工具一律走 GitHub Release 二进制
+  或官方安装包（xcodegen 2.46.0 即如此装到 `/usr/local/bin`）。影响：后续所有工具获取
+  都不要写 `brew install`。
+
+## 多机对照（2026-10-05）
+
+| 机器 | 系统 | 工具链 | 备注 |
+|---|---|---|---|
+| A | macOS 15.4 | AppleClang 17.0.0.17000013 | Intel i7-9750H + AMD GPU；**无 ANE、无 ProRes 硬编**；本节上文全部实测来自此机 |
+| B | macOS 13.7 | Xcode 15.2（AppleClang 15） | 需 `pip3 install --user cmake` + `CMAKE_BIN=$(ls ~/Library/Python/*/bin/cmake \| head -1)` |
+| C | macOS 26.7.1 | Xcode 26.6（iPhoneSimulator 26.5 SDK） | 当前机；**xcodegen 2.46.0 已装** `/usr/local/bin/xcodegen`；Metal toolchain 走 DVTDownloads 挂载点 |
+
+跨工具链兼容写法（B 机踩出，见 pitfalls P42）：不用 `std::va_list`（用 `::va_list` +
+`<cstdarg>`）；不对 volatile 做复合赋值/自增（C++20 已弃用）。
+
+性能数字**不得取自 A / B 机**（无 ANE / 无 ProRes 硬编 / 老旧 CPU）——PERF-001 基线
+必须标注采集机型。

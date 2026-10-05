@@ -5,6 +5,12 @@
 #   bundle install && bundle exec pod install
 #   open ChuanqiCut.xcworkspace      # 注意开 workspace，不是 xcodeproj
 #
+# xcodegen 安装（本机无 brew）：取 GitHub Release 二进制，不要从源码编。
+#   curl -sL -o /tmp/xcodegen.zip \
+#     https://github.com/yonaskolb/XcodeGen/releases/download/2.46.0/xcodegen.zip
+#   unzip -q /tmp/xcodegen.zip -d /tmp/xcodegen_bin
+#   sudo cp /tmp/xcodegen_bin/xcodegen/bin/xcodegen /usr/local/bin/
+#
 # ChuanqiCut.xcodeproj 与 .xcworkspace 均为生成产物，不入库。
 # 依赖（SDK + SharedUI）全部走 CocoaPods，见同目录 Podfile；本工程不含 SPM 包。
 
@@ -20,6 +26,9 @@ settings:
     SWIFT_VERSION: "6.1"
     MARKETING_VERSION: 0.1.0
     CURRENT_PROJECT_VERSION: 1
+    # xcodegen 2.46 不再默认写 PRODUCT_NAME；缺了它 Xcode 会解析出空名，
+    # 报 `Multiple commands produce '.../Build/Products/.../.app'`（同 iOS 端 P53）。
+    PRODUCT_NAME: "$(TARGET_NAME)"
 
 targets:
   ChuanqiCutMacApp:

@@ -1,0 +1,66 @@
+# tasks/ — 任务层使用说明与已建卡登记表
+
+> 任务事实源 = [`TASK-BACKLOG.md`](TASK-BACKLOG.md)（118 任务 DAG 总账）+ 本目录 `TASK-<ID>.md`（单卡）。
+> 本表只登记**已生成的卡**；BACKLOG 里没建卡的行仍是"待建卡"状态。
+
+## 建卡流程
+
+1. 取号前 `git fetch` 核对远端已用号（编号纪律见 [ADR-0019 §4](../decisions/ADR-0019-文档体系分层与归档规则.md)）；
+2. 按 [`../../.ai/templates/task.md`](../../.ai/templates/task.md) 建卡，写集不得与其他在飞任务相交；
+3. 在 BACKLOG 对应行标注 ✅（完成后）；在本表登记一行。
+
+## 已建卡登记表（34 张，2026-10-05）
+
+### 基建 INFRA / DOC
+| 卡 | 标题 |
+|---|---|
+| [INFRA-001](TASK-INFRA-001.md) | monorepo 目录骨架与 CMake 顶层 |
+| [INFRA-002](TASK-INFRA-002.md) | 内核 CMake 构建 + CTest（桌面） |
+| [INFRA-009](TASK-INFRA-009.md) | Apple 端双工程拆分 + CocoaPods 源码集成 |
+| [DOC-001](TASK-DOC-001.md) | 文档体系统一分层与归档（ADR-0019 落地） |
+
+### 内核 CORE / MODEL / MEDIA
+| 卡 | 标题 |
+|---|---|
+| [CORE-001](TASK-CORE-001.md) | RationalTime 与有理数时间运算 |
+| [CORE-006](TASK-CORE-006.md) | PAL 接口定义冻结 |
+| [CORE-007](TASK-CORE-007.md) | 能力查询 `ICapabilities` 与枚举（实现） |
+| [CORE-008](TASK-CORE-008.md) | 线程模型与队列骨架 |
+| [CORE-009](TASK-CORE-009.md) | EditorSession 门面与快照机制 |
+| [MODEL-001](TASK-MODEL-001.md) | 时间线数据模型（Timeline / Track / Clip / Transition） |
+| [MODEL-002](TASK-MODEL-002.md) | Command 模式与 CommandHistory（Undo/Redo） |
+| [MEDIA-021](TASK-MEDIA-021.md) | 顺序取帧不必每帧 seek（预览帧率的真瓶颈） |
+
+### 绑定 BIND
+| 卡 | 标题 |
+|---|---|
+| [BIND-001](TASK-BIND-001.md) | `cq_sdk.h` 纯 C ABI 冻结 |
+| [BIND-002](TASK-BIND-002.md) | Swift 绑定层（SPM package） |
+| [BIND-003](TASK-BIND-003.md) | C ABI 预览接口（含取帧接入 session） |
+
+### UI（Apple）UIA
+| 卡 | 标题 |
+|---|---|
+| [UIA-002](TASK-UIA-002.md) | 编辑器主框架（预览 + 时间线 + 属性面板） |
+| [UIA-003](TASK-UIA-003.md) | MTKView 预览视图嵌入 |
+| [UIA-004](TASK-UIA-004.md) | 时间线自绘视图（Canvas，非组件堆叠） |
+| [UIA-005](TASK-UIA-005.md) | 片段拖拽/裁剪交互（含 undo/redo C ABI） |
+| [UIA-009](TASK-UIA-009.md) | 素材导入流程（含 Session 级素材表收口） |
+| [UIA-010](TASK-UIA-010.md) | 播放驱动（播放时钟 + 播放/暂停入口） |
+| [UIA-011](TASK-UIA-011.md) | 相册素材导入（PhotosPicker 入口） |
+| [UIA-012](TASK-UIA-012.md) | 相册多选批量导入 |
+| [UIA-013](TASK-UIA-013.md) | 自研相册浏览器（伞任务，B 期） |
+| [UIA-014](TASK-UIA-014.md) | 预览宽高比适配（letterbox / fit；编号两次让位 011→012→014） |
+
+### 相机 CAM（iOS 原生域，ADR-0014）
+| 卡 | 标题 |
+|---|---|
+| [CAM-001](TASK-CAM-001.md) | 相机契约冻结（**已回退留档**：ADR-0014 转向 iOS 原生） |
+| [CAM-002](TASK-CAM-002.md) | 相机采集管理器（AVCaptureSession） |
+| [CAM-003](TASK-CAM-003.md) | 相机预览渲染链路 + 滤镜（MTKView + Core Image） |
+| [CAM-004](TASK-CAM-004.md) | 首页 + 相机页 UI + EditorViewModel 惰性化 |
+| [CAM-005](TASK-CAM-005.md) | 录制 + 产出（AVAssetWriter） |
+| [CAM-011](TASK-CAM-011.md) | Vision 检测桥 + 帧间平滑（B 期） |
+| [CAM-012](TASK-CAM-012.md) | 美颜升级——Metal 磨皮替换高斯近似（B 期） |
+| [CAM-013](TASK-CAM-013.md) | 美型——人脸关键点驱动的 MeshWarp（B 期，**下一张**） |
+| [CAM-014](TASK-CAM-014.md) | 贴纸 + 头部道具锚定（B 期） |

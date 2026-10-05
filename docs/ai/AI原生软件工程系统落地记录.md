@@ -298,4 +298,4 @@ Build
 - 评估 Codex/Claude Code/Gemini CLI 的组合方式及其边界。
 - 把 Harness 拆成可实现的最小工具链与迭代计划。
 
-本次进一步落地规格见：[AI-ENG-001：ChuanqiCut AI 原生软件工程工作流](docs/specs/AI-ENG-001.md)。
+本次进一步落地规格见：[AI-ENG-001：ChuanqiCut AI 原生软件工程工作流](../specs/AI-ENG-001.md)。

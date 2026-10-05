@@ -48,6 +48,22 @@ public struct PlayerScreen: View {
             Color.black.ignoresSafeArea()
             surface
             SubtitleOverlayView(cue: vm.currentExternalSubtitleCue)
+            if vm.isInPip {
+                // PiP 占位态（UIA-016）：画面 layer 已被移入系统小窗
+                ZStack {
+                    Color.black.ignoresSafeArea()
+                    VStack(spacing: 10) {
+                        Image(systemName: "rectangle.on.rectangle")
+                            .font(.largeTitle)
+                            .foregroundStyle(.secondary)
+                        Text("正在画中画播放")
+                            .foregroundStyle(.white)
+                        Text("画面已移至系统小窗，返回本界面可恢复")
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+            }
             PlayerControlsOverlay(vm: vm, onOpenNewFile: { showsImporter = true },
                                   onShowQueue: { showsQueue = true },
                                   onImportSubtitle: { showsSubtitleImporter = true })

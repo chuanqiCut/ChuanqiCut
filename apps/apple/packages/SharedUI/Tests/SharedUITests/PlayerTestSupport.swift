@@ -28,6 +28,7 @@ final class StubPlayerEngine: PlayerEngine {
     var subtitleTracks: [PlayerTrackOption] = []
     var currentSubtitleTrackID: Int?
     var isRemoteSource = false
+    var chapters: [PlayerChapter] = []
     private(set) var selectedAudioID: Int?
     private(set) var selectedSubtitleID: Int?
 

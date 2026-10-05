@@ -57,6 +57,10 @@ final class PlayerViewModel: ObservableObject {
     @Published private(set) var isBoosting = false
     /// 当前源是否远程（UIA-024；引擎随状态广播同步）。
     @Published private(set) var isRemoteSource = false
+    /// 章节（UIA-016；引擎随状态广播同步，空 = 无章节）。
+    @Published private(set) var chapters: [PlayerChapter] = []
+    /// 画中画进行中（UIA-016；PiP delegate 驱动，播放器显示占位态）。
+    @Published private(set) var isInPip = false
     /// 网络源缓冲中（waitingToMinimizeStalling；控制层显示 spinner）。
     @Published private(set) var isBuffering = false
     /// 捏合缩放（UIA-017）：1x–3x，纯 UI 变换不碰引擎。
@@ -159,6 +163,7 @@ final class PlayerViewModel: ObservableObject {
         engine.onBufferingChange = { [weak self] buffering in self?.isBuffering = buffering }
         rewireThumbnailHandler()
         pip.onPossibleChange = { [weak self] possible in self?.isPipPossible = possible }
+        pip.onActiveChange = { [weak self] active in self?.isInPip = active }
 
         // 跨会话倍速记忆（didSet 同步引擎并原样回写，无害）
         rate = defaults.object(forKey: Self.rateDefaultsKey) as? Double ?? 1.0
@@ -460,6 +465,16 @@ final class PlayerViewModel: ObservableObject {
         zoomOffset = .zero
     }
 
+    // MARK: 章节（UIA-016）
+
+    /// 跳转到章节起点（零容差 + 气泡反馈）。
+    func jumpToChapter(_ chapter: PlayerChapter) {
+        engine.seek(to: chapter.start, precise: true)
+        currentTime = chapter.start
+        showFeedback("跳转：\(chapter.name)")
+        keepControlsVisible()
+    }
+
     // MARK: 音轨 / 字幕
 
     /// 切音轨（id 来自引擎发布的 audioTracks；nil = 默认轨道）。
@@ -596,7 +611,9 @@ final class PlayerViewModel: ObservableObject {
         videoSize = engine.videoSize
         // 轨道元数据随同值广播刷新（装载后异步到达）。
         isRemoteSource = engine.isRemoteSource
+        chapters = engine.chapters
         audioTracks = engine.audioTracks
+        // （换片时引擎侧已清空章节，这里随广播同步为空）
         currentAudioTrackID = engine.currentAudioTrackID
         subtitleTracks = engine.subtitleTracks
         currentSubtitleTrackID = engine.currentSubtitleTrackID

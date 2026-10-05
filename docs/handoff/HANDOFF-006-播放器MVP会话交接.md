@@ -66,6 +66,11 @@
 
 ## 实施进度（P1/P2 开工后滚动更新）
 
+- **UIA-016 ✅ 代码落地（2026-10-05 Batch D）**：章节（协议 +chapters、引擎装载、
+  进度条刻度、菜单跳转零容差）+ PiP 占位态（AVPictureInPictureControllerDelegate
+  → isInPip）+ AirPlayRoutePicker（AVRoutePickerView 桥接，落 surface 域文件）。
+  章节 API 形状已在本机 SDK 头文件验证（无弃用标记）。PlayerQueueTests +2（累计 44）。
+  **待构建机**：PiP delegate 线程断言；**待真机**：章节视频、PiP 进出、AirPlay 路由。
 - **UIA-018 / UIA-025 ✅ 代码落地（2026-10-05 Batch C）**：ADR-0023（解析层
   Swift 纯函数过渡，SubtitleCue 值类型即未来 C ABI 底稿）+ SubtitleParser
   （SRT/VTT/ASS 嗅探、时间戳方言、坏块容错、ASS 样式子集与 span 样式快照切段）

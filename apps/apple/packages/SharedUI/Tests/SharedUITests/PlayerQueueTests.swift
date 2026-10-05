@@ -139,6 +139,36 @@ final class PlayerQueueTests: XCTestCase {
         XCTAssertFalse(vm.isBuffering)
     }
 
+    // MARK: 章节与画中画（UIA-016）
+
+    func testChaptersSyncAndJumpSeekToStart() {
+        let (vm, engine) = makePlayerViewModel(duration: 600)
+        XCTAssertTrue(vm.chapters.isEmpty, "装载前无章节")
+
+        engine.chapters = [
+            PlayerChapter(id: 0, start: 0, name: "片头"),
+            PlayerChapter(id: 1, start: 120, name: "发展"),
+            PlayerChapter(id: 2, start: 480, name: "高潮"),
+        ]
+        engine.onStateChange?(.ready)
+        XCTAssertEqual(vm.chapters.count, 3, "章节随状态广播同步")
+
+        vm.jumpToChapter(engine.chapters[1])
+        XCTAssertEqual(engine.seeks.first?.target ?? -1, 120, accuracy: 0.001, "跳到章节起点")
+        XCTAssertEqual(engine.seeks.first?.precise ?? false, true, "章节跳转零容差")
+        XCTAssertEqual(vm.currentTime, 120, accuracy: 0.001)
+        XCTAssertEqual(vm.feedback, "跳转：发展")
+    }
+
+    func testPipActiveStateDrivesPlaceholder() {
+        let (vm, _) = makePlayerViewModel()
+        XCTAssertFalse(vm.isInPip)
+        vm.pip.onActiveChange?(true)
+        XCTAssertTrue(vm.isInPip, "进入 PiP → 占位态")
+        vm.pip.onActiveChange?(false)
+        XCTAssertFalse(vm.isInPip, "退出 PiP → 恢复")
+    }
+
     // MARK: 最近播放
 
     func testRecentStoreRecordDedupsCapsAndPersists() {

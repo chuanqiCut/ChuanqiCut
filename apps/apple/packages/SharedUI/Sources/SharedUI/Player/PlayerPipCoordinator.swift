@@ -17,6 +17,8 @@ final class PlayerPipCoordinator {
 
     /// PiP 是否可能启动（KVO isPictureInPicturePossible 驱动，控制层据此显隐按钮）。
     var onPossibleChange: ((Bool) -> Void)?
+    /// PiP 进入/退出（delegate 驱动，播放器显示占位态）。
+    var onActiveChange: ((Bool) -> Void)?
 
     private(set) var isSupported = false
     private var controller: AVPictureInPictureController?
@@ -39,6 +41,7 @@ final class PlayerPipCoordinator {
         // 退后台自动进 PiP（RESEARCH-006 §3.4 最小接线）。
         created.canStartPictureInPictureAutomaticallyFromInline = true
         controller = created
+        created.delegate = self
         possibleObservation = created.observe(\.isPictureInPicturePossible, options: [.new]) { [weak self] observed, _ in
             let possible = observed.isPictureInPicturePossible
             Task { @MainActor [weak self] in self?.onPossibleChange?(possible) }
@@ -55,5 +58,20 @@ final class PlayerPipCoordinator {
         possibleObservation?.invalidate()
         possibleObservation = nil
         controller = nil
+    }
+}
+
+// MARK: - AVPictureInPictureControllerDelegate
+// ObjC 协议按 @preconcurrency 处理（手法同 MetalPreviewView 的 MTKViewDelegate）；
+// AVKit 保证 delegate 回调在主线程，此处的 Task 跳跃是 Swift 6 隔离的形式合规。
+
+extension PlayerPipCoordinator: AVPictureInPictureControllerDelegate {
+
+    func pictureInPictureControllerDidStartPictureInPicture(_ pictureInPictureController: AVPictureInPictureController) {
+        Task { @MainActor [weak self] in self?.onActiveChange?(true) }
+    }
+
+    func pictureInPictureControllerDidStopPictureInPicture(_ pictureInPictureController: AVPictureInPictureController) {
+        Task { @MainActor [weak self] in self?.onActiveChange?(false) }
     }
 }

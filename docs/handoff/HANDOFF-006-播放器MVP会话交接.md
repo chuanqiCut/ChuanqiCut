@@ -64,6 +64,22 @@
 （P2 四卡 = 用户拍板项：UIA-024 网络流点播、025 ASS 样式子集、026 素材库联动、
 027 macOS mini player；依赖：025←018、026/027←022，024 独立）。
 
+## 实施总览（2026-10-05 深夜：PLAN 十卡全部代码落地）
+
+P1 六卡（016/017/018/021/022/023）+ P2 四卡（024/025/026/027）分五批提交：
+d2122f8 → cc7267a → a7d197d → 7fa0826 → 935b4d8。测试 **48 用例**
+（PlayerTests 20 / PlayerQueueTests 19 / PlayerSubtitleTests 9）。唯一未落：
+UIA-023 的 macOS PiP 按钮 + F/S/A 快捷键（卡内标注）。
+
+**构建机一轮清单（最终版）**：
+1. swift test --disable-sandbox（48 用例；重点 ASS 解析、队列优先级、controller 转发）
+2. 双平台 xcodebuild（0 error 0 警告）；PropertyPanelZone 热点文件本轮有改动
+   （contextMenu + sheet），review 时对照 TASK-UIA-026
+3. tools/ci/run_gate.sh 全量
+4. Swift 6 风险点定级：AVMediaSelectionGroup / AVAssetImageGenerator Sendable、
+   PiP delegate 线程、MenuBarExtra 注入、requestGeometryUpdate
+5. 真机行为清单 = SPEC §6.4 + HANDOFF 各 Batch 追加项；baselines 播放器节逐项替换
+
 ## 实施进度（P1/P2 开工后滚动更新）
 
 - **UIA-023 / 026 / 027 ✅ 代码落地（2026-10-05 Batch E，P1/P2 收官）**：

@@ -60,6 +60,9 @@ final class PlayerViewModel: ObservableObject {
     @Published private(set) var currentAudioTrackID: Int?
     @Published private(set) var subtitleTracks: [PlayerTrackOption] = []
     @Published private(set) var currentSubtitleTrackID: Int?
+    /// 播放队列（UIA-022）：非空时播完自动推进；A-B 循环/单片循环优先于队列。
+    @Published private(set) var queue: [URL] = []
+    @Published private(set) var queueIndex: Int?
     /// 双击快进快退步长（秒）。moreMenu 可设 5/10/15/30，跨会话记忆。
     @Published var doubleTapSeconds: TimeInterval {
         didSet {
@@ -92,6 +95,8 @@ final class PlayerViewModel: ObservableObject {
     private(set) var url: URL
     /// 倍速记忆存储（测试注入独立 suite）。
     private let defaults: UserDefaults
+    /// 最近播放记录（nil = 不记录；共享实例见 PlayerRecentStore.shared）。
+    private let recent: PlayerRecentStore?
 
     // MARK: 内部状态
 
@@ -102,6 +107,8 @@ final class PlayerViewModel: ObservableObject {
     private var rateBeforeBoost: Double?
     /// 缩略图已批量预热（换片后复位）。
     private var warmedUp = false
+    /// 当前媒体已写入最近播放（换片后复位；ready 才记，失败不污染）。
+    private var recordedRecentForCurrentMedia = false
     private var hideTask: Task<Void, Never>?
     private var feedbackTask: Task<Void, Never>?
 
@@ -121,10 +128,11 @@ final class PlayerViewModel: ObservableObject {
 
     // MARK: 初始化
 
-    init(engine: PlayerEngine, url: URL, defaults: UserDefaults = .standard) {
+    init(engine: PlayerEngine, url: URL, defaults: UserDefaults, recent: PlayerRecentStore?) {
         self.engine = engine
         self.url = url
         self.defaults = defaults
+        self.recent = recent
         // 文件不存在/打不开时缩略图请求静默失败（回调 image=nil），
         // 控制层降级为纯时间气泡，无需前置存在性检查。
         self.thumbnails = VideoThumbnailLoader(url: url)
@@ -154,7 +162,7 @@ final class PlayerViewModel: ObservableObject {
     }
 
     convenience init(url: URL) {
-        self.init(engine: AVPlayerEngine(), url: url)
+        self.init(engine: AVPlayerEngine(), url: url, defaults: .standard, recent: .shared)
     }
 
     // MARK: 生命周期
@@ -193,8 +201,9 @@ final class PlayerViewModel: ObservableObject {
 
     /// 换片：同一播放器内装载新文件（控制层"打开新视频"入口）。
     /// 循环开关与倍速记忆跨片保留；A-B 循环/播放进度/缩略图全部复位。
-    func swapMedia(to newURL: URL) {
-        guard newURL != url else { return }
+    /// force = 同 URL 也强制重载（队列跳转/重播场景）。
+    func swapMedia(to newURL: URL, force: Bool = false) {
+        guard force || newURL != url else { return }
         if securityScopeActive {
             url.stopAccessingSecurityScopedResource()
             securityScopeActive = false
@@ -220,7 +229,59 @@ final class PlayerViewModel: ObservableObject {
         resetABLoop()
         warmedUp = false
         state = .loading
+        recordedRecentForCurrentMedia = false
         engine.load(url: newURL)
+    }
+
+    /// 装载播放队列并从 startIndex 起播（Launcher 多选/素材库联动/导出入口共用）。
+    func setQueue(_ urls: [URL], startIndex: Int = 0) {
+        guard !urls.isEmpty else { return }
+        queue = urls
+        queueIndex = min(max(startIndex, 0), urls.count - 1)
+    }
+
+    /// 播放单文件并清空队列（控制层"打开新视频"入口）。
+    func playStandalone(_ newURL: URL) {
+        queue = []
+        queueIndex = nil
+        swapMedia(to: newURL, force: true)
+    }
+
+    /// 跳到队列第 index 项（强制重载，重复项也从头播）。
+    func jumpQueue(to index: Int) {
+        guard index >= 0, index < queue.count else { return }
+        queueIndex = index
+        swapMedia(to: queue[index], force: true)
+        engine.play()
+        isPlaying = true
+        keepControlsVisible()
+    }
+
+    func clearQueue() {
+        queue = []
+        queueIndex = nil
+        showFeedback("已清空播放队列")
+        keepControlsVisible()
+    }
+
+    /// 队列推进（播完自动下一片）。返回是否推进成功（成功 = 续播，不落停止路径）。
+    private func advanceQueue() -> Bool {
+        guard let index = queueIndex, index + 1 < queue.count else { return false }
+        let next = queue[index + 1]
+        queueIndex = index + 1
+        swapMedia(to: next)
+        engine.play()
+        isPlaying = true
+        return true
+    }
+
+    /// 当前片加载失败时的跳片。返回是否跳到了下一片（否则由错误横幅兜底）。
+    private func advanceToNextQueueItemAfterFailure() -> Bool {
+        guard let index = queueIndex, index + 1 < queue.count else { return false }
+        let next = queue[index + 1]
+        queueIndex = index + 1
+        swapMedia(to: next, force: true)
+        return true
     }
 
     // MARK: 播放控制
@@ -468,9 +529,19 @@ final class PlayerViewModel: ObservableObject {
         subtitleTracks = engine.subtitleTracks
         currentSubtitleTrackID = engine.currentSubtitleTrackID
         if case .failed(let message) = newState {
-            log.error("播放引擎失败: \(message, privacy: .public)")
-            showsControls = true
-            cancelHide()
+            // 队列中还有下一片 → 自动跳片；否则落错误横幅兜底。
+            if advanceToNextQueueItemAfterFailure() {
+                showFeedback("已跳过无法播放的文件")
+            } else {
+                log.error("播放引擎失败: \(message, privacy: .public)")
+                showsControls = true
+                cancelHide()
+            }
+        }
+        // 播放成功即记录最近播放（UIA-021；每片只记一次，失败不污染）。
+        if case .ready = newState, !recordedRecentForCurrentMedia {
+            recordedRecentForCurrentMedia = true
+            recent?.record(url: url, name: mediaTitle)
         }
     }
 
@@ -485,6 +556,10 @@ final class PlayerViewModel: ObservableObject {
         if loopEnabled {
             engine.seek(to: 0, precise: true)
             engine.play()
+            return
+        }
+        // 队列推进（UIA-022）：成功 = 续播下一片。
+        if advanceQueue() {
             return
         }
         // 自然播完：停住，常显控制层，息屏定时器还原。

@@ -21,6 +21,8 @@ struct PlayerControlsOverlay: View {
     @ObservedObject var vm: PlayerViewModel
     /// "打开新视频"入口（PlayerScreen 注入 fileImporter；nil = 不显示）。
     var onOpenNewFile: (() -> Void)?
+    /// "播放队列"入口（PlayerScreen 注入队列 sheet；nil = 不显示）。
+    var onShowQueue: (() -> Void)?
 
     @State private var singleTapTask: Task<Void, Never>?
     @State private var panMode: PanMode?
@@ -249,6 +251,13 @@ struct PlayerControlsOverlay: View {
                 vm.cycleABLoop()
             } label: {
                 Label(Self.abLoopMenuTitle(vm.abLoopState), systemImage: "arrow.2.squarepath")
+            }
+            if vm.queue.count > 1, let onShowQueue = onShowQueue {
+                Button {
+                    onShowQueue()
+                } label: {
+                    Label("播放队列（\(vm.queue.count)）", systemImage: "list.number")
+                }
             }
             if !vm.audioTracks.isEmpty {
                 Menu {

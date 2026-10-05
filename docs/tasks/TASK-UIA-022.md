@@ -2,6 +2,13 @@
 > 前置：构建机门禁 PASS（TASK-UIA-015）；开工前 git fetch 核对号（PLAN-播放器进阶 §5）。
 # TASK-UIA-022：播放器播放列表与连续播放
 
+> **状态**：✅ 代码落地（2026-10-05，Batch A）；构建机门禁与真机连播间隙待实测。
+> 落地：VM 队列状态机（setQueue/advanceQueue/jumpQueue/clearQueue/playStandalone，
+> 分派链 AB > 单片循环 > 队列 > 停止；失败自动跳片）+ swapMedia 增 force 参数
+> + PlayerScreen 队列 init(urls:startIndex:) 与队列 sheet（detents 门控同
+> AlbumPickerScreen 手法）+ moreMenu"播放队列（N）"+ Launcher 多选入队。
+> PlayerQueueTests 8 用例。本机 parse 全绿。
+
 ```yaml
 id:          TASK-UIA-022
 layer:       UI

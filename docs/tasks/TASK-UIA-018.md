@@ -2,6 +2,14 @@
 > 前置：构建机门禁 PASS（TASK-UIA-015）；开工前 git fetch 核对号（PLAN-播放器进阶 §5）。
 # TASK-UIA-018：播放器外挂字幕 v1（SRT / WebVTT）
 
+> **状态**：✅ 代码落地（2026-10-05，Batch C）；ADR-0023 已立（解析层 Swift 纯函数
+> 过渡 + 下沉 C++ 反转条件）。落地：`Player/SubtitleParser.swift`（嗅探分发/时间戳
+> 方言/坏块容错/标签剥离/1MB 上界）+ `SubtitleOverlayView.swift`（底部安全区/
+> \pos 绝对定位/九宫格对齐/字号 PlayRes 归一/逐 span 样式）+ VM
+> loadExternalSubtitle/closeExternalSubtitle/currentExternalSubtitleCue（派生二分）
+> + moreMenu 入口（外挂开启时内封字幕菜单让位）+ 换片清除。PlayerSubtitleTests
+> 9 用例。本机 parse 全绿。
+
 ```yaml
 id:          TASK-UIA-018
 layer:       UI

@@ -62,6 +62,8 @@ final class PlayerViewModel: ObservableObject {
     /// 捏合缩放（UIA-017）：1x–3x，纯 UI 变换不碰引擎。
     @Published private(set) var zoomScale: CGFloat = 1.0
     @Published private(set) var zoomOffset: CGSize = .zero
+    /// 外挂字幕（UIA-018/025）：nil = 关闭；开启时内封字幕菜单让位。
+    @Published private(set) var externalSubtitle: [SubtitleCue]?
     /// 可选音轨/字幕（引擎装载后经状态广播同步；空 = 无多轨）。
     @Published private(set) var audioTracks: [PlayerTrackOption] = []
     @Published private(set) var currentAudioTrackID: Int?
@@ -91,6 +93,12 @@ final class PlayerViewModel: ObservableObject {
 
     /// 控制层显示的时刻：拖动中显示拖动预览位置，否则显示实际播放时刻。
     var displaySeconds: TimeInterval { isScrubbing ? scrubPosition : currentTime }
+
+    /// 当前应显示的外挂字幕条（二分查找，O(log n)；随 displaySeconds 派生）。
+    var currentExternalSubtitleCue: SubtitleCue? {
+        guard let cues = externalSubtitle else { return nil }
+        return SubtitleParser.cue(at: displaySeconds, in: cues)
+    }
 
     // MARK: 依赖
 
@@ -235,6 +243,7 @@ final class PlayerViewModel: ObservableObject {
         subtitleTracks = []
         currentSubtitleTrackID = nil
         resetABLoop()
+        externalSubtitle = nil
         warmedUp = false
         resetZoom()
         isBuffering = false
@@ -454,6 +463,31 @@ final class PlayerViewModel: ObservableObject {
     // MARK: 音轨 / 字幕
 
     /// 切音轨（id 来自引擎发布的 audioTracks；nil = 默认轨道）。
+    /// 加载外挂字幕文件（SRT/VTT/ASS 按内容嗅探；1MB 上界；失败气泡提示）。
+    func loadExternalSubtitle(from url: URL) {
+        let scoped = url.startAccessingSecurityScopedResource()
+        defer { if scoped { url.stopAccessingSecurityScopedResource() } }
+        do {
+            let data = try Data(contentsOf: url)
+            let cues = try SubtitleParser.parse(data: data)
+            externalSubtitle = cues
+            showFeedback("已加载字幕（\(cues.count) 条）")
+        } catch SubtitleParserError.tooLarge {
+            log.error("字幕文件超 1MB 上界: \(url.lastPathComponent, privacy: .public)")
+            showFeedback("字幕文件过大（上限 1MB）")
+        } catch {
+            log.error("字幕解析失败: \(String(describing: error), privacy: .public)")
+            showFeedback("字幕加载失败（不支持的格式或损坏文件）")
+        }
+        keepControlsVisible()
+    }
+
+    func closeExternalSubtitle() {
+        externalSubtitle = nil
+        showFeedback("已关闭外挂字幕")
+        keepControlsVisible()
+    }
+
     func selectAudioTrack(id: Int?) {
         engine.selectAudioTrack(id: id)
         currentAudioTrackID = engine.currentAudioTrackID

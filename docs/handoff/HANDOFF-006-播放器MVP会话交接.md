@@ -66,6 +66,12 @@
 
 ## 实施进度（P1/P2 开工后滚动更新）
 
+- **UIA-018 / UIA-025 ✅ 代码落地（2026-10-05 Batch C）**：ADR-0023（解析层
+  Swift 纯函数过渡，SubtitleCue 值类型即未来 C ABI 底稿）+ SubtitleParser
+  （SRT/VTT/ASS 嗅探、时间戳方言、坏块容错、ASS 样式子集与 span 样式快照切段）
+  + SubtitleOverlayView（\pos/九宫格/PlayRes 字号归一）+ VM 装载/关闭/派生查询
+  + moreMenu 入口（外挂开启时内封字幕让位）+ 换片清除。PlayerSubtitleTests
+  **9 用例**（累计 42）。**待构建机**：swift test 全量；**待真机**：真实字幕样本对照。
 - **UIA-024 / UIA-017 ✅ 代码落地（2026-10-05 Batch B）**：网络流点播
   （`isRemoteMediaURL` 纯函数 + 远程恢复系统缓冲 + 直播流拒绝 + onBufferingChange
   → spinner + 远程禁预热/气泡 + Launcher 网址入口含剪贴板粘贴）+ 捏合缩放

@@ -22,6 +22,7 @@ public struct PlayerScreen: View {
     @StateObject private var vm: PlayerViewModel
     @State private var showsImporter = false
     @State private var showsQueue = false
+    @State private var showsSubtitleImporter = false
 
     public init(url: URL) {
         _vm = StateObject(wrappedValue: PlayerViewModel(url: url))
@@ -46,8 +47,10 @@ public struct PlayerScreen: View {
         ZStack {
             Color.black.ignoresSafeArea()
             surface
+            SubtitleOverlayView(cue: vm.currentExternalSubtitleCue)
             PlayerControlsOverlay(vm: vm, onOpenNewFile: { showsImporter = true },
-                                  onShowQueue: { showsQueue = true })
+                                  onShowQueue: { showsQueue = true },
+                                  onImportSubtitle: { showsSubtitleImporter = true })
         }
         .onAppear { vm.activate() }
         .onDisappear { vm.deactivate() }
@@ -62,6 +65,15 @@ public struct PlayerScreen: View {
         }
         .sheet(isPresented: $showsQueue) {
             queueSheet
+        }
+        .fileImporter(
+            isPresented: $showsSubtitleImporter,
+            allowedContentTypes: [.data],
+            allowsMultipleSelection: false
+        ) { result in
+            if case .success(let urls) = result, let first = urls.first {
+                vm.loadExternalSubtitle(from: first)
+            }
         }
         #if os(macOS)
         .onKeyPress { press in

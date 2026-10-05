@@ -23,6 +23,8 @@ struct PlayerControlsOverlay: View {
     var onOpenNewFile: (() -> Void)?
     /// "播放队列"入口（PlayerScreen 注入队列 sheet；nil = 不显示）。
     var onShowQueue: (() -> Void)?
+    /// "加载外挂字幕"入口（PlayerScreen 注入 fileImporter；nil = 不显示）。
+    var onImportSubtitle: (() -> Void)?
 
     @State private var singleTapTask: Task<Void, Never>?
     @State private var panMode: PanMode?
@@ -315,7 +317,21 @@ struct PlayerControlsOverlay: View {
                     Label("音轨", systemImage: "waveform")
                 }
             }
-            if !vm.subtitleTracks.isEmpty {
+            if let onImportSubtitle = onImportSubtitle {
+                if vm.externalSubtitle != nil {
+                    Button {
+                        vm.closeExternalSubtitle()
+                    } label: {
+                        Label("关闭外挂字幕", systemImage: "xmark.circle")
+                    }
+                }
+                Button {
+                    onImportSubtitle()
+                } label: {
+                    Label("加载外挂字幕", systemImage: "square.and.arrow.down")
+                }
+            }
+            if vm.externalSubtitle == nil, !vm.subtitleTracks.isEmpty {
                 Menu {
                     Button {
                         vm.selectSubtitleTrack(id: nil)

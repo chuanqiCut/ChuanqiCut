@@ -218,6 +218,10 @@ parallel:    false          # 是否与同批次其他任务并行
 | UIA-021 | UI | 播放器最近播放（bookmark 持久化 + 列表；进阶版 P1；编号跳 019/020 见 PLAN §5） | UIA-015 门禁 PASS | PlayerRecentStore + Launcher + PlayerTests | 重启重播；去重置顶 ≤20；失效自动剔除 |
 | UIA-022 | UI | 播放器播放列表与连续播放（进阶版 P1） | UIA-015 门禁 PASS, UIA-021 | PlayerViewModel/Screen/Queue + PlayerTests | 连播不断流（<1s [E]）；AB > 循环 > 队列优先级；失败跳片 |
 | UIA-023 | UI | 播放器设置页 + macOS PiP + 快捷键扩充（进阶版 P1） | UIA-015 门禁 PASS, UIA-018 | PlayerSettingsView + Controls/Screen/PipCoordinator + PlayerTests | 设置聚合既有持久化项；macOS PiP 可用性显隐；快捷键无冲突 |
+| UIA-024 | UI | 播放器网络流播放（URL/HLS 点播；源类型策略 + 缓冲态 + URL 入口；拍板项 2026-10-05"均需要"） | UIA-015 门禁 PASS | AVPlayerEngine/VM/Screen + PlayerTests | 源类型判定纯函数；远程禁预热；buffering 态；直播流拒绝；HLS 真机样本 |
+| UIA-025 | UI | 播放器外挂字幕 v2（ASS/SSA 样式子集：颜色/粗斜下/对齐/\pos；拍板项） | UIA-015 门禁 PASS, UIA-018 | SubtitleParser/OverlayView + PlayerTests | 子集 tag 生效且未知 tag 容错；还原度声明为子集；libass 引入另评 |
+| UIA-026 | UI | 编辑器素材库 → 播放器联动（单条预览/批量入队；值拷贝过接缝；跨域卡） | UIA-015 门禁 PASS, UIA-022 | PlayerScreen + Editor/PropertyPanelZone（热点，开工前协调）+ PlayerTests | 失效素材置灰；播放器零 Session 依赖；push/sheet 呈现 |
+| UIA-027 | UI | macOS mini player（MenuBarExtra + PlayerController 门面 + 关窗续播；拍板项） | UIA-015 门禁 PASS, UIA-022 | PlayerController（新）+ PlayerScreen + MacApp + PlayerTests | 既有 init 兼容回归；关窗续播；MiniBar 只读进度 |
 
 ### 3.6 导出
 

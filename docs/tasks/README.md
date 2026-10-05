@@ -9,7 +9,7 @@
 2. 按 [`../../.ai/templates/task.md`](../../.ai/templates/task.md) 建卡，写集不得与其他在飞任务相交；
 3. 在 BACKLOG 对应行标注 ✅（完成后）；在本表登记一行。
 
-## 已建卡登记表（53 张，2026-10-05）
+## 已建卡登记表（57 张，2026-10-05）
 
 ### 基建 INFRA / DOC
 | 卡 | 标题 |
@@ -58,6 +58,10 @@
 | [UIA-021](TASK-UIA-021.md) | 播放器最近播放（bookmark 持久化；进阶版 P1；跳 019/020 见 PLAN §5） |
 | [UIA-022](TASK-UIA-022.md) | 播放器播放列表与连续播放（进阶版 P1） |
 | [UIA-023](TASK-UIA-023.md) | 播放器设置页 + macOS PiP + 快捷键扩充（进阶版 P1） |
+| [UIA-024](TASK-UIA-024.md) | 播放器网络流播放（URL/HLS 点播；进阶版 P2，拍板项） |
+| [UIA-025](TASK-UIA-025.md) | 播放器外挂字幕 v2（ASS/SSA 样式子集；进阶版 P2，拍板项） |
+| [UIA-026](TASK-UIA-026.md) | 编辑器素材库 → 播放器联动（进阶版 P2，拍板项，跨域卡） |
+| [UIA-027](TASK-UIA-027.md) | macOS mini player（MenuBarExtra + 生命周期上移；进阶版 P2，拍板项） |
 
 ### 相机 CAM（iOS 原生域，ADR-0014）
 | 卡 | 标题 |

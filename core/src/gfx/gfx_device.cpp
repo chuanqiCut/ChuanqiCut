@@ -178,7 +178,9 @@ Status CreateGfxDevice(PalPtr<IGraphicsDevice>& pal_device, IGfxDevice*& out_dev
 
     // 接管 PAL 设备所有权：调用方传进来的 PalPtr 会被移空，
     // 避免"GFX 设备还活着但底层 PAL 设备已被销毁"的悬垂。
-    out_device = new GfxDeviceImpl(std::move(pal_device));
+    // 内核 -fno-exceptions：分配必须 nothrow，失败按资源不足返回（CODESTYLE §2）。
+    out_device = new (std::nothrow) GfxDeviceImpl(std::move(pal_device));
+    if (!out_device) return Status(StatusCode::kResourceExhausted);
     return Status::Ok();
 }
 

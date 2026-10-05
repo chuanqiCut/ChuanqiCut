@@ -12,7 +12,7 @@ struct TimelineZone: View {
     var body: some View {
         VStack(spacing: 0) {
             HStack(spacing: 12) {
-                Text("Timeline")
+                Text("时间线")
                     .font(.caption)
                     .foregroundStyle(Theme.secondaryText)
 

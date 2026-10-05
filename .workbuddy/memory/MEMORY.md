@@ -270,3 +270,19 @@ iOS 平台差异五处修复、门禁命令、红线摘录、下一步优先级�
   plan（`generator: local_rules`），UI 明示"离线模式"。
 - 供应商协议收敛 OpenAI-compatible（可插拔）；语音输入走各端系统 STT（UI 层），
   音频不上传。合规备案问题上线前过法务（HANDOFF-005 §6）。
+
+## 三线并行与守门口径（2026-10-05 定，CODE-001）
+
+- **三条线开工**：A 编辑器/UI（UIA-*/MODEL-*）、B 相机/特效（CAM-*/CAP-*）、
+  C 内核/媒体/渲染（CORE/MEDIA/RENDER/AUDIO/GFX/EXPORT）。写集边界与禁改热点见
+  `docs/tasks/PLAN-三线并行.md` §1/§3。
+- **集成机（主力机）是唯一发号器**：任务 ID / ADR / pitfalls P 号每线一次领 5 个号，
+  登记（BACKLOG/日志）即占号；兜底 = fetch 核号、改动面小的一侧让位。
+  2026-10-05 号段：STYLE-001~005、INFRA-010~012 已由集成机占（见 BACKLOG §2.1/§2.1.1）。
+- **门禁口径以集成机为准**：远端"已验证"一律按未验证处理；合并后跑
+  `tools/ci/run_gate.sh`（INFRA-010）+ cq-code-review 流程 A（写集越界 +
+  iphonesimulator -typecheck 专项）；P0 修复前该线停止合并新代码。
+- **风格唯一标准 = `docs/CODESTYLE.md`**；审查流程 = `.agents/skills/cq-code-review`；
+  巡检记录落 `docs/reviews/`。
+- **文档/skill 里出现的命令路径必须真实存在**（P49）；仓库脚本里 `$var`
+  一律写 `${var}`（bash 3.2 全角解析坑，P50）。

@@ -762,3 +762,88 @@ CAM-012 首次对相机模块做全量 `-typecheck`（P46 技法），一次抓�
    recorderBox 隐式 self——已改局部 let 捕获（顺便消掉潜在保留环）。
 **规则**：相机模块新文件合入前必须过 iphonesimulator SDK 全量 -typecheck
 （-parse 只验语法不验类型/API/可用性）；harness 已是固定工具。
+
+### P49 · skill/文档描述"目标态"脚本不存在 —— 新会话照文档跑必失败
+- 现象：`cq-build-test` skill 引用 `tools/ci/run_gate.sh`、`tools/qa/golden_compare.sh`、
+  `tools/shaders/build.sh`、`tools/build/clean.sh`，四个全不存在（`tools/compliance/`、
+  `tools/shaders/` 只有 .gitkeep）；新会话按 skill 执行直接报错，此前无人发现
+  因为没人真照着跑过。
+- 根因：skill 写的是设计目标态（BACKLOG 的 INFRA-006/QA-002 未落地），文档没区分
+  "现状 / 目标"。
+- 修复：`run_gate.sh` 已落地（INFRA-010，2026-10-05）；golden 命令改指真实的
+  `tests/golden/verify.py`；shader / clean 显式标注未实现。
+- 防复发规则：**文档/skill 里出现的每个命令路径必须真实存在**；引用未实现脚本
+  必须标"（未实现，BACKLOG <ID>）"。已写进 `docs/CODESTYLE.md` §5 与
+  cq-code-review 巡检清单。
+- 日期 / 来源 / 验证状态：2026-10-05 / CODE-001 全库巡检 / **verified**（脚本逐个 ls 核实）
+
+### P50 · bash 3.2（macOS 自带）下 `$var` 紧跟全角字符 = unbound variable
+- 现象：run_gate.sh 首版在步骤失败的分支报
+  `line 52: rc…: unbound variable`，而 `rc` 上一行刚 `local rc=$?` 赋值。
+- 根因：bash 3.2 把紧跟 `$rc` 之后的全角字节（`）——`）解析进变量名；
+  macOS 自带 bash 是 3.2，`#!/usr/bin/env bash` 命中的可能就是它。
+  `bash -n` 查不出来（语法合法，扩展期才炸）。
+- 排障步骤：报错行号 → `sed -n 'Xp'` 看该行 → 注意行内 `$var` 后第一个字符。
+- 修复：脚本里变量引用一律 `${var}` 花括号形式，输出文案里的全角字符与
+  变量之间用花括号隔离。
+- 防复发规则：**仓库脚本（echo 带中文）里 `$var` 一律写 `${var}`**；
+  失败分支必须真跑一次（本例首跑即炸）。
+- 日期 / 来源 / 验证状态：2026-10-05 / INFRA-010 首跑 / **verified**
+  （修后 deps 失败分支正常打印 tail + 摘要并 exit 1；通过分支见 run_gate 实跑）
+
+### P51 · Xcode 工程是生成产物却没人重新生成 → 源码全在仓库、target 里一个都没有
+- 现象：`ChuanqiCutApp.swift:23: cannot find 'HomeView' in scope`。第一反应是
+  "HomeView 没提交"，但 `git ls-files` 与磁盘 11 .swift + 1 .metal **完全一致**，
+  `git status` 干净。
+- 根因：`apps/apple/ios/ChuanqiCut.xcodeproj/project.pbxproj` 是 UIA-002 时期的
+  陈旧生成产物（`LastUpgradeCheck = 1430` ≈ Xcode 14.3），只引用了
+  `ChuanqiCutApp.swift` —— **12 个源文件里 11 个从未进过任何编译**。
+  仓库约定是"xcodeproj/xcworkspace 不入库"，但本机没有 brew / xcodegen / mint，
+  clone 后**没有任何路径能重新生成**，于是陈旧产物一直用到现在。
+- 排障步骤：`git ls-files <dir>` 对比 `find <dir> -name '*.swift'`（排除"没提交"）
+  → `grep -oE '[A-Za-z0-9_]+\.swift' project.pbxproj`（看工程实际收录哪些）
+  → 两者不一致即为工程产物陈旧，不是源码缺失。
+- 修复：装 xcodegen（GitHub Release 二进制，见 project.yml 头部注释）重新
+  generate + `bundle exec pod install`；xcodegen 按 project.yml 自动收录全部 12 个。
+- 防复发规则：**"cannot find X in scope"先查工程引用，不要先怀疑没提交**；
+  xcodegen 装法必须写进 project.yml（本机无 brew，不能写 `brew install xcodegen`）。
+- 日期 / 来源 / 验证状态：2026-10-05 / HomeView 编译不过排障 / **verified**
+  （generate 后 12/12 引用齐全；simulator + device 双端 BUILD SUCCEEDED）
+
+### P52 · CIKernel 的 metallib：编译和链接都得 -fcikernel，`xcrun metallib` 会产出能用的**空壳**
+- 现象：`beauty_bilateral.metal`（CoreImage kernel）走 Xcode 内建 Metal 阶段时
+  `air-lld: symbol(s) not found for target 'air64_v25-apple-ios16.0.0-simulator'`
+  （`coreimage::sampler` 的 sample/coord/extent）。
+- 根因：`coreimage::sampler` 是 CoreImage **运行时**解析的符号，必须以
+  CoreImage kernel 模式编译。
+- ⚠️ 二次陷阱（这个更贵）：只给编译阶段 `-fcikernel`、链接用 `xcrun metallib`，
+  **链接成功、退出码 0、产出 96 字节 metallib**，但里面只有 `MTLB`+`ENDT`，
+  没有任何函数符号 —— 运行时 `CIKernel.kernelNames(fromMetalLibraryData:)`
+  查不到 → `BeautyKernel.init?` 返回 nil → **静默回落默认实现，编译全绿**。
+- 修法：编译与链接**都**用 `metal -fcikernel`（不是 `metallib`）：
+  `metal -fcikernel -target <triple> -isysroot <sdk> -c k.metal -o k.air`
+  `metal -fcikernel -target <triple> -isysroot <sdk> -o k.metallib k.air`
+  正确产物 8.4KB，`strings` 可见 `cq_beauty_down_h` / `cq_beauty_up_v_mix`。
+- 顺带：Xcode 内建阶段不可用（它的链接用 metal 驱动且不带 -fcikernel），
+  故该 .metal 要从 Sources 排除，改由 `postBuildScripts` 编译并直写
+  `$TARGET_BUILD_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH/`（签名在所有 phase 之后）。
+- 防复发规则：**产出 metallib 后必须 `strings` 检查 kernel 名**；
+  "链接退出码 0" 不构成证据。大小也要看（96B = 空壳）。
+- 日期 / 来源 / 验证状态：2026-10-05 / CAM-012 首次编译 / **verified**
+  （产物与手工链接的 8399B 样本 `cmp` IDENTICAL；simulator/device 双端均有）
+
+### P53 · xcodegen 2.46 三个不显然的行为（PRODUCT_NAME / excludes / metal flags）
+- （a）**不写 `PRODUCT_NAME`**：生成的工程缺该设置，Xcode 解析出空产品名，报
+  `Multiple commands produce '.../Build/Products/Debug-iphonesimulator/.app'`
+  （注意路径里 `.app` 前是空的）。→ project.yml 的 `settings.base` 必须显式写
+  `PRODUCT_NAME: "$(TARGET_NAME)"`。
+- （b）**`excludes` 要用 glob**：写 `iOSApp/Camera/Effects/beauty_bilateral.metal`
+  （相对工程根）**不生效**，文件照样进 Sources；必须写 `**/beauty_bilateral.metal`。
+- （c）**Metal 编译 flag 塞不进去**：`MTL_OTHER_FLAGS = -fcikernel` 在
+  `xcodebuild -showBuildSettings` 里看得到，但**不会出现在 metal 命令行**；
+  source 级的 `compilerFlags` 也不落地（PBXBuildFile 无 settings 段）。
+  → 真要给 .metal 加 flag，别指望 build setting，用脚本自己编（见 P52）。
+- 排障：`xcodebuild ... -showBuildSettings | grep MTL_` 能确认设置存在，但
+  **存在 ≠ 生效**；要回到编译日志里 grep 实际命令行验证。
+- 日期 / 来源 / 验证状态：2026-10-05 / HomeView 排障（工程重建三次）/ **verified**
+  （每步都重新 generate + pod install + build 实测）

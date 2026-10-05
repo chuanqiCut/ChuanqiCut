@@ -12,6 +12,7 @@
 
 import SwiftUI
 import Foundation
+import os
 import ChuanqiCut
 
 // MARK: - 错误
@@ -79,6 +80,9 @@ public final class EditorViewModel: ObservableObject {
     private var nextAssetId: UInt64 = 1
     /// 导入期间的去重锁位（导入是用户动作，同屏不会并发；防连点）。
     private var importInFlight = false
+
+    /// 诊断日志（CODESTYLE §3：生产代码用 os.Logger，禁 print）。
+    private let log = Logger(subsystem: "com.chuanqi.cut", category: "EditorViewModel")
 
     // MARK: 内核会话
 
@@ -370,13 +374,13 @@ public final class EditorViewModel: ObservableObject {
 
         // 1) 探测时长（同步；失败 = 无法解析的文件）
         guard let duration = session.probeMediaDuration(path: path) else {
-            return Status(rawValue: 2000)  // kDecodeError：打不开/解析不了
+            return .decodeError  // 打不开/解析不了（2000，语义码见绑定层 Status）
         }
         // 文件能打开却读不到时长 = 解析问题（不是参数非法）—— 用 decodeError 而非
         // invalidArgument，调用方与日志能区分这两类失败。
         // ⚠️ 实测偶发（SharedUI 全量跑约 50% 命中，pitfalls P33）：probe 成功但
         //    时长为 0，根因未定位在内核侧。这里是症状的最早可观测点。
-        guard duration.value > 0 else { return Status(rawValue: 2000) }
+        guard duration.value > 0 else { return .decodeError }
 
         // 2) 注册素材（素材 id 本地分配，单调递增）
         let assetId = nextAssetId
@@ -384,7 +388,7 @@ public final class EditorViewModel: ObservableObject {
         let regSt = session.registerAsset(id: assetId, path: path)
         guard regSt.isOK else {
             nextAssetId -= 1
-            print("[EditorViewModel] importMedia: registerAsset 失败 raw=\(regSt.rawValue)")
+            log.error("importMedia: registerAsset 失败 raw=\(regSt.rawValue)")
             return .invalidArgument
         }
 
@@ -398,7 +402,7 @@ public final class EditorViewModel: ObservableObject {
         if videoTrack == nil {
             let addTrackSt = session.addTrack(kind: 0)
             guard addTrackSt.isOK else {
-                print("[EditorViewModel] importMedia: addTrack 失败 raw=\(addTrackSt.rawValue)")
+                log.error("importMedia: addTrack 失败 raw=\(addTrackSt.rawValue)")
                 return .invalidArgument
             }
             let deadline = Date().addingTimeInterval(5)
@@ -408,11 +412,12 @@ public final class EditorViewModel: ObservableObject {
                 RunLoop.main.run(until: Date().addingTimeInterval(0.01))
             }
             guard videoTrack != nil else {
-                print("[EditorViewModel] importMedia: 5s 内未等到视频轨（addTrack 未落地或被拒）")
+                log.error("importMedia: 5s 内未等到视频轨（addTrack 未落地或被拒）")
                 return .invalidArgument
             }
         }
-        let trackId = videoTrack!.trackId
+        guard let videoTrack else { return .invalidArgument }
+        let trackId = videoTrack.trackId
 
         // 4) 追加片段：起点 = 该轨最后一片段的结束时刻（追加式，不重叠）
         let end = timeline.clips
@@ -429,9 +434,10 @@ public final class EditorViewModel: ObservableObject {
                                         start: start, duration: duration,
                                         sourceIn: RationalTime(value: 0, timescale: duration.timescale))
         guard addClipSt.isOK else {
-            print("[EditorViewModel] importMedia: addClip 失败 raw=\(addClipSt.rawValue) "
-                + "trackId=\(trackId) start=\(start.value)/\(start.timescale) "
-                + "dur=\(duration.value)/\(duration.timescale)")
+            // ⚠️ os.Logger 只接受编译期字面量插值：用 `+` 拼接会得到 String，
+            //    触发 "cannot convert value of type 'String' to 'OSLogMessage'"。
+            //    长行只能横向排，不能折成多行拼接。
+            log.error("importMedia: addClip 失败 raw=\(addClipSt.rawValue) trackId=\(trackId) start=\(start.value)/\(start.timescale) dur=\(duration.value)/\(duration.timescale)")
             return .invalidArgument
         }
         return .ok

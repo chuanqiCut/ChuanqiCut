@@ -36,17 +36,22 @@ xcodebuild test -scheme SharedUI
 
 ### Shader
 ```bash
-tools/shaders/build.sh --all && tools/shaders/lint.sh
+# ⚠️ tools/shaders/ 目前是占位（构建/lint 脚本尚未实现）。改 shader 时人工确认
+#    Portable 层（shaders/src/）无平台扩展；脚本落地后（BACKLOG INFRA）补命令。
 ```
 
 ### Golden（渲染/导出相关改动必跑）
 ```bash
-tools/qa/golden_compare.sh --case=<case>
+python3 tests/golden/verify.py --json   # 样本齐备性/参数一致性（需 Python ≥ 3.11）
+# ⚠️ 视觉比对（PSNR/SSIM）归 QA-002，尚未实现 —— 当前 golden 门禁只查齐备性。
 ```
 
 ### 门禁（提交前）
 ```bash
-tools/ci/run_gate.sh          # 编译 + 单测 + 静态检查 + 协议门禁 + SBOM
+tools/ci/run_gate.sh          # 本机总门禁（INFRA-010）：deps 校验 + 头纯净性 +
+                              # Debug/Release 全量单测 + XCFramework/Swift/SharedUI
+                              # + golden 齐备性；日志落 build/gate-logs/
+tools/ci/run_gate.sh --fast   # 快速档：跳过 Release 与 Apple/Swift
 ```
 
 ## 报告格式（必须）
@@ -67,6 +72,8 @@ tools/ci/run_gate.sh          # 编译 + 单测 + 静态检查 + 协议门禁 + 
 - [ ] 报告含命令、结果、跳过项、风险
 
 ## 常见失败处理
-- 构建产物缓存污染 → `tools/build/clean.sh` 后重试
+- 构建产物缓存污染 → 手动删 `build/`（无 clean.sh 脚本）后重跑
+- 改了 `core/` 之后 Swift 侧报 `symbol(s) not found` → SPM 用的是 XCFramework 复制件，
+  先 `tools/build/build_core_apple.sh --config=Release && bindings/swift/prepare.sh`
 - 多个 worktree 共用 DerivedData → 每个 worktree 必须独立 DerivedData 路径
 - golden 失败 → 先确认是"预期变更"还是"回归"，预期变更需更新 golden 并在 PR 说明

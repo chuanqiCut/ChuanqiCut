@@ -70,14 +70,8 @@ final class TimelineTests: XCTestCase {
 
     func testAssetQueryAndProbeDuration() throws {
         guard let session = Session() else { return XCTFail("Session 创建失败") }
-        // golden 夹具：bindings/swift → 仓库根
-        let golden = URL(fileURLWithPath: #filePath)
-            .deletingLastPathComponent()   // 1 → Tests/ChuanqiCutTests
-            .deletingLastPathComponent()   // 2 → Tests
-            .deletingLastPathComponent()   // 3 → bindings/swift
-            .deletingLastPathComponent()   // 4 → bindings
-            .deletingLastPathComponent()   // 5 → 仓库根
-            .appendingPathComponent("tests/golden/frames/gf_1080p_h264.mp4").path
+        // golden 夹具路径唯一真源 = TestPaths（P30：禁止手写 #filePath 上溯链）
+        let golden = TestPaths.goldenVideo
         guard FileManager.default.fileExists(atPath: golden) else {
             return XCTFail("golden 夹具缺失：\(golden)")
         }

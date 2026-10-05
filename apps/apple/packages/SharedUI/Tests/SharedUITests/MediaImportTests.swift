@@ -16,15 +16,8 @@ import ChuanqiCut
 final class MediaImportTests: XCTestCase {
 
     private var goldenURL: URL {
-        URL(fileURLWithPath: #filePath)
-            .deletingLastPathComponent()   // 1 → Tests/SharedUITests
-            .deletingLastPathComponent()   // 2 → Tests
-            .deletingLastPathComponent()   // 3 → SharedUI 包根
-            .deletingLastPathComponent()   // 4 → packages
-            .deletingLastPathComponent()   // 5 → apple
-            .deletingLastPathComponent()   // 6 → apps
-            .deletingLastPathComponent()   // 7 → 仓库根
-            .appendingPathComponent("tests/golden/frames/gf_1080p_h264.mp4")
+        // 路径唯一真源 = RepoPath（P30：禁止手写 #filePath 上溯链）
+        URL(fileURLWithPath: RepoPath.goldenVideo)
     }
 
     @discardableResult

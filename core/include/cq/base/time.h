@@ -5,8 +5,9 @@
 //
 // 红线（来自 AGENTS.root.md #4 / ADR-0006）：
 //   * 时间一律用 `RationalTime{value, timescale}`，禁止浮点秒。
-//   * 项目统一 timescale = 60000（见 `kProjectTimeScale`），可被 24/25/30/60
-//     等整除；NTSC 帧率的原生 timescale（如 24000 / 30000）由各素材保留，
+//   * 项目统一 timescale = **120000**（见 `kProjectTimeScale`，ADR-0009 修订
+//     ADR-0006 原定的 60000），可被 24/25/30/60/24000 整除；NTSC 帧率的原生
+//     timescale（如 24000 / 30000）由各素材保留，
 //     转换只在边界发生一次（ADR-0006 §1）。
 //   * 运算全程有理数（整数），中间不落浮点。
 //

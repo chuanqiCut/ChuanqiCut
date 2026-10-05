@@ -19,8 +19,8 @@
 //
 // 注：本文件属 base 层（跨平台），禁止出现平台类型。
 
-#ifndef CQ_BASE_PERF_H
-#define CQ_BASE_PERF_H
+#ifndef CQ_BASE_PERF_H_
+#define CQ_BASE_PERF_H_
 
 #include <cstdint>
 
@@ -112,4 +112,4 @@ private:
 #define CQ_PERF_SCOPE_NAMED(stage, pts, name) \
     ::cq::PerfScope cq_perf_scope_##__LINE__((stage), (pts), (name))
 
-#endif  // CQ_BASE_PERF_H
+#endif  // CQ_BASE_PERF_H_

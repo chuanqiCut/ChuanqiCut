@@ -68,3 +68,6 @@ Pods/
 apps/apple/*/build/
 # ZCode 会话本地数据
 .zcode/
+
+# Python 字节码缓存（deps.py 等工具运行产物）
+__pycache__/

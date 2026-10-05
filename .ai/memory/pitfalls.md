@@ -974,6 +974,30 @@ ADR-0020 文件头带着完整冲突块（`<<<<<<<< HEAD ... ======== ... >>>>>>
   2. **改完 Swift 不确定有没有被编译 → 先塞一个必然报错的 canary（`1 + "x"`）跑一次，
      确认它真炸了再拿掉**。呼应 P46/P48：`-parse`/挑错 scheme 这类"轻检查"多次放过真问题。
 
+### P63 · 用任务体里的 flag 做同步点 —— TaskRunner 计数在任务返回后才自增
+> 日期 / 来源 / 验证状态：2026-10-05 / 门禁 core-dbg `core_thread_model` 失败 / **verified**
+> （根因代码定位 + 复现率实测：空载 1/20、CPU 负载 1/30、单跑 5/5 绿）
+
+- 现象：`tools/ci/run_gate.sh` core-dbg 42 条里只有 `core_thread_model` 红，
+  失败断言「执行计数为 1」；Release 配置同msgid 100% 绿，单跑 5/5 绿。
+- 根因（`core/src/session/task_runner.cpp` WorkerLoop）：
+  ```cpp
+  task();                                    // 任务体末尾执行 finished.store(true)
+  executed_.fetch_add(1, std::memory_order_release);   // ← 任务**返回之后**才自增
+  ```
+  测试却在轮询到 `finished == true` 之后**立刻**读 `ExecutedCount()`。
+  「任务体结束」和「执行计数自增」中间有一个窗口，负载抢占时被放大 → 计数仍为 0 → FAIL。
+- 这不是 TaskRunner 的语义错误（"已执行完"自增在任务体之后是对的），**是测试选错了同步点**。
+- 修复口径（**core 不在本次 CAM-015 写集内，未改，等拍板**）：把等待条件改成等
+  `ExecutedCount()` 本身
+  （上限轮询），再断言 == 1；不要拿任务体自己的 flag 当作「runner 已记账」的证据。
+- 防复发规则：**跨线程测试的等待条件必须等「被断言的那个量」本身**，
+  等一个相邻信号 = 埋了一颗负载相关的 flaky（同族：P31 哨兵法要盯目标效果本身）。
+- 附带发现（门禁脚本）：`run_gate.sh` 的摘要会把**上一轮**的日志尾部一并打印
+  （core-rel / swift / sharedui 的日志时间戳停在上一跑），一票否决后可能被人误读成"本次也过了"。
+  看摘要必须同时看 `PASS/FAIL/SKIP` 计数与 `build/gate-logs/*.log` 的时间戳。
+
+
 
 
 ### P62 · App target 没有 DEBUG 编译条件 —— `#if DEBUG` 代码被静默剥掉
@@ -991,3 +1015,43 @@ ADR-0020 文件头带着完整冲突块（`<<<<<<<< HEAD ... ======== ... >>>>>>
   2. App 侧新增 `#if DEBUG` 功能后，验证必须**跑行为**（模拟器启动实测），
      不能只看 BUILD SUCCEEDED —— 与 P61（scheme 假绿）、P48（-parse 假绿）同族：
      「编译通过」对**被预处理剥掉**的代码毫无约束力。
+
+
+### P64 · 真机 UI 测试 runner「exit 74 before establishing connection」—— 锁屏即挂，手动拉起正常
+> 日期 / 来源 / 验证状态：2026-10-05 / 启动基线测量会话（tools/perf/launch_bench 首次上真机）/ 
+> 现象 **verified**（两轮复现）；根因=锁屏为 **hypothesis**（未解锁复测前不下结论）
+
+- 现象：`xcodebuild test` 对真机（iPhone 17 Pro / iOS 26.6.1）跑 UI 测试，runner 安装成功但
+  `Early unexpected exit ... exited with code 74 before establishing connection`，连续两轮；
+  同一工程同时刻对模拟器全绿。
+- 对照证据：`xcrun devicectl device process launch --terminate-existing` **手动拉起 runner 成功**
+  （安装、签名、profile、Developer Mode 都没问题）——只有 XCTest 引导握死。
+- 已耗掉时间的弯路，防复发：
+  1. 真机 UI 测试挂 exit 74，先怀疑**锁屏**，解锁后重跑；别先去折腾签名/entitlements
+     （手动 launch 成功 = 签名链路是好的）。
+  2. `xctrace record --template 'App Launch'` 对真机**能录**，但 CLI 导出的只有裸 kdebug 表
+     （0x31,0xca / thread-narrative 全进程 60MB），**导不出 GUI 里的 Process Lifecycle 里程碑**
+     ——别试图用 xctrace XML 替代 `XCTApplicationLaunchMetric`，直接用 LaunchBench 那套 UI 测试。
+  3. 同 bundle id 覆盖安装 Debug/Release 时注意 Xcode 26 的 sim Debug 是
+     **ENABLE_DEBUG_DYLIB** 形态（代码在 `*.debug.dylib`，主二进制只有 25KB），
+     与 Release（代码全在主二进制）包结构不同，比对包大小/符号时别拿错对象。
+
+
+### P65 · blit 写 framebufferOnly drawable —— 无校验层的「实测无 error」不算证据
+> 日期 / 来源 / 验证状态：2026-10-05 / TASK-CAM-015 真机 DEBUG 调试 SIGABRT /
+> 现象 **verified**（校验层下第一帧必炸、100% 复现）；修后 SDK typecheck 通过，
+> 真机复验归传哲（未实测帧率）
+
+- 现象：`CameraRenderer.draw` 的 `encoder.copy(from: scratch, to: drawable.texture)` 在
+  DEBUG（Metal API Validation 开启 / GPU 抓帧）下：
+  `MTLDebugBlitCommandEncoder ... failed assertion 'Copy From Texture Validation
+  destinationTexture must not be a framebufferOnly texture.'` → SIGABRT。
+- 根因：Metal 规范**禁止对 framebufferOnly 纹理做 blit**（源/目标都禁；该纹理只允许当
+  render pass 的 colorAttachment）。P60/CAM-014 记录的「blit 写入合法（本机实测无 error）」
+  是**无校验层运行**下的未定义行为放行，不算证据。
+- 与 P61 同族升级：不止「scheme 开关改变编译对象」，**校验层开关改变运行时合法性**。
+- 修复（CAM-015 翻案）：`CameraVideoView` 改 `framebufferOnly = false`（blit 合法化，
+  中间纹理保留作 CI 落脚点），CameraRenderer 两处错误注释勘误。真机帧率不达标时的
+  出路是 blit 换 render pass，**不是改回 true**。
+- 防复发规则：Metal/图形 API 的行为结论必须在**校验层开启**（DEBUG scheme 的 Metal
+  API Validation、GPU 抓帧）状态下实测；引用「实测无 error」必须注明校验层开关状态。

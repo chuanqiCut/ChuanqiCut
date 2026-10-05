@@ -377,3 +377,29 @@ INFRA-001/002 → CORE-001~005 → CORE-006(PAL冻结) → PALA-001/010
 **关键路径**：`CAM-002 → CAM-003 → CAM-004 → CAM-005`。
 **注意**：相机特效与编辑器特效是两套实现（ADR-0014 代价）——时间线滤镜仍等
 RENDER-001/红线 #6 路线，勿把相机滤镜直接当 SDK 能力引用。
+
+---
+
+## 10. 智能成片（AIEDIT，2026-10-04 新增；ADR-0016 + SPEC AIEDIT-001）
+
+> 用户需求：首页「智能成片」入口 —— 本地特征提取 → 大模型决策 → SDK 执行 →
+> 导出/二次编辑 + 对话框（文字/语音）多轮调整；扩展单列「AI 脚本成片」入口
+> （脚本→分镜）。调研：RESEARCH-003。伞卡：TASK-AIEDIT-000（含 DAG/批次/并行声明）。
+
+| ID | 层 | 任务 | 依赖 | 写集要点 | 验收 |
+|---|---|---|---|---|---|
+| AIEDIT-001 | SDK | **契约冻结**：FeatureReport/EditPlan schema + ILlmClient/INetTransport + 校验器 | — | `core/include/cq/ai/*`(新)、`core/include/cq/pal/net.h`(新)、校验器+golden ≥40 例 | ctest edit_plan 全绿；浮点秒全拒 |
+| AIEDIT-002 | SDK | 视觉特征（镜头边界/运动/质量，零模型 P0） | 001 | `core/src/ai/analysis/*`(新) | golden 边界 ±1；内存 <200MB [E] |
+| AIEDIT-003 | SDK | 音频解码扩档(FFmpeg decode) + 音频特征（静音/LUFS/包络） | 001 | `core/src/media/audio_decode/*`(新)、`third_party/manifest.toml`(高冲突) | 过 dependency-governance；边界 ≤50ms |
+| AIEDIT-004 | SDK | PAL 网络（URLSession/SSE）+ OpenAI-compatible 客户端 | 001 | `pal/apple/net/*`(新)、`core/src/ai/llm/*`(新) | 假服务器四异常路径；零三方依赖 |
+| AIEDIT-005 | SDK | Prompt 管线与决策解析/修复/降级编排 | 001/004/011 | `core/src/ai/plan/plan_pipeline 等`(新) | 四路径全过；增量 rev 校验 |
+| AIEDIT-006 | SDK | EditPlan→Command 执行器 + RemoveRange/SetTransition 新命令 | 001 | `core/include/cq/command/command.h`(高冲突)、`core/src/command/*` | undo 逐字段还原；批次原子 |
+| AIEDIT-007 | SDK | C ABI 扩展（cq_ai_*）+ Swift 绑定（Integrator） | 002/004/005/006 | `cq_sdk.h`(高冲突)、bindings | c_abi_ai 全绿；observer 无泄漏 |
+| AIEDIT-008 | UI | 智能成片向导 UI（首页入口 + 三步 + 双出口） | 007 | `HomeView.swift`(高冲突)、SharedUI `SmartCut/Wizard+Result`(新) | 状态机单测；双端编译 |
+| AIEDIT-009 | UI | 对话式调整（文字 + 语音 STT + 逐条接受） | 008 | SharedUI `SmartCut/Chat+Voice`(新)、project.yml info(高冲突) | 撤销本轮还原；权限三路径 |
+| AIEDIT-010 | P1 | AI 脚本成片（脚本→分镜→素材匹配，单列入口） | 009 | 启动时冻结 | 伞占位，启动时拆 |
+| AIEDIT-011 | SDK | 本地规则引擎降级（离线成片，同 schema 输出） | 001 | `core/src/ai/fallback/*`(新) | 确定性输出；断网出合法 plan |
+
+**批次**：1=001（串行先行）→ 2=002/003/004/006/011（五路并行）→ 3=005 → 4=007 → 5=008 → 6=009。
+**关键路径**：`001 → 005 → 007 → 008 → 009`（002/003/006/011 赶在 007 前完成即可）。
+**P0 出口**：闭环可用（导出按钮置灰待 EXPORT-001）；**P0.5**：BGM 卡点命令 + 导出对接；**P1**：010 + 转写剪辑 + Android 端。

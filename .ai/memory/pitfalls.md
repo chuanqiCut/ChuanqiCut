@@ -762,3 +762,27 @@ CAM-012 首次对相机模块做全量 `-typecheck`（P46 技法），一次抓�
    recorderBox 隐式 self——已改局部 let 捕获（顺便消掉潜在保留环）。
 **规则**：相机模块新文件合入前必须过 iphonesimulator SDK 全量 -typecheck
 （-parse 只验语法不验类型/API/可用性）；harness 已是固定工具。
+
+### P49 · App 目标（ChuanqiCutApp）从未整体编译过，HomeView 首页三连错（Swift 6.1 语言模式）
+用户在构建机报"主分支首页编译不通过"。App 目标 SWIFT_VERSION=6.1（Swift 6 语言
+模式严格并发），而既有验证（-parse / 默认模式 -typecheck）都查不出语言模式错误。
+本轮静态审查（无编译机，未实测编译，**hypothesis→构建机验收**）定位并修复：
+1. HomeView.swift：用了 `ChuanqiCut.version` 但缺 `import ChuanqiCut`（SharedUI
+   无 @_exported 转发，Swift 不允许传递依赖取符号）→ `cannot find 'ChuanqiCut'
+   in scope`，正中"首页编译不通过"；
+2. CameraManager.applyPortraitOrientation：`isVideoRotationAngleSupported(90)`
+   （iOS 17+）在 `#available(iOS 17.0,*)` 门控之前调用——编译错，且 iOS 16 真机
+   unrecognized selector 运行时崩溃；已改为门控内各分支自查支持性；
+3. CameraViewModel.capturePhoto：`var processed` 被 `Task { @MainActor in }`
+   （@Sendable）捕获 → `reference to captured var in concurrently-executing
+   code`；改 `let` 确定初始化；
+4. CameraManager（普通 final class NSObject）被 4 处 `DispatchQueue.async`
+   @Sendable 闭包捕获 → Swift 6 必报 non-sendable capture；类标
+   `@unchecked Sendable`（队列独占纪律担保），capturePhoto 的 onDone 经
+   PhotoRelay（@unchecked Sendable，新增 deliver()）转交，@Sendable 闭包不再捕获
+   非 Sendable 的 onDone。
+**规则**：App 目标级 typecheck 必须带 `-swift-version 6` 跑（与 SWIFT_VERSION=6.1
+一致），否则严格并发错误全部放行；本批修复只过了 -parse（本机 Swift 5.5 无
+iOS 16 SDK），类型级验证待构建机。
+- 日期 / 来源 / 验证状态：2026-10-05 / 双机集成修复（用户报首页编译失败）/
+  **未实测**：静态审查 + -parse；-typecheck/xcodebuild 待构建机

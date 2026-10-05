@@ -1056,9 +1056,11 @@ ADR-0020 文件头带着完整冲突块（`<<<<<<<< HEAD ... ======== ... >>>>>>
 - 防复发规则：Metal/图形 API 的行为结论必须在**校验层开启**（DEBUG scheme 的 Metal
   API Validation、GPU 抓帧）状态下实测；引用「实测无 error」必须注明校验层开关状态。
 
-### P63 · VT 解码器只认 'hvc1' —— 'hev1' 格式描述建会话必 -12906
+### P66 · VT 解码器只认 'hvc1' —— 'hev1' 格式描述建会话必 -12906
 > 日期 / 来源 / 验证状态：2026-10-05 / TASK-MEDIA-022 / **verified**
 >（golden 'hev1' 文件复现 -12906；重建 'hvc1' 后 150 帧全解）
+> ⚠️ 编号更正：原编 P63 与并行会话（CAM-015 TaskRunner 条目）撞号，按
+> 「改动面小的让位」（PLAN-三线并行 §2-3）改为 P66。
 
 - 现象：`VTDecompressionSessionCreate` 对 ffmpeg 产出的 HEVC MP4 返回
   **-12906 kVTUnsupportedDecompressionErr**，即使文件是普通 8-bit 4:2:0。

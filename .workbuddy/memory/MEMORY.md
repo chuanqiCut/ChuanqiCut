@@ -298,3 +298,15 @@ iOS 平台差异五处修复、门禁命令、红线摘录、下一步优先级�
 - 远端"已验证"一律按未验证处理；合并后跑 gate + cq-code-review 流程 A（写集越界 + typecheck）。
 - **风格唯一标准 = `docs/CODESTYLE.md`**；巡检记录落 `docs/reviews/`。
 - **文档/skill 里的命令路径必须真实存在**（P58）；仓库脚本 `$var` 一律写 `${var}`（bash 3.2 坑，P50）。
+
+## 播放器域边界（UIA-015 / ADR-0022，2026-10-05 确立）
+
+- **AVFoundation/AVKit 只许出现在 `SharedUI/Sources/SharedUI/Player/` 域的
+  五个文件**（PlayerEngine/AVPlayerEngine/PlayerSurfaceView/
+  VideoThumbnailLoader/PlayerPipCoordinator）；控制层、PlayerViewModel、
+  App target 一律不 import。跨文件传 `AVPlayer`/`AVPlayerLayer` 用
+  "不点名的不透明值"（不写出类型名即可传值）。控制层只依赖
+  `PlayerEngine` 协议——换 C++ 播放 session 时不改 UI。
+- **SharedUI 新代码按 Swift 5.5 可解析风格写**（显式 `guard let x = x`、
+  不用 `any P`）——本机 swiftc 5.5 是唯一静态验证手段，5.7 简写会把
+  语法检查变成噪音（P45/P46 环境约束的推论）。

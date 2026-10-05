@@ -36,5 +36,12 @@ struct ChuanqiCutMacApp: App {
                 .frame(minWidth: 960, minHeight: 540)
         }
         .defaultSize(width: 1280, height: 720)
+        // 独立播放器窗口（UIA-015；SPEC-UIA-020 §4.3）：macOS 菜单
+        // 文件 → 新建视频播放器窗口 打开。
+        Window("视频播放器", id: "player") {
+            PlayerLauncherScreen()
+                .frame(minWidth: 960, minHeight: 540)
+        }
+        .defaultSize(width: 1280, height: 720)
     }
 }

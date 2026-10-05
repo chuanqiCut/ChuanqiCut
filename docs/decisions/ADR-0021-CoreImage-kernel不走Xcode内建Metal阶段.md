@@ -3,7 +3,7 @@
 - 状态：Accepted（2026-10-05）
 - 影响面：`apps/apple/ios/project.yml`、CIKernel 类 shader 资产（当前仅
   `iOSApp/Camera/Effects/beauty_bilateral.metal`，CAM-012）
-- 相关：ADR-0014（相机模块采用 iOS 原生栈）、pitfalls P52 / P53
+- 相关：ADR-0014（相机模块采用 iOS 原生栈）、pitfalls P55 / P56
 
 ## 背景
 
@@ -20,7 +20,7 @@ Metal kernel。iOS 上 `CIKernel(source:)` 不可用，只能走
 CIKernel 的 .metal **排除在 Xcode 内建 Metal 编译阶段之外**，改由
 `postBuildScripts` 自己编，产物直写 `.app`：
 
-1. `sources` 里 `excludes: ["**/beauty_bilateral.metal"]`（glob 写法，见 P53-b）；
+1. `sources` 里 `excludes: ["**/beauty_bilateral.metal"]`（glob 写法，见 P56-b）；
 2. 脚本用 `metal -fcikernel` **编译 + 链接两步**（都带 `-fcikernel`），
    target triple 按 `PLATFORM_NAME` 区分 simulator / device；
 3. 输出 `$TARGET_BUILD_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH/beauty_bilateral.metallib`
@@ -31,7 +31,7 @@ CIKernel 的 .metal **排除在 Xcode 内建 Metal 编译阶段之外**，改由
 - 内建阶段不带 `-fcikernel`，链接必报
   `air-lld: symbol(s) not found`（`coreimage::Sampler::sample/coord/extent`）。
 - 给 target 设 `MTL_OTHER_FLAGS = -fcikernel` **无效**：`showBuildSettings` 看得到，
-  但不出现在 metal 命令行（P53-c）；source 级 `compilerFlags` 也不落地。
+  但不出现在 metal 命令行（P56-c）；source 级 `compilerFlags` 也不落地。
 - 只给编译阶段加 `-fcikernel`、链接用 `xcrun metallib`，会产出 **96 字节空壳**
   （只有 `MTLB`+`ENDT`，零函数符号），**链接退出码 0、编译全绿**，但运行时
   `CIKernel.kernelNames` 查不到 → `BeautyKernel.init?` 返回 nil → 静默回落默认

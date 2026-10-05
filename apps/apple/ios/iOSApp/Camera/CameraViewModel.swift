@@ -74,7 +74,6 @@ final class CameraViewModel: ObservableObject {
             let context = CIContext(mtlDevice: device)
             ciContext = context
             let previewRenderer = CameraPreviewRenderer(ciContext: context, commandQueue: queue)
-            previewRenderer.setFilter(filter)
             renderer = previewRenderer
             // CAM-012：Metal 磨皮引擎注入（bundle 无 metallib 时静默走 SharedUI 默认实现）。
             BeautyKernel.installSharedSmoothingIfNeeded()
@@ -82,6 +81,10 @@ final class CameraViewModel: ObservableObject {
             ciContext = nil
             renderer = nil
         }
+        // ⚠️ 初始滤镜必须等**所有存储属性初始化完**再同步：init 里在 renderer
+        //    赋值前访问 self.filter 会触发 phase-1 报错
+        //    （'self' used in property access 'filter' before all stored properties are initialized）。
+        renderer?.setFilter(filter)
     }
 
     // MARK: 生命周期

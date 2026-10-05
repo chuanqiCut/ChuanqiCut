@@ -112,8 +112,11 @@ final class VisionDetector: @unchecked Sendable {
         lastPtsSeconds = seconds
         busy = true
         stateLock.unlock()
+        // CVImageBuffer 是 CF 类型、不 Sendable。依据：闭包**强捕获**使其引用计数
+        // 不归零，采集输出不会把它回收进 pool；detect 全程只读像素内容。
+        nonisolated(unsafe) let frame = pixelBuffer
         queue.async { [weak self] in
-            self?.detect(pixelBuffer, ptsSeconds: seconds, pts: pts)
+            self?.detect(frame, ptsSeconds: seconds, pts: pts)
         }
     }
 

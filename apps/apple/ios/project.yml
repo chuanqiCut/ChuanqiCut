@@ -5,6 +5,12 @@
 #   bundle install && bundle exec pod install
 #   open ChuanqiCut.xcworkspace      # 注意开 workspace，不是 xcodeproj
 #
+# xcodegen 安装（本机无 brew）：取 GitHub Release 二进制，不要从源码编。
+#   curl -sL -o /tmp/xcodegen.zip \
+#     https://github.com/yonaskolb/XcodeGen/releases/download/2.46.0/xcodegen.zip
+#   unzip -q /tmp/xcodegen.zip -d /tmp/xcodegen_bin
+#   sudo cp /tmp/xcodegen_bin/xcodegen/bin/xcodegen /usr/local/bin/
+#
 # ChuanqiCut.xcodeproj 与 .xcworkspace 均为生成产物，不入库。
 # 依赖（SDK + SharedUI）全部走 CocoaPods，见同目录 Podfile；本工程不含 SPM 包。
 
@@ -20,12 +26,21 @@ settings:
     SWIFT_VERSION: "6.1"
     MARKETING_VERSION: 0.1.0
     CURRENT_PROJECT_VERSION: 1
+    # xcodegen 2.46 不再默认写 PRODUCT_NAME；缺了它 Xcode 会解析出空名，
+    # 报 `Multiple commands produce '.../Build/Products/.../.app'`。
+    PRODUCT_NAME: "$(TARGET_NAME)"
+    # Xcode 26 对传统 headermap 的弃用提示（否则每次构建一条 warning）。
+    ALWAYS_SEARCH_USER_PATHS: NO
 
 targets:
   ChuanqiCutApp:
     type: application
     platform: iOS
-    sources: [iOSApp]
+    # 收录 iOSApp；CIKernel 的 .metal 排除在 Sources 之外（见下方脚本说明）。
+    sources:
+      - path: iOSApp
+        excludes:
+          - "**/beauty_bilateral.metal"
     info:
       path: iOSApp/Info.plist
       properties:
@@ -46,3 +61,32 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.chuanqi.cut
         TARGETED_DEVICE_FAMILY: "1,2"
+    # CoreImage kernel 不能走 Xcode 内建 Metal 阶段（见 sources 的 excludes）：
+    #   1) 编译必须带 -fcikernel，否则 coreimage::sampler 的 sample/coord/extent
+    #      是未解析引用；
+    #   2) 链接必须用 `xcrun metallib`，不能用 `metal` 驱动 —— 实测后者对
+    #      -fcikernel 的 .air 必报
+    #      `air-lld: symbol(s) not found for target 'air64_v25-apple-ios16.0.0-simulator'`，
+    #      而 `xcrun metallib` 链接同一份 .air 成功（CoreImage 符号运行时解析）。
+    # 故这里自己编，产物直接落进 .app（签名在所有 build phase 之后，安全）。
+    # BeautyKernel 扫描 bundle 内任意 .metallib，不要求叫 default.metallib。
+    postBuildScripts:
+      - name: "Compile CoreImage metal kernel into bundle"
+        basedOnDependencyAnalysis: false
+        script: |
+          set -euo pipefail
+          SRC="$PROJECT_DIR/iOSApp/Camera/Effects/beauty_bilateral.metal"
+          AIR="$TARGET_TEMP_DIR/beauty_bilateral.air"
+          OUT="$TARGET_BUILD_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH/beauty_bilateral.metallib"
+          mkdir -p "$TARGET_TEMP_DIR"
+          case "$PLATFORM_NAME" in
+            *simulator) TRIPLE="air64-apple-ios${IPHONEOS_DEPLOYMENT_TARGET}-simulator" ;;
+            *)          TRIPLE="air64-apple-ios${IPHONEOS_DEPLOYMENT_TARGET}" ;;
+          esac
+          # 编译与链接**都要** -fcikernel：只给编译阶段时 `xcrun metallib`
+          # 会产出 96 字节的空壳（只有 MTLB/ENDT，无函数符号），链接不报错，
+          # 但运行时 CIKernel.kernelNames 查不到 → 静默回落默认实现。
+          # 必须用 `metal -fcikernel` 链接（不是 metallib），产物 8.4KB 且含
+          # cq_beauty_down_h / cq_beauty_up_v_mix。
+          xcrun -sdk "$PLATFORM_NAME" metal -fcikernel -target "$TRIPLE" -isysroot "$SDKROOT" -c "$SRC" -o "$AIR"
+          xcrun -sdk "$PLATFORM_NAME" metal -fcikernel -target "$TRIPLE" -isysroot "$SDKROOT" -o "$OUT" "$AIR"

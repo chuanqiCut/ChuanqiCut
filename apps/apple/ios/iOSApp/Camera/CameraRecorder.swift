@@ -21,7 +21,10 @@ import CoreVideo
 import Foundation
 import SharedUI
 
-final class CameraRecorder {
+// @unchecked Sendable 的依据：状态迁移由 `lock` 保护，append 只在 videoQueue /
+// audioQueue，start/finish 主线程调用（见文件头线程模型）；本类实例在
+// CameraViewModel 与采集队列之间传递是安全的。
+final class CameraRecorder: @unchecked Sendable {
 
     enum RecordingError: Error, LocalizedError {
         case writerCreationFailed
@@ -202,9 +205,13 @@ final class CameraRecorder {
         }
         videoInput?.markAsFinished()
         audioInput?.markAsFinished()
-        writer.finishWriting { [weak self] in
-            let status = writer.status
-            let error = writer.error
+        // AVAssetWriter 不 Sendable。依据：finishWriting 的回调由 writer 自己在
+        // 串行队列上调用一次，闭包只读 status/error，且 writer 此后不再被写入
+        // （markAsFinished 已调用）—— 跨闭包持有没有数据竞争。
+        nonisolated(unsafe) let finishingWriter = writer
+        finishingWriter.finishWriting { [weak self] in
+            let status = finishingWriter.status
+            let error = finishingWriter.error
             let url = self?.outputURL
             Task { @MainActor in
                 if status == .completed, let url {

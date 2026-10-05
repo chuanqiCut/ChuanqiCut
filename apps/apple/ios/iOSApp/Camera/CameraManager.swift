@@ -15,7 +15,11 @@
 import AVFoundation
 import CoreMedia
 
-final class CameraManager: NSObject {
+// @unchecked Sendable 的依据（不是静音警告，是已建立的线程模型）：
+//   可变状态（configured / currentPosition）**只在 sessionQueue** 触碰，
+//   session / photoOutput 是 let 且创建后不再改；跨队列只传不可变的 Bool /
+//   Position / 帧缓冲。故本类实例跨队列传递是安全的。
+final class CameraManager: NSObject, @unchecked Sendable {
 
     enum Position {
         case back
@@ -62,7 +66,9 @@ final class CameraManager: NSObject {
 
     /// 相机+麦克风授权。拒绝相机 = false；拒绝麦克风仍可拍（录制时静音轨降级）。
     static func requestAuthorization(_ completion: @escaping @MainActor (_ cameraGranted: Bool, _ micGranted: Bool) -> Void) {
-        func request(_ mediaType: AVMediaType, _ done: @escaping (Bool) -> Void) {
+        // done 只在 Bool 上传递（Sendable），且 requestAccess 的 completionHandler
+        // 是 @Sendable —— 这里显式标注，避免外层闭包被推断成非 Sendable。
+        @Sendable func request(_ mediaType: AVMediaType, _ done: @escaping @Sendable (Bool) -> Void) {
             switch AVCaptureDevice.authorizationStatus(for: mediaType) {
             case .authorized:
                 done(true)
@@ -128,12 +134,16 @@ final class CameraManager: NSObject {
     /// 统一走 process 链，保证与预览同序），错误/失败以 nil 上抛（诚实暴露）。
     /// 可在视频录制中调用（AVFoundation 支持拍录并发）。
     func capturePhoto(onDone: @escaping (_ pixelBuffer: CVImageBuffer?) -> Void) {
+        // onDone 的签名含 CVImageBuffer（CF 类型，不 Sendable），整体闭包因此在
+        // @Sendable 的 sessionQueue 闭包里被拒。安全性依据：闭包**强捕获** buffer，
+        // CVPixelBuffer 引用计数不会被池回收；消费方（CameraViewModel）只读渲染。
+        nonisolated(unsafe) let done = onDone
         sessionQueue.async { [weak self] in
             guard let self, self.configured, self.session.outputs.contains(self.photoOutput) else {
-                onDone(nil)
+                done(nil)
                 return
             }
-            self.photoRelay.onPhoto = onDone
+            self.photoRelay.onPhoto = done
             let settings = AVCapturePhotoSettings()
             // 竖屏/镜像沿用 connection 的呈现设置（photoOutput 的 connection 一并设置）。
             if let connection = self.photoOutput.connection(with: .video) {

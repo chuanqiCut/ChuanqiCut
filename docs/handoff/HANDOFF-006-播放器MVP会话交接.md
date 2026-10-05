@@ -55,6 +55,13 @@
   新增 Swift 6 关注点：`AVMediaSelectionGroup`/`AVMediaSelectionOption`
   跨执行器 Sendable 标注（与缩略图同 hypothesis，报错则同样装箱收敛）。
 
+## 进阶版本规划（2026-10-05 深夜追加）
+
+进阶版路线已立：`docs/tasks/PLAN-播放器进阶.md`（P1 六卡 UIA-016/017/018/021/022/023
++ P2 导出挂接点 + P3 内核演进纲领）。P1 全部卡以**构建机门禁 PASS**为开工前置；
+编号跳过 019（面板框架 spec 保留）/020（防 spec 同号混淆），取号已 git fetch 核对。
+构建机会话完成门禁后，可直接按 PLAN §2 顺序开工 P1。
+
 ## 装配形状（一图）
 
 ```

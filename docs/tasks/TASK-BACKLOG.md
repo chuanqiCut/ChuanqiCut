@@ -211,7 +211,13 @@ parallel:    false          # 是否与同批次其他任务并行
 | UIA-012 | UI | 相册多选批量导入（PhotosPicker maxSelectionCount=20，逐条汇入 importMedia，部分失败不中断；Spec UIA-012 + ADR-0015） | UIA-011 | `SharedUI`（PropertyPanelZone + PhotoImportTests 追加） | 多选 N 条全部入表且顺序一致；部分失败汇总展示不中断；零权限零依赖；内核/绑定零改动 |
 | UIA-013 | UI | 自研相册浏览器（网格/相簿/多选序号/时长过滤/iCloud/.limited，替换系统 sheet；Spec UIA-013 + ADR-0015，B 期伞任务） | UIA-012 | `SharedUI/MediaPicker`（新目录）+ `project.yml` info 段（高冲突，开工时协调） | 编译门禁 + AlbumPickerTests 全绿；真机项（权限/.limited/iCloud/帧率）随真机恢复决策执行；导入链路零改动 |
 | UIA-014 | 跨平台 + UI | 预览宽高比适配（FitMode stretch/contain/cover，视口原语接缝）✅ 2026-10-04 | UIA-010 | `preview_renderer.*` + GFX/PAL 编码器 + `cq_sdk.h` + `Previewer.swift` + SharedUI AppEntry | 非同比例素材按模式适配；默认 stretch 行为不变；像素断言见 TASK-UIA-014（编号两次让位：011→012→014，撞相册导入/相册多选） |
-| UIA-015 | UI | 独立视频播放器 MVP（AVPlayer 过渡 + PlayerEngine 接缝；Spec UIA-020 + ADR-0022，2026-10-05 当日交付） | 无（UIA-014 收口后立项） | `SharedUI/Player/`（新目录）+ HomeView + MacApp + `ios/project.yml` info 段 | PlayerTests 全绿 + 构建机 0 警告 + SPEC §6.4 行为清单；内核/绑定零改动；C++ session 演进见 ADR-0022 反转条件 |
+| UIA-015 | UI | 独立视频播放器 MVP（AVPlayer 过渡 + PlayerEngine 接缝；Spec UIA-020 + ADR-0022，2026-10-05 当日交付）✅ + 第二/三轮 V1 | 无（UIA-014 收口后立项） | `SharedUI/Player/`（新目录）+ HomeView + MacApp + `ios/project.yml` info 段 | PlayerTests 全绿 + 构建机 0 警告 + SPEC §6.4 行为清单；内核/绑定零改动；C++ session 演进见 ADR-0022 反转条件 |
+| UIA-016 | UI | 播放器系统级播控补完（章节标记 + PiP 占位态 + AirPlay 路由；进阶版 P1，PLAN-播放器进阶） | UIA-015 门禁 PASS | `SharedUI/Player/**` + PlayerTests | 章节刻度/跳转；PiP 占位态；AirPlay 呼出；章节 API 形状构建机首验 |
+| UIA-017 | UI | 播放器画面捏合缩放与拖移（1x–3x + 双击复位；进阶版 P1） | UIA-015 门禁 PASS | PlayerControlsView/Screen/VM + PlayerTests | 缩放钳制 + 回弹；与上下滑/长按消歧真机验证；映射纯函数可测 |
+| UIA-018 | UI | 播放器外挂字幕 v1（SRT/WebVTT；进阶版 P1） | UIA-015 门禁 PASS；**开工前补 ADR-0023（解析层归属）** | Player/SubtitleParser + Overlay + VM/Screen + PlayerTests + ADR-0023 | 解析容错 + 1MB 上界；字幕随时间轴显隐；换片清除 |
+| UIA-021 | UI | 播放器最近播放（bookmark 持久化 + 列表；进阶版 P1；编号跳 019/020 见 PLAN §5） | UIA-015 门禁 PASS | PlayerRecentStore + Launcher + PlayerTests | 重启重播；去重置顶 ≤20；失效自动剔除 |
+| UIA-022 | UI | 播放器播放列表与连续播放（进阶版 P1） | UIA-015 门禁 PASS, UIA-021 | PlayerViewModel/Screen/Queue + PlayerTests | 连播不断流（<1s [E]）；AB > 循环 > 队列优先级；失败跳片 |
+| UIA-023 | UI | 播放器设置页 + macOS PiP + 快捷键扩充（进阶版 P1） | UIA-015 门禁 PASS, UIA-018 | PlayerSettingsView + Controls/Screen/PipCoordinator + PlayerTests | 设置聚合既有持久化项；macOS PiP 可用性显隐；快捷键无冲突 |
 
 ### 3.6 导出
 

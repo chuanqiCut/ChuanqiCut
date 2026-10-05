@@ -9,7 +9,7 @@
 2. 按 [`../../.ai/templates/task.md`](../../.ai/templates/task.md) 建卡，写集不得与其他在飞任务相交；
 3. 在 BACKLOG 对应行标注 ✅（完成后）；在本表登记一行。
 
-## 已建卡登记表（47 张，2026-10-05）
+## 已建卡登记表（53 张，2026-10-05）
 
 ### 基建 INFRA / DOC
 | 卡 | 标题 |
@@ -52,6 +52,12 @@
 | [UIA-013](TASK-UIA-013.md) | 自研相册浏览器（伞任务，B 期） |
 | [UIA-014](TASK-UIA-014.md) | 预览宽高比适配（letterbox / fit；编号两次让位 011→012→014） |
 | [UIA-015](TASK-UIA-015.md) | 独立视频播放器 MVP（AVPlayer 过渡 + 接缝；Spec UIA-020 + ADR-0022） |
+| [UIA-016](TASK-UIA-016.md) | 播放器系统级播控补完（章节 + PiP 占位 + AirPlay；进阶版 P1） |
+| [UIA-017](TASK-UIA-017.md) | 播放器画面捏合缩放与拖移（进阶版 P1） |
+| [UIA-018](TASK-UIA-018.md) | 播放器外挂字幕 v1（SRT/WebVTT；开工前补 ADR-0023；进阶版 P1） |
+| [UIA-021](TASK-UIA-021.md) | 播放器最近播放（bookmark 持久化；进阶版 P1；跳 019/020 见 PLAN §5） |
+| [UIA-022](TASK-UIA-022.md) | 播放器播放列表与连续播放（进阶版 P1） |
+| [UIA-023](TASK-UIA-023.md) | 播放器设置页 + macOS PiP + 快捷键扩充（进阶版 P1） |
 
 ### 相机 CAM（iOS 原生域，ADR-0014）
 | 卡 | 标题 |

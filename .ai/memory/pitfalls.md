@@ -861,3 +861,18 @@ CAM-012 首次对相机模块做全量 `-typecheck`（P46 技法），一次抓�
   每线一次领 5 个号，登记即占号）；号段表已更新（ADR 新号从 0022 起）。
 - 日期 / 来源 / 验证状态：2026-10-05 / CODE-001 收口 / **verified**
   （grep 全仓：智能成片侧 ADR-0016 残留 0，预览侧 5 处引用完整保留）
+
+### P57 · Swift 6 严格并发：UIKit 交互要显式 @MainActor，注入闭包签名必须带 @Sendable
+- 现象：SharedUI 相册 5 条警告 —— `UIImpactFeedbackGenerator.impactOccurred()` /
+  `UIApplication.shared.open()` 在 nonisolated `static func` 里调用被拒（456/463）；
+  `PHPhotoLibrary.requestAuthorization` 的 handler 收非 Sendable 闭包被拒（49）。
+- 根因：Swift 6 把 UIKit 的这些类型标成 `@MainActor`；`requestAuthorization` 的
+  handler 参数本身是 `@Sendable`，注入式依赖的**闭包签名必须与之完全一致**。
+- 修法：`PickerFeedback` 两个方法标 `@MainActor`（让调用点由编译器校验，不是静音），
+  `PermissionGuideView.onOpenSettings` 同步标 `@MainActor`；
+  `AlbumPermissionModel.request` 的注入签名改为 `@escaping @Sendable (PHAuthorizationStatus) -> Void`。
+- 验收：改注入签名必须重跑 `swift test`（71/71 绿才能证明测试注入点没被破坏）。
+- 防复发规则：**Swift 6 下"只是警告"的 main-actor 隔离违规，在严格模式是运行时
+  风险**，不能因为编译过就放着；注入式依赖改签名 = 改 API，必须连带跑测试。
+- 日期 / 来源 / 验证状态：2026-10-05 / SharedUI 相册优化 / **verified**
+  （5 条警告清零；SharedUI swift test 71/71；iOSApp 构建 0 error 0 项目警告）

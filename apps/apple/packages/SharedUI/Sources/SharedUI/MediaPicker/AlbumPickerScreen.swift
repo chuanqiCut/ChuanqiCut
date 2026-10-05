@@ -413,7 +413,9 @@ private struct LimitedLibraryBanner: View {
 // MARK: - 权限拒绝引导
 
 private struct PermissionGuideView: View {
-    let onOpenSettings: () -> Void
+    // 与 PickerFeedback.openSystemSettings 同为 @MainActor：Button action 在
+    // SwiftUI 里本就跑在主线程，标出来让编译器把住这层。
+    @MainActor var onOpenSettings: () -> Void
 
     var body: some View {
         VStack(spacing: 14) {
@@ -451,13 +453,17 @@ private struct PermissionGuideView: View {
 
 enum PickerFeedback {
 
-    static func selectionChanged() {
+    // UIImpactFeedbackGenerator / UIApplication.shared 在 Swift 6 里是
+    // @MainActor 隔离的，静态方法不标就只能在 nonisolated 上下文"偷渡"——
+    // 这里显式标 @MainActor，让调用点由编译器校验（Swift 6 严格并发下
+    // 从后台调 UIKit 是真会出问题的，不是可忽略的警告）。
+    @MainActor static func selectionChanged() {
         #if canImport(UIKit)
         UIImpactFeedbackGenerator(style: .light).impactOccurred()
         #endif
     }
 
-    static func openSystemSettings() {
+    @MainActor static func openSystemSettings() {
         #if canImport(UIKit)
         if let url = URL(string: UIApplication.openSettingsURLString) {
             UIApplication.shared.open(url)

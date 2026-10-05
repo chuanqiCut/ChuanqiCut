@@ -14,96 +14,10 @@ import XCTest
 @MainActor
 final class PlayerTests: XCTestCase {
 
-    // MARK: Stub 引擎（记录调用，不碰 AVFoundation）
-
-    private final class StubPlayerEngine: PlayerEngine {
-        var state: PlayerEngineState = .idle
-        var duration: TimeInterval = 0
-        var currentTime: TimeInterval = 0
-        var isPlaying = false
-        var rate: Double = 1.0
-        var volume: Double = 1.0
-        var isMuted = false
-        var videoSize: CGSize? = CGSize(width: 1920, height: 1080)
-        var frameDuration: TimeInterval = 1.0 / 30.0
-        var audioTracks: [PlayerTrackOption] = [
-            PlayerTrackOption(id: 0, name: "国语"),
-            PlayerTrackOption(id: 1, name: "粤语"),
-        ]
-        var currentAudioTrackID: Int?
-        var subtitleTracks: [PlayerTrackOption] = []
-        var currentSubtitleTrackID: Int?
-        private(set) var selectedAudioID: Int?
-        private(set) var selectedSubtitleID: Int?
-
-        var onTick: ((TimeInterval) -> Void)?
-        var onStateChange: ((PlayerEngineState) -> Void)?
-        var onEnded: (() -> Void)?
-        var onPlayStateChange: ((Bool) -> Void)?
-
-        private(set) var loadCalls: [URL] = []
-        private(set) var seeks: [(target: TimeInterval, precise: Bool)] = []
-        private(set) var playCount = 0
-        private(set) var pauseCount = 0
-
-        func load(url: URL) {
-            loadCalls.append(url)
-            state = .loading
-        }
-
-        func play() {
-            playCount += 1
-            isPlaying = true
-        }
-
-        func pause() {
-            pauseCount += 1
-            isPlaying = false
-        }
-
-        func seek(to seconds: TimeInterval, precise: Bool) {
-            seeks.append((seconds, precise))
-            currentTime = seconds
-        }
-
-        func invalidate() {}
-
-        func selectAudioTrack(id: Int?) {
-            selectedAudioID = id
-            currentAudioTrackID = id
-        }
-
-        func selectSubtitleTrack(id: Int?) {
-            selectedSubtitleID = id
-            currentSubtitleTrackID = id
-        }
-    }
-
-    private func makeViewModel(duration: TimeInterval = 0,
-                               currentTime: TimeInterval = 0,
-                               isPlaying: Bool = false,
-                               defaults: UserDefaults? = nil) -> (PlayerViewModel, StubPlayerEngine) {
-        let engine = StubPlayerEngine()
-        engine.duration = duration
-        engine.currentTime = currentTime
-        engine.isPlaying = isPlaying
-        // URL 无需真实存在：activate() 的 security scope 恒返回 false（无害），
-        // 缩略图请求对不存在的文件静默失败（降级为纯时间气泡）。
-        let url = URL(fileURLWithPath: "/tmp/cq-player-tests-nonexistent.mp4")
-        let vm: PlayerViewModel
-        if let defaults = defaults {
-            vm = PlayerViewModel(engine: engine, url: url, defaults: defaults)
-        } else {
-            vm = PlayerViewModel(engine: engine, url: url)
-        }
-        vm.activate()
-        return (vm, engine)
-    }
-
     // MARK: 进度条拖动
 
     func testScrubSeeksOnlyOnEndWithZeroToleranceAndRestoresMute() {
-        let (vm, engine) = makeViewModel(duration: 100, currentTime: 20, isPlaying: true)
+        let (vm, engine) = makePlayerViewModel(duration: 100, currentTime: 20, isPlaying: true)
 
         vm.beginScrub()
         XCTAssertTrue(vm.isScrubbing, "拖动中应处于 scrub 状态")
@@ -126,7 +40,7 @@ final class PlayerTests: XCTestCase {
     }
 
     func testSkipClampsToDurationBounds() {
-        let (vm, engine) = makeViewModel(duration: 30, currentTime: 28)
+        let (vm, engine) = makePlayerViewModel(duration: 30, currentTime: 28)
 
         vm.skip(relative: 10)
         XCTAssertEqual(engine.seeks.first?.target ?? -1, 30, accuracy: 0.001, "快进越界钳制到片尾")
@@ -145,7 +59,7 @@ final class PlayerTests: XCTestCase {
     }
 
     func testJumpFractionClamps() {
-        let (vm, engine) = makeViewModel(duration: 200)
+        let (vm, engine) = makePlayerViewModel(duration: 200)
         vm.jump(toFraction: 1.5)
         XCTAssertEqual(engine.seeks.first?.target ?? -1, 200, accuracy: 0.001, "百分比跳转钳制到 [0,1]")
         vm.jump(toFraction: 0.25)
@@ -155,7 +69,7 @@ final class PlayerTests: XCTestCase {
     // MARK: 倍速与步进
 
     func testRatePassesThroughToEngine() {
-        let (vm, engine) = makeViewModel()
+        let (vm, engine) = makePlayerViewModel()
         vm.rate = 1.5
         XCTAssertEqual(engine.rate, 1.5, "倍速必须透传引擎")
         vm.rate = 0.5
@@ -163,7 +77,7 @@ final class PlayerTests: XCTestCase {
     }
 
     func testFrameStepUsesEngineFrameDuration() {
-        let (vm, engine) = makeViewModel(currentTime: 1.0)
+        let (vm, engine) = makePlayerViewModel(currentTime: 1.0)
         engine.frameDuration = 1.0 / 25.0
         vm.stepFrames(1)
         XCTAssertEqual(engine.seeks.first?.target ?? -1, 1.04, accuracy: 0.0001, "逐帧步进按引擎帧时长")
@@ -175,7 +89,7 @@ final class PlayerTests: XCTestCase {
     // MARK: 播完与失败
 
     func testNaturalEndStopsPlaybackAndKeepsControlsVisible() {
-        let (vm, engine) = makeViewModel(duration: 120, currentTime: 119, isPlaying: true)
+        let (vm, engine) = makePlayerViewModel(duration: 120, currentTime: 119, isPlaying: true)
 
         engine.onEnded?()
         XCTAssertFalse(vm.isPlaying, "播完自动停止（不循环）")
@@ -185,7 +99,7 @@ final class PlayerTests: XCTestCase {
     }
 
     func testEngineFailureSurfacesStateAndKeepsControlsVisible() {
-        let (vm, engine) = makeViewModel()
+        let (vm, engine) = makePlayerViewModel()
         vm.toggleControls()
         XCTAssertFalse(vm.showsControls)
 
@@ -203,7 +117,7 @@ final class PlayerTests: XCTestCase {
     // MARK: 长按倍速
 
     func testSpeedBoostRestoresPreviousRate() {
-        let (vm, engine) = makeViewModel(isPlaying: true)
+        let (vm, engine) = makePlayerViewModel(isPlaying: true)
         vm.rate = 1.25
 
         vm.beginSpeedBoost()
@@ -221,7 +135,7 @@ final class PlayerTests: XCTestCase {
     // MARK: 循环
 
     func testLoopRestartsFromBeginningOnEnd() {
-        let (vm, engine) = makeViewModel(duration: 60, currentTime: 59.8, isPlaying: true)
+        let (vm, engine) = makePlayerViewModel(duration: 60, currentTime: 59.8, isPlaying: true)
         vm.toggleLoop()
         XCTAssertTrue(vm.loopEnabled)
 
@@ -232,7 +146,7 @@ final class PlayerTests: XCTestCase {
     }
 
     func testABLoopSeeksBackWhenCrossingEnd() {
-        let (vm, engine) = makeViewModel(duration: 120, isPlaying: true)
+        let (vm, engine) = makePlayerViewModel(duration: 120, isPlaying: true)
 
         engine.onTick?(10)
         vm.cycleABLoop()
@@ -250,7 +164,7 @@ final class PlayerTests: XCTestCase {
     }
 
     func testABLoopTooShortCancels() {
-        let (vm, _) = makeViewModel(duration: 120)
+        let (vm, _) = makePlayerViewModel(duration: 120)
         engineTickThenSetA(vm, at: 10)
         engineOnTick(vm, 10.3)
         vm.cycleABLoop()
@@ -258,7 +172,7 @@ final class PlayerTests: XCTestCase {
     }
 
     func testManualSeekOutsideABClearsLoop() {
-        let (vm, _) = makeViewModel(duration: 120, isPlaying: true)
+        let (vm, _) = makePlayerViewModel(duration: 120, isPlaying: true)
         engineTickThenSetA(vm, at: 10)
         engineOnTick(vm, 30)
         vm.cycleABLoop()
@@ -275,11 +189,11 @@ final class PlayerTests: XCTestCase {
         let defaults = UserDefaults(suiteName: suiteName) ?? .standard
         defer { defaults.removePersistentDomain(forName: suiteName) }
 
-        let (vm1, _) = makeViewModel(defaults: defaults)
+        let (vm1, _) = makePlayerViewModel(defaults: defaults)
         vm1.rate = 1.5
         XCTAssertEqual(defaults.double(forKey: PlayerViewModel.rateDefaultsKey), 1.5, "倍速变更写入 UserDefaults")
 
-        let (vm2, engine2) = makeViewModel(defaults: defaults)
+        let (vm2, engine2) = makePlayerViewModel(defaults: defaults)
         XCTAssertEqual(vm2.rate, 1.5, "新实例从 UserDefaults 恢复倍速")
         XCTAssertEqual(engine2.rate, 1.5, "恢复的倍速同步引擎")
     }
@@ -287,7 +201,7 @@ final class PlayerTests: XCTestCase {
     // MARK: 换片
 
     func testSwapMediaResetsPlaybackStateAndKeepsLoopToggle() {
-        let (vm, engine) = makeViewModel(duration: 100, currentTime: 50, isPlaying: true)
+        let (vm, engine) = makePlayerViewModel(duration: 100, currentTime: 50, isPlaying: true)
         vm.toggleLoop()
         engineTickThenSetA(vm, at: 40)
         engineOnTick(vm, 60)
@@ -306,7 +220,7 @@ final class PlayerTests: XCTestCase {
     // MARK: 音轨 / 字幕
 
     func testTrackListingSyncsFromEngineBroadcast() {
-        let (vm, engine) = makeViewModel()
+        let (vm, engine) = makePlayerViewModel()
         XCTAssertTrue(vm.audioTracks.isEmpty, "装载前轨道列表为空")
 
         engine.onStateChange?(.ready)
@@ -320,7 +234,7 @@ final class PlayerTests: XCTestCase {
     }
 
     func testTrackSelectionPassesThroughToEngine() {
-        let (vm, engine) = makeViewModel()
+        let (vm, engine) = makePlayerViewModel()
         vm.selectAudioTrack(id: 1)
         XCTAssertEqual(engine.selectedAudioID, 1, "音轨选择透传引擎")
         XCTAssertEqual(vm.currentAudioTrackID, 1)
@@ -337,12 +251,12 @@ final class PlayerTests: XCTestCase {
         let defaults = UserDefaults(suiteName: suiteName) ?? .standard
         defer { defaults.removePersistentDomain(forName: suiteName) }
 
-        let (vm1, _) = makeViewModel(defaults: defaults)
+        let (vm1, _) = makePlayerViewModel(defaults: defaults)
         XCTAssertEqual(vm1.doubleTapSeconds, 10, "默认步长 10 秒")
         vm1.doubleTapSeconds = 15
         XCTAssertEqual(defaults.double(forKey: PlayerViewModel.doubleTapDefaultsKey), 15, "步长变更写入 UserDefaults")
 
-        let (vm2, _) = makeViewModel(defaults: defaults)
+        let (vm2, _) = makePlayerViewModel(defaults: defaults)
         XCTAssertEqual(vm2.doubleTapSeconds, 15, "新实例恢复步长")
     }
 

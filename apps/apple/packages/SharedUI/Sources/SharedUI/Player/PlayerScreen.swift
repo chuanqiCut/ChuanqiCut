@@ -16,9 +16,20 @@ import UniformTypeIdentified
 public struct PlayerScreen: View {
     @StateObject private var vm: PlayerViewModel
     @State private var showsImporter = false
+    @State private var showsQueue = false
 
     public init(url: URL) {
         _vm = StateObject(wrappedValue: PlayerViewModel(url: url))
+    }
+
+    /// 队列模式入口（Launcher 多选/素材库联动/导出批预览共用，UIA-022/026）。
+    public init(urls: [URL], startIndex: Int = 0) {
+        let clamped = min(max(startIndex, 0), max(urls.count - 1, 0))
+        // 空数组防御：落一个不可播路径 → 引擎 failed → 错误横幅（不 crash）。
+        let safe = urls.isEmpty ? [URL(fileURLWithPath: "/dev/null")] : urls
+        let model = PlayerViewModel(url: safe[clamped])
+        model.setQueue(safe, startIndex: clamped)
+        _vm = StateObject(wrappedValue: model)
     }
 
     /// 测试与未来装配用（引擎注入）。
@@ -30,7 +41,8 @@ public struct PlayerScreen: View {
         ZStack {
             Color.black.ignoresSafeArea()
             surface
-            PlayerControlsOverlay(vm: vm, onOpenNewFile: { showsImporter = true })
+            PlayerControlsOverlay(vm: vm, onOpenNewFile: { showsImporter = true },
+                                  onShowQueue: { showsQueue = true })
         }
         .onAppear { vm.activate() }
         .onDisappear { vm.deactivate() }
@@ -40,14 +52,55 @@ public struct PlayerScreen: View {
             allowsMultipleSelection: false
         ) { result in
             if case .success(let urls) = result, let first = urls.first {
-                vm.swapMedia(to: first)
+                vm.playStandalone(first)   // 手动换片 = 退出队列模式
             }
+        }
+        .sheet(isPresented: $showsQueue) {
+            queueSheet
         }
         #if os(macOS)
         .onKeyPress { press in
             handleKeyPress(press)
         }
         #endif
+    }
+
+    /// 播放队列面板（UIA-022）：当前片高亮，点击切换并关闭。
+    private var queueSheet: some View {
+        NavigationStack {
+            List(Array(vm.queue.enumerated()), id: \.offset) { index, url in
+                Button {
+                    vm.jumpQueue(to: index)
+                    showsQueue = false
+                } label: {
+                    HStack(spacing: 10) {
+                        if vm.queueIndex == index {
+                            Image(systemName: "speaker.wave.2.fill")
+                                .font(.caption)
+                                .foregroundStyle(.tint)
+                        }
+                        Text(url.lastPathComponent)
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                        Spacer()
+                    }
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(vm.queueIndex == index
+                                    ? "正在播放：\(url.lastPathComponent)"
+                                    : "播放：\(url.lastPathComponent)")
+            }
+            .navigationTitle("播放队列（\(vm.queue.count)）")
+            .toolbar {
+                Button("清空") {
+                    vm.clearQueue()
+                    showsQueue = false
+                }
+            }
+        }
+        .preferredColorScheme(.dark)
+        .playerSheetDetents()
     }
 
     /// 画面 sink。AVPlayer 之外（未来 C++ 引擎）先落黑底占位。
@@ -106,18 +159,35 @@ public struct PlayerScreen: View {
     #endif
 }
 
+// MARK: - sheet 形态（iOS 半屏两档 detents；macOS 窗口形态无需 detents，
+// 手法同 AlbumPickerScreen.mediaPickerPanelPresentation）
+
+private extension View {
+    @ViewBuilder
+    func playerSheetDetents() -> some View {
+        #if canImport(UIKit)
+        presentationDetents([.medium, .large])
+        #else
+        self
+        #endif
+    }
+}
+
 // MARK: - 选择文件入口（首页卡片 / macOS 窗口共用）
 
 public struct PlayerLauncherScreen: View {
-    @State private var url: URL?
+    @State private var urls: [URL] = []
     @State private var showsImporter = false
+    @ObservedObject private var recent = PlayerRecentStore.shared
 
     public init() {}
 
     public var body: some View {
         Group {
-            if let url = url {
-                PlayerScreen(url: url)
+            if urls.count == 1, let only = urls.first {
+                PlayerScreen(url: only)
+            } else if urls.count > 1 {
+                PlayerScreen(urls: urls)
             } else {
                 emptyPrompt
             }
@@ -125,16 +195,17 @@ public struct PlayerLauncherScreen: View {
         .fileImporter(
             isPresented: $showsImporter,
             allowedContentTypes: Self.supportedTypes,
-            allowsMultipleSelection: false
+            allowsMultipleSelection: true
         ) { result in
-            if case .success(let urls) = result, let first = urls.first {
-                url = first
+            if case .success(let picked) = result, !picked.isEmpty {
+                urls = picked
             }
         }
         // 拖视频文件进窗口直接播（macOS 惯例；iOS 16 / macOS 13 基线内）
-        .dropDestination(for: URL.self, isTargeted: nil) { urls, _ in
-            guard let first = urls.first else { return false }
-            url = first
+        .dropDestination(for: URL.self, isTargeted: nil) { dropped, _ in
+            guard let first = dropped.first else { return false }
+            urls = dropped
+            _ = first
             return true
         }
     }
@@ -142,24 +213,78 @@ public struct PlayerLauncherScreen: View {
     private var emptyPrompt: some View {
         ZStack {
             Color.black.ignoresSafeArea()
-            VStack(spacing: 16) {
-                Image(systemName: "play.rectangle")
-                    .font(.system(size: 56))
+            ScrollView {
+                VStack(spacing: 20) {
+                    Image(systemName: "play.rectangle")
+                        .font(.system(size: 56))
+                        .foregroundStyle(.secondary)
+                        .padding(.top, 24)
+                    Text("选择本地视频开始播放，可多选连播")
+                        .foregroundStyle(.secondary)
+                    Button {
+                        showsImporter = true
+                    } label: {
+                        Label("选择视频文件", systemImage: "folder")
+                            .foregroundStyle(.white)
+                            .padding(.horizontal, 20)
+                            .padding(.vertical, 10)
+                            .background(Color.white.opacity(0.12), in: Capsule())
+                    }
+                    .buttonStyle(.plain)
+                    if !recent.items.isEmpty {
+                        recentList
+                    }
+                }
+                .padding(32)
+                .frame(maxWidth: 640)
+            }
+        }
+    }
+
+    /// 最近播放（UIA-021）：失效条目点击即剔除。
+    private var recentList: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack {
+                Text("最近播放")
+                    .font(.footnote)
                     .foregroundStyle(.secondary)
-                Text("选择一个本地视频开始播放")
-                    .foregroundStyle(.secondary)
+                Spacer()
+                Button("清空") {
+                    recent.clear()
+                }
+                .font(.footnote)
+                .accessibilityLabel("清空最近播放")
+            }
+            .padding(.bottom, 2)
+            ForEach(recent.items.prefix(8)) { item in
                 Button {
-                    showsImporter = true
+                    if let url = recent.playbackURL(for: item) {
+                        urls = [url]
+                    } else {
+                        recent.remove(item)
+                    }
                 } label: {
-                    Label("选择视频文件", systemImage: "folder")
-                        .foregroundStyle(.white)
-                        .padding(.horizontal, 20)
-                        .padding(.vertical, 10)
-                        .background(Color.white.opacity(0.12), in: Capsule())
+                    HStack(spacing: 10) {
+                        Image(systemName: item.isRemote ? "network" : "doc.text")
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                        Text(item.name)
+                            .font(.subheadline)
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                            .foregroundStyle(.white.opacity(0.9))
+                        Spacer()
+                        Text(item.addedAt, style: .date)
+                            .font(.caption2)
+                            .foregroundStyle(.tertiary)
+                    }
+                    .contentShape(Rectangle())
+                    .padding(.vertical, 6)
+                    .padding(.horizontal, 12)
+                    .background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 10))
                 }
                 .buttonStyle(.plain)
             }
-            .padding(32)
         }
     }
 

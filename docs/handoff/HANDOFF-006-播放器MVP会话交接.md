@@ -64,6 +64,15 @@
 （P2 四卡 = 用户拍板项：UIA-024 网络流点播、025 ASS 样式子集、026 素材库联动、
 027 macOS mini player；依赖：025←018、026/027←022，024 独立）。
 
+## 实施进度（P1/P2 开工后滚动更新）
+
+- **UIA-021 / UIA-022 ✅ 代码落地（2026-10-05 Batch A）**：最近播放存储
+  （`PlayerRecentStore`，shared 单例 + tests 注入）+ 队列状态机（分派链
+  AB > 循环 > 队列 > 停止；失败跳片）+ Launcher 多选/最近列表 + 队列 sheet。
+  测试支撑抽出 `PlayerTestSupport.swift`（StubPlayerEngine + makePlayerViewModel 共用）。
+  新增公共 API：`PlayerScreen(urls:startIndex:)`。PlayerTests 17 + PlayerQueueTests 11 用例。
+  **待构建机**：swift test 全量 + 双平台编译；待真机：iOS bookmark 跨会话、连播间隙。
+
 ## 装配形状（一图）
 
 ```

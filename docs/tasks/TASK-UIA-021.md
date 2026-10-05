@@ -2,6 +2,11 @@
 > 前置：构建机门禁 PASS（TASK-UIA-015）；开工前 git fetch 核对号（PLAN-播放器进阶 §5）。
 # TASK-UIA-021：播放器最近播放（bookmark 持久化 + 列表入口）
 
+> **状态**：✅ 代码落地（2026-10-05，Batch A）；构建机门禁与真机项待执行。
+> 落地：`Player/PlayerRecentStore.swift`（去重置顶/上限 20/失效剔除/bookmark 平台分支）
+> + Launcher 最近列表（含清空）+ VM ready 时记录（每片一次，失败不污染）。
+> PlayerQueueTests 6 用例覆盖存储纯逻辑与 VM 记录时机。本机 parse 全绿。
+
 ```yaml
 id:          TASK-UIA-021
 layer:       UI

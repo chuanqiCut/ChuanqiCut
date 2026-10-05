@@ -438,4 +438,19 @@ RENDER-001/红线 #6 路线，勿把相机滤镜直接当 SDK 能力引用。
 | MEDIA-022 | SDK | HEVC 解码支持 + 探测失败诚实透传 ✅ 2026-10-05 | — | `pal/apple/media_decode.mm`、绑定 probe 透传、AppEntry 文案 | HEVC golden probe=0 + 像素断言；门禁全绿（诊断见任务卡 §背景） |
 
 **批次**：020 ∥ 016 → 015。**关键路径**：020 → 015。
-**登记未开工**：UIA-017（macOS 惯例化）、UIA-018（时间线视觉/缩略图）、Theme 2.0 全量清扫（RESEARCH-004 §6.0，待批）、UIA-019 面板框架立项、MEDIA-022（HEVC，2026-10-05 立项）。
+**登记未开工**：UIA-017（macOS 惯例化）、UIA-018（时间线视觉——被 RESEARCH-006/UIA-024 吸收时标注让位）、Theme 2.0 全量清扫（RESEARCH-004 §6.0，待批）、UIA-019 面板框架立项。
+
+## 12. 编辑页 UIKit 重建（UIA-021~024，2026-10-05 新增；RESEARCH-006 + ADR-0022）
+
+> 用户命题：播放卡顿 + 界面丑 → 复刻剪映移动端范式；SwiftUI 难实现就改 UIKit。
+> 决策：ADR-0022（编辑页核心三件套 UIKit，外层 SwiftUI 壳，Command 链路零改动）。
+
+| ID | 层 | 任务 | 依赖 | 写集要点 | 验收 |
+|---|---|---|---|---|---|
+| UIA-021 | UI | EditorViewController 骨架（三区 UIKit 容器 + SwiftUI 装配） | — | SharedUI `Editor/UIKit/**`(新)、EditorScreen 装配 | 双平台编译；既有测试零回归 |
+| UIA-022 | UI | 时间线 UIKit 自绘 + 手势 + CADisplayLink 播放头（卡顿修复主体） | 021 | SharedUI `Editor/UIKit/Timeline*` | 播放头移动仅重绘播放头层；主线程单帧 <16ms（真机走查） |
+| UIA-023 | UI | 预览浮层/传输条 + 底部工具栏/二级条 | 021 | SharedUI `Editor/UIKit/{Preview,Toolbar}*` | 剪映形状走查清单（RESEARCH-006 §2） |
+| UIA-024 | UI | 时间线缩略图（异步抽帧，吸收原 UIA-018） | 022 | 同上 + 抽帧缓存 | 主线程不解码；缩略图随片段可见 |
+
+**批次**：阶段 0（真机性能剖面，回填 baselines，UIA-021 前半天）→ 021 → 022 ∥ 023 → 024。
+**关键路径**：021 → 022。

@@ -454,3 +454,23 @@ Spec UIA-020 / ADR-0022 / RESEARCH-006。**内核 = AVPlayer 过渡实现 +
   不用 `any P` —— 与部分既有文件的 5.7 简写噪音区分开）；linkcheck ✅；
   `swift test` / 双平台 xcodebuild / SPEC §6.4 行为清单待构建机+真机。
   播放性能数字全部未实测（baselines 有未实测清单）。
+
+## UIA-015 第二轮（2026-10-05 深夜，V1 批次同日追加）
+
+- **长按倍速**：overlay 上 `onLongPressGesture(0.35s, maxDist 12)` →
+  VM `beginSpeedBoost/endSpeedBoost`（2x，松手恢复，重复触发幂等，仅播放中生效），
+  触觉复用 MediaPicker 域的 `PickerFeedback.selectionChanged()`（同模块内跨域复用，
+  均为 @MainActor）。中央气泡 "2x 快进中"。
+- **循环**：单片循环（onEnded → seek 0 + play，纯 VM 不动引擎协议）+
+  **A-B 循环**（三态 off→aSet→looping；tick 粒度 0.25s 越界回跳零容差；
+  区间 <1s 视为误触；手动 seek 落区间外自动清除；播完（B≈片尾）回 A 续播；
+  进度条画高亮区间/起点刻度）。入口收进 moreMenu（ellipsis.circle）避免控制行溢出。
+- **倍速记忆**：VM 注入 `UserDefaults`（测试用独立 suite），键
+  `cq.player.rate`，init 恢复 + didSet 写入。
+- **缩略图批量预热**：ready 后 `VideoThumbnailLoader.warmup`（≤24 桶、
+  ≥6 桶、短片 5s/桶，50ms 错峰防瞬间并发解码），气泡基本命中缓存。
+- **换片与拖放**：VM `swapMedia(to:)`（scope 换绑 + 状态复位 + loader 重建 +
+  AB 清除；循环开关/倍速记忆保留）；控制层 moreMenu"打开新视频"（fileImporter）；
+  Launcher 增加 `dropDestination(for: URL.self)` 拖放打开（macOS 惯例）。
+- **第二轮测试**：PlayerTests 8 → 14 用例（boost 恢复/循环续播/AB 回跳/
+  短区间取消/区间外清除/倍速记忆/换片复位）。parse 全绿。

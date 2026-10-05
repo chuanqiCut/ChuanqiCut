@@ -38,6 +38,18 @@
    （起播延迟 / 零容差 seek 延迟 / 2x CPU / 缩略图内存）。
 5. 如踩新坑：pitfalls 记 **P60 起**（本轮未用号）。
 
+## 第二轮（同日深夜，V1 批次）新增验收点
+
+- 新增功能：长按倍速（2x 松手恢复+触觉）、单片循环、A-B 循环（三态+区间
+  标记+区间外自动清除）、倍速跨会话记忆（UserDefaults `cq.player.rate`）、
+  缩略图批量预热（≤24 桶错峰）、换片（moreMenu"打开新视频"）、macOS 拖放打开。
+- PlayerTests 8 → **14 用例**；构建机跑全量。
+- 新增 Swift 6 关注点：`onLongPressGesture` 与 pan/tap 手势共存（构建机真机
+  验证消歧）；`dropDestination(for: URL.self)`（iOS16/macOS13 基线内）；
+  PickerFeedback 跨域复用（MediaPicker 域 → Player 域，同模块 internal）。
+- 行为清单追加：长按 2x 松手回 1x；A-B 回跳与标记显示；换片后进度/缩略图/AB
+  复位且循环开关保留；重启 App 倍速保持。
+
 ## 装配形状（一图）
 
 ```

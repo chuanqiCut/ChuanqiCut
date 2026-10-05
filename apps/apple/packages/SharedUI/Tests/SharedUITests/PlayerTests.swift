@@ -62,14 +62,21 @@ final class PlayerTests: XCTestCase {
 
     private func makeViewModel(duration: TimeInterval = 0,
                                currentTime: TimeInterval = 0,
-                               isPlaying: Bool = false) -> (PlayerViewModel, StubPlayerEngine) {
+                               isPlaying: Bool = false,
+                               defaults: UserDefaults? = nil) -> (PlayerViewModel, StubPlayerEngine) {
         let engine = StubPlayerEngine()
         engine.duration = duration
         engine.currentTime = currentTime
         engine.isPlaying = isPlaying
         // URL 无需真实存在：activate() 的 security scope 恒返回 false（无害），
         // 缩略图请求对不存在的文件静默失败（降级为纯时间气泡）。
-        let vm = PlayerViewModel(engine: engine, url: URL(fileURLWithPath: "/tmp/cq-player-tests-nonexistent.mp4"))
+        let url = URL(fileURLWithPath: "/tmp/cq-player-tests-nonexistent.mp4")
+        let vm: PlayerViewModel
+        if let defaults = defaults {
+            vm = PlayerViewModel(engine: engine, url: url, defaults: defaults)
+        } else {
+            vm = PlayerViewModel(engine: engine, url: url)
+        }
         vm.activate()
         return (vm, engine)
     }
@@ -172,6 +179,123 @@ final class PlayerTests: XCTestCase {
             XCTFail("引擎失败必须反映到 vm.state")
         }
         XCTAssertTrue(vm.showsControls, "失败时保持控制层可见（横幅 + 重试）")
+    }
+
+    // MARK: 长按倍速
+
+    func testSpeedBoostRestoresPreviousRate() {
+        let (vm, engine) = makeViewModel(isPlaying: true)
+        vm.rate = 1.25
+
+        vm.beginSpeedBoost()
+        XCTAssertTrue(vm.isBoosting, "长按期间处于倍速冲刺状态")
+        XCTAssertEqual(engine.rate, 2.0, "长按倍速 = 2x")
+        vm.beginSpeedBoost()
+        XCTAssertEqual(vm.rate, 2.0, "重复长按无副作用")
+
+        vm.endSpeedBoost()
+        XCTAssertFalse(vm.isBoosting)
+        XCTAssertEqual(engine.rate, 1.25, "松手恢复原速率")
+        XCTAssertEqual(vm.rate, 1.25)
+    }
+
+    // MARK: 循环
+
+    func testLoopRestartsFromBeginningOnEnd() {
+        let (vm, engine) = makeViewModel(duration: 60, currentTime: 59.8, isPlaying: true)
+        vm.toggleLoop()
+        XCTAssertTrue(vm.loopEnabled)
+
+        engine.onEnded?()
+        XCTAssertEqual(engine.seeks.first?.target ?? -1, 0, accuracy: 0.001, "单片循环：播完回零")
+        XCTAssertEqual(engine.playCount, 1, "循环时播完续播而非停止")
+        XCTAssertTrue(vm.isPlaying)
+    }
+
+    func testABLoopSeeksBackWhenCrossingEnd() {
+        let (vm, engine) = makeViewModel(duration: 120, isPlaying: true)
+
+        engine.onTick?(10)
+        vm.cycleABLoop()
+        XCTAssertEqual(vm.abLoopState, .aSet, "第一次点按 = 设起点 A")
+
+        engine.onTick?(30)
+        vm.cycleABLoop()
+        XCTAssertEqual(vm.abLoopState, .looping, "第二次点按 = 设终点并开启")
+        XCTAssertEqual(vm.abStart, 10, accuracy: 0.001)
+        XCTAssertEqual(vm.abEnd, 30, accuracy: 0.001)
+
+        engine.onTick?(30.5)
+        XCTAssertEqual(engine.seeks.first?.target ?? -1, 10, accuracy: 0.001, "越过 B 点跳回 A")
+        XCTAssertEqual(engine.seeks.first?.precise ?? false, true, "回跳零容差")
+    }
+
+    func testABLoopTooShortCancels() {
+        let (vm, _) = makeViewModel(duration: 120)
+        engineTickThenSetA(vm, at: 10)
+        engineOnTick(vm, 10.3)
+        vm.cycleABLoop()
+        XCTAssertEqual(vm.abLoopState, .off, "区间 < 1s 视为误触取消")
+    }
+
+    func testManualSeekOutsideABClearsLoop() {
+        let (vm, _) = makeViewModel(duration: 120, isPlaying: true)
+        engineTickThenSetA(vm, at: 10)
+        engineOnTick(vm, 30)
+        vm.cycleABLoop()
+        XCTAssertEqual(vm.abLoopState, .looping)
+
+        vm.skip(relative: 100)
+        XCTAssertEqual(vm.abLoopState, .off, "手动 seek 跳出区间应清除 A-B 循环")
+    }
+
+    // MARK: 倍速记忆
+
+    func testRatePersistsAcrossInstances() {
+        let suiteName = "PlayerTests.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName) ?? .standard
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        let (vm1, _) = makeViewModel(defaults: defaults)
+        vm1.rate = 1.5
+        XCTAssertEqual(defaults.double(forKey: PlayerViewModel.rateDefaultsKey), 1.5, "倍速变更写入 UserDefaults")
+
+        let (vm2, engine2) = makeViewModel(defaults: defaults)
+        XCTAssertEqual(vm2.rate, 1.5, "新实例从 UserDefaults 恢复倍速")
+        XCTAssertEqual(engine2.rate, 1.5, "恢复的倍速同步引擎")
+    }
+
+    // MARK: 换片
+
+    func testSwapMediaResetsPlaybackStateAndKeepsLoopToggle() {
+        let (vm, engine) = makeViewModel(duration: 100, currentTime: 50, isPlaying: true)
+        vm.toggleLoop()
+        engineTickThenSetA(vm, at: 40)
+        engineOnTick(vm, 60)
+        vm.cycleABLoop()
+        XCTAssertEqual(vm.abLoopState, .looping)
+
+        vm.swapMedia(to: URL(fileURLWithPath: "/tmp/cq-player-tests-other.mp4"))
+        XCTAssertEqual(engine.loadCalls.count, 2, "换片重新装载")
+        XCTAssertEqual(vm.duration, 0, accuracy: 0.001, "换片清零时长")
+        XCTAssertEqual(vm.currentTime, 0, accuracy: 0.001)
+        XCTAssertEqual(vm.abLoopState, .off, "换片清除 A-B 循环")
+        XCTAssertTrue(vm.loopEnabled, "循环开关跨片保留")
+        XCTAssertEqual(vm.state, .loading)
+    }
+
+    // MARK: tick/设 A 辅助（engine 的 onTick 是 VM 接线的唯一入口）
+
+    private func engineOnTick(_ vm: PlayerViewModel, _ seconds: TimeInterval) {
+        guard let stub = vm.engine as? StubPlayerEngine else {
+            return XCTFail("注入的引擎应是 StubPlayerEngine")
+        }
+        stub.onTick?(seconds)
+    }
+
+    private func engineTickThenSetA(_ vm: PlayerViewModel, at seconds: TimeInterval) {
+        engineOnTick(vm, seconds)
+        vm.cycleABLoop()
     }
 
     // MARK: 纯函数

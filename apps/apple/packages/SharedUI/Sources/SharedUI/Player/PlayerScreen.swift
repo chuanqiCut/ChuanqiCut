@@ -15,6 +15,7 @@ import UniformTypeIdentified
 
 public struct PlayerScreen: View {
     @StateObject private var vm: PlayerViewModel
+    @State private var showsImporter = false
 
     public init(url: URL) {
         _vm = StateObject(wrappedValue: PlayerViewModel(url: url))
@@ -29,10 +30,19 @@ public struct PlayerScreen: View {
         ZStack {
             Color.black.ignoresSafeArea()
             surface
-            PlayerControlsOverlay(vm: vm)
+            PlayerControlsOverlay(vm: vm, onOpenNewFile: { showsImporter = true })
         }
         .onAppear { vm.activate() }
         .onDisappear { vm.deactivate() }
+        .fileImporter(
+            isPresented: $showsImporter,
+            allowedContentTypes: PlayerLauncherScreen.supportedTypes,
+            allowsMultipleSelection: false
+        ) { result in
+            if case .success(let urls) = result, let first = urls.first {
+                vm.swapMedia(to: first)
+            }
+        }
         #if os(macOS)
         .onKeyPress { press in
             handleKeyPress(press)
@@ -121,6 +131,12 @@ public struct PlayerLauncherScreen: View {
                 url = first
             }
         }
+        // 拖视频文件进窗口直接播（macOS 惯例；iOS 16 / macOS 13 基线内）
+        .dropDestination(for: URL.self, isTargeted: nil) { urls, _ in
+            guard let first = urls.first else { return false }
+            url = first
+            return true
+        }
     }
 
     private var emptyPrompt: some View {
@@ -148,5 +164,6 @@ public struct PlayerLauncherScreen: View {
     }
 
     /// mp4/mov 等（AVPlayer 可播的范围；播不了的文件走播放页错误横幅）。
-    private static let supportedTypes: [UTType] = [.movie, .video]
+    /// PlayerScreen 的换片 fileImporter 共用。
+    static let supportedTypes: [UTType] = [.movie, .video]
 }

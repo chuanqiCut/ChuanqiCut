@@ -3,6 +3,13 @@
 > 拍板：2026-10-05 用户确认进阶版四项开放问题"均需要"，本卡为落地卡（PLAN §3 P2）。
 # TASK-UIA-025：播放器外挂字幕 v2——ASS/SSA 样式子集
 
+> **状态**：✅ 代码落地（2026-10-05，Batch C，与 UIA-018 同解析器交付）。
+> 覆盖：[Script Info] PlayRes、[V4+/V4 Styles] Format/Style 行（字段序由 Format 决定）、
+> Dialogue 固定序字段、样式子集 {\b}{\i}{\u}{\fn}{\fs}{\c/\1c（BGR→RGB）}{\an}{\pos}、
+> \N 换行、未知 tag 容错剥离；样式切换即切段（span 持样式快照）。未做：卡拉OK/
+> 矢量/blur/3D/clip（还原度声明"样式子集"）；libass 引入另评（ADR-0023 §4）。
+> PlayerSubtitleTests 含 ASS 3 用例。本机 parse 全绿。
+
 ```yaml
 id:          TASK-UIA-025
 layer:       UI

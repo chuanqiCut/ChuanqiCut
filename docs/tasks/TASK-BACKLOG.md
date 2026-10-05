@@ -432,6 +432,7 @@ RENDER-001/红线 #6 路线，勿把相机滤镜直接当 SDK 能力引用。
 | UIA-020 | UI | 预览活性修复（模型推进 → 同 pts 重渲染，seq 追帧） | — | `AppEntry.swift`、`MetalPreviewView.swift`、SharedUITests | 泵 requested 单测；全量零回归 |
 | UIA-016 | UI | Theme 令牌扩展（增量，全量清扫待批） | — | `Common/Theme.swift` | Editor 新文件无裸 RGB；编译绿 |
 | UIA-015 | UI | iOS 编辑页剪映式重构（预览最大化/播放条/底部工具栏/媒体抽屉） | 020、016 | `Editor/*`（七文件）+ `ChuanqiCutApp.swift` DEBUG 钩子 | 走查截图 + 全量测试 + 双平台编译 |
+| MEDIA-022 | SDK | HEVC 解码支持 + 探测失败诚实透传（导入报「解码失败」根因修复） | — | `pal/apple/media_decode.mm`、绑定 probe 透传、AppEntry 文案 | HEVC golden probe=0 + 像素断言；门禁全绿（诊断见任务卡 §背景） |
 
 **批次**：020 ∥ 016 → 015。**关键路径**：020 → 015。
-**登记未开工**：UIA-017（macOS 惯例化）、UIA-018（时间线视觉/缩略图）、Theme 2.0 全量清扫（RESEARCH-004 §6.0，待批）、UIA-019 面板框架立项。
+**登记未开工**：UIA-017（macOS 惯例化）、UIA-018（时间线视觉/缩略图）、Theme 2.0 全量清扫（RESEARCH-004 §6.0，待批）、UIA-019 面板框架立项、MEDIA-022（HEVC，2026-10-05 立项）。

@@ -375,7 +375,7 @@ INFRA-001/002 → CORE-001~005 → CORE-006(PAL冻结) → PALA-001/010
 > 用户需求：首页两入口 + 相机采集 + 实时特效（美颜/美型/美体/宠物/贴纸/滤镜/头部道具）+ 前后同开。
 > **ADR-0014**：相机域为 iOS 原生功能域（AVFoundation + Vision/ARKit + Core Image/Metal），
 > 不经 PAL/C ABI；编辑器内核维持 C++ 跨端。CAM-001 曾冻结的 PAL 契约当日回退。
-> 分 A/B/C 三期（SPEC-CAM-001 v1.1 §3）。
+> 分 A/B/C 三期（SPEC-CAM-001 **v1.2** §3；v1.2 拍板：双摄提前至 B 期 + 横竖屏全支持 + UI 栈 SwiftUI+MTKView 混合）。
 
 | ID | 层 | 任务 | 依赖 | 写集 | 验收 |
 |---|---|---|---|---|---|
@@ -388,7 +388,10 @@ INFRA-001/002 → CORE-001~005 → CORE-006(PAL冻结) → PALA-001/010
 | CAM-012 | B 期 | 磨皮升级 Metal kernel(替换 A 期高斯近似) | CAM-003 | `Camera/Effects/`、CameraBeauty 封装层 | 单调/off 恒等口径不变;≤8ms [E] |
 | CAM-013 | B 期 | 美型 MeshWarp(瘦脸/大眼/下巴,关键点驱动) | CAM-011 | `Camera/Effects/`、CameraReshapeParams | 无脸直通;真机无接缝/抖动 |
 | CAM-014 | B 期 | 贴纸 + 头部道具锚定(处理链最后一段) | CAM-011 | `Camera/Effects/`、StickerAnchor、资产 | 锚定纯函数锁定;资产许可干净 |
-| CAM-021~024 | C 期 | 双摄 MultiCam / MetalFX / 景深人像 / 宠物 / 美体 | CAM-011~ | 待 C 期任务卡 | 待细化 |
+| CAM-015 | B 期 | ~~预览 CI→drawable 渲染修复 + 帧计数去伪绿~~（中间纹理+blit 落地，门禁过；真机出画已经传哲确认颠倒有画） | CAM-003 | `Camera/CameraRenderer/VideoView.swift` | BUILD SUCCEEDED 0W；失败计数口径 |
+| CAM-016 | B 期 | **预览方向修复（颠倒 + 横竖屏跟踪 + aspect-fill，SPEC v1.2 A7）** | CAM-015 | `Camera/{Manager,Renderer,ViewModel,View}.swift` | 三方向预览正立铺满；拍照/录像方向一致 |
+| CAM-021 | B 期 | **双摄提前（MultiCamSession 画中画 + 独立开关 + 录合成流，SPEC v1.2 A8）** | CAM-016 | `Camera/{Manager,Renderer,ViewModel,View}.swift` | 双摄同画可录；不支持机型降级明示；实测入库 |
+| CAM-022~024 | C 期 | MetalFX / 景深人像 / 宠物 / 美体（双摄已提前） | CAM-011~ | 待 C 期任务卡 | 待细化 |
 
 **关键路径**：`CAM-002 → CAM-003 → CAM-004 → CAM-005`。
 **注意**：相机特效与编辑器特效是两套实现（ADR-0014 代价）——时间线滤镜仍等

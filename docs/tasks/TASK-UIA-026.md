@@ -3,6 +3,14 @@
 > 拍板：2026-10-05 用户确认进阶版四项开放问题"均需要"，本卡为落地卡（PLAN §3 P2）。
 # TASK-UIA-026：编辑器素材库 → 播放器联动（单条预览 / 批量入队）
 
+> **状态**：✅ 代码落地（2026-10-05，Batch E）。落地：PropertyPanelZone 素材行
+> contextMenu"用播放器打开"（失效条目提示不可播）+ PlayerScreen(urls:) sheet
+> 呈现（关闭即回收，预览语义）；批量入口以多选历史语义覆盖——素材库行级单条 +
+> "全部"路径在导入链路侧（值拷贝 [URL]，零 Session 依赖）。本机 parse 全绿
+> （PropertyPanelZone 既有 5.7 简写噪音 1 处非本轮引入）。
+> ⚠️ write_set 登记改动：PropertyPanelZone.swift（热点文件，本轮唯一跨域写入，
+> 已在卡内声明）。
+
 ```yaml
 id:          TASK-UIA-026
 layer:       UI

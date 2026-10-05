@@ -3,6 +3,15 @@
 > 拍板：2026-10-05 用户确认进阶版四项开放问题"均需要"，本卡为落地卡（PLAN §3 P2）。
 # TASK-UIA-027：macOS mini player（MenuBarExtra）+ 播放器生命周期上移
 
+> **状态**：✅ 代码落地（2026-10-05，Batch E）。落地：`PlayerController` public 门面
+> （App 级共享 VM；objectWillChange 合并转发 VM 更换与内部状态；open/playStandalone）
+> + PlayerScreen 抽出 internal PlayerScreenBody（teardownOnDisappear 区分自管/
+> 控制器模式）+ PlayerLauncherScreen(controller:) 控制器模式 + MacApp
+> MenuBarExtra(.window) + PlayerMiniBar（标题/只读进度/播控/上下片/打开主窗）
+> + VM hasNext/hasPrevious/playNextInQueue/playPreviousInQueue（边界回零）。
+> PlayerQueueTests +4 用例。**待构建机/真机**：MenuBarExtra 场景注入、关窗续播
+> 实测（AVPlayer 跨窗口存活）、MiniBar 布局。
+
 ```yaml
 id:          TASK-UIA-027
 layer:       UI

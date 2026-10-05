@@ -25,6 +25,8 @@ struct PlayerControlsOverlay: View {
     var onShowQueue: (() -> Void)?
     /// "加载外挂字幕"入口（PlayerScreen 注入 fileImporter；nil = 不显示）。
     var onImportSubtitle: (() -> Void)?
+    /// "播放设置"入口（PlayerScreen 注入 sheet）。
+    var onOpenSettings: (() -> Void)?
 
     @State private var singleTapTask: Task<Void, Never>?
     @State private var panMode: PanMode?
@@ -331,6 +333,13 @@ struct PlayerControlsOverlay: View {
                     }
                 } label: {
                     Label("音轨", systemImage: "waveform")
+                }
+            }
+            if let onOpenSettings = onOpenSettings {
+                Button {
+                    onOpenSettings()
+                } label: {
+                    Label("播放设置", systemImage: "gearshape")
                 }
             }
             if let onImportSubtitle = onImportSubtitle {

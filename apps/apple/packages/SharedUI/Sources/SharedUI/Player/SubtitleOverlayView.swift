@@ -12,6 +12,8 @@ import SwiftUI
 
 struct SubtitleOverlayView: View {
     let cue: SubtitleCue?
+    /// 字幕字号乘数（设置页，UIA-023：标准 1.0 / 大 1.4）。
+    var scale: CGFloat = 1.0
 
     private static let defaultBottomPadding: CGFloat = 72
 
@@ -51,7 +53,7 @@ struct SubtitleOverlayView: View {
         for span in cue.spans {
             var segment = Text(span.text)
             if let fontSize = span.fontSize {
-                let resolved = containerHeight * fontSize / SubtitleParser.defaultPlayResHeight
+                let resolved = containerHeight * fontSize / SubtitleParser.defaultPlayResHeight * scale
                 if let fontName = span.fontName {
                     segment = segment.font(.custom(fontName, size: resolved))
                 } else {
@@ -59,7 +61,7 @@ struct SubtitleOverlayView: View {
                                                    weight: span.bold ? .bold : .regular))
                 }
             } else if let fontName = span.fontName {
-                segment = segment.font(.custom(fontName, size: 16))
+                segment = segment.font(.custom(fontName, size: 16 * scale))
             } else if span.bold {
                 segment = segment.bold()
             }

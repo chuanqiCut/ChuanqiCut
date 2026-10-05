@@ -60,3 +60,44 @@ tools/perf/infer_bench --model=<m>   # 实测耗时与是否命中 NPU
 
 ## 相关
 ADR-0005、ARCH-004 §1
+
+---
+
+# 智能成片管线（2026-10-04 立项；ADR-0016 / SPEC AIEDIT-001 / TASK-AIEDIT-000）
+
+> 全仓首个大模型接入域。与"端侧推理效果链"（上文）是**两个独立子域**：
+> 上文 = 帧级实时效果（人脸/磨皮），本节 = 素材级离线理解与决策。
+
+## 分层（ADR-0016 决策 2）
+
+```
+core/include/cq/ai/     feature_report.h / edit_plan.h / llm_client.h   ← 契约（AIEDIT-001 冻结）
+core/include/cq/pal/    net.h（INetTransport 抽象）
+core/src/ai/analysis/   视觉特征（镜头/运动/质量，P0 零模型）             ← AIEDIT-002
+core/src/ai/audio_analysis/  音频特征（静音/LUFS/包络，需解码扩档）      ← AIEDIT-003
+core/src/ai/plan/       EditPlan 校验器 / Prompt 管线 / timeline 摘要    ← AIEDIT-001/005
+core/src/ai/llm/        OpenAI-compatible 客户端（纯 C++）               ← AIEDIT-004
+core/src/ai/fallback/   本地规则引擎（离线降级，同 schema 输出）          ← AIEDIT-011
+core/src/ai/plan/plan_executor  EditPlan→Command 批次                    ← AIEDIT-006
+pal/apple/net/          URLSession + SSE（零第三方）                     ← AIEDIT-004
+```
+
+## 硬规则（违反即 PR 驳回）
+
+1. **原始素材默认不出设备**：上云只有 FeatureReport（KB 级聚合统计）+ 用户消息；人脸只报 count/area_ratio 布尔级，不做识别。
+2. **LLM 输出 = EditPlan（`cq.editplan/1`）action 列表**，动词集 8 个封顶；时间字段一律 `{value, timescale}` 且 `timescale==120000`，浮点秒一律非法；未知 schema 版本拒绝并降级，不猜测解析。
+3. **C++ 校验器是唯一权威**（schema + 引用 + 时间线合法性）；修复重试 ≤2 → 规则引擎降级（`generator: local_rules`）。
+4. **AI 产物全走 Command**（与人手同一撤销栈，批次原子可撤销）；禁止 AI 链路直接改 ModelSnapshot。
+5. 供应商可插拔（OpenAI-compatible 协议收敛），key 不落盘明文（Keychain，绑定层职责）。
+
+## 与既有设施的关系
+
+- 特征取帧走 FrameProvider（精确 seek），分析管线全程后台 + CancelToken。
+- 人脸特征 P0 置 null；AI-010 模型就绪后经能力查询运行时替换（不走 `#if`）。
+- 导出（EXPORT-001 未做）与 BGM 命令是 P0.5 缺口，P0 的"导出"按钮置灰。
+
+## 验证
+```bash
+ctest -R "edit_plan|visual_analyzer|audio_analysis|llm_client|plan_pipeline|plan_executor|rule_engine|c_abi_ai"
+tools/build/build_core.sh --platform=apple
+```

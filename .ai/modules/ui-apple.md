@@ -353,3 +353,49 @@ loading 覆盖 → 落 tmp → async 交付 → importMedia → loading 解除 +
   同一 .metal → metallib，连同真 BeautyKernel/CameraBeauty 在 macOS 宿主 GPU 上
   跑算法断言（profile 单调/方差单调/边缘过渡宽度/平台对比度/1080p 耗时），
   诊断开关 `CQ_DEBUG_PROFILE=1`。真机指标（≤8ms）仍待实测回填 baselines。
+
+---
+
+# AIEDIT 立项（2026-10-04）：智能成片入口（SmartCut/ 域）
+
+Spec AIEDIT-001 / ADR-0016 / TASK-AIEDIT-000。首页 `HomeView.swift` 新增第三张
+入口卡「智能成片」（Route: `.smartCut`），新域目录
+`SharedUI/Sources/SharedUI/SmartCut/`（Wizard / Result / Chat / Voice 四子域，
+组织方式照 MediaPicker：纯逻辑抽可测类型 + SwiftUI 接线冒烟）。
+
+- **选素材复用 UIA-013**：`AlbumPickerScreen` 多选模式 → `runBatch` → importMedia
+  → asset_id 就绪后进分析（C ABI `cq_ai_*`，AIEDIT-007）。
+- **结果页双出口**：直接导出（EXPORT-001 落地前置灰 + 标注）/「进编辑器精修」
+  push 现有 EditorView —— **同一 CQSession**，plan 批次在撤销栈原样可见。
+- **对话框（AIEDIT-009）**：文字 + 按住说话（SFSpeechRecognizer → 文字进框）；
+  逐轮增量 plan 逐条接受/拒绝（拒绝项剔除后再校验应用）；"撤销本轮"按批次 id
+  定位。隐私：语音仅本地转文字，音频不上传；STT 权限文案随 project.yml info 段。
+- **决策透明 UI**：结构时间条（片头/发展/高潮）+ 每段 reason 抽屉（学 Opus，
+  不做黑盒成片）；断网出片时显式标注"离线模式"（local_rules）。
+- 高冲突文件：HomeView.swift（AIEDIT-008 独占批次）、project.yml info 段
+  （AIEDIT-009，NSSpeechRecognitionUsageDescription + 麦克风）。
+- 状态：立项（12 张任务卡落盘，未开工；关键路径 001→005→007→008→009）。
+
+---
+
+# UI 视觉升级调研（2026-10-04）：RESEARCH-004 结论
+
+应"拍摄/编辑 UI 比较丑，调研 iOS/Mac 主流做法"命题完成调研，全文见
+`docs/research/RESEARCH-004-拍摄与编辑UI主流方案调研.md`。要点：
+
+- **定性**：丑的根源是"缺设计系统 + iOS 竖屏塞了桌面三区 + 细节打磨为零"，
+  不是框架问题——主流剪辑 App 无一靠第三方 UI 库变好看，拍摄 UI 不引库
+  （NextLevel/SwiftyCam/Mijick Camera 均只管采集；与 ADR-0015 同构逻辑）。
+- **主流形状**：iOS 拍摄页 = 全屏取景 + 玻璃悬浮控件 + 滤镜缩略图卡 + 全屏
+  结果页；iOS 剪辑页 = 剪映式"单焦点+抽屉"（预览最大化/时间线中部/底部图标
+  工具栏/属性 bottom sheet，无常驻侧栏）；macOS = 标准 NLE 五区 + Mac 惯例
+  （工具栏/可折叠 Inspector/可拖分隔条/菜单栏），现有 HSplitView 布局同构，
+  缺惯例化与打磨。
+- **基线策略（建议，待拍板立 ADR）**：双轨——Theme 2.0 语义令牌先行（两端
+  共享令牌值，对应 ARCH-005"共享状态不共享 UI"）；Liquid Glass 需 SDK 26
+  构建 + 26+ 运行，自定义效果一律 #available 门控、低版本回退系统材质。
+  先决条件：构建机升 Xcode 26（现 SDK iphoneos18.4）。
+- **任务批次建议**：UIA-014 设计系统（Theme.swift 一次改净，后续只读）→
+  UIA-015 iOS 相机页 / UIA-016 iOS 剪辑页 / UIA-017 macOS 惯例化 →
+  UIA-018 时间线视觉（缩略图异步，主线程不解码红线不变）。均为纯视图层，
+  Command/ViewModel/Session 不动。下一步：cq-spec-authoring 出 SPEC-UIA-014。

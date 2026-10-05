@@ -924,3 +924,70 @@ ADR-0020 文件头带着完整冲突块（`<<<<<<<< HEAD ... ======== ... >>>>>>
   cq-code-review 收尾清单）；编号类合并收口必须做一次全库旧号扫描。
 - 日期 / 来源 / 验证状态：2026-10-05 / 双机第四轮合并本机巡检 / **verified**
   （ADR-0020 文件头已修复；全库 `<<<<<<<` 扫描 0 残留）
+
+### P60 · CI 渲进 MTKView drawable 静默失败 —— `framebufferOnly` 与 `ShaderWrite` 的坑
+> 日期 / 来源 / 验证状态：2026-10-05 / 相机预览每帧报错（运行时日志实证）/ **verified**
+> （usage 位图本机实测；blit 进 usage=0x04 drawable 无 error；根因机制闭环）
+
+- 现象：控制台每帧刷这两行，画面不动（黑），但帧计数一路涨：
+  ```
+  -[CIRenderDestination initWithMTLTexture:commandBuffer:] texture usage must include MTLTextureUsageShaderWrite.
+  -[CIContext(CIRenderDestination) _startTaskToRender:toDestination:...] The destination is nil.
+  ```
+- 根因：`MTKView.framebufferOnly = true`（**默认**）时 drawable 纹理**只有 `renderTarget` usage**
+  （Apple 文档原话："you may not sample, read from, or write to those textures"）；
+  而 `CIContext.render(_:to:commandBuffer:bounds:colorSpace:)` 内部要构造
+  `CIRenderDestination(mtlTexture:commandBuffer:)`，**要求 usage 含 `ShaderWrite`**
+  → init 返回 nil → 这一帧什么都没画。
+- 本机实测 usage 位图（`CAMetalLayer.nextDrawable()`，AMD Radeon Pro 5300M / macOS 26.5 SDK）：
+  `framebufferOnly=true` → `0x04 (RenderTarget)`、`texture.isFramebufferOnly=true`；
+  `false` → `0x17 (ShaderRead|ShaderWrite|RenderTarget|PixelFormatView)`。
+- 两个必须记住的子事实：
+  1. **`renderTarget ≠ shaderWrite`**（Apple `MTLTextureUsage.shaderWrite` 文档明确二者不等价）。
+     CI 写纹理走的是 shader write，不是 render pass attachment。
+  2. **`framebufferOnly` 禁的是 shader read/write，不禁 blit / render pass 写入** ——
+     实测 `MTLBlitCommandEncoder.copy` 进 usage=0x04 的 drawable，commit 后 `error=nil`。
+     这就是「渲到中间纹理再 blit」这条路成立的前提。
+- 伪绿陷阱：`render(_:to:commandBuffer:...)` **非 throws**，且 destination nil
+  **不会落到 `commandBuffer.error`**。旧代码依赖「看命令缓冲错误」+「draw 末尾无条件计数」
+  → 黑屏也能报满帧率。**计数类埋点必须绑定「真的出了效果」**，不能绑定「代码走到了这一步」。
+- 修复（TASK-CAM-015）：CI 渲进自建中间纹理（usage 含 ShaderWrite，storage=private）
+  → blit 进 drawable；计数改由 command buffer 完成回调按成功/失败分流，并加 os_log 摘要。
+- 防复发规则：**任何把 CI 渲到 drawable 的代码，先核对 drawable 的 usage；新加帧率/耗时计数器时，
+  先问「这个计数在彻底失败时会不会照样涨」**。
+
+### P61 · 编译验证选错 scheme —— `-scheme ChuanqiCut` 其实只编 Pods 静态库 target
+> 日期 / 来源 / 验证状态：2026-10-05 / TASK-CAM-015 验证踩到 / **verified**
+> （canary 语法错误 seeded 后该 scheme 仍 BUILD SUCCEEDED；换 `-scheme ChuanqiCutApp` 才编译）
+
+- 现象：`xcodebuild -workspace ChuanqiCut.xcworkspace -scheme ChuanqiCut ... build`
+  **BUILD SUCCEEDED、退出码 0、零警告**，但改动过的 App 源文件压根没被编译
+  （中间产物 `.o` 时间戳停在几小时前）。
+- 根因：workspace 里有四个 scheme（`xcodebuild -list` 可见）——
+  `ChuanqiCut` 是 **Pods 生成的静态库 target**（编 `bindings/swift` 的封装），
+  `ChuanqiCutApp` 才是 iOS App 目标。依赖图日志里 `Target dependency graph (1 target)`
+  就是线索：**只有 1 个 target 时，编的一定不是 App**。
+- 假绿等级：这是「编译通过也不作数」的极端形式 —— 连 `-Werror` 警告都没有，因为根本没编译。
+- 防复发规则（两条一起用）：
+  1. iOS App 验证固定命令：
+     `xcodebuild -workspace ChuanqiCut.xcworkspace -scheme ChuanqiCutApp -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' -derivedDataPath <隔离路径> build`
+  2. **改完 Swift 不确定有没有被编译 → 先塞一个必然报错的 canary（`1 + "x"`）跑一次，
+     确认它真炸了再拿掉**。呼应 P46/P48：`-parse`/挑错 scheme 这类"轻检查"多次放过真问题。
+
+
+
+### P62 · App target 没有 DEBUG 编译条件 —— `#if DEBUG` 代码被静默剥掉
+> 日期 / 来源 / 验证状态：2026-10-05 / TASK-UIA-015 走查踩到 / **verified**
+>（`CQ_AUTO_ROUTE` 钩子在模拟器上不生效；补 SWIFT_ACTIVE_COMPILATION_CONDITIONS 后生效）
+
+- 现象：App 源码里 `#if DEBUG` 的启动钩子编译后**不存在**（行为上直进编辑器失败），
+  构建零警告零错误。
+- 根因：CocoaPods 会给 **Pods 目标**默认注入 `SWIFT_ACTIVE_COMPILATION_CONDITIONS
+  = DEBUG`，但 **App target** 的 xcodegen 生成的工程里原本没有这条 —— App 代码的
+  `#if DEBUG` 全部被剥掉。之前 App target 没有 `#if DEBUG` 代码，所以从没暴露。
+- 防复发规则：
+  1. 双端 project.yml 已补 `settings.configs.Debug.SWIFT_ACTIVE_COMPILATION_CONDITIONS: DEBUG`
+     （生成产物 pbxproj 中可 grep 验证）。
+  2. App 侧新增 `#if DEBUG` 功能后，验证必须**跑行为**（模拟器启动实测），
+     不能只看 BUILD SUCCEEDED —— 与 P61（scheme 假绿）、P48（-parse 假绿）同族：
+     「编译通过」对**被预处理剥掉**的代码毫无约束力。

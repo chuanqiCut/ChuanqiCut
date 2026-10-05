@@ -265,4 +265,18 @@ extension Session {
         guard cq_status_is_ok(code) != 0 else { return nil }
         return RationalTime(value: value, timescale: timescale)
     }
+
+    /// 媒体时长探测（详细版，MEDIA-022）：成功返回时长，失败返回内核**原始状态码**
+    /// —— 2001 = 编码格式不支持（HEVC 修复前 iPhone 相册素材曾全落这里）、
+    /// 1000 = 文件无法读取、2000 = 解析失败。旧 `probeMediaDuration` 把一切失败
+    /// 折叠成 nil，UI 只能统一显示「解码失败」，掩盖真实原因，故保留两者。
+    public func probeMediaDurationDetailed(path: String) -> Result<RationalTime, Status> {
+        var value: Int64 = 0
+        var timescale: Int32 = 0
+        let code = path.withCString { cq_media_probe_duration($0, &value, &timescale) }
+        if cq_status_is_ok(code) != 0 {
+            return .success(RationalTime(value: value, timescale: timescale))
+        }
+        return .failure(Status(rawValue: code))
+    }
 }

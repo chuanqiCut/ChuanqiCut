@@ -109,7 +109,7 @@ struct MediaLibraryPanel: View {
             switch result {
             case .success(let url):
                 let status = viewModel.importMedia(url: url)
-                importError = status.isOK ? nil : "导入失败：\(status.text)"
+                importError = status.isOK ? nil : "导入失败：\(status.userText)"
             case .failure(let error):
                 importError = "选择失败：\(error.localizedDescription)"
             }
@@ -199,7 +199,7 @@ final class PhotoLibraryImporter: ObservableObject {
                 if status.isOK {
                     importedCount += 1
                 } else {
-                    failures.append("导入失败：\(status.text)")
+                    failures.append("导入失败：\(status.userText)")
                 }
             } catch {
                 failures.append("相册读取失败：\(error.localizedDescription)")

@@ -146,3 +146,18 @@ ARCH-004 §3、`PALA-0xx` 任务、ADR-0009（RationalTime 网格）、EXPORT-00
    首帧时长兜底用 **dts 差**（P40：B 帧文件前两包 pts 差 = (bframes+1) 帧）。
 
 回归：`pala_decode` / `frame_provider_apple` / `media_sequential_real`。
+
+## PALA-011 增补（MEDIA-022，2026-10-05）：HEVC 硬解支持
+
+- `VideoToolboxDecoder::Open` 接受 **H.264 + HEVC**（'hvc1'/'hev1'；杜比视界
+  'dvh1'/'dvhe' 按 HEVC 基底尝试）。demuxer 侧 HEVC 映射/IRAP 判定本就绪。
+- **两个实测坑（golden `gf_1080p_hevc.mp4` = 'hev1' 8-bit 4:2:0）**：
+  1. demuxer `VideoCodecToCq` 原先不认 'hev1'/'dvh1'/'dvhe' → 报 kUnknown；
+  2. **VT 解码器按 'hvc1' 注册**，'hev1' 格式描述建会话返回 **-12906
+     kVTUnsupportedDecompressionErr** —— 修法：用同一份 hvcC 重建
+     subtype='hvc1' 的 `CMVideoFormatDescription`（码流与参数集相同，差别只在
+     随流参数集允许性）。iPhone 实拍 = 'hvc1' 不受影响。
+- 验收：`pala_decode` 参数化为 H.264 + HEVC 双节（150 帧/pts 单调/像素/端到端）；
+  probe（完整解码管线打开）对 HEVC golden 返回 0。
+- 绑定层：`probeMediaDurationDetailed`（失败透传原始状态码）+ `Status: Error`；
+  UI 文案按 1000/2000/2001 分级（SharedUI `Status.userText`）。

@@ -1,11 +1,13 @@
 // ChuanqiCut — PALA-011 Apple 硬解后端实现（VTDecompressionSession）
 //
 // 见 media_decode.h 的设计说明。要点：
-//   * H.264 硬解（优先硬件，运行时查询是否真硬解）。
-//   * SPS/PPS 注入：Open 时经 source path 打开 AVAsset 取视频轨 CMFormatDescription
-//     （内嵌 avcC，含 SPS/PPS）建立解码会话，无需手解 avcC、不碰已废弃 API。
+//   * H.264 / HEVC 硬解（优先硬件，运行时查询是否真硬解）。HEVC 是 MEDIA-022
+//     新增 —— iPhone 相册默认编码，不支持 = 相册导入几乎全挂。
+//   * SPS/PPS（avcC）与 VPS/SPS/PPS（hvcC）注入：Open 时经 source path 打开
+//     AVAsset 取视频轨 CMFormatDescription 建立解码会话，无需手解参数集、
+//     不碰已废弃 API。
 //   * dts→pts 重排：VideoToolbox 内部 DPB 已在显示序回调，PopFrame 按显示序出队。
-//   * seek 后 flush：Flush 清空待出队帧并复位时长跟踪；新 GOP 以 IDR 起，VT 内部复位。
+//   * seek 后 flush：Flush 清空待出队帧并复位时长跟踪；新 GOP 以 IDR/IRAP 起，VT 内部复位。
 //
 // 红线：零 FFmpeg 类型；平台类型只在本 .mm / media_decode.h；错误一律 Status；内核禁用异常。
 
@@ -140,16 +142,21 @@ Status VideoToolboxDecoder::Open(const StreamInfo& info) {
     width_ = info.width;
     height_ = info.height;
 
-    if (bound_codec_ != CodecId::kH264) {
-        // 本期仅 H.264；HEVC/其它诚实返回不支持，绝不伪造。
+    // MEDIA-022：H.264 + HEVC。HEVC 是 iPhone 相册默认编码（含杜比视界基底），
+    // 不支持 = 相册导入几乎全挂。实现路径与 H.264 完全同构：格式描述（hvcC）
+    // 直接取自视频轨 CMFormatDescription 建 VT 会话 —— 旧注释里「parameter-set
+    // 构造 API 已废弃」的顾虑不适用（我们从不手解 parameter set）。
+    const bool want_hevc = (bound_codec_ == CodecId::kHevc);
+    if (bound_codec_ != CodecId::kH264 && !want_hevc) {
+        // ProRes/MJPEG 等其它编码诚实返回不支持，绝不伪造。
         return Status{StatusCode::kDecodeUnsupported};
     }
     if (source_path_.empty()) {
-        // 无 source path 无法取得 avcC/SPS/PPS；诚实报告缺 codec 描述。
+        // 无 source path 无法取得 avcC/hvcC；诚实报告缺 codec 描述。
         return Status{StatusCode::kDecodeUnsupported};
     }
 
-    // 经 AVAsset 取得视频轨 CMFormatDescription（内嵌 avcC，含 SPS/PPS）。
+    // 经 AVAsset 取得视频轨 CMFormatDescription（内嵌 avcC/hvcC，含参数集）。
     @autoreleasepool {
         NSString* ns_path = [NSString stringWithUTF8String:source_path_.c_str()];
         if (ns_path == nil) return Status{StatusCode::kInvalidArgument};
@@ -190,12 +197,69 @@ Status VideoToolboxDecoder::Open(const StreamInfo& info) {
         if (CMFormatDescriptionGetMediaType(fd) != kCMMediaType_Video) {
             return Status{StatusCode::kDecodeUnsupported};
         }
-        FourCharCode codec = CMVideoFormatDescriptionGetCodecType(fd);
-        if (codec != kCMVideoCodecType_H264) {
+        // 格式描述 codec 必须与 demuxer 报告的流编码一致（HEVC = 'hvc1'/'hev1'；
+        // 杜比视界 'dvh1'/'dvhe' 是 HEVC 基底 + 扩展，按 HEVC 会话尝试 —— VT 不接受
+        // 时如实 kDecodeError，不伪造成功）。
+        const FourCharCode codec = CMVideoFormatDescriptionGetCodecType(fd);
+        const FourCharCode kHev1 = 'hev1';
+        const FourCharCode kDolbyHvc1 = 'dvh1';
+        const FourCharCode kDolbyHevc = 'dvhe';
+        const bool codec_ok =
+            want_hevc ? (codec == kCMVideoCodecType_HEVC || codec == kHev1 ||
+                         codec == kDolbyHvc1 || codec == kDolbyHevc)
+                      : (codec == kCMVideoCodecType_H264);
+        if (!codec_ok) {
             return Status{StatusCode::kDecodeUnsupported};
         }
         CFRetain(fd);
         format_desc_ = fd;
+
+        // MEDIA-022：VT 解码器按 'hvc1' 注册，'hev1'/'dvh1'/'dvhe' 格式描述会
+        // 匹配不到解码器（VTDecompressionSessionCreate 返回 -12906
+        // kVTUnsupportedDecompressionErr）—— 实测于本机 macOS 26 Intel。
+        // 修法：用**同一份 hvcC** 重建 subtype='hvc1' 的格式描述（hvc1 与 hev1
+        // 的码流与参数集完全相同，差别只在参数集是否允许随流携带）。iPhone
+        // 实拍本来就是 'hvc1'，此重建只服务 ffmpeg 等工具产出的素材。
+        if (want_hevc && codec != kCMVideoCodecType_HEVC) {
+            CFDictionaryRef atoms = static_cast<CFDictionaryRef>(CMFormatDescriptionGetExtension(
+                fd, kCMFormatDescriptionExtension_SampleDescriptionExtensionAtoms));
+            CFDataRef hvcc =
+                atoms != nullptr
+                    ? static_cast<CFDataRef>(CFDictionaryGetValue(atoms, CFSTR("hvcC")))
+                    : nullptr;
+            if (hvcc == nullptr) {
+                CFRelease(fd);
+                format_desc_ = nullptr;
+                return Status{StatusCode::kDecodeUnsupported};  // 无 hvcC 无法重建
+            }
+            CFStringRef atom_keys[] = {CFSTR("hvcC")};
+            CFTypeRef atom_values[] = {hvcc};
+            CFDictionaryRef atom_dict = CFDictionaryCreate(
+                kCFAllocatorDefault, reinterpret_cast<const void**>(atom_keys),
+                reinterpret_cast<const void**>(atom_values), 1,
+                &kCFTypeDictionaryKeyCallBacks, &kCFTypeDictionaryValueCallBacks);
+            CFStringRef ext_key = kCMFormatDescriptionExtension_SampleDescriptionExtensionAtoms;
+            CFDictionaryRef ext = CFDictionaryCreate(
+                kCFAllocatorDefault, reinterpret_cast<const void**>(&ext_key),
+                reinterpret_cast<const void**>(&atom_dict), 1, &kCFTypeDictionaryKeyCallBacks,
+                &kCFTypeDictionaryValueCallBacks);
+            CMVideoDimensions dims = CMVideoFormatDescriptionGetDimensions(fd);
+            CMVideoFormatDescriptionRef rebuilt = nullptr;
+            OSStatus rst = CMVideoFormatDescriptionCreate(
+                kCFAllocatorDefault, kCMVideoCodecType_HEVC, dims.width, dims.height, ext,
+                &rebuilt);
+            CFRelease(ext);
+            CFRelease(atom_dict);
+            if (rst != noErr || rebuilt == nullptr) {
+                CFRelease(fd);
+                format_desc_ = nullptr;
+                std::printf("[VideoToolboxDecoder] hvc1 重建失败 osstatus=%d\n",
+                            static_cast<int>(rst));
+                return Status{StatusCode::kDecodeError};
+            }
+            CFRelease(fd);      // 换用重建后的格式描述（原 fd 仅为 hvcC 来源）
+            format_desc_ = rebuilt;
+        }
     }
 
     // 建立 VT 解码会话（优先硬件；是否真硬解运行后查询）。
@@ -221,6 +285,29 @@ Status VideoToolboxDecoder::Open(const StreamInfo& info) {
         kCFAllocatorDefault, format_desc_, (__bridge CFDictionaryRef)spec,
         (__bridge CFDictionaryRef)attrs, &cb, &session_);
     if (st != noErr || session_ == nullptr) {
+        // 诊断打印（与 demuxer 的排障打印同风格）：OSStatus + 格式关键参数进日志。
+        // 已知案例（MEDIA-022 排障）：'hev1' HEVC 在部分平台要求特定输出属性。
+        const FourCharCode fcc = CMVideoFormatDescriptionGetCodecType(format_desc_);
+        int chroma = -1, depth_luma = -1, depth_chroma = -1;
+        CFDictionaryRef atoms = static_cast<CFDictionaryRef>(CMFormatDescriptionGetExtension(
+            format_desc_, kCMFormatDescriptionExtension_SampleDescriptionExtensionAtoms));
+        if (atoms != nullptr) {
+            CFDataRef hvcc = static_cast<CFDataRef>(CFDictionaryGetValue(atoms, CFSTR("hvcC")));
+            if (hvcc != nullptr && CFDataGetLength(hvcc) > 20) {
+                const uint8_t* h = CFDataGetBytePtr(hvcc);
+                chroma = static_cast<int>(h[16] & 0x03);
+                depth_luma = static_cast<int>(h[18] & 0x07) + 8;
+                depth_chroma = static_cast<int>(h[19] & 0x07) + 8;
+            }
+        }
+        CMVideoDimensions dims = CMVideoFormatDescriptionGetDimensions(format_desc_);
+        std::printf(
+            "[VideoToolboxDecoder] VTDecompressionSessionCreate failed osstatus=%d "
+            "(codec=%c%c%c%c %ux%u chroma=%d luma=%dbit chroma_depth=%dbit)\n",
+            static_cast<int>(st), static_cast<int>((fcc >> 24) & 0xFF),
+            static_cast<int>((fcc >> 16) & 0xFF), static_cast<int>((fcc >> 8) & 0xFF),
+            static_cast<int>(fcc & 0xFF), static_cast<unsigned>(dims.width),
+            static_cast<unsigned>(dims.height), chroma, depth_luma, depth_chroma);
         return Status{StatusCode::kDecodeError};
     }
 
@@ -241,7 +328,7 @@ Status VideoToolboxDecoder::Open(const StreamInfo& info) {
 }
 
 // ---------------------------------------------------------------------------
-// Feed：把 AVCC 压缩包拷成 CMSampleBuffer 喂入解码器
+// Feed：把 AVCC/HVCC 压缩包拷成 CMSampleBuffer 喂入解码器
 // ---------------------------------------------------------------------------
 Status VideoToolboxDecoder::Feed(const MediaPacket& pkt) {
     if (session_ == nullptr || format_desc_ == nullptr) {

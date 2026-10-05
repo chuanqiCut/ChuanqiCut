@@ -77,6 +77,10 @@ public struct Status: RawRepresentable, Equatable, Sendable {
     public var text: String { String(cString: cq_status_to_string(rawValue)) }
 }
 
+/// 使 `Result<_, Status>` 可用（MEDIA-022 probeMediaDurationDetailed 的失败分支）。
+/// Status 本身是值语义的状态码，作为 Error 抛出/传递无副作用。
+extension Status: Swift.Error {}
+
 // MARK: - 快照与变更
 
 /// 会话快照。

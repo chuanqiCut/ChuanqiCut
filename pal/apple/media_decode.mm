@@ -15,11 +15,14 @@
 #import <Foundation/Foundation.h>
 #import <dispatch/dispatch.h>
 
+#include <algorithm>
 #include <atomic>
+#include <chrono>
 #include <cstdint>
 #include <deque>
 #include <mutex>
 #include <string>
+#include <vector>
 
 #include "cq/base/status.h"
 #include "cq/base/time.h"
@@ -96,7 +99,15 @@ void VideoToolboxDecoder::OutputCallback(void* ref_con, void* source_ref_con, OS
     }
     if (self == nullptr) return;
     // 完成登记：无论成败都从 pending 移除 —— 丢帧/解错的包不能永远压住重排等待。
-    if (dts.timescale != 0) self->MarkDecoded(dts);
+    if (dts.timescale != 0) {
+        self->MarkDecoded(dts);
+#ifndef NDEBUG
+        self->DebugRecordLatency(
+            dts.value,
+            static_cast<uint64_t>(
+                std::chrono::steady_clock::now().time_since_epoch().count()));
+#endif
+    }
     if (status != noErr) return;
     if (image_buffer == nullptr) return;
     CVPixelBufferRef pb = reinterpret_cast<CVPixelBufferRef>(image_buffer);
@@ -115,6 +126,32 @@ void VideoToolboxDecoder::MarkDecoded(const RationalTime& dts) {
     std::lock_guard<std::mutex> lk(queue_mutex_);
     pending_dts_pts_.erase(dts.value);
 }
+
+#ifndef NDEBUG
+void VideoToolboxDecoder::DebugRecordSubmit(int64_t dts_value, uint64_t nanos) {
+    std::lock_guard<std::mutex> lk(queue_mutex_);
+    debug_submit_nanos_[dts_value] = nanos;
+}
+
+void VideoToolboxDecoder::DebugRecordLatency(int64_t dts_value, uint64_t now_nanos) {
+    std::lock_guard<std::mutex> lk(queue_mutex_);
+    const auto it = debug_submit_nanos_.find(dts_value);
+    if (it == debug_submit_nanos_.end()) return;  // 无配对提交时刻（理论不可达）
+    debug_latency_nanos_.push_back(now_nanos - it->second);
+    debug_submit_nanos_.erase(it);
+    if (debug_latency_nanos_.size() % 60 == 0) {
+        std::vector<uint64_t> sorted = debug_latency_nanos_;
+        std::sort(sorted.begin(), sorted.end());
+        auto ms = [](uint64_t n) { return n / 1'000'000; };
+        std::printf("[VideoToolboxDecoder] decode latency (n=%zu) min=%llums p50=%llums "
+                    "p95=%llums max=%llums\n",
+                    sorted.size(), ms(sorted.front()),
+                    ms(sorted[sorted.size() / 2]),
+                    ms(sorted[sorted.size() * 95 / 100]), ms(sorted.back()));
+        fflush(stderr);
+    }
+}
+#endif
 
 // ---------------------------------------------------------------------------
 // Open：取得 codec 描述并建立 VT 会话
@@ -264,10 +301,28 @@ Status VideoToolboxDecoder::Open(const StreamInfo& info) {
 
     // 建立 VT 解码会话（优先硬件；是否真硬解运行后查询）。
     VTDecompressionOutputCallbackRecord cb{&VideoToolboxDecoder::OutputCallback, this};
-    NSDictionary* attrs = @{
+    // MEDIA-023：预览吞吐修复——输出降采样到 ≤1080p（解码+缩放 VT 内部一体完成，
+    // 经 destinationImageBufferAttributes 的 kCVPixelBufferWidth/HeightKey 声明）。
+    // 真机剖面（baselines「预览播放吞吐」）：4K60 实拍素材全尺寸 VT→BGRA 转换时
+    // 泵仅 17~32 帧/s；输出 ≤1080p 后每帧 BGRA ≤6MB，转换/导入/blit 全链路受益。
+    // 1080p 及以下素材尺寸不变（attrs 不带尺寸键，行为同旧）。
+    const CMVideoDimensions src_dims = CMVideoFormatDescriptionGetDimensions(format_desc_);
+    const auto clamped = ClampOutputDimensions(src_dims.width, src_dims.height);
+    output_width_ = static_cast<uint32_t>(clamped.first);
+    output_height_ = static_cast<uint32_t>(clamped.second);
+    NSMutableDictionary* attrs = [@{
         (__bridge id)kCVPixelBufferPixelFormatTypeKey: @(kCVPixelFormatType_32BGRA),
         (__bridge id)kCVPixelBufferMetalCompatibilityKey: @YES,
-    };
+    } mutableCopy];
+    if (output_width_ != static_cast<uint32_t>(src_dims.width) ||
+        output_height_ != static_cast<uint32_t>(src_dims.height)) {
+        attrs[(__bridge id)kCVPixelBufferWidthKey] = @(output_width_);
+        attrs[(__bridge id)kCVPixelBufferHeightKey] = @(output_height_);
+        std::printf("[VideoToolboxDecoder] 输出降采样 %ux%u -> %ux%u（MEDIA-023）\n",
+                    static_cast<unsigned>(src_dims.width),
+                    static_cast<unsigned>(src_dims.height),
+                    output_width_, output_height_);
+    }
     // ⚠️ 这两个常量在 iOS 上要求 **iOS 17.0+**（macOS 为 10.9 起）。
     //    项目最低部署目标是 **iOS 16**（ADR-0010），直接引用会被 -Werror
     //    （-Wunguarded-availability-new）判为错误。
@@ -311,6 +366,10 @@ Status VideoToolboxDecoder::Open(const StreamInfo& info) {
         return Status{StatusCode::kDecodeError};
     }
 
+    // MEDIA-023 备注：输出尺寸经 destinationImageBufferAttributes 声明（会话创建时
+    // 生效），无创建后属性可设；若 VT 对该格式拒绝降采样，会话创建本身会失败并
+    // 走上方 -12906/-12907 诊断打印，行为诚实可见。
+
     // 运行时查询：本次会话是否真的走了硬件解码（如实上报，不伪造）。
     // iOS 16 下该属性不可用 → 保持默认（未知），绝不谎报"已硬解"。
     if (@available(iOS 17.0, *)) {
@@ -323,6 +382,8 @@ Status VideoToolboxDecoder::Open(const StreamInfo& info) {
             CFRelease(hw);
         }
     }
+    std::printf("[VideoToolboxDecoder] Open 完成 hw=%s out=%ux%u\n",
+                session_hw_ ? "YES" : "NO/unknown", output_width_, output_height_);
 
     return Status::Ok();
 }
@@ -389,10 +450,17 @@ Status VideoToolboxDecoder::Feed(const MediaPacket& pkt) {
     VTDecodeInfoFlags info = 0;
     // sourceFrameRefCon 传 CFRetain(sbuf)：回调从中取 dts 做完成登记，并负责释放。
     void* source_ref = const_cast<void*>(CFRetain(sbuf));
+#ifndef NDEBUG
+    const auto submit_nanos =
+        static_cast<uint64_t>(std::chrono::steady_clock::now().time_since_epoch().count());
+#endif
     st = VTDecompressionSessionDecodeFrame(session_, sbuf,
                                            kVTDecodeFrame_EnableAsynchronousDecompression,
                                            source_ref, &info);
     CFRelease(sbuf);
+#ifndef NDEBUG
+    if (st == noErr) DebugRecordSubmit(pkt.dts.value, submit_nanos);
+#endif
     if (st != noErr) {
         // 提交失败：回调不会发生，完成登记须在本线程补齐，否则重排会永远等待。
         {

@@ -40,6 +40,31 @@ enum PreviewSettleRule {
     }
 }
 
+// MARK: - 播放性能剖面（阶段 0，DEBUG only）
+
+#if DEBUG
+/// MTKView draw 回调计数器（跨视图累加，AppEntry 每 2s 读取并清零）。
+/// 遵守 AppEntry 的报告节奏，本类不做任何计时。
+@MainActor
+final class PlaybackDrawCounter {
+    static let shared = PlaybackDrawCounter()
+    private var value = 0
+    private let lock = NSLock()
+    var count: Int {
+        lock.lock(); defer { lock.unlock() }
+        return value
+    }
+    func bump() {
+        lock.lock(); defer { lock.unlock() }
+        value += 1
+    }
+    func reset() {
+        lock.lock(); defer { lock.unlock() }
+        value = 0
+    }
+}
+#endif
+
 // MARK: - MTKView 子类（持有渲染状态，MTKViewDelegate 由自身实现）
 
 /// AppKit/UIKit 的视图类，隐式 @MainActor。满足 @objc 协议 MTKViewDelegate
@@ -192,6 +217,9 @@ extension PreviewMTKView: MTKViewDelegate {
     }
 
     func draw(in view: MTKView) {
+        #if DEBUG
+        PlaybackDrawCounter.shared.bump()
+        #endif
         guard let renderer else {
             return
         }

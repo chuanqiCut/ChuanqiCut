@@ -634,3 +634,48 @@ fit 为每帧一次整数几何计算（4 次乘除）+ 一次视口状态设置
 | 1080p 单帧磨皮（A 期默认 CI 高斯对照，s=0.5） | 19.12ms | 同上 | 2026-10-04 | kernel 引擎在本机口径下快 ~2× |
 | 平坦区方差压降（s=1.0 / 基线） | 0.000082 / 0.006115（75×） | 同上（GPU 实证） | 2026-10-04 | tools/qa/beauty_harness |
 | 边缘过渡宽度（10-90%，s=0.5 / s=1.0） | 2.0px / 4.0px | 同上 | 2026-10-04 | 平台对比度保持 101.6%/103.3% |
+
+## 启动基线（LaunchBench，2026-10-05）：「点图标 → 首页」冷启动
+
+> 来源：用户报「App 启动感觉慢」的诊断会话。测的是**正式启动路径**
+> （`ChuanqiCutApp.init()` 只调 `markMainThread()`；HomeView 纯导航壳；
+> Session/Previewer/相机全部惰性，进编辑器/拍摄页才创建）。
+> 工具：`tools/perf/launch_bench/`（独立 XcodeGen 工程，零主工程改动，
+> `XCTApplicationLaunchMetric` ×7，预热 1 轮，每轮 terminate 后 launch）。
+
+**环境**：宿主 Intel i7-9750H / macOS 26.7.1 / Xcode 26.6；模拟器 iPhone 16 Pro（iOS 18.4）。
+电量/温度未记录。⚠️ 模拟器绝对值受 Intel 宿主拖累，**只看相对差值，不要引用绝对秒数当体验**。
+
+| 项 | P50 | P95 | min–max | RSD | 备注 |
+|---|---|---|---|---|---|
+| ChuanqiCut Debug（sim） | 2.08s | 2.15s | 1.83–2.15 | 4.9% | 第一会话 |
+| ChuanqiCut Debug（sim，复测） | 1.84s | 1.93s | 1.70–1.93 | 4.3% | 同会话跟在参照 App 后跑，会话间方差 ~10% |
+| ChuanqiCut Release（sim） | 2.16s | 2.41s | 1.98–2.41 | 6.1% | build/release_sim 产物 |
+| 空壳 SwiftUI 参照 App（sim） | 2.21s | 2.63s | 1.99–2.63 | 8.4% | com.chuanqi.perf.reference |
+
+**结论**：
+1. **App 净启动成本 ≈ 0**：与空壳参照无统计差异（Debug、Release 都是），代码路径上没有可优化点。
+2. **Debug 构建不是慢因**（sim 上 Debug≈Release）。
+3. 模拟器 ~2s 是 launch 机制/渲染栈开销（Intel 宿主放大），**不代表真机体感**。
+4. **真机（iPhone 17 Pro / iOS 26.6.1）未实测**：UI test runner 在真机两次 exit 74
+   （见 pitfalls P64），待解锁后由传哲跑：
+   `xcodebuild test -project tools/perf/launch_bench/LaunchBench.xcodeproj -scheme LaunchBench -destination 'id=00008150-00016C381ED8401C'`
+5. 静态证据（主二进制无 `__mod_init_func`、无 ObjC `+load`、无内嵌 dylib、App 包仅系统框架依赖）
+   见当日工作日志。
+
+## 预览播放吞吐（阶段 0 真机剖面，2026-10-06）
+
+> 工具：DEBUG 播放诊断（AppEntry 每 2s 汇总，`CQ_AUTO_PLAY=1` 自动开播，
+> `devicectl device process launch --console` 采集）。
+> 素材：用户真机相册导入的 iPhone 实拍 422MB .MOV（tmp/cq_album_2CEBC5E4…，疑 4K60 HDR HEVC [hypothesis]）。
+> 构建：Debug（arm64 真机）。
+
+| 项 | 数值 | 备注 |
+|---|---|---|
+| pump_req/s | 178–180 | 60Hz Timer × 合并语义正常 |
+| **pump_rendered/s** | **32 → 17**（第 2、4 秒窗口） | **播放卡顿主因：解码管线吞吐不足** |
+| mtk_draw/s | 228（起步）/ 120（稳态） | ProMotion 满帧，UI 呈现层健康 |
+| tick_p95 | <1ms（打印 0ms） | **SwiftUI 30Hz 重算在 A19 上非主因**（修正 RESEARCH-006 §1 假设） |
+
+**结论**：卡顿 = 解码管线（VT→BGRA 转换写带宽 hypothesis 主嫌，4K 帧 33MB/帧），
+UI 重建（ADR-0022）解决不了它 → 立即立 MEDIA-023（VT 输出降采样 ≤1080p）。

@@ -162,6 +162,12 @@ static int RunCodecAcceptance(const std::string& path, cq::CodecId expect_codec,
         return g_failures - failures_at_entry;
     }
     std::printf("  硬解是否真走硬件: %s\n", decoder.IsHardwareAccelerated() ? "YES" : "NO(软解回退)");
+    std::printf("  输出尺寸: %ux%u（源 %ux%u，MEDIA-023 降采样上限 1080p）\n",
+                decoder.OutputWidth(), decoder.OutputHeight(), info.width, info.height);
+    Check(decoder.OutputWidth() <= 1920 && decoder.OutputHeight() <= 1920,
+          "输出长边 ≤ 1920（MEDIA-023 钳制）");
+    Check(decoder.OutputWidth() % 2 == 0 && decoder.OutputHeight() % 2 == 0,
+          "输出尺寸取偶");
 
     std::vector<cq::RationalTime> demux_pts;
     demux_pts.reserve(256);
@@ -303,6 +309,21 @@ static int RunCodecAcceptance(const std::string& path, cq::CodecId expect_codec,
 int main() {
     std::setvbuf(stdout, nullptr, _IONBF, 0);
     std::printf("== ChuanqiCut PALA-011 Apple 硬解验收（VideoToolbox / H.264 + HEVC）==\n");
+
+    // MEDIA-023：输出尺寸钳制纯函数（4K/竖拍 4K → 长边 1920 等比 + 偶对齐；
+    // 1080p 及以下原样）。
+    {
+        auto c = cq::VideoToolboxDecoder::ClampOutputDimensions(3840, 2160);
+        Check(c.first == 1920 && c.second == 1080, "4K 横拍 → 1920x1080");
+        c = cq::VideoToolboxDecoder::ClampOutputDimensions(2160, 3840);
+        Check(c.first == 1080 && c.second == 1920, "4K 竖拍 → 1080x1920（等比不旋转）");
+        c = cq::VideoToolboxDecoder::ClampOutputDimensions(1920, 1080);
+        Check(c.first == 1920 && c.second == 1080, "1080p 原样不变");
+        c = cq::VideoToolboxDecoder::ClampOutputDimensions(1280, 720);
+        Check(c.first == 1280 && c.second == 720, "720p 原样不变");
+        c = cq::VideoToolboxDecoder::ClampOutputDimensions(3841, 2162);
+        Check(c.first % 2 == 0 && c.second % 2 == 0, "非整尺寸输出取偶");
+    }
 
     // H.264（既有基线）+ HEVC（MEDIA-022：iPhone 相册默认编码，此前 Open 一律
     // 返回 kDecodeUnsupported，导入链路在探测步即挂）。

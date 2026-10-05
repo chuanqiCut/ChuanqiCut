@@ -24,6 +24,7 @@
 #include <map>
 #include <mutex>
 #include <string>
+#include <utility>  // std::pair
 
 #include "cq/media/system_frame_provider.h"  // cq::IFrameDecoder / MediaFrame / StreamInfo
 
@@ -104,6 +105,28 @@ public:
     // 已解码且已出队的帧数（供测试/诊断）。
     int64_t PoppedCount() const { return popped_count_; }
 
+    // 实际输出尺寸（MEDIA-023 降采样后；供测试/诊断）。
+    uint32_t OutputWidth() const { return output_width_; }
+    uint32_t OutputHeight() const { return output_height_; }
+
+    // 输出尺寸钳制（MEDIA-023，纯函数可测）：长边 >1920 时等比缩到长边 1920，
+    // 宽高取偶（YUV 采样对齐）；≤1080p 原样返回。
+    static std::pair<int32_t, int32_t> ClampOutputDimensions(int32_t width, int32_t height) {
+        constexpr int32_t kMaxEdge = 1920;
+        int32_t w = width;
+        int32_t h = height;
+        if (w > kMaxEdge || h > kMaxEdge) {
+            const int32_t num = (w >= h) ? w : h;
+            w = (w * kMaxEdge + num / 2) / num;   // 四舍五入
+            h = (h * kMaxEdge + num / 2) / num;
+            if (w < 2) w = 2;
+            if (h < 2) h = 2;
+        }
+        w -= w % 2;
+        h -= h % 2;
+        return {w, h};
+    }
+
 private:
     // 输出回调（C 函数，经 refCon 取回 this）。
     static void OutputCallback(void* ref_con, void* source_ref_con, OSStatus status,
@@ -121,6 +144,8 @@ private:
     CodecId bound_codec_ = CodecId::kUnknown;
     uint32_t width_ = 0;
     uint32_t height_ = 0;
+    uint32_t output_width_ = 0;   // MEDIA-023：实际输出尺寸（降采样后）
+    uint32_t output_height_ = 0;
 
     CMFormatDescriptionRef format_desc_ = nullptr;  // Open 时取得，会话与 CMSampleBuffer 共用
     VTDecompressionSessionRef session_ = nullptr;
@@ -141,6 +166,15 @@ private:
     bool has_prev_ = false;
     RationalTime nominal_duration_{4000, kProjectTimeScale};  // 首帧时长兜底（≈1/30s @120000）
     int64_t popped_count_ = 0;
+
+#ifndef NDEBUG
+    // MEDIA-023 排障仪器（仅 Debug 构建）：Feed→解码回调的单帧延迟直方图。
+    // 每完成 60 帧打印一次 min/p50/p95/max —— 判别「VT 异步往返」vs「转换慢路径」。
+    void DebugRecordSubmit(int64_t dts_value, uint64_t nanos);
+    void DebugRecordLatency(int64_t dts_value, uint64_t nanos);
+    std::map<int64_t, uint64_t> debug_submit_nanos_;
+    std::vector<uint64_t> debug_latency_nanos_;
+#endif
 
     CqNativeImage* last_returned_ = nullptr;  // 供 Flush/析构释放，避免泄漏
 

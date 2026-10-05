@@ -52,9 +52,27 @@ public struct EditorScreen: View {
             let viewModel = try EditorViewModel()
 #if DEBUG
             // UIA-003 启动冒烟钩子：无初始导入时才装演示片段（有录制产物时以产物为准）。
+            var demoLoaded = false
             if initialMediaURL == nil {
-                _ = viewModel.installDemoClipFromEnvironment()
+                demoLoaded = viewModel.installDemoClipFromEnvironment()
             }
+            // 阶段 0 剖面钩子：CQ_AUTO_PLAY=1 进编辑器即自动开播（与 CQ_AUTO_ROUTE
+            // 配套，真机剖面无需点屏幕）。⚠️ 必须等演示片段落到快照再开播 ——
+            // installDemo 返回时 addClip 快照可能仍在途（真机实测竞态：clips=0 时
+            // togglePlayback 被空片段守卫挡掉，上轮碰巧通过）。泵手法同 installDemo。
+            var autoPlayed = false
+            if ProcessInfo.processInfo.environment["CQ_AUTO_PLAY"] == "1" {
+                let deadline = Date().addingTimeInterval(5)
+                while viewModel.timeline.clips.isEmpty && Date() < deadline {
+                    RunLoop.main.run(until: Date().addingTimeInterval(0.01))
+                }
+                viewModel.togglePlayback()
+                autoPlayed = viewModel.isPlaying
+            }
+            // devicectl --console 通道的钩子状态（stderr 无缓冲必现）。
+            // version 用于判别：≥3 = addClip 已落内核（回流断）；=2 = addClip 未落地。
+            fputs(("[hook] demo_loaded=\(demoLoaded) auto_play=\(autoPlayed) clips=\(viewModel.timeline.clips.count) version=\(viewModel.snapshot.version)\n"), stderr)
+            fflush(stderr)
 #endif
             model = viewModel
         } catch {

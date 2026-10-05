@@ -28,6 +28,13 @@ struct PlayerTrackOption: Equatable {
     let name: String
 }
 
+/// 章节条目（id = 装载会话内顺序号；start = 章节起点秒）。
+struct PlayerChapter: Equatable, Identifiable {
+    let id: Int
+    let start: TimeInterval
+    let name: String
+}
+
 /// 引擎生命周期状态。failed 携带用户可读的中文错误描述（不做错误码翻译，
 /// 保留 AVFoundation 原始 description——控制层直接展示）。
 /// （App target 不直接消费本类型，故 internal；测试经 @testable 访问。）
@@ -70,6 +77,8 @@ protocol PlayerEngine: AnyObject {
     var currentSubtitleTrackID: Int? { get }
     /// 当前源是否为远程（http/https）。远程源走差异化策略（缓冲等待、禁缩略图预热）。
     var isRemoteSource: Bool { get }
+    /// 章节（容器元数据；装载完成后发布，空 = 无章节）。
+    var chapters: [PlayerChapter] { get }
 
     // MARK: 回调（主隔离域）
 

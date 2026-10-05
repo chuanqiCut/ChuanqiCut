@@ -176,6 +176,9 @@ struct PlayerControlsOverlay: View {
                 .accessibilityLabel("画中画")
             }
             #endif
+            AirPlayRoutePicker()
+                .frame(width: 24, height: 24)
+                .accessibilityLabel("隔空播放")
         }
         .padding(.horizontal, 20)
         .padding(.top, 10)
@@ -283,6 +286,19 @@ struct PlayerControlsOverlay: View {
                 vm.cycleABLoop()
             } label: {
                 Label(Self.abLoopMenuTitle(vm.abLoopState), systemImage: "arrow.2.squarepath")
+            }
+            if !vm.chapters.isEmpty {
+                Menu {
+                    ForEach(vm.chapters) { chapter in
+                        Button {
+                            vm.jumpToChapter(chapter)
+                        } label: {
+                            Text(chapter.name)
+                        }
+                    }
+                } label: {
+                    Label("章节", systemImage: "bookmark")
+                }
             }
             if vm.queue.count > 1, let onShowQueue = onShowQueue {
                 Button {
@@ -597,6 +613,15 @@ struct PlayerScrubber: View {
                 .frame(width: max(0, min(width, fraction * width)), height: 4)
             if vm.abLoopState != .off, vm.duration > 0 {
                 abRegion(width: width)
+            }
+            if !vm.chapters.isEmpty, vm.duration > 0 {
+                ForEach(vm.chapters.filter { $0.start > 0.1 }) { chapter in
+                    Rectangle()
+                        .fill(.white.opacity(0.7))
+                        .frame(width: 2, height: 10)
+                        .offset(x: min(width - 2, (chapter.start / vm.duration) * width))
+                        .allowsHitTesting(false)
+                }
             }
             Circle()
                 .fill(.white)

@@ -11,6 +11,7 @@
 // （layer 参数同样是"不点名的不透明值"穿过调用方）。
 
 import AVFoundation
+import AVKit
 import QuartzCore
 import SwiftUI
 #if os(iOS)
@@ -77,6 +78,31 @@ final class PlayerLayerHostNSView: NSView {
         announcedLayer = true
         onLayerReady?(layer)
     }
+}
+#endif
+
+// MARK: - AirPlay 路由选择器（AVRoutePickerView 桥接，UIA-016）
+
+#if os(iOS)
+struct AirPlayRoutePicker: UIViewRepresentable {
+    func makeUIView(context: Context) -> AVRoutePickerView {
+        let view = AVRoutePickerView()
+        view.prioritizesVideoDevices = true
+        view.tintColor = .white
+        return view
+    }
+
+    func updateUIView(_ view: AVRoutePickerView, context: Context) {}
+}
+#elseif os(macOS)
+struct AirPlayRoutePicker: NSViewRepresentable {
+    func makeNSView(context: Context) -> AVRoutePickerView {
+        let view = AVRoutePickerView()
+        view.prioritizesVideoDevices = true
+        return view
+    }
+
+    func updateNSView(_ view: AVRoutePickerView, context: Context) {}
 }
 #endif
 

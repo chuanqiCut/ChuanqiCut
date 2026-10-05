@@ -28,6 +28,7 @@ final class AVPlayerEngine: PlayerEngine {
     private(set) var videoSize: CGSize?
     private(set) var frameDuration: TimeInterval = 1.0 / 30.0
     private(set) var isRemoteSource = false
+    private(set) var chapters: [PlayerChapter] = []
     private(set) var audioTracks: [PlayerTrackOption] = []
     private(set) var currentAudioTrackID: Int?
     private(set) var subtitleTracks: [PlayerTrackOption] = []
@@ -108,6 +109,7 @@ final class AVPlayerEngine: PlayerEngine {
         currentSubtitleTrackID = nil
         audioGroup = nil
         subtitleGroup = nil
+        chapters = []
 
         // 源类型策略（UIA-024）：本地零等待起播；远程走系统缓冲策略。
         isRemoteSource = Self.isRemoteMediaURL(url)
@@ -181,6 +183,26 @@ final class AVPlayerEngine: PlayerEngine {
             } catch {
                 self.log.error("load video metadata 失败: \(String(describing: error), privacy: .public)")
             }
+        }
+        Task { @MainActor [weak self] in
+            guard let self = self else { return }
+            // 章节元数据（chapterMetadataGroups(bestMatchingPreferredLanguages:)，
+            // 本机 SDK 验证无弃用标记；同步调用放主 Task——章节数量级小，开销可忽略）。
+            let groups = asset.chapterMetadataGroups(
+                bestMatchingPreferredLanguages: Locale.preferredLanguages)
+            self.chapters = groups.enumerated().compactMap { index, group in
+                let timeRange = group.timeRange
+                guard timeRange.duration.seconds > 0,
+                      timeRange.start.seconds.isFinite,
+                      timeRange.duration.seconds.isFinite else { return nil }
+                let title = group.items.compactMap { item -> String? in
+                    guard item.identifier == AVMetadata.Identifier.commonKeyTitle else { return nil }
+                    return item.stringValue
+                }.first ?? "章节 \(index + 1)"
+                return PlayerChapter(id: index, start: timeRange.start.seconds, name: title)
+            }
+            // 同值重发 = "章节元数据有刷新"信号。
+            self.onStateChange?(self.state)
         }
         Task { @MainActor [weak self] in
             guard let self = self else { return }

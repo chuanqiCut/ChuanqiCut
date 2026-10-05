@@ -2,6 +2,15 @@
 > 前置：构建机门禁 PASS（TASK-UIA-015）；开工前 git fetch 核对号（PLAN-播放器进阶 §5）。
 # TASK-UIA-016：播放器系统级播控补完（章节 + PiP 占位态 + AirPlay）
 
+> **状态**：✅ 代码落地（2026-10-05，Batch D；章节 API 形状已在本机 SDK 头文件
+> 验证——`chapterMetadataGroups(bestMatchingPreferredLanguages:)` 无弃用标记）。
+> 落地：协议 +`PlayerChapter`/+chapters；引擎装载任务（commonKeyTitle 提名、
+> 同值广播）；进度条章节刻度 + moreMenu 章节菜单 + jumpToChapter 零容差跳转；
+> PiP delegate（AVPictureInPictureControllerDelegate，@preconcurrency 手法同
+> MetalPreviewView）→ isInPip 占位态；AirPlayRoutePicker（AVRoutePickerView 双平台
+> representable，落 surface 域边界文件）。PlayerQueueTests +2 用例。
+> 本机 parse 全绿；PiP delegate 线程断言与真机行为待构建机。
+
 ```yaml
 id:          TASK-UIA-016
 layer:       UI

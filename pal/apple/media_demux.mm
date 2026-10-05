@@ -49,12 +49,17 @@ RationalTime ToRational(CMTime t, RoundMode mode) {
 }
 
 // 视频/音频 FourCharCode -> 本项目 CodecId（与 FFmpeg 解耦，映射在 PAL 内）。
+// MEDIA-022：'hev1'（ffmpeg 默认 HEVC tag）与 'dvh1'/'dvhe'（杜比视界，HEVC 基底）
+// 与 'hvc1' 同属 HEVC —— 缺了它们，iPhone 相册/常见 HEVC 素材会被报成 kUnknown。
 CodecId VideoCodecToCq(FourCharCode c) {
     switch (c) {
         case kCMVideoCodecType_H264:
             return CodecId::kH264;
         case kCMVideoCodecType_HEVC:
         case kCMVideoCodecType_HEVCWithAlpha:
+        case 'hev1':
+        case 'dvh1':
+        case 'dvhe':
             return CodecId::kHevc;
         case kCMVideoCodecType_AppleProRes422:
         case kCMVideoCodecType_AppleProRes4444:
@@ -130,7 +135,9 @@ static size_t GetNalLengthSize(CMFormatDescriptionRef fmt, FourCharCode codec) {
             // AVCConfigurationRecord：byte4 低 2 位 = lengthSizeMinusOne。
             if (a != nullptr && n > 4) return static_cast<size_t>((a[4] & 0x03) + 1);
         }
-    } else if (codec == kCMVideoCodecType_HEVC || codec == kCMVideoCodecType_HEVCWithAlpha) {
+    } else if (codec == kCMVideoCodecType_HEVC || codec == kCMVideoCodecType_HEVCWithAlpha ||
+               codec == 'hev1' || codec == 'dvh1' || codec == 'dvhe') {
+        // MEDIA-022：'hev1'/杜比视界同样携带 hvcC。
         CFDataRef hvcc = static_cast<CFDataRef>(CFDictionaryGetValue(atoms, CFSTR("hvcC")));
         if (hvcc != nullptr) {
             const uint8_t* h = CFDataGetBytePtr(hvcc);

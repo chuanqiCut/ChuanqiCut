@@ -1055,3 +1055,22 @@ ADR-0020 文件头带着完整冲突块（`<<<<<<<< HEAD ... ======== ... >>>>>>
   出路是 blit 换 render pass，**不是改回 true**。
 - 防复发规则：Metal/图形 API 的行为结论必须在**校验层开启**（DEBUG scheme 的 Metal
   API Validation、GPU 抓帧）状态下实测；引用「实测无 error」必须注明校验层开关状态。
+
+### P63 · VT 解码器只认 'hvc1' —— 'hev1' 格式描述建会话必 -12906
+> 日期 / 来源 / 验证状态：2026-10-05 / TASK-MEDIA-022 / **verified**
+>（golden 'hev1' 文件复现 -12906；重建 'hvc1' 后 150 帧全解）
+
+- 现象：`VTDecompressionSessionCreate` 对 ffmpeg 产出的 HEVC MP4 返回
+  **-12906 kVTUnsupportedDecompressionErr**，即使文件是普通 8-bit 4:2:0。
+- 根因：VT 的 HEVC 解码器按 **'hvc1'** subtype 注册；'hev1'（ffmpeg 默认 tag）
+  与 'dvh1'/'dvhe'（杜比视界）的格式描述匹配不到解码器。文件本身没问题
+  （AVFoundation 能解析、AVAssetReader 能 passthrough）。
+- 修法：用**同一份 hvcC**（参数集字节完全相同）`CMVideoFormatDescriptionCreate`
+  重建 subtype='hvc1' 的格式描述再建会话。iPhone 实拍本来就是 'hvc1'，不受影响。
+- 防复发规则：
+  1. 媒体测试断言不要只覆盖 Apple 工具链产物 —— golden 里必须有 ffmpeg tag 的
+     'hev1'（现有 `gf_1080p_hevc.mp4` 即是，别删）。
+  2. VT 相关排障先打印 **OSStatus + codec fourcc + hvcC chroma/bitDepth**
+     （`VideoToolboxDecoder` 失败分支已内置该诊断打印）。
+  3. 运维注意：**两轮 run_gate.sh 并发会互踩**（prepare 替换 XCFramework 的瞬间
+     另一轮的测试在读）→ 门禁一律串行独占跑。

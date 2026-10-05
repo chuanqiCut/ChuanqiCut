@@ -418,15 +418,20 @@ public final class EditorViewModel: ObservableObject {
         defer { if scoped { url.stopAccessingSecurityScopedResource() } }
         let path = url.path
 
-        // 1) 探测时长（同步；失败 = 无法解析的文件）
-        guard let duration = session.probeMediaDuration(path: path) else {
-            return .decodeError  // 打不开/解析不了（2000，语义码见绑定层 Status）
+        // 1) 探测时长（同步）。失败 = 内核原始状态码**原样透传**（MEDIA-022）：
+        //    2001 = 编码格式不支持（HEVC 曾全落这里）、1000 = 文件无法读取、
+        //    2000 = 解析失败 —— UI 据此给差异化文案，不再一律「解码失败」。
+        let probed = session.probeMediaDurationDetailed(path: path)
+        let duration: RationalTime
+        switch probed {
+        case .success(let d):
+            duration = d
+        case .failure(let status):
+            log.error("importMedia: probe 失败 raw=\(status.rawValue)")
+            return status
         }
-        // 文件能打开却读不到时长 = 解析问题（不是参数非法）—— 用 decodeError 而非
-        // invalidArgument，调用方与日志能区分这两类失败。
-        // ⚠️ 实测偶发（SharedUI 全量跑约 50% 命中，pitfalls P33）：probe 成功但
-        //    时长为 0，根因未定位在内核侧。这里是症状的最早可观测点。
-        guard duration.value > 0 else { return .decodeError }
+        // 防御分支（P33 症状最早可观测点）：ABI 已把 0 时长报为 2000，理论上
+        // 到不了这里；保底用 decodeError，调用方与日志能区分这类失败。
 
         // 2) 注册素材（素材 id 本地分配，单调递增）
         let assetId = nextAssetId
@@ -487,6 +492,24 @@ public final class EditorViewModel: ObservableObject {
             return .invalidArgument
         }
         return .ok
+    }
+}
+
+// MARK: - 用户可读的错误文案（MEDIA-022）
+
+public extension Status {
+    /// 用户可读的失败原因（中文）。未知码回退 `text`（内核诊断标识，不丢信息）。
+    ///
+    /// 背景：导入失败曾一律显示「解码失败」，实际最常见的是 2001 编码不支持
+    /// （HEVC）—— 根因修复（TASK-MEDIA-022）后仍需对 ProRes 等给出准确文案。
+    var userText: String {
+        switch rawValue {
+        case 1000: return "文件无法读取"
+        case 1001: return "文件不存在"
+        case 2000: return "文件解析失败"
+        case 2001: return "视频编码格式暂不支持"
+        default:   return text
+        }
     }
 }
 

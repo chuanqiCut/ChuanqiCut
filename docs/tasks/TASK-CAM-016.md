@@ -68,6 +68,22 @@ parallel:    false
 
 逐条对 acceptance：①②本机门禁；③④真机归传哲（日志先行：渲染统计口径不变）。
 
+## 验证状态
+
+- [x] `xcodebuild -workspace ChuanqiCut.xcworkspace -scheme ChuanqiCutApp
+      -sdk iphonesimulator -configuration Debug build` → **BUILD SUCCEEDED，0 error，
+      改动文件 0 warning**（2026-10-06 00:02）。全日志去重 2 条警告均为环境级
+      （Metal 工具链搜索路径 + AppIntents 元数据），与本次改动无关。
+- [x] 模拟器（iPhone 16 Pro, iOS 18.4）安装 + 冷启动无崩（launchctl 进程存活；
+      模拟器无相机设备，走「设备缺失不伪造成功」降级路径）。
+- [ ] **真机（归传哲）**：①竖/左横/右横三方向预览正立、铺满；②拍照判别（照片正立
+      ⇒ 行序诊断坐实；照片也颠倒 ⇒ rotationAngle portrait 改 270 一行）；③若预览
+      变镜像 → `ciWritesBottomUp` 改 false 一行；④横屏 180° 反接 → 交换 0/180 一行。
+- [ ] 真机帧率（渲染 pass vs 旧 blit）—— **baselines 未实测**，待传哲数据。
+- ⚠️ 与并行会话 MEDIA-022 同仓并行：其间 SharedUI/bindings 未提交中间态曾阻塞
+  全量构建（其自行修复后本卡构建通过）；总门禁 run_gate.sh 按运维约定串行，
+  待其收口后补跑全量（P66 运维条）。
+
 ## 回写
 
 - 接口变更（applyOrientation/setInterfaceOrientation）→ `.ai/modules/camera.md`

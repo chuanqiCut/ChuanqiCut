@@ -1076,3 +1076,35 @@ ADR-0020 文件头带着完整冲突块（`<<<<<<<< HEAD ... ======== ... >>>>>>
      （`VideoToolboxDecoder` 失败分支已内置该诊断打印）。
   3. 运维注意：**两轮 run_gate.sh 并发会互踩**（prepare 替换 XCFramework 的瞬间
      另一轮的测试在读）→ 门禁一律串行独占跑。
+
+### P67 · 三个「方向」枚举的 landscape 命名互换 + 没有 scene 级方向通知
+> 日期 / 来源 / 验证状态：2026-10-06 / TASK-CAM-016 / **verified**
+>（SDK 头文件原文引用，见 UIOrientation.h / AVCaptureSession.h）
+
+1. `UIInterfaceOrientationLandscapeLeft = UIDeviceOrientationLandscapeRight`
+   （UIOrientation.h 原文注释），且 AVCaptureVideoOrientation 头文件注释：
+   LandscapeRight =「home button on the right」⇒ **UI ↔ AVCapture 的 landscape
+   名字互换**：UI.landscapeLeft（home 在右）→ AVCaptureVideoOrientation.landscapeRight。
+   **同名直映会在真机上横屏 180° 反接** —— CAM-016 首版即犯了同名直映，头文件核源后纠正。
+2. iOS SDK **不存在** scene 级方向变更通知（`UIWindowScene.interfaceOrientationDidChange*`
+   不存在，swiftinterface/头文件双确认）；触发源只有 `UIDevice.orientationDidChangeNotification`，
+   且它**早于** scene 提交转场 —— 立即读 `scene.interfaceOrientation` 可能拿旧值。
+   CAM-016 取值侧分 0/200/500ms 三次采样取终值（消费方同值去重，重复采样无害）。
+3. `AVCaptureVideoOrientation` 自 iOS 17 整体弃用（指向
+   AVCaptureDeviceRotationCoordinator）；新代码用 `connection.videoRotationAngle`
+   {portrait:90, landscapeLeft:0, landscapeRight:180}，iOS 16 才走旧 API。
+- 防复发规则：**涉方向/方位映射先 grep SDK 头文件注释，不凭记忆**（三套枚举命名
+  各说各话）；映射表必须收敛在一处（CameraManager.rotationAngle / videoOrientation），
+  注释里带头文件证据。
+
+### P68 · macOS CLI 上 CIContext.render(to MTLTexture) 静默写零 —— 本机探针判不了 iOS 行序
+> 日期 / 来源 / 验证状态：2026-10-06 / TASK-CAM-016 行序探针 / **verified**（本机矩阵实验）
+
+写「CI 行序探针」（CVPixelBuffer 红顶蓝底 → render → 纹理读回）在 macOS 26 CLI 下：
+private/shared/managed × 各 usage **全组合输出全零**、`commandBuffer.error = nil` ——
+`render(_:to:commandBuffer:bounds:colorSpace:)` 在 macOS 脚本环境整体静默 no-op
+（同输入走 createCGImage 正常出图）。⇒ **该 API 的 iOS 行为不能用 macOS 探针判定**
+（P60 同族：非 throws API 的失败无处落）。另：CIRenderDestination 版 render 在
+Swift 下经 `toDestination:` 标签也找不到（ObjC selector `renderImage:toDestination:` 未按预期导入）。
+- 防复发规则：Metal/CI 行为探针先跑「自检基准」（如 CGImage 路径）确认环境有效再信
+  结果；宿主 OS ≠ 目标 OS 的探针结论只算 hypothesis，iOS 行为必须模拟器/真机实证。

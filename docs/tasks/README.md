@@ -9,7 +9,7 @@
 2. 按 [`../../.ai/templates/task.md`](../../.ai/templates/task.md) 建卡，写集不得与其他在飞任务相交；
 3. 在 BACKLOG 对应行标注 ✅（完成后）；在本表登记一行。
 
-## 已建卡登记表（46 张，2026-10-05）
+## 已建卡登记表（47 张，2026-10-05）
 
 ### 基建 INFRA / DOC
 | 卡 | 标题 |
@@ -51,6 +51,7 @@
 | [UIA-012](TASK-UIA-012.md) | 相册多选批量导入 |
 | [UIA-013](TASK-UIA-013.md) | 自研相册浏览器（伞任务，B 期） |
 | [UIA-014](TASK-UIA-014.md) | 预览宽高比适配（letterbox / fit；编号两次让位 011→012→014） |
+| [UIA-015](TASK-UIA-015.md) | 独立视频播放器 MVP（AVPlayer 过渡 + 接缝；Spec UIA-020 + ADR-0022） |
 
 ### 相机 CAM（iOS 原生域，ADR-0014）
 | 卡 | 标题 |

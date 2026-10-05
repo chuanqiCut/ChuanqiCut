@@ -13,6 +13,7 @@ struct HomeView: View {
     private enum Route: Hashable {
         case editor
         case camera
+        case player
     }
 
     var body: some View {
@@ -31,6 +32,10 @@ struct HomeView: View {
                               title: "拍摄",
                               subtitle: "滤镜 · 实时预览 · 一键录制",
                               icon: "camera")
+                    entryCard(route: .player,
+                              title: "播放器",
+                              subtitle: "预览成片 · 播放本地视频",
+                              icon: "play.rectangle")
                     Spacer()
                     footerText
                 }
@@ -42,6 +47,8 @@ struct HomeView: View {
                     EditorScreen()
                 case .camera:
                     CameraView()
+                case .player:
+                    PlayerLauncherScreen()
                 }
             }
         }

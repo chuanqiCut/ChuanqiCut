@@ -634,3 +634,20 @@ fit 为每帧一次整数几何计算（4 次乘除）+ 一次视口状态设置
 | 1080p 单帧磨皮（A 期默认 CI 高斯对照，s=0.5） | 19.12ms | 同上 | 2026-10-04 | kernel 引擎在本机口径下快 ~2× |
 | 平坦区方差压降（s=1.0 / 基线） | 0.000082 / 0.006115（75×） | 同上（GPU 实证） | 2026-10-04 | tools/qa/beauty_harness |
 | 边缘过渡宽度（10-90%，s=0.5 / s=1.0） | 2.0px / 4.0px | 同上 | 2026-10-04 | 平台对比度保持 101.6%/103.3% |
+
+## 播放器（UIA-015，2026-10-05）：**全部未实测**
+
+> 独立文件播放器 MVP（AVPlayer 过渡，ADR-0022）。本节逐项登记"未实测"，
+> 构建机编译 + 真机验收后**替换为实测数字**（数字纪律：估算不得作验收阈值）。
+
+| 项 | 值 | 待测条件 |
+|---|---|---|
+| 起播延迟（本地 1080p mp4，`automaticallyWaitsToMinimizeStalling=false`） | **未实测** [E 估算百毫秒级] | 构建机 + 真机 |
+| 零容差 seek 落点延迟（长 GOP 源 vs 短 GOP） | **未实测** | 真机，对比 golden 片段 |
+| 双击 ±10s（关键帧容差 seek）感知延迟 | **未实测** | 真机 |
+| 变速 2x（audioTimePitchAlgorithm=.timeDomain）CPU 占用 | **未实测** | 真机 Instruments |
+| 缩略图 LRU 120 张内存占用（maximumSize 480） | **未实测** [E ≈32MB] | 真机 Memory gauge |
+| 单张缩略图生成耗时（tolerance ±1s） | **未实测** | 真机 |
+| 逐帧步进（，/.）单步延迟 | **未实测** | 真机 |
+| SharedUI swift test（含 PlayerTests 8 用例） | **未跑**（本机 Swift 5.5，P45/P46） | 构建机 |
+| iOS/macOS xcodebuild（0 error 0 warning） | **未跑** | 构建机 |

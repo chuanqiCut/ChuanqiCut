@@ -411,3 +411,46 @@ Spec AIEDIT-001 / ADR-0020 / TASK-AIEDIT-000。首页 `HomeView.swift` 新增第
   UIA-015 iOS 相机页 / UIA-016 iOS 剪辑页 / UIA-017 macOS 惯例化 →
   UIA-018 时间线视觉（缩略图异步，主线程不解码红线不变）。均为纯视图层，
   Command/ViewModel/Session 不动。下一步：cq-spec-authoring 出 SPEC-UIA-014。
+
+---
+
+# UIA-015 落地（2026-10-05）：独立视频播放器 MVP（Player/ 域）
+
+Spec UIA-020 / ADR-0022 / RESEARCH-006。**内核 = AVPlayer 过渡实现 +
+`PlayerEngine` 协议接缝**（ADR-0022：自研预览线无声（PALA-030 未实现），
+播有声成片唯一即时路径；先例 ADR-0014/0015 的 UI 域系统 API 豁免）。
+`core/`、C ABI、绑定层零改动。
+
+- **新域** `SharedUI/Sources/SharedUI/Player/`（七文件）：
+  `PlayerEngine`（@MainActor 协议接缝：load/play/pause/seek(to:precise:)/
+  invalidate + state/duration/currentTime/rate/volume/isMuted/videoSize/
+  frameDuration + onTick/onStateChange/onEnded/onPlayStateChange）→
+  `AVPlayerEngine`（过渡实现：defaultRate 承载倍速、零容差/关键帧双档
+  seek、timeControlStatus KVO 覆盖耳机拔出/来电自动暂停、
+  `automaticallyWaitsToMinimizeStalling=false`）→ `PlayerViewModel`
+  （状态机：拖动=暂停+静音预览、松手零容差 seek；播放中 4s 自动隐藏）→
+  `PlayerControlsView`（自绘进度条+缩略图气泡+双击 ±10s+上下滑亮度/音量
+  （iOS）+倍率菜单 0.5~2x+失败横幅+VoiceOver adjustable 进度条）→
+  `PlayerSurfaceView`（AVPlayerLayer 桥，iOS UIView(layerClass) /
+  macOS NSView(makeBackingLayer)，gravity 用自有枚举隔离）→
+  `PlayerPipCoordinator`（AVPictureInPictureController 强持有 + 退后台
+  自动进 + 可用性 KVO）→ `VideoThumbnailLoader`（按秒取桶 + LRU ≤120 张
+  + 按桶去重，失败静默降级纯时间气泡）。
+- **AVFoundation 域边界（ADR-0022 决策 4，代码审查按此检查）**：只许出现在
+  Player 域五文件（引擎×2、surface、缩略图、PiP 协调器）；控制层/VM/
+  App target 不 import。跨文件传 `AVPlayer`/`AVPlayerLayer` 用
+  **"不点名的不透明值"**手法（Swift 允许传递未在本文件导入的类型值，
+  只要本文件不写出类型名）。
+- **装配**：`HomeView` 第三入口卡「播放器」→ `PlayerLauncherScreen`
+  （fileImporter movie/video）；macOS `ChuanqiCutMacApp` 新增
+  `Window("视频播放器", id: "player")`。`ios/project.yml` info 段新增
+  `UIBackgroundModes: [audio]`（PiP/后台播放前置）。键盘（macOS）：
+  `.onKeyPress`（空格/←→/，. /0-9/m）。
+- **测试**：`PlayerTests`（StubPlayerEngine 注入，8 用例：拖动只在松手
+  一次零容差 seek 且恢复静音、skip/jump 越界钳制、倍速透传、逐帧按
+  frameDuration、播完停住、失败上抛+控制层常显、时间码格式化）。
+- ⚠️ 门禁：本机 Swift 5.5（P45/P46 环境）`swiftc -parse` 10 文件全绿
+  （**新代码按 5.5 可解析风格写**：`guard let self = self` 显式绑定、
+  不用 `any P` —— 与部分既有文件的 5.7 简写噪音区分开）；linkcheck ✅；
+  `swift test` / 双平台 xcodebuild / SPEC §6.4 行为清单待构建机+真机。
+  播放性能数字全部未实测（baselines 有未实测清单）。

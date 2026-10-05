@@ -39,13 +39,15 @@ final class AlbumPermissionModel: ObservableObject {
     @Published private(set) var access: AlbumAccessLevel
 
     private let readCurrent: () -> PHAuthorizationStatus
-    private let request: (@escaping (PHAuthorizationStatus) -> Void) -> Void
+    // PHPhotoLibrary.requestAuthorization 的 handler 是 @Sendable，注入签名必须
+    // 一致，否则传进去的非 Sendable 闭包会在严格并发下被拒。
+    private let request: (@escaping @Sendable (PHAuthorizationStatus) -> Void) -> Void
 
     /// 生产 = PhotoKit 真实现（.readWrite：自研浏览器要的是读，受限补选走
     /// 同一授权位；测试注入固定值）。
     init(readCurrent: @escaping () -> PHAuthorizationStatus = {
         PHPhotoLibrary.authorizationStatus(for: .readWrite)
-    }, request: @escaping (@escaping (PHAuthorizationStatus) -> Void) -> Void = {
+    }, request: @escaping (@escaping @Sendable (PHAuthorizationStatus) -> Void) -> Void = {
         PHPhotoLibrary.requestAuthorization(for: .readWrite, handler: $0)
     }) {
         self.readCurrent = readCurrent

@@ -19,6 +19,8 @@ import UIKit
 
 struct PlayerControlsOverlay: View {
     @ObservedObject var vm: PlayerViewModel
+    /// "打开新视频"入口（PlayerScreen 注入 fileImporter；nil = 不显示）。
+    var onOpenNewFile: (() -> Void)?
 
     @State private var singleTapTask: Task<Void, Never>?
     @State private var panMode: PanMode?
@@ -51,6 +53,13 @@ struct PlayerControlsOverlay: View {
             }
         }
         .contentShape(Rectangle())
+        .onLongPressGesture(minimumDuration: 0.35, maximumDistance: 12) {
+            vm.beginSpeedBoost()
+        } onPressingChanged: { pressing in
+            if !pressing {
+                vm.endSpeedBoost()
+            }
+        }
         .onTapGesture(count: 2, coordinateSpace: .local) { location in
             singleTapTask?.cancel()
             vm.skip(relative: location.x < size.width / 2 ? -10 : 10)
@@ -188,6 +197,7 @@ struct PlayerControlsOverlay: View {
             }
             .accessibilityLabel("快进 10 秒")
             rateMenu
+            moreMenu
             Spacer()
             aspectButton
             #if os(iOS)
@@ -218,6 +228,45 @@ struct PlayerControlsOverlay: View {
                 .overlay(Capsule().stroke(.white.opacity(0.5), lineWidth: 1))
         }
         .accessibilityLabel("播放速度")
+    }
+
+    /// 更多操作：换片 / 循环 / A-B 循环（控制行保持精简）。
+    private var moreMenu: some View {
+        Menu {
+            if let onOpenNewFile = onOpenNewFile {
+                Button {
+                    onOpenNewFile()
+                } label: {
+                    Label("打开新视频", systemImage: "folder")
+                }
+            }
+            Button {
+                vm.toggleLoop()
+            } label: {
+                Label(vm.loopEnabled ? "关闭循环播放" : "开启循环播放", systemImage: "repeat")
+            }
+            Button {
+                vm.cycleABLoop()
+            } label: {
+                Label(Self.abLoopMenuTitle(vm.abLoopState), systemImage: "arrow.2.squarepath")
+            }
+        } label: {
+            Image(systemName: "ellipsis.circle")
+                .font(.title3)
+                .foregroundStyle(.white)
+        }
+        .accessibilityLabel("更多选项")
+    }
+
+    static func abLoopMenuTitle(_ state: ABLoopState) -> String {
+        switch state {
+        case .off:
+            return "A-B 循环：设起点"
+        case .aSet:
+            return "A-B 循环：设终点"
+        case .looping:
+            return "关闭 A-B 循环"
+        }
     }
 
     private var aspectButton: some View {
@@ -252,7 +301,7 @@ struct PlayerControlsOverlay: View {
 
     @ViewBuilder
     private var centerBubble: some View {
-        if let text = panFeedback ?? vm.feedback {
+        if let text = panFeedback ?? (vm.isBoosting ? "2x 快进中" : nil) ?? vm.feedback {
             Text(text)
                 .font(.callout)
                 .foregroundStyle(.white)
@@ -409,6 +458,9 @@ struct PlayerScrubber: View {
             Capsule()
                 .fill(.white)
                 .frame(width: max(0, min(width, fraction * width)), height: 4)
+            if vm.abLoopState != .off, vm.duration > 0 {
+                abRegion(width: width)
+            }
             Circle()
                 .fill(.white)
                 .frame(width: vm.isScrubbing ? 14 : 10, height: vm.isScrubbing ? 14 : 10)
@@ -444,6 +496,17 @@ struct PlayerScrubber: View {
                 .background(.black.opacity(0.7), in: Capsule())
         }
         .allowsHitTesting(false)
+    }
+
+    /// A-B 循环标记：aSet 时只画起点刻度，looping 时高亮整个区间。
+    private func abRegion(width: CGFloat) -> some View {
+        let startX = max(0, min(width, (vm.abStart / vm.duration) * width))
+        let endX = max(0, min(width, (vm.abEnd / vm.duration) * width))
+        return Rectangle()
+            .fill(.white.opacity(0.35))
+            .frame(width: vm.abLoopState == .looping ? max(2, endX - startX) : 2, height: 10)
+            .offset(x: startX)
+            .allowsHitTesting(false)
     }
 
     private func bubbleOffsetX(width: CGFloat) -> CGFloat {

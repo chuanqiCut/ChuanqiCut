@@ -47,10 +47,21 @@ final class PlayerViewModel: ObservableObject {
     @Published private(set) var feedback: String?
     /// 画中画可用性（iOS；KVO isPictureInPicturePossible 驱动）。
     @Published private(set) var isPipPossible = false
+    /// 单片循环（播完自动从头续播）。
+    @Published private(set) var loopEnabled = false
+    /// A-B 循环状态机与区间（控制层在进度条上画标记）。
+    @Published private(set) var abLoopState: ABLoopState = .off
+    @Published private(set) var abStart: TimeInterval = 0
+    @Published private(set) var abEnd: TimeInterval = 0
+    /// 长按倍速进行中（松手恢复原速率）。
+    @Published private(set) var isBoosting = false
 
-    /// 播放速率（1.0 = 原速）。didSet 直接透传引擎。
+    /// 播放速率（1.0 = 原速）。didSet 透传引擎并记忆（跨会话恢复）。
     @Published var rate: Double = 1.0 {
-        didSet { engine.rate = rate }
+        didSet {
+            engine.rate = rate
+            defaults.set(rate, forKey: Self.rateDefaultsKey)
+        }
     }
 
     /// 顶栏标题（文件名）。
@@ -65,8 +76,10 @@ final class PlayerViewModel: ObservableObject {
     /// PiP 协调器（iOS；macOS 上不会被 attach）。由 PlayerScreen 在画面
     /// layer 就绪时接入——layer 类型在本文件不点名（域边界，见文件头）。
     let pip = PlayerPipCoordinator()
-    private let thumbnails: VideoThumbnailLoader?
-    private let url: URL
+    private(set) var thumbnails: VideoThumbnailLoader?
+    private(set) var url: URL
+    /// 倍速记忆存储（测试注入独立 suite）。
+    private let defaults: UserDefaults
 
     // MARK: 内部状态
 
@@ -74,6 +87,9 @@ final class PlayerViewModel: ObservableObject {
     private var securityScopeActive = false
     private var wasMutedBeforeScrub = false
     private var wasPlayingBeforeScrub = false
+    private var rateBeforeBoost: Double?
+    /// 缩略图已批量预热（换片后复位）。
+    private var warmedUp = false
     private var hideTask: Task<Void, Never>?
     private var feedbackTask: Task<Void, Never>?
 
@@ -81,12 +97,19 @@ final class PlayerViewModel: ObservableObject {
 
     /// 播放中无交互自动隐藏控制层的时延。
     static let controlsAutoHideNanos: UInt64 = 4_000_000_000
+    /// 长按倍速档位。
+    static let boostRate: Double = 2.0
+    /// A-B 循环最短区间（低于视为误触）。
+    static let minABLoopSeconds: TimeInterval = 1.0
+    /// 倍速记忆的 UserDefaults 键。
+    static let rateDefaultsKey = "cq.player.rate"
 
     // MARK: 初始化
 
-    init(engine: PlayerEngine, url: URL) {
+    init(engine: PlayerEngine, url: URL, defaults: UserDefaults = .standard) {
         self.engine = engine
         self.url = url
+        self.defaults = defaults
         // 文件不存在/打不开时缩略图请求静默失败（回调 image=nil），
         // 控制层降级为纯时间气泡，无需前置存在性检查。
         self.thumbnails = VideoThumbnailLoader(url: url)
@@ -95,6 +118,15 @@ final class PlayerViewModel: ObservableObject {
         engine.onStateChange = { [weak self] newState in self?.engineDidChangeState(newState) }
         engine.onEnded = { [weak self] in self?.engineDidEnd() }
         engine.onPlayStateChange = { [weak self] playing in self?.enginePlayStateDidChange(playing) }
+        rewireThumbnailHandler()
+        pip.onPossibleChange = { [weak self] possible in self?.isPipPossible = possible }
+
+        // 跨会话倍速记忆（didSet 同步引擎并原样回写，无害）
+        rate = defaults.object(forKey: Self.rateDefaultsKey) as? Double ?? 1.0
+    }
+
+    /// 缩略图回调统一接线（init 与换片共用）。
+    private func rewireThumbnailHandler() {
         thumbnails?.onUpdate = { [weak self] bucket, image in
             guard let self = self else { return }
             // 只接受"仍停留在当前桶"的结果，防慢请求覆盖新位置的气泡。
@@ -102,7 +134,6 @@ final class PlayerViewModel: ObservableObject {
                 self.scrubThumbnail = image
             }
         }
-        pip.onPossibleChange = { [weak self] possible in self?.isPipPossible = possible }
     }
 
     convenience init(url: URL) {
@@ -123,6 +154,7 @@ final class PlayerViewModel: ObservableObject {
 
     /// 拆除观察者/任务/scope（onDisappear 调用）。
     func deactivate() {
+        endSpeedBoost()
         engine.invalidate()
         pip.invalidate()
         thumbnails?.invalidate()
@@ -142,15 +174,43 @@ final class PlayerViewModel: ObservableObject {
         engine.load(url: url)
     }
 
+    /// 换片：同一播放器内装载新文件（控制层"打开新视频"入口）。
+    /// 循环开关与倍速记忆跨片保留；A-B 循环/播放进度/缩略图全部复位。
+    func swapMedia(to newURL: URL) {
+        guard newURL != url else { return }
+        if securityScopeActive {
+            url.stopAccessingSecurityScopedResource()
+            securityScopeActive = false
+        }
+        url = newURL
+        securityScopeActive = newURL.startAccessingSecurityScopedResource()
+
+        thumbnails?.invalidate()
+        thumbnails = VideoThumbnailLoader(url: newURL)
+        rewireThumbnailHandler()
+
+        duration = 0
+        currentTime = 0
+        videoSize = nil
+        isPlaying = false
+        isScrubbing = false
+        scrubPosition = 0
+        scrubThumbnail = nil
+        resetABLoop()
+        warmedUp = false
+        state = .loading
+        engine.load(url: newURL)
+    }
+
     // MARK: 播放控制
 
     func togglePlay() {
         if engine.isPlaying {
             engine.pause()
         } else {
-            // 播完后再按播放 = 从头开始。
+            // 播完后再按播放 = 从头开始（A-B 循环中则回到起点 A）。
             if engine.duration > 0, engine.currentTime >= engine.duration - engine.frameDuration / 2 {
-                engine.seek(to: 0, precise: false)
+                engine.seek(to: abLoopState == .looping ? abStart : 0, precise: false)
             }
             engine.play()
         }
@@ -170,6 +230,7 @@ final class PlayerViewModel: ObservableObject {
         guard target != currentTime else { return } // 已在边界，无动作无反馈
         engine.seek(to: target, precise: false)
         currentTime = target
+        clearABLoopIfOutside(target: target)
         let magnitude = Int(abs(seconds).rounded())
         showFeedback(seconds < 0 ? "快退 \(magnitude) 秒" : "快进 \(magnitude) 秒")
         keepControlsVisible()
@@ -181,6 +242,7 @@ final class PlayerViewModel: ObservableObject {
         let target = min(max(fraction, 0), 1) * engine.duration
         engine.seek(to: target, precise: false)
         currentTime = target
+        clearABLoopIfOutside(target: target)
         keepControlsVisible()
     }
 
@@ -206,6 +268,68 @@ final class PlayerViewModel: ObservableObject {
 
     func setAspectFill(_ fill: Bool) {
         isAspectFill = fill
+    }
+
+    // MARK: 循环与长按倍速
+
+    func toggleLoop() {
+        loopEnabled.toggle()
+        showFeedback(loopEnabled ? "循环播放已开启" : "循环播放已关闭")
+        keepControlsVisible()
+    }
+
+    /// A-B 循环三态轮转：设起点 → 设终点（开启）→ 关闭。区间 < 1s 视为误触取消。
+    func cycleABLoop() {
+        switch abLoopState {
+        case .off:
+            abStart = currentTime
+            abLoopState = .aSet
+            showFeedback("已设起点 A，再点一次设终点 B")
+        case .aSet:
+            abEnd = currentTime
+            guard abEnd - abStart >= Self.minABLoopSeconds else {
+                resetABLoop()
+                showFeedback("区间不足 1 秒，已取消")
+                return
+            }
+            abLoopState = .looping
+            showFeedback("A-B 循环已开启")
+        case .looping:
+            resetABLoop()
+            showFeedback("A-B 循环已关闭")
+        }
+        keepControlsVisible()
+    }
+
+    /// 长按倍速（B站/抖音范式）：按住 2x，松手恢复。仅在播放中生效。
+    func beginSpeedBoost() {
+        guard !isBoosting, engine.isPlaying else { return }
+        isBoosting = true
+        rateBeforeBoost = rate
+        rate = Self.boostRate
+        PickerFeedback.selectionChanged()
+        keepControlsVisible()
+    }
+
+    func endSpeedBoost() {
+        guard isBoosting, let restore = rateBeforeBoost else { return }
+        rateBeforeBoost = nil
+        isBoosting = false
+        rate = restore
+    }
+
+    private func resetABLoop() {
+        abLoopState = .off
+        abStart = 0
+        abEnd = 0
+    }
+
+    /// 手动 seek 落到 A-B 区间外 = 用户意图跳出循环，自动清除。
+    private func clearABLoopIfOutside(target: TimeInterval) {
+        guard abLoopState == .looping else { return }
+        if target < abStart - 0.25 || target > abEnd + 0.25 {
+            resetABLoop()
+        }
     }
 
     // MARK: 进度条拖动（SPEC-UIA-020 §3：拖动只改 UI，松手才 seek）
@@ -236,6 +360,7 @@ final class PlayerViewModel: ObservableObject {
             engine.play()
         }
         isScrubbing = false
+        clearABLoopIfOutside(target: scrubPosition)
         keepControlsVisible()
     }
 
@@ -284,6 +409,12 @@ final class PlayerViewModel: ObservableObject {
         // 元数据可能晚于 ready 到达，随 tick 兜底刷新（幂等）。
         duration = engine.duration
         videoSize = engine.videoSize
+        scheduleWarmupIfNeeded()
+        // A-B 循环：越过终点 B 跳回起点 A（0.25s tick 粒度）。
+        if abLoopState == .looping, seconds >= abEnd {
+            engine.seek(to: abStart, precise: true)
+            currentTime = abStart
+        }
     }
 
     private func engineDidChangeState(_ newState: PlayerEngineState) {
@@ -298,7 +429,19 @@ final class PlayerViewModel: ObservableObject {
     }
 
     private func engineDidEnd() {
-        // 自然播完：停住（不自动循环），常显控制层，息屏定时器还原。
+        // A-B 循环中播完（终点 B ≈ 片尾）→ 回 A 续播。
+        if abLoopState == .looping {
+            engine.seek(to: abStart, precise: true)
+            engine.play()
+            return
+        }
+        // 单片循环：回零续播。
+        if loopEnabled {
+            engine.seek(to: 0, precise: true)
+            engine.play()
+            return
+        }
+        // 自然播完：停住，常显控制层，息屏定时器还原。
         engine.pause()
         isPlaying = false
         duration = engine.duration  // 兜底同步（元数据可能晚到）
@@ -321,6 +464,15 @@ final class PlayerViewModel: ObservableObject {
     }
 
     // MARK: 内部
+
+    /// 就绪后批量预热均匀分布的缩略图（拖动气泡就近命中缓存）。
+    /// 短片按 5s/桶收紧，长片封顶 24 桶；错峰发起在 loader 内部。
+    private func scheduleWarmupIfNeeded() {
+        guard !warmedUp, engine.duration > 0 else { return }
+        warmedUp = true
+        let count = min(24, max(6, Int(engine.duration / 5)))
+        thumbnails?.warmup(duration: engine.duration, count: count)
+    }
 
     private func requestScrubThumbnail() {
         guard let thumbnails = thumbnails else { return }
@@ -372,6 +524,15 @@ final class PlayerViewModel: ObservableObject {
     private func activateAudioSessionIfNeeded() {}
     private func setIdleTimerDisabled(_ disabled: Bool) {}
     #endif
+}
+
+// MARK: - A-B 循环状态
+
+/// off → aSet（已设起点 A）→ looping（区间循环中）。
+enum ABLoopState: Equatable {
+    case off
+    case aSet
+    case looping
 }
 
 // MARK: - 时间码格式化

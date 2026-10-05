@@ -27,6 +27,7 @@ final class VideoThumbnailLoader {
     private var order: [Int] = []
     private var inflight: Set<Int> = []
     private var tasks: [Int: Task<Void, Never>] = [:]
+    private var warmupTask: Task<Void, Never>?
 
     private static let maxCachedThumbnails = 120
     private let log = Logger(subsystem: "com.chuanqi.cut", category: "VideoThumbnailLoader")
@@ -71,7 +72,25 @@ final class VideoThumbnailLoader {
         }
     }
 
+    /// 就绪后批量预热均匀分布的缩略图（拖动气泡就近命中缓存，不必现等生成）。
+    /// 逐张错峰 50ms，避免就绪瞬间并发 N 个解码任务；按桶去重照常生效。
+    func warmup(duration: TimeInterval, count: Int) {
+        guard duration > 0, count > 0 else { return }
+        warmupTask?.cancel()
+        warmupTask = Task { [weak self] in
+            for index in 0..<count {
+                guard let self = self else { return }
+                if Task.isCancelled { return }
+                let seconds = duration * (Double(index) + 0.5) / Double(count)
+                self.requestThumbnail(atSecond: seconds)
+                try? await Task.sleep(nanoseconds: 50_000_000)
+            }
+        }
+    }
+
     func invalidate() {
+        warmupTask?.cancel()
+        warmupTask = nil
         for task in tasks.values {
             task.cancel()
         }

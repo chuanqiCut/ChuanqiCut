@@ -169,6 +169,74 @@ final class PlayerQueueTests: XCTestCase {
         XCTAssertFalse(vm.isInPip, "退出 PiP → 恢复")
     }
 
+    // MARK: 队列跳片助手（UIA-027 迷你播控）
+
+    func testQueueSkipHelpersAndBoundaryRestart() {
+        let (vm, engine) = makePlayerViewModel()
+        vm.setQueue([urlA, urlB, urlC])
+
+        vm.playNextInQueue()
+        XCTAssertEqual(vm.queueIndex, 1, "下一片")
+        XCTAssertEqual(engine.loadCalls.count, 2)
+        vm.playNextInQueue()
+        XCTAssertEqual(vm.queueIndex, 2)
+        vm.playNextInQueue()
+        XCTAssertEqual(vm.queueIndex, 2, "末片之后无动作")
+
+        vm.playPreviousInQueue()
+        XCTAssertEqual(vm.queueIndex, 1, "上一片")
+        vm.playPreviousInQueue()
+        XCTAssertEqual(vm.queueIndex, 0)
+        vm.playPreviousInQueue()
+        XCTAssertEqual(vm.queueIndex, 0, "首片无上一片")
+        XCTAssertEqual(engine.seeks.last?.target ?? -1, 0, accuracy: 0.001, "边界回零重播")
+    }
+
+    // MARK: 设置页持久化（UIA-023）
+
+    func testSettingsPersistLoopDefaultAndSubtitleScale() {
+        let suiteName = "PlayerQueueTests.settings." + UUID().uuidString
+        let defaults = UserDefaults(suiteName: suiteName) ?? .standard
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        let (vm, _) = makePlayerViewModel(defaults: defaults)
+        XCTAssertFalse(vm.loopEnabled, "默认循环初始为关")
+        vm.setDefaultLoopEnabled(true)
+        XCTAssertTrue(defaults.bool(forKey: PlayerViewModel.loopDefaultsKey), "默认循环写入 UserDefaults")
+        XCTAssertTrue(vm.loopEnabled, "写入即应用")
+
+        vm.subtitleScale = 1.4
+        XCTAssertEqual(defaults.double(forKey: PlayerViewModel.subtitleScaleDefaultsKey), 1.4, accuracy: 0.0001, "字幕缩放写入")
+
+        let (vm2, _) = makePlayerViewModel(defaults: defaults)
+        XCTAssertTrue(vm2.loopEnabled, "新实例恢复默认循环")
+        XCTAssertEqual(vm2.subtitleScale, 1.4, accuracy: 0.0001, "新实例恢复字幕缩放")
+    }
+
+    // MARK: PlayerController 门面（UIA-027）
+
+    func testControllerOpenCreatesSharedModelAndReusesIt() {
+        let controller = PlayerController()
+        XCTAssertNil(controller.model, "初始无媒体")
+
+        controller.open(urls: [urlA, urlB])
+        let first = controller.model
+        XCTAssertNotNil(first, "首次 open 创建共享 VM")
+        XCTAssertEqual(first?.queue.count, 2)
+
+        controller.open(urls: [urlC])
+        XCTAssertTrue(controller.model === first, "再次 open 复用同一共享 VM（关窗续播前提）")
+        XCTAssertEqual(controller.model?.queue.count, 1, "队列被替换")
+        XCTAssertEqual(controller.model?.queueIndex, 0)
+    }
+
+    func testControllerPlayStandaloneWithoutMediaOpensSingle() {
+        let controller = PlayerController()
+        controller.playStandalone(urlA)
+        XCTAssertEqual(controller.model?.queue.isEmpty, true, "单文件播放无队列")
+        XCTAssertNotNil(controller.model)
+    }
+
     // MARK: 最近播放
 
     func testRecentStoreRecordDedupsCapsAndPersists() {

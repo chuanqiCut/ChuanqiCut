@@ -83,6 +83,13 @@ final class PlayerViewModel: ObservableObject {
             defaults.set(doubleTapSeconds, forKey: Self.doubleTapDefaultsKey)
         }
     }
+    /// 外挂字幕字号乘数（UIA-023 设置页：标准 1.0 / 大 1.4，跨会话记忆）。
+    @Published var subtitleScale: Double {
+        didSet {
+            guard oldValue != subtitleScale else { return }
+            defaults.set(subtitleScale, forKey: Self.subtitleScaleDefaultsKey)
+        }
+    }
 
     /// 播放速率（1.0 = 原速）。didSet 透传引擎并记忆（跨会话恢复）。
     @Published var rate: Double = 1.0 {
@@ -144,6 +151,9 @@ final class PlayerViewModel: ObservableObject {
     /// 双击步长记忆的 UserDefaults 键与可选档位。
     static let doubleTapDefaultsKey = "cq.player.doubleTapSeconds"
     static let doubleTapOptions: [TimeInterval] = [5, 10, 15, 30]
+    /// 默认循环 / 字幕缩放的 UserDefaults 键（UIA-023 设置页）。
+    static let loopDefaultsKey = "cq.player.loopDefault"
+    static let subtitleScaleDefaultsKey = "cq.player.subtitleScale"
 
     // MARK: 初始化
 
@@ -169,6 +179,9 @@ final class PlayerViewModel: ObservableObject {
         rate = defaults.object(forKey: Self.rateDefaultsKey) as? Double ?? 1.0
         // 跨会话双击步长记忆
         doubleTapSeconds = defaults.object(forKey: Self.doubleTapDefaultsKey) as? Double ?? 10.0
+        // 跨会话默认循环与字幕缩放
+        loopEnabled = defaults.bool(forKey: Self.loopDefaultsKey)
+        subtitleScale = defaults.object(forKey: Self.subtitleScaleDefaultsKey) as? Double ?? 1.0
     }
 
     /// 缩略图回调统一接线（init 与换片共用）。
@@ -288,6 +301,37 @@ final class PlayerViewModel: ObservableObject {
         keepControlsVisible()
     }
 
+    var hasNextQueueItem: Bool {
+        guard let index = queueIndex else { return false }
+        return index + 1 < queue.count
+    }
+
+    var hasPreviousQueueItem: Bool {
+        guard let index = queueIndex else { return false }
+        return index > 0
+    }
+
+    /// 手动下一片（迷你播控）。
+    func playNextInQueue() {
+        guard hasNextQueueItem, let index = queueIndex else { return }
+        jumpQueue(to: index + 1)
+    }
+
+    /// 手动上一片；无上一片时回零重播。
+    func playPreviousInQueue() {
+        guard let index = queueIndex else {
+            engine.seek(to: 0, precise: false)
+            currentTime = 0
+            return
+        }
+        if index > 0 {
+            jumpQueue(to: index - 1)
+        } else {
+            engine.seek(to: 0, precise: false)
+            currentTime = 0
+        }
+    }
+
     /// 队列推进（播完自动下一片）。返回是否推进成功（成功 = 续播，不落停止路径）。
     private func advanceQueue() -> Bool {
         guard let index = queueIndex, index + 1 < queue.count else { return false }
@@ -383,6 +427,12 @@ final class PlayerViewModel: ObservableObject {
         loopEnabled.toggle()
         showFeedback(loopEnabled ? "循环播放已开启" : "循环播放已关闭")
         keepControlsVisible()
+    }
+
+    /// 设置页"默认循环"：写入持久化默认并即时应用。
+    func setDefaultLoopEnabled(_ on: Bool) {
+        defaults.set(on, forKey: Self.loopDefaultsKey)
+        loopEnabled = on
     }
 
     /// A-B 循环三态轮转：设起点 → 设终点（开启）→ 关闭。区间 < 1s 视为误触取消。

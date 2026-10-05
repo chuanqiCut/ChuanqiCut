@@ -26,6 +26,9 @@ struct PropertyPanelZone: View {
     @State private var showAlbumPicker = false
     @StateObject private var photosImporter = PhotoLibraryImporter()
 
+    // UIA-026：素材库 → 播放器联动（值拷贝过接缝，播放器零 Session 依赖）。
+    @State private var playerURLs: [URL]?
+
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             Text("素材库")
@@ -106,6 +109,19 @@ struct PropertyPanelZone: View {
                     }
                     .padding(.horizontal, 16)
                     .padding(.vertical, 6)
+                    .contextMenu {
+                        if asset.exists {
+                            Button {
+                                playerURLs = [URL(fileURLWithPath: asset.path)]
+                            } label: {
+                                Label("用播放器打开", systemImage: "play.rectangle")
+                            }
+                        } else {
+                            Text("文件已失效，无法播放")
+                        }
+                    }
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 6)
                     Divider()
                 }
             }
@@ -152,6 +168,19 @@ struct PropertyPanelZone: View {
             .padding(.bottom, 10)
         }
         .background(Theme.panelBackground)
+        // UIA-026：播放器 sheet（单条预览 / 批量连播；关闭即回收，预览用语义）
+        .sheet(isPresented: Binding(
+            get: { playerURLs != nil },
+            set: { if !$0 { playerURLs = nil } }
+        )) {
+            if let urls = playerURLs {
+                if urls.count == 1, let only = urls.first {
+                    PlayerScreen(url: only)
+                } else {
+                    PlayerScreen(urls: urls)
+                }
+            }
+        }
         .fileImporter(isPresented: $showImporter,
                       allowedContentTypes: [.movie, .video, .mpeg4Movie]) { result in
             switch result {

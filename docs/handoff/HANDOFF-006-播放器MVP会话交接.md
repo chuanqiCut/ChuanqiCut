@@ -66,6 +66,13 @@
 
 ## 实施进度（P1/P2 开工后滚动更新）
 
+- **UIA-023 / 026 / 027 ✅ 代码落地（2026-10-05 Batch E，P1/P2 收官）**：
+  设置页（聚合持久化项 + 字幕字号两档）+ 素材库联动（PropertyPanelZone
+  contextMenu → PlayerScreen sheet，值拷贝过接缝）+ PlayerController 门面
+  （App 级共享 VM，关窗续播）+ PlayerMiniBar + MacApp MenuBarExtra。
+  PlayerScreen 抽出 PlayerScreenBody（teardownOnDisappear 双模式）。
+  PlayerQueueTests +4（累计 **48 用例**）。UIA-023 的 macOS PiP 按钮/快捷键
+  F-S-A 未落（卡内标注，下一轮）。
 - **UIA-016 ✅ 代码落地（2026-10-05 Batch D）**：章节（协议 +chapters、引擎装载、
   进度条刻度、菜单跳转零容差）+ PiP 占位态（AVPictureInPictureControllerDelegate
   → isInPip）+ AirPlayRoutePicker（AVRoutePickerView 桥接，落 surface 域文件）。

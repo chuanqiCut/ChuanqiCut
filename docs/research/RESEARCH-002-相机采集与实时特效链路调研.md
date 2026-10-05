@@ -2,7 +2,7 @@
 
 - 日期：2026-10-04
 - 状态：**提案**（决策点见 §9，确认后转 Spec）
-- 上游：用户需求（2026-10-04 会话）、ADR-0005、ADR-0010、RESEARCH-001、`技术调研_MediaPipe加速与系统API对比.md`
+- 上游：用户需求（2026-10-04 会话）、ADR-0005、ADR-0010、RESEARCH-001、`docs/research/legacy/技术调研_MediaPipe加速与系统API对比.md`
 - 参考设备：iPhone 17 Pro（iOS 26 / A19 Pro），部署基线 iOS 16（ADR-0010）
 
 ---
@@ -232,4 +232,4 @@
 ## 11. 参考
 
 - Apple：AVCaptureMultiCamSession（developer.apple.com/documentation/avfoundation/avcapturemulticamsession）、WWDC19-249（Introducing Multi-Camera Capture）、WWDC23-10045（Detect animal poses in Vision）、Detecting animal body poses with Vision（documentation/vision）
-- 仓内：ADR-0005（推理策略）、ADR-0009（timescale）、ADR-0010（基线）、RESEARCH-001、`技术调研_MediaPipe加速与系统API对比.md`、`技术方案决策书.md` §Phase3、TASK-BACKLOG AI-0xx/EDIT-005/COLOR-002
+- 仓内：ADR-0005（推理策略）、ADR-0009（timescale）、ADR-0010（基线）、RESEARCH-001、`docs/research/legacy/技术调研_MediaPipe加速与系统API对比.md`、`技术方案决策书.md` §Phase3、TASK-BACKLOG AI-0xx/EDIT-005/COLOR-002

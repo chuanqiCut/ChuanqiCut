@@ -9,7 +9,7 @@
 2. 按 [`../../.ai/templates/task.md`](../../.ai/templates/task.md) 建卡，写集不得与其他在飞任务相交；
 3. 在 BACKLOG 对应行标注 ✅（完成后）；在本表登记一行。
 
-## 已建卡登记表（34 张，2026-10-05）
+## 已建卡登记表（46 张，2026-10-05）
 
 ### 基建 INFRA / DOC
 | 卡 | 标题 |
@@ -64,3 +64,19 @@
 | [CAM-012](TASK-CAM-012.md) | 美颜升级——Metal 磨皮替换高斯近似（B 期） |
 | [CAM-013](TASK-CAM-013.md) | 美型——人脸关键点驱动的 MeshWarp（B 期，**下一张**） |
 | [CAM-014](TASK-CAM-014.md) | 贴纸 + 头部道具锚定（B 期） |
+
+### 智能成片 AIEDIT（2026-10-04 立项，ADR-0020）
+| 卡 | 标题 |
+|---|---|
+| [AIEDIT-000](TASK-AIEDIT-000.md) | 智能成片批次总览（伞卡） |
+| [AIEDIT-001](TASK-AIEDIT-001.md) | 智能成片契约冻结（FeatureReport / EditPlan / LLM 接口 + 校验器） |
+| [AIEDIT-002](TASK-AIEDIT-002.md) | 视觉特征提取管线（镜头边界/运动/质量） |
+| [AIEDIT-003](TASK-AIEDIT-003.md) | 音频解码扩档 + 音频特征提取（静音/响度/能量包络） |
+| [AIEDIT-004](TASK-AIEDIT-004.md) | PAL 网络传输 + LLM 客户端（URLSession / SSE） |
+| [AIEDIT-005](TASK-AIEDIT-005.md) | Prompt 管线与决策解析/修复 |
+| [AIEDIT-006](TASK-AIEDIT-006.md) | EditPlan→Command 执行器 + 新增命令类型 |
+| [AIEDIT-007](TASK-AIEDIT-007.md) | C ABI 扩展与 Swift 绑定（Integrator） |
+| [AIEDIT-008](TASK-AIEDIT-008.md) | 智能成片向导 UI（首页入口 + 三步向导） |
+| [AIEDIT-009](TASK-AIEDIT-009.md) | 对话式调整（文字 + 语音输入） |
+| [AIEDIT-010](TASK-AIEDIT-010.md) | AI 脚本成片（脚本→分镜→素材匹配→成片）【P1 伞占位】 |
+| [AIEDIT-011](TASK-AIEDIT-011.md) | 本地规则引擎降级（离线成片） |

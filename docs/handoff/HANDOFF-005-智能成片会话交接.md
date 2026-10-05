@@ -13,7 +13,7 @@
 | 文件 | 内容 |
 |---|---|
 | `docs/research/RESEARCH-003-智能成片竞品调研.md` | 剪映/CapCut、iMovie Magic Movie、GoPro Quik、必剪、Opus/Vizard/Gling、Descript、端侧模型现状（Apple FM/Gemini Nano）；能力矩阵 + 取长补短 8 条 + 差异化定位 |
-| `docs/decisions/ADR-0016-智能成片与大模型接入边界.md` | 7 条决策：素材不出设备 / 分层边界 / EditPlan 契约 / 全 Command 化 / 供应商可插拔 / 离线降级 / 会话无状态化；3 条反转条件 |
+| `docs/decisions/ADR-0020-智能成片与大模型接入边界.md` | 7 条决策：素材不出设备 / 分层边界 / EditPlan 契约 / 全 Command 化 / 供应商可插拔 / 离线降级 / 会话无状态化；3 条反转条件 |
 | `docs/specs/AIEDIT-001-智能成片.md` | 技术方案：架构与数据流 / FeatureReport schema / EditPlan schema（8 动词）/ 校验与修复 / 执行器映射 / UI 流程 / 三阶段 / 非目标 / 可机判验收 / 6 条开放问题 |
 | `docs/tasks/TASK-AIEDIT-000~011.md`（12 张卡） | 伞卡（DAG/批次/关键路径）+ 11 张实施卡（YAML 全字段：写集/依赖/验收/验证命令/风险） |
 | `docs/tasks/TASK-BACKLOG.md` §10 | 批次登记表 |
@@ -33,7 +33,7 @@ SwiftUI(HomeView 入口卡→向导→对话框)  ──C ABI cq_ai_*──▶  
 
 ## 3. 关键决策与理由（防新会话重新发明）
 
-1. **上云的只有特征摘要**（ADR-0016 决策 1）——与剪映上传素材的差异即隐私卖点；端侧无可用的多模态视频理解模型（RESEARCH-003 §2.7），"理解"必须上云，但可以只理解特征。
+1. **上云的只有特征摘要**（ADR-0020 决策 1）——与剪映上传素材的差异即隐私卖点；端侧无可用的多模态视频理解模型（RESEARCH-003 §2.7），"理解"必须上云，但可以只理解特征。
 2. **EditPlan 是 action 列表不是时间线**（决策 3）——有界、可校验、可增量 diff、可逐条接受/拒绝（学 Opus 决策透明）。
 3. **AI 全走 Command**（决策 4）——"AI 改错了"一键撤销；复用 ADR-0012 线程模型。
 4. **离线降级是产品能力不是兜底补丁**（决策 6）——对标 iMovie 的完全离线可用；规则引擎输出同 schema，下游无感。
@@ -70,4 +70,4 @@ P1     010 脚本成片（启动时先拆 Spec/契约）
 
 ## 7. 状态核对（对 commit 历史）
 
-本轮零代码提交，全部为文档新增/追加（`docs/research/`、`docs/specs/AIEDIT-001`、`docs/decisions/ADR-0016`、`docs/tasks/TASK-AIEDIT-000~011`、backlog §10、`.ai/modules/{ai,ui-apple}.md`、`.workbuddy` 日志）。HEAD = `be90dff`（UIA-013 v1.1）。性能/成本数字全部 [E]，baselines.md 未动（无实测）。
+本轮零代码提交，全部为文档新增/追加（`docs/research/`、`docs/specs/AIEDIT-001`、`docs/decisions/ADR-0020`、`docs/tasks/TASK-AIEDIT-000~011`、backlog §10、`.ai/modules/{ai,ui-apple}.md`、`.workbuddy` 日志）。HEAD = `be90dff`（UIA-013 v1.1）。性能/成本数字全部 [E]，baselines.md 未动（无实测）。

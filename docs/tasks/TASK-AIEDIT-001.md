@@ -4,7 +4,7 @@
 id:          AIEDIT-001
 layer:       SDK
 goal:        冻结智能成批次的全部跨任务契约：FeatureReport/EditPlan JSON schema、ILlmClient/INetTransport 抽象头，并交付 EditPlan 校验器
-input:       [SPEC AIEDIT-001 §4-§7, ADR-0016 决策 2/3/7, .ai/modules/ai.md, core/include/cq/pal/inference.h（接口风格参照）]
+input:       [SPEC AIEDIT-001 §4-§7, ADR-0020 决策 2/3/7, .ai/modules/ai.md, core/include/cq/pal/inference.h（接口风格参照）]
 output:      [契约头文件, EditPlan 校验器实现, golden 样例集, 单测, 模块文档更新]
 write_set:   core/include/cq/ai/{feature_report.h, edit_plan.h, llm_client.h}(新)、
              core/include/cq/pal/net.h(新)、core/src/ai/plan/edit_plan_validator.{h,cpp}(新)、
@@ -27,7 +27,7 @@ parallel:    false（批次 1，先行）
 
 ## 背景
 
-ADR-0016 决策 3：LLM 输出必须是有界动词集的 `EditPlan`，C++ 是唯一权威校验方。本任务是全批次的地基——002~011 全部消费这里冻结的类型。
+ADR-0020 决策 3：LLM 输出必须是有界动词集的 `EditPlan`，C++ 是唯一权威校验方。本任务是全批次的地基——002~011 全部消费这里冻结的类型。
 
 ## 实现要点
 

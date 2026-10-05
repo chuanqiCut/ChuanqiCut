@@ -44,6 +44,9 @@ cat docs/handoff/HANDOFF-004-*.md      # 3. 最近交接（状态以最新一份
 |---|---|
 | [`RESEARCH-001-现有调研文档批判性评审与事实核验.md`](research/RESEARCH-001-现有调研文档批判性评审与事实核验.md) | 对第一代 7 份调研的批判性评审：10 条事实错误、7 项矛盾裁决、14 项缺失主题、§5 保留/修正/废弃处置表。**引用第一代文档前先读它** |
 | [`RESEARCH-002-相机采集与实时特效链路调研.md`](research/RESEARCH-002-相机采集与实时特效链路调研.md) | 相机域调研（2026-10-04），上游为 ADR-0014 / SPEC-CAM-001 |
+| [`RESEARCH-003-智能成片竞品调研.md`](research/RESEARCH-003-智能成片竞品调研.md) | 智能成片竞品调研（剪映图文成片 / iMovie / 必剪等），下游 ADR-0020 / AIEDIT-001 |
+| [`RESEARCH-004-拍摄与编辑UI主流方案调研.md`](research/RESEARCH-004-拍摄与编辑UI主流方案调研.md) | 拍摄与编辑 UI 主流方案调研 |
+| [`RESEARCH-005-功能面板信息架构与四端布局调研.md`](research/RESEARCH-005-功能面板信息架构与四端布局调研.md) | 功能面板信息架构与四端布局调研，下游 UIA-019 |
 | `legacy/`（7 份） | 第一代调研素材（2026-09-23 前）：6 份 `技术调研_*.md` + `技术方案决策书`。**只读**，每份头部有状态横幅；性能数字一律 [E]、结论已被评审修正 |
 
 **规则**：新的调研产出一律建 `RESEARCH-00x-<标题>.md`（编号纪律见 ADR-0019）；
@@ -51,7 +54,7 @@ cat docs/handoff/HANDOFF-004-*.md      # 3. 最近交接（状态以最新一份
 
 ---
 
-## 三、决策记录（decisions/，ADR-0001 ~ 0019）
+## 三、决策记录（decisions/，ADR-0001 ~ 0020）
 
 | ADR | 决策 |
 |---|---|
@@ -74,6 +77,7 @@ cat docs/handoff/HANDOFF-004-*.md      # 3. 最近交接（状态以最新一份
 | [0017](decisions/ADR-0017-顺序取帧快路径与解码器显示序重排.md) | 顺序取帧快路径与解码器显示序重排 |
 | [0018](decisions/ADR-0018-预览宽高比的视口接缝.md) | 预览宽高比的视口接缝 |
 | [0019](decisions/ADR-0019-文档体系分层与归档规则.md) | **文档体系分层与归档规则**（本地图的权威定义） |
+| [0020](decisions/ADR-0020-智能成片与大模型接入边界.md) | 智能成片与大模型（LLM）接入边界（特征上云/素材不出设备/EditPlan 校验） |
 
 **规则**：改变既有惯例/架构约束必须新增 ADR；取号前先 `git fetch`（双机并行撞号纪律见 ADR-0019 §4）。
 
@@ -86,7 +90,7 @@ cat docs/handoff/HANDOFF-004-*.md      # 3. 最近交接（状态以最新一份
 | 前缀 | 类型 | 文档 |
 |---|---|---|
 | `ARCH-` | **架构方案** | [ARCH-001 技术方案总纲](specs/ARCH-001-技术方案总纲.md)（主方案）· [ARCH-002 依赖治理](specs/ARCH-002-依赖治理与开源SDK能力管理.md) · [ARCH-003 内核与GPU-Shader策略](specs/ARCH-003-跨平台内核与GPU-Shader策略.md) · [ARCH-004 平台适配矩阵](specs/ARCH-004-平台适配矩阵与Android-HarmonyOS落地.md) · [ARCH-005 UI层策略](specs/ARCH-005-UI层策略与工程结构.md) |
-| `<功能域>-` | **功能 Spec** | [CAM-001 相机与首页](specs/CAM-001-相机与首页.md) · [UIA-002 编辑器主框架](specs/UIA-002-编辑器主框架.md) · [UIA-011 相册素材导入](specs/UIA-011-相册素材导入.md) · [UIA-012 相册多选批量导入](specs/UIA-012-相册多选批量导入.md) · [UIA-013 自研相册浏览器](specs/UIA-013-自研相册浏览器.md) |
+| `<功能域>-` | **功能 Spec** | [CAM-001 相机与首页](specs/CAM-001-相机与首页.md) · [UIA-002 编辑器主框架](specs/UIA-002-编辑器主框架.md) · [UIA-011 相册素材导入](specs/UIA-011-相册素材导入.md) · [UIA-012 相册多选批量导入](specs/UIA-012-相册多选批量导入.md) · [UIA-013 自研相册浏览器](specs/UIA-013-自研相册浏览器.md) · [UIA-019 统一面板框架与四端布局](specs/UIA-019-统一面板框架与四端布局.md) · [AIEDIT-001 智能成片](specs/AIEDIT-001-智能成片.md) |
 | `PAL-` | **接口契约** | [PAL-接口契约](specs/PAL-接口契约.md)（§4 = GFX/Media 契约，被 `.ai/modules/pal.md`、`gfx.md`、`media.md` 引用） |
 | `AI-ENG-` | **工程方法规范** | [AI-ENG-001](specs/AI-ENG-001.md)（AI 原生研发工作流） |
 
@@ -115,8 +119,9 @@ cat docs/handoff/HANDOFF-004-*.md      # 3. 最近交接（状态以最新一份
 | [HANDOFF-003](handoff/HANDOFF-003-编码阶段会话交接.md) | 编码阶段交接（历史） |
 | [HANDOFF-004-编码阶段会话交接](handoff/HANDOFF-004-编码阶段会话交接.md) | **编辑器线**当前状态（UIA / BIND / MEDIA 线） |
 | [HANDOFF-004-相机模块会话交接](handoff/HANDOFF-004-相机模块会话交接.md) | **相机线**当前状态（CAM 线，随 CAM 系列任务持续刷新） |
+| [HANDOFF-005-智能成片会话交接](handoff/HANDOFF-005-智能成片会话交接.md) | **智能成片线**当前状态（AIEDIT-000~011 立项轮，RESEARCH-003/ADR-0020/SPEC） |
 
-**规则**：新交接取下一个编号（下一份 = 005）；双线并行期间允许**同号双卡**（后缀区分主题），
+**规则**：新交接取下一个编号（下一份 = 006）；双线并行期间允许**同号双卡**（后缀区分主题），
 引用时务必带主题（"HANDOFF-004 相机版 §x"）。状态核对必须对着 commit 历史与门禁数字，不照抄上一版（pitfalls E10）。
 
 ---

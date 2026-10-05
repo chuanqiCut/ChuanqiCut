@@ -49,6 +49,11 @@
   PickerFeedback 跨域复用（MediaPicker 域 → Player 域，同模块 internal）。
 - 行为清单追加：长按 2x 松手回 1x；A-B 回跳与标记显示；换片后进度/缩略图/AB
   复位且循环开关保留；重启 App 倍速保持。
+- **第三轮追加**：多音轨/内封字幕视频的 moreMenu"音轨/字幕"子菜单切换生效
+  （切换后音画继续、气泡反馈、checkmark 移动）；双击步长 5/10/15/30 切换
+  持久化且 skip 按钮图标同步变化。PlayerTests 8 → **17 用例**。
+  新增 Swift 6 关注点：`AVMediaSelectionGroup`/`AVMediaSelectionOption`
+  跨执行器 Sendable 标注（与缩略图同 hypothesis，报错则同样装箱收敛）。
 
 ## 装配形状（一图）
 

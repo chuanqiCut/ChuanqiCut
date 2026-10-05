@@ -474,3 +474,24 @@ Spec UIA-020 / ADR-0022 / RESEARCH-006。**内核 = AVPlayer 过渡实现 +
   Launcher 增加 `dropDestination(for: URL.self)` 拖放打开（macOS 惯例）。
 - **第二轮测试**：PlayerTests 8 → 14 用例（boost 恢复/循环续播/AB 回跳/
   短区间取消/区间外清除/倍速记忆/换片复位）。parse 全绿。
+
+## UIA-015 第三轮（2026-10-05 深夜，V1 收尾）
+
+- **音轨/字幕选择**：`PlayerEngine` 协议扩展（+`PlayerTrackOption`
+  [id=当次装载会话内的组内下标, name=本地化显示名] + audioTracks/
+  currentAudioTrackID/subtitleTracks/currentSubtitleTrackID +
+  selectAudioTrack/selectSubtitleTrack，nil=默认/关闭）。
+  `AVPlayerEngine` 用 `asset.loadMediaSelectionGroup(for: .audible/.legible)`
+  异步装载，装载完成经**同值状态广播**刷新 VM（与时长广播同机制）；
+  `item.selectMediaOption(_:in:)` 执行切换；换片先清旧列表防闪现。
+  控制层 moreMenu 两个子菜单（waveform / captions.bbox 图标，当前项
+  checkmark），切换经 showFeedback 气泡反馈。
+- **双击步长可设**：`vm.doubleTapSeconds`（5/10/15/30，UserDefaults
+  `cq.player.doubleTapSeconds` 持久化）；双击区、skip 按钮图标
+  （gobackward/goforward.5/10/15/30）、VoiceOver adjustable 全部随步长走。
+- **第三轮测试**：PlayerTests 14 → **17 用例**（轨道列表同步/选择透传/
+  步长持久化）。parse 全绿。
+- ⚠️ 章节标记（V1 最后一项）暂缓：AVAsset 章节 API 的 async 形状无法在
+  本机（Swift 5.5）验证，待构建机在线做。音轨/字幕的
+  `AVMediaSelectionGroup` 跨执行器 Sendable 标注与缩略图同属
+  [hypothesis]，构建机 typecheck 见分晓。

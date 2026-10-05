@@ -55,6 +55,18 @@ final class PlayerViewModel: ObservableObject {
     @Published private(set) var abEnd: TimeInterval = 0
     /// 长按倍速进行中（松手恢复原速率）。
     @Published private(set) var isBoosting = false
+    /// 可选音轨/字幕（引擎装载后经状态广播同步；空 = 无多轨）。
+    @Published private(set) var audioTracks: [PlayerTrackOption] = []
+    @Published private(set) var currentAudioTrackID: Int?
+    @Published private(set) var subtitleTracks: [PlayerTrackOption] = []
+    @Published private(set) var currentSubtitleTrackID: Int?
+    /// 双击快进快退步长（秒）。moreMenu 可设 5/10/15/30，跨会话记忆。
+    @Published var doubleTapSeconds: TimeInterval {
+        didSet {
+            guard oldValue != doubleTapSeconds else { return }
+            defaults.set(doubleTapSeconds, forKey: Self.doubleTapDefaultsKey)
+        }
+    }
 
     /// 播放速率（1.0 = 原速）。didSet 透传引擎并记忆（跨会话恢复）。
     @Published var rate: Double = 1.0 {
@@ -103,6 +115,9 @@ final class PlayerViewModel: ObservableObject {
     static let minABLoopSeconds: TimeInterval = 1.0
     /// 倍速记忆的 UserDefaults 键。
     static let rateDefaultsKey = "cq.player.rate"
+    /// 双击步长记忆的 UserDefaults 键与可选档位。
+    static let doubleTapDefaultsKey = "cq.player.doubleTapSeconds"
+    static let doubleTapOptions: [TimeInterval] = [5, 10, 15, 30]
 
     // MARK: 初始化
 
@@ -123,6 +138,8 @@ final class PlayerViewModel: ObservableObject {
 
         // 跨会话倍速记忆（didSet 同步引擎并原样回写，无害）
         rate = defaults.object(forKey: Self.rateDefaultsKey) as? Double ?? 1.0
+        // 跨会话双击步长记忆
+        doubleTapSeconds = defaults.object(forKey: Self.doubleTapDefaultsKey) as? Double ?? 10.0
     }
 
     /// 缩略图回调统一接线（init 与换片共用）。
@@ -196,6 +213,10 @@ final class PlayerViewModel: ObservableObject {
         isScrubbing = false
         scrubPosition = 0
         scrubThumbnail = nil
+        audioTracks = []
+        currentAudioTrackID = nil
+        subtitleTracks = []
+        currentSubtitleTrackID = nil
         resetABLoop()
         warmedUp = false
         state = .loading
@@ -332,6 +353,26 @@ final class PlayerViewModel: ObservableObject {
         }
     }
 
+    // MARK: 音轨 / 字幕
+
+    /// 切音轨（id 来自引擎发布的 audioTracks；nil = 默认轨道）。
+    func selectAudioTrack(id: Int?) {
+        engine.selectAudioTrack(id: id)
+        currentAudioTrackID = engine.currentAudioTrackID
+        let name = engine.audioTracks.first(where: { $0.id == id })?.name
+        showFeedback(name.map { "音轨：\($0)" } ?? "音轨：默认")
+        keepControlsVisible()
+    }
+
+    /// 切字幕轨（id 来自引擎发布的 subtitleTracks；nil = 关闭字幕）。
+    func selectSubtitleTrack(id: Int?) {
+        engine.selectSubtitleTrack(id: id)
+        currentSubtitleTrackID = engine.currentSubtitleTrackID
+        let name = engine.subtitleTracks.first(where: { $0.id == id })?.name
+        showFeedback(name.map { "字幕：\($0)" } ?? "字幕已关闭")
+        keepControlsVisible()
+    }
+
     // MARK: 进度条拖动（SPEC-UIA-020 §3：拖动只改 UI，松手才 seek）
 
     func beginScrub() {
@@ -421,6 +462,11 @@ final class PlayerViewModel: ObservableObject {
         state = newState
         duration = engine.duration
         videoSize = engine.videoSize
+        // 轨道元数据随同值广播刷新（装载后异步到达）。
+        audioTracks = engine.audioTracks
+        currentAudioTrackID = engine.currentAudioTrackID
+        subtitleTracks = engine.subtitleTracks
+        currentSubtitleTrackID = engine.currentSubtitleTrackID
         if case .failed(let message) = newState {
             log.error("播放引擎失败: \(message, privacy: .public)")
             showsControls = true

@@ -20,6 +20,14 @@ import CoreGraphics
 
 // MARK: - 引擎状态
 
+/// 可选轨道条目（音轨/字幕）。id = 引擎**当次装载会话内**的组内下标
+/// （换片/重装后失效，UI 以引擎重新发布的列表为准）；
+/// name = 本地化显示名（空名回退"轨道 N"）。
+struct PlayerTrackOption: Equatable {
+    let id: Int
+    let name: String
+}
+
 /// 引擎生命周期状态。failed 携带用户可读的中文错误描述（不做错误码翻译，
 /// 保留 AVFoundation 原始 description——控制层直接展示）。
 /// （App target 不直接消费本类型，故 internal；测试经 @testable 访问。）
@@ -52,6 +60,14 @@ protocol PlayerEngine: AnyObject {
     var videoSize: CGSize? { get }
     /// 单帧时长（秒），逐帧步进用。未知时回退 1/30。
     var frameDuration: TimeInterval { get }
+    /// 可选音轨（装载完成后发布；无多轨 = 空数组）。
+    var audioTracks: [PlayerTrackOption] { get }
+    /// 当前音轨 id（nil = 默认轨道）。
+    var currentAudioTrackID: Int? { get }
+    /// 可选字幕轨（含内封字幕；空 = 无字幕轨）。
+    var subtitleTracks: [PlayerTrackOption] { get }
+    /// 当前字幕轨 id（nil = 关闭字幕）。
+    var currentSubtitleTrackID: Int? { get }
 
     // MARK: 回调（主隔离域）
 
@@ -72,6 +88,10 @@ protocol PlayerEngine: AnyObject {
     func pause()
     /// seek。precise = 零容差（帧精确，慢）；否则吸附关键帧（快进快退用）。
     func seek(to seconds: TimeInterval, precise: Bool)
+    /// 切换音轨（id 取当前 audioTracks 的 id；nil = 回默认轨道）。
+    func selectAudioTrack(id: Int?)
+    /// 切换字幕轨（id 取当前 subtitleTracks 的 id；nil = 关闭字幕）。
+    func selectSubtitleTrack(id: Int?)
     /// 拆除全部观察者/回调并停止播放。onDisappear 路径调用。
     func invalidate()
 }

@@ -652,5 +652,6 @@ fit 为每帧一次整数几何计算（4 次乘除）+ 一次视口状态设置
 | A-B 循环回跳延迟（tick 0.25s 粒度） | **未实测** | 真机 |
 | 长按倍速 2x→恢复 1x 的引擎切换顺滑度 | **未实测** | 真机 |
 | 缩略图批量预热（≤24 桶 × 50ms 错峰）CPU 峰值 | **未实测** | 真机 Instruments |
+| 音轨/字幕切换生效延迟（selectMediaOption） | **未实测** | 真机，多轨样本 |
 | SharedUI swift test（含 PlayerTests 8 用例） | **未跑**（本机 Swift 5.5，P45/P46） | 构建机 |
 | iOS/macOS xcodebuild（0 error 0 warning） | **未跑** | 构建机 |

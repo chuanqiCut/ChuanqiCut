@@ -82,9 +82,17 @@
 - **相机特效 = App 层资产**（`iOSApp/Camera/Effects/`），SharedUI 只持契约层 + 默认 CI 兜底；原生引擎经 `CameraBeautyEngine.smoothing` 注入，**加载失败必须回落默认，引擎永不制造黑帧**。
 - CIKernel：编译链接**都要** `-fcikernel` 且都用 `metal`（用 `xcrun metallib` 会产出 96 字节空壳，全绿但查不到 kernel）；验收 = `strings` 查 kernel 名 + 看大小（正常 ~8.4KB）。
 - 相机 Swift 文件合入前必须过 **iphonesimulator SDK 全量 -typecheck 且带 `-swift-version 6`**（`-parse` 两次放过真错误，P46/P48/P49）。
-- **drawable 接受 blit 的前提 = `framebufferOnly = false`**（P65）：Metal 规范禁止对
-  framebufferOnly 纹理 blit（源/目标都禁，只允许当 colorAttachment）；「实测无 error」
-  若在无校验层下取得则不算证据。帧率不达标出路 = blit 换 render pass，不是改回 true。
+- **drawable 走渲染 pass，不走 blit**（P65→CAM-016 终态）：Metal 禁止对 framebufferOnly
+  纹理 blit（校验层下 SIGABRT，「实测无 error」须注明校验层状态）；终态 = 中间纹理 →
+  显式 UV 渲染 pass（colorAttachment 是 framebufferOnly 唯一合法写法）→ drawable 保持
+  `framebufferOnly = true`。v 轴符号 = CI 行序补偿（`ciWritesBottomUp`，真机一验定案）。
+- **三套方向枚举 landscape 命名互换**（P67）：`UIInterfaceOrientationLandscapeLeft`（home 在右）
+  ≡ `AVCaptureVideoOrientation.landscapeRight` —— 同名直映必错；映射只准落在
+  `CameraManager.rotationAngle/videoOrientation` 一处，改前 grep SDK 头文件注释。
+- **相机页 UI 栈（传哲 2026-10-05 拍板）**：SwiftUI + UIViewRepresentable(MTKView) 混合，
+  **不引 SnapKit/RxSwift** 等 UIKit 生态库（SnapKit 只有 Auto Layout 语义、RxSwift 与
+  SwiftUI 状态模型重复）；引任何 UI 三方必须走 manifest.toml + cq-dependency-governance。
+  双摄（CAM-021）开关必须独立于前后翻转按钮。
 
 ## 数字纪律
 - 估算标 `[E]`，推测标 `hypothesis`，实测才能做验收阈值。引用 baselines 必须带机器环境。

@@ -1,30 +1,26 @@
 // CameraRenderer — 相机帧槽 + Core Image 预览渲染（CAM-003，ADR-0014）
 //
-// 链路：CVPixelBuffer → CIImage → 滤镜 → CI 渲进**自建中间纹理** → blit 进
-// drawable → present。全程 GPU（CIContext 默认 Metal 后端），无 CPU 读回
-// （RESEARCH-002 §5 红线）。
+// 链路：CVPixelBuffer → CIImage → 美颜/滤镜 → CI 渲进**自建中间纹理** → 显式 UV
+// 渲染 pass（行序补偿 + aspect-fill）→ drawable → present。全程 GPU（CIContext
+// 默认 Metal 后端），无 CPU 读回（RESEARCH-002 §5 红线）。
 //
-// ⚠️ 为什么多了「中间纹理」这一跳（2026-10-05 真机/模拟器日志实证，CAM-014）：
-//    `CIContext.render(_:to:commandBuffer:bounds:colorSpace:)` 内部要构造
-//    `CIRenderDestination(mtlTexture:commandBuffer:)`，而它**要求目标纹理 usage
-//    含 MTLTextureUsageShaderWrite**。`MTKView.framebufferOnly = true`（默认）时
-//    drawable 纹理只有 `renderTarget`（本机实测 usage=0x04），于是 init 返回 nil，
-//    控制台每帧打
-//      `... texture usage must include MTLTextureUsageShaderWrite.`
-//      `... _startTaskToRender:toDestination:... The destination is nil.`
-//    —— 而 `render(...)` 非 throws，失败**不落到 commandBuffer.error**，
-//    表现为「黑屏 + 帧计数照涨」的伪绿。
-//    当时两条修法：(A) `framebufferOnly = false`；(B) 渲到自建中间纹理（usage 含
-//    ShaderWrite）再 blit 进 drawable。CAM-014/015 选 B，理由记的是「drawable 保持
-//    framebufferOnly，blit 写入合法（本机实测无 error）」。
-//    ⚠️ 翻案（2026-10-05 校验层实证，pitfalls P64）：那句「实测无 error」不算证据 ——
-//    Metal 规范**禁止对 framebufferOnly 纹理做 blit**（它只允许当 render pass 的
-//    colorAttachment），无校验层时是未定义行为、驱动放行；DEBUG scheme 的 Metal API
-//    Validation / GPU 抓帧下是硬断言 SIGABRT（下方 blit 处每帧必炸）。
-//    终态：中间纹理**保留**（CI 落脚点职责不变）+ `framebufferOnly = false`
-//    （CameraVideoView，blit 合法化）。代价 = 失去 CoreAnimation 显示优化
-//    （Apple 文档 "at a cost to performance"）；真机帧率不达标时的替代方案是
-//    「blit 换 render pass（全屏 quad 采样中间纹理）」，不要凭直觉优化。
+// ⚠️ 为什么需要「中间纹理」（P60，CAM-014/015）：CI 直写 drawable 时内部构造
+//    CIRenderDestination 要求 usage 含 ShaderWrite，而 framebufferOnly drawable 只有
+//    renderTarget → destination nil → **静默黑屏 + 帧计数假绿**（render 非 throws）。
+//
+// ⚠️ 为什么中间纹理 → drawable 是「渲染 pass」而不是 blit（P65 翻案 + CAM-016）：
+//    1) P65（2026-10-05 真机校验层实证）：Metal 规范**禁止对 framebufferOnly 纹理
+//       blit**（源/目标都禁；该纹理只允许当 render pass 的 colorAttachment）。
+//       P60 时期记的「blit 写入合法（实测无 error）」是无校验层运行的未定义行为放行，
+//       DEBUG Metal API Validation / GPU 抓帧下第一帧 SIGABRT。当时临时用
+//       framebufferOnly = false 续命（CAM-015 二段，已翻案登记）。
+//    2) CAM-016（本卡）：blit 没有 UV 可言 —— 既做不了行序补偿（传哲真机实证预览
+//       **上下颠倒**），也做不了横竖屏 aspect-fill（SPEC-CAM-001 v1.2 目标5）。
+//       换显式 UV 渲染 pass：屏幕上边采样哪个 v 由**带符号 vScale** 一个数决定，
+//       行序补偿与铺满一并解决；drawable 恢复 framebufferOnly = true（colorAttachment
+//       正是它唯一合法的用法；编辑器预览 PreviewFrameRenderer 同形态，真机已验证）。
+//    ⚠️ 行序常数 `ciWritesBottomUp` 是由真机现象反推的假设（macOS 探针不等价，
+//       CI 的 iOS 行序未直接实证），真机一验若反向，改这一个值即可。
 //
 // 线程模型：
 //   - CameraFrameSlot：采集队列写 / MTKView 渲染线程读，锁保护，latest-wins
@@ -103,6 +99,53 @@ private final class FrameStats: @unchecked Sendable {
     }
 }
 
+// MARK: - aspect-fill 渲染 pass（CAM-016）
+
+/// 采样窗参数（逐帧 CPU 计算，`setVertexBytes` 注入）。
+/// u/vScale = 可见源窗口的半宽/半高归一值，**v 带符号**：负号 = v 轴翻转
+/// （CI 行序 top-down 时的补偿）；正号 = CI bottom-up（图像底行在纹理 row0）。
+/// 布局必须与下方 MSL 的 `FillUniforms` 逐字节一致。
+private struct FillUniforms {
+    var uScale: Float
+    var vScale: Float
+}
+
+/// 顶点几何与 uv 映射**与 SharedUI PreviewFrameRenderer 同约定**（全屏大三角形、
+/// 屏幕可见区恰好 t∈[0,1]²），差异仅在：uv 经 uniforms 缩放（aspect-fill 采样窗）
+/// 并带 v 轴符号（行序补偿）。两侧不得单方面改约定。
+private enum FillShader {
+
+    /// true = 假设 CI 渲进 Metal 纹理是 bottom-up（图像底行 → 纹理 row0）。
+    /// 依据：CAM-015 时期「blit 行序直拷 + drawable row0=屏幕顶（编辑器链路已证）」
+    /// 下真机预览上下颠倒 ⇒ 反推 CI 写入行序与呈现相反。真机一验若反向改 false。
+    static let ciWritesBottomUp = true
+
+    static let mslSource = """
+        #include <metal_stdlib>
+        using namespace metal;
+        struct FillUniforms { float uScale; float vScale; };
+        struct VOut {
+            float4 position [[position]];
+            float2 uv;
+        };
+        vertex VOut cq_camera_fill_vertex(uint vid [[vertex_id]],
+                                          constant FillUniforms &u [[buffer(0)]]) {
+            float2 pos[3] = { float2(-1.0, -1.0), float2(3.0, -1.0), float2(-1.0, 3.0) };
+            float2 t[3]   = { float2(0.0, 0.0), float2(2.0, 0.0), float2(0.0, 2.0) };
+            VOut o;
+            o.position = float4(pos[vid], 0.0, 1.0);
+            o.uv = float2(0.5 + (t[vid].x - 0.5) * u.uScale,
+                          0.5 + (t[vid].y - 0.5) * u.vScale);
+            return o;
+        }
+        fragment float4 cq_camera_fill_fragment(VOut in [[stage_in]],
+                                                texture2d<float> tex [[texture(0)]]) {
+            constexpr sampler smp(address::clamp_to_edge, filter::linear);
+            return tex.sample(smp, in.uv);
+        }
+        """
+}
+
 // MARK: - 预览渲染器
 
 final class CameraPreviewRenderer: NSObject, MTKViewDelegate {
@@ -135,6 +178,43 @@ final class CameraPreviewRenderer: NSObject, MTKViewDelegate {
     private let scratchLock = NSLock()
     private var scratch: (any MTLTexture)?
 
+    // MARK: 呈现管线（aspect-fill 渲染 pass，CAM-016）
+
+    private let pipelineLock = NSLock()
+    private var pipelines: [MTLPixelFormat: Result<any MTLRenderPipelineState, NSError>] = [:]
+
+    /// 取（并缓存）指定像素格式的呈现管线。失败按格式记忆并打一条 error ——
+    /// 管线建不出来意味着黑屏，**必须留痕**（P60 教训：静默失败不能复现）。
+    private func obtainPipeline(pixelFormat: MTLPixelFormat) -> (any MTLRenderPipelineState)? {
+        pipelineLock.lock()
+        defer { pipelineLock.unlock() }
+        if let cached = pipelines[pixelFormat] {
+            return try? cached.get()
+        }
+        do {
+            let device = commandQueue.device
+            // makeLibrary(source:) 在当前 SDK 是 throws 非 optional（P48 同族口径），
+            // 失败路径只有函数缺失与 pipeline 构建两处。
+            let library = try device.makeLibrary(source: FillShader.mslSource, options: nil)
+            guard let vertex = library.makeFunction(name: "cq_camera_fill_vertex"),
+                  let fragment = library.makeFunction(name: "cq_camera_fill_fragment") else {
+                throw NSError(domain: "cq.camera.render", code: 1,
+                              userInfo: [NSLocalizedDescriptionKey: "填充管线 shader 函数缺失"])
+            }
+            let descriptor = MTLRenderPipelineDescriptor()
+            descriptor.vertexFunction = vertex
+            descriptor.fragmentFunction = fragment
+            descriptor.colorAttachments[0].pixelFormat = pixelFormat
+            let pipeline = try device.makeRenderPipelineState(descriptor: descriptor)
+            pipelines[pixelFormat] = .success(pipeline)
+            return pipeline
+        } catch {
+            Self.logger.error("预览呈现管线创建失败（\(pixelFormat.rawValue, privacy: .public)）：\((error as NSError).localizedDescription, privacy: .public)")
+            pipelines[pixelFormat] = .failure(error as NSError)
+            return nil
+        }
+    }
+
     /// 取与 `size` / `pixelFormat` 匹配的中间纹理；不匹配就重建（旋转/分辨率变化走这里）。
     /// 只在 draw 这条串行路径调用，仍加锁：MTKView 不保证每次 draw 同一条线程。
     private func obtainScratch(width: Int, height: Int,
@@ -148,7 +228,7 @@ final class CameraPreviewRenderer: NSObject, MTKViewDelegate {
         }
         let descriptor = MTLTextureDescriptor.texture2DDescriptor(
             pixelFormat: pixelFormat, width: width, height: height, mipmapped: false)
-        // ShaderWrite 是 CI 写入的硬要求；ShaderRead 是随后 blit 读取所需。
+        // ShaderWrite 是 CI 写入的硬要求；ShaderRead 是随后渲染 pass 采样所需。
         descriptor.usage = [.shaderWrite, .shaderRead]
         descriptor.storageMode = .private  // GPU 专用，无 CPU 访问路径
         // MTLCommandQueue.device 在当前 SDK 为非可选（P48 同族存量修复，2026-10-05
@@ -207,9 +287,8 @@ final class CameraPreviewRenderer: NSObject, MTKViewDelegate {
     // MARK: MTKViewDelegate
 
     func mtkView(_ view: MTKView, drawableSizeWillChange size: CGSize) {
-        // 视图尺寸变化无需处理：中间纹理按**帧尺寸**分配（不是 drawable 尺寸），
-        // 写入 drawable 时再按 drawable 实际尺寸截断（保持既有「1:1 不缩放」语义，
-        // 不做 letterbox/fit —— 那属于 UI 需求，改之前先问）。
+        // 无需重建任何资源：中间纹理按**帧尺寸**分配（与视图尺寸无关），
+        // 采样窗逐帧按帧/ drawable 实际尺寸重算（CAM-016，aspect-fill 旋转/转屏零成本）。
     }
 
     func draw(in view: MTKView) {
@@ -233,24 +312,32 @@ final class CameraPreviewRenderer: NSObject, MTKViewDelegate {
 
         // 1) CI 渲进中间纹理（这里 requirement 是 usage 含 ShaderWrite，配 bgra 目标）。
         //    render(toMTLTexture:) 非 throws（iOS 17.2 SDK 无同步 render(toDestination:)，
-        //    P48）：CI 内部的失败不抛到此层，成败只能看下面 blit 后的完成状态。
+        //    P48）：CI 内部的失败不抛到此层，成败只能看下面渲染完成后的完成状态。
         ciContext.render(image, to: scratch, commandBuffer: commandBuffer,
                          bounds: extent, colorSpace: CGColorSpaceCreateDeviceRGB())
 
-        // 2) GPU 拷贝进 drawable。**目标纹理必须非 framebufferOnly**（Metal 规范禁止
-        //    对 framebufferOnly 纹理 blit，校验层下硬断言 SIGABRT —— P64），
-        //    已由 CameraVideoView 关掉 framebufferOnly（翻案记录见文件头）。
-        //    尺寸按 drawable 截断，与改动前 CI 直写 drawable 的裁剪行为一致。
-        guard let encoder = commandBuffer.makeBlitCommandEncoder() else { return }
-        let copyWidth = min(width, drawable.texture.width)
-        let copyHeight = min(height, drawable.texture.height)
-        encoder.copy(from: scratch,
-                     sourceSlice: 0, sourceLevel: 0,
-                     sourceOrigin: MTLOrigin(x: 0, y: 0, z: 0),
-                     sourceSize: MTLSize(width: copyWidth, height: copyHeight, depth: 1),
-                     to: drawable.texture,
-                     destinationSlice: 0, destinationLevel: 0,
-                     destinationOrigin: MTLOrigin(x: 0, y: 0, z: 0))
+        // 2) 采样中间纹理渲进 drawable（CAM-016 渲染 pass，取代被 P65 封死的 blit）：
+        //    - colorAttachment 是 framebufferOnly 纹理唯一合法写法；
+        //    - v 轴符号 = 行序补偿（真机颠倒修正），u/v 比例 = aspect-fill 铺满；
+        //    - clamp_to_edge：采样窗浮点误差不露边。
+        let drawableWidth = drawable.texture.width
+        let drawableHeight = drawable.texture.height
+        guard drawableWidth > 0, drawableHeight > 0,
+              let renderPass = view.currentRenderPassDescriptor,
+              let encoder = commandBuffer.makeRenderCommandEncoder(descriptor: renderPass),
+              let pipeline = obtainPipeline(pixelFormat: drawable.texture.pixelFormat) else {
+            return
+        }
+        let coverScale = max(Float(drawableWidth) / Float(width),
+                             Float(drawableHeight) / Float(height))
+        var uniforms = FillUniforms(
+            uScale: Float(drawableWidth) / (coverScale * Float(width)),
+            vScale: (FillShader.ciWritesBottomUp ? 1.0 : -1.0)
+                * Float(drawableHeight) / (coverScale * Float(height)))
+        encoder.setRenderPipelineState(pipeline)
+        encoder.setFragmentTexture(scratch, index: 0)
+        encoder.setVertexBytes(&uniforms, length: MemoryLayout<FillUniforms>.stride, index: 0)
+        encoder.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: 3)
         encoder.endEncoding()
 
         // 3) 计数只认「完成且无错」。回调在 Metal 自己的线程：这里**捕获 stats 不捕获 self**

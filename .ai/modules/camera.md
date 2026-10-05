@@ -13,31 +13,33 @@
   ├─ videoQueue 视频帧 → CameraFrameSlot.push（latest-wins，不排队）
   └─ audioQueue 音频包 → CameraRecorder.appendAudio
 渲染  CameraPreviewRenderer（MTKViewDelegate，连续绘制）
-      CVPixelBuffer → CIImage → 处理链 → CI 渲进中间纹理 → blit 进 drawable → present
+      CVPixelBuffer → CIImage → 处理链 → CI 渲进中间纹理 → 显式UV渲染pass 进 drawable → present
 录制  CameraRecorder（videoQueue 内 AVAssetWriter + PixelBufferAdaptor）
 拍照  CameraManager.capturePhoto → CameraViewModel 走同一条 process 链 → 存相册
 ```
 
-## 2. 预览渲染形状（2026-10-05 改，TASK-CAM-015 / pitfalls P60）
+## 2. 预览渲染形状（2026-10-06 终态，TASK-CAM-015/016 / pitfalls P60/P65/P68）
 
-**CI 不能直写 MTKView 的 drawable**：`framebufferOnly`（默认 true）时 drawable 纹理
-只有 `renderTarget` usage，而 CI 内部构造 `CIRenderDestination` 要求 usage 含
-`ShaderWrite`，缺 → init 返回 nil → 每帧静默空转（黑屏）。
+**CI 不能直写 MTKView 的 drawable**（P60）：framebufferOnly drawable 只有 renderTarget
+usage，而 CI 的 CIRenderDestination 要求 ShaderWrite → destination nil → 每帧**静默**
+黑屏（render 非 throws，失败不进 commandBuffer.error，帧计数假绿）。
+**blit 也被规范封死**（P65）：Metal 禁止对 framebufferOnly 纹理 blit（源/目标都禁），
+无校验层时未定义行为放行、DEBUG 校验层下每帧 SIGABRT ——「实测无 error」不算证据。
 
 ```
-旧：CI ──直接──> drawable.texture          ✗ usage 不含 ShaderWrite → destination nil
-新：CI ──> 自建中间纹理(ShaderWrite|ShaderRead, private) ──blit──> drawable   ✓
-          尺寸 = 帧尺寸；pixelFormat = drawable 同款；尺寸/格式变就重建
+旧：CI ──直接──> drawable             ✗ P60（usage 缺 ShaderWrite → 静默黑屏）
+旧：CI ──> 中间纹理 ──blit──> drawable ✗ P65（framebufferOnly 禁 blit，校验层必炸）
+新：CI ──> 自建中间纹理(ShaderWrite|ShaderRead, private, 帧尺寸)
+        ──显式UV渲染pass──> drawable   ✓ colorAttachment 是 framebufferOnly 唯一合法写法
 ```
 
-- drawable `framebufferOnly = false`（2026-10-05 翻案，pitfalls P65）：Metal 规范**禁止
-  对 framebufferOnly 纹理 blit**（源/目标都禁，只允许当 colorAttachment）。此前记的
-  「blit 不受限（本机实测无 error）」是**无校验层**运行下的假象 —— 校验层（DEBUG scheme
-  Metal API Validation / GPU 抓帧）开启时每帧硬断言 SIGABRT。
-- blit 尺寸按 drawable 截断 —— 保持「1:1 不缩放」的既有视觉语义；**铺满 / letterbox 属 UI 需求，未做**。
-- framebufferOnly=false 的代价 = 失去 CoreAnimation 显示优化（Apple 明写 "at a cost to
-  performance"），登记在案。**真机帧率不达标时的替代方案 = blit 换 render pass
-  （全屏 quad 采样中间纹理），不是改回 true —— 那条路已被规范封死。**
+- drawable 恢复 `framebufferOnly = true`（CoreAnimation 显示优化失而复得）；编辑器
+  PreviewFrameRenderer 同形态，真机已验证。CAM-015 二段的 `= false` 是 blit 存续期的
+  续命方案，随 blit 移除而退场。
+- 渲染 pass 全屏大三角形 + 逐帧 uniforms（`uScale` / **带符号 vScale**，几何与 uv
+  约定与 PreviewFrameRenderer 对齐）：v 符号 = CI 行序补偿（`ciWritesBottomUp=true`
+  由真机颠倒现象**反推**；macOS 探针判不了 iOS 行序 —— P68；真机反向则改 false）；
+  u/v 比例 = aspect-fill（SPEC v1.2 目标5，铺满取代旧「1:1 截断」语义）。
 
 ## 3. 埋点口径（红线：真机验收归传哲，日志先行）
 
@@ -56,3 +58,18 @@
 
 预览 / 拍照 / 录制都走同一条：**美颜 → 滤镜**。录制在开始时锁定 preset+beauty。
 录制路径渲染到 `CVPixelBufferPool` 的像素缓冲（不是 MTL 纹理），故不受 P60 影响。
+
+## 5. 方向（CAM-016，SPEC v1.2 目标5：竖 + 左右横屏全支持）
+
+- **采集**：`connection.videoRotationAngle` 按 UIInterfaceOrientation 映射
+  {portrait:90, landscapeLeft:0, landscapeRight:180}（landscapeLeft=home 在右=传感器
+  原生位）；iOS 16 fallback 走旧 API 且 **landscape 名互换**
+  （UI.landscapeLeft → AVCapture.landscapeRight，UIOrientation.h 原文依据，pitfalls P67）。
+  入口 `CameraManager.setInterfaceOrientation`（sessionQueue 串行；configure 前只存值）。
+- **触发**：CameraView 监听 `UIDevice.orientationDidChangeNotification`（scene 级通知
+  不存在，P67）→ `CameraViewModel.refreshInterfaceOrientation()` 分 0/200/500ms 三次
+  采样 `scene.interfaceOrientation`（通知早于 scene 提交转场的竞态）；
+  **录制中锁定**（`!isRecording` 门控，Spec v1.2 非目标）。
+- **渲染**：aspect-fill 采样窗逐帧按帧/drawable 尺寸重算，转屏零重建成本。
+- 前摄镜像在各方向保持（旋转后应用，Apple 语义）。
+- 待真机一验：行序常数（`ciWritesBottomUp`）与横屏映射的定案口径见 TASK-CAM-016 risk。

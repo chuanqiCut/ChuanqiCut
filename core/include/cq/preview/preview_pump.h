@@ -50,6 +50,7 @@
 #include <cstdint>
 #include <mutex>
 #include <thread>
+#include <vector>
 
 #include "cq/base/status.h"
 #include "cq/base/time.h"
@@ -127,6 +128,12 @@ private:
     std::atomic<uint64_t> rendered_{0};
     std::atomic<uint64_t> coalesced_{0};
     std::atomic<uint64_t> non_ok_{0};
+
+#ifndef NDEBUG
+    // MEDIA-023 排障仪器（Debug only）：分段耗时样本（acquire/import/draw/total），
+    // 每 60 帧打印直方图。
+    std::vector<IPreviewFrameSource::StageTimings> stage_samples_;
+#endif
 };
 
 }  // namespace cq

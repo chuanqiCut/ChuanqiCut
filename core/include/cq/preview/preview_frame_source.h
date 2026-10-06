@@ -37,6 +37,18 @@ public:
 
     // 当前离屏目标（测试读回像素用；UI 侧不需要）。
     virtual IRenderTarget* Target() = 0;
+
+#ifndef NDEBUG
+    // MEDIA-023 排障仪器（仅 Debug 构建）：上一帧分段耗时（acquire/import/draw/
+    // total，纳秒）。无仪器的实现返回 nullptr（泵据此跳过汇总）。
+    struct StageTimings {
+        int64_t acquire_ns = 0;
+        int64_t import_ns = 0;
+        int64_t draw_ns = 0;
+        int64_t total_ns = 0;
+    };
+    virtual const StageTimings* DebugLastTimings() const { return nullptr; }
+#endif
 };
 
 }  // namespace cq

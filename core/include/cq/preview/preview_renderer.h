@@ -122,6 +122,18 @@ public:
 
     IRenderTarget* Target() override { return target_.get(); }
 
+#ifndef NDEBUG
+    // MEDIA-023 排障仪器：把内部分段计时暴露给泵（Debug only；经缓存避免跨线程
+    // 读 LiveTimings —— timings_ 本身只有泵线程写，此处消费也在泵线程，无竞争）。
+    const IPreviewFrameSource::StageTimings* DebugLastTimings() const override {
+        stage_cache_.acquire_ns = timings_.acquire_ns;
+        stage_cache_.import_ns = timings_.import_ns;
+        stage_cache_.draw_ns = timings_.draw_ns;
+        stage_cache_.total_ns = timings_.total_ns;
+        return &stage_cache_;
+    }
+#endif
+
     // 上一帧的各阶段耗时（见 Timings 注释）。首帧之前全 0。
     const Timings& LastTimings() const { return timings_; }
 
@@ -171,6 +183,9 @@ private:
     RationalTime last_source_time_{0, 1};
     RationalTime last_frame_pts_{0, 1};
     Timings timings_{};
+#ifndef NDEBUG
+    mutable IPreviewFrameSource::StageTimings stage_cache_{};
+#endif
     std::atomic<int> fit_mode_{static_cast<int>(FitMode::kStretch)};  // 见 SetFitMode
 };
 

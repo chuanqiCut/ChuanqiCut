@@ -406,7 +406,9 @@ public final class EditorViewModel: ObservableObject {
         }
         let ts = RationalTime.projectTimescale
         let start = RationalTime(value: 0, timescale: ts)
-        let duration = RationalTime(value: 5 * Int64(ts), timescale: ts)
+        // CQ_DEMO_SECONDS：演示片段时长（阶段 0 剖面用长窗口；默认 5s）。
+        let demoSeconds = Int(ProcessInfo.processInfo.environment["CQ_DEMO_SECONDS"] ?? "") ?? 5
+        let duration = RationalTime(value: Int64(demoSeconds) * Int64(ts), timescale: ts)
         let sourceIn = RationalTime(value: 0, timescale: ts)
 
         let versionAtStart = session.currentSnapshot.version

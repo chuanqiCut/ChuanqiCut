@@ -1108,3 +1108,19 @@ private/shared/managed × 各 usage **全组合输出全零**、`commandBuffer.e
 Swift 下经 `toDestination:` 标签也找不到（ObjC selector `renderImage:toDestination:` 未按预期导入）。
 - 防复发规则：Metal/CI 行为探针先跑「自检基准」（如 CGImage 路径）确认环境有效再信
   结果；宿主 OS ≠ 目标 OS 的探针结论只算 hypothesis，iOS 行为必须模拟器/真机实证。
+
+### P67 · 真机自动测量基建的三个坑（stdout 全缓冲 / xcodebuild 段错误 / Debug XCFramework）
+> 日期 / 来源 / 验证状态：2026-10-06 / TASK-MEDIA-023 阶段 0 剖面 / **verified**
+
+1. **`std::printf`/Swift `print` 走 stdout = 全缓冲**：`devicectl device process
+   launch --console` 管道下诊断行永远憋在缓冲区（本轮连坑三次）。诊断输出一律
+   `std::fprintf(stderr, …) + fflush(stderr)`（stderr 无缓冲）；Swift 侧同理。
+2. **xcodebuild 对 'platform=iOS' 目的地偶发 SIGSEGV（exit 139，Xcode 26.6 自身
+   bug，objc respondsToSelector 空指针）**：清 derivedData 无效；换
+   `-sdk iphoneos -destination 'generic/platform=iOS'`（门禁同款）绕开。
+3. **App 的 core 代码来自预构建 XCFramework（podspec vendored）**：改 core/*.cpp
+   后必须 `build_core_apple.sh --config=Debug && bindings/swift/prepare.sh` 再
+   xcodebuild，否则设备跑旧 core；门禁建的是 **Release（NDEBUG）**——`#ifndef
+   NDEBUG` 的仪器/日志在设备上全部静默消失，真机剖面必须 Debug 配置重建。
+   另：Xcode 26 的 Debug 产物是 **ChuanqiCutApp.debug.dylib**（非主二进制），
+   strings/nm 验证要查对文件。

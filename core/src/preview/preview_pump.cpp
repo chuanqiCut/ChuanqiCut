@@ -9,8 +9,14 @@
 
 #include "cq/preview/preview_pump.h"
 
+#include <algorithm>
 #include <new>
 #include <utility>
+#include <vector>
+
+#ifndef NDEBUG
+#include <cstdio>
+#endif
 
 namespace cq {
 
@@ -89,6 +95,10 @@ PreviewPump::Stats PreviewPump::GetStats() const {
 }
 
 void PreviewPump::Loop() {
+#ifndef NDEBUG
+    std::fprintf(stderr, "[PreviewPump] loop start (instrumented v2)\n");
+    fflush(stderr);
+#endif
     for (;;) {
         bool do_render = false;
         bool do_resize = false;
@@ -129,6 +139,33 @@ void PreviewPump::Loop() {
         CancelToken token;
         const Status s = source_->RenderFrame(pts, tex, token);
         if (!s.IsOk()) non_ok_.fetch_add(1, std::memory_order_relaxed);
+#ifndef NDEBUG
+        // MEDIA-023 排障仪器（Debug only）：每完成 60 帧打印一次分段耗时直方图
+        // （acquire=取帧+解码 / import=Metal 导入 / draw=离屏渲染），每 20 帧一报。
+        if (const auto* t = source_->DebugLastTimings()) {
+            stage_samples_.push_back(*t);
+            if (stage_samples_.size() % 20 == 0) {
+                auto report = [&](const char* name, auto get) {
+                    std::vector<double> v;
+                    v.reserve(stage_samples_.size());
+                    for (const auto& st : stage_samples_) {
+                        v.push_back(static_cast<double>(get(st)) / 1e6);
+                    }
+                    std::sort(v.begin(), v.end());
+                    std::fprintf(stderr,
+                                 "[PreviewPump] %s (n=%zu) min=%.1fms p50=%.1fms "
+                                 "p95=%.1fms max=%.1fms\n",
+                                 name, v.size(), v.front(),
+                                 v[v.size() / 2], v[v.size() * 95 / 100], v.back());
+                };
+                report("acquire", [](const auto& t) { return t.acquire_ns; });
+                report("import ", [](const auto& t) { return t.import_ns; });
+                report("draw   ", [](const auto& t) { return t.draw_ns; });
+                report("total  ", [](const auto& t) { return t.total_ns; });
+                fflush(stderr);
+            }
+        }
+#endif
 
         {
             std::lock_guard<std::mutex> lk(mtx_);

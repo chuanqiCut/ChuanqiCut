@@ -23,12 +23,15 @@
 import AVFoundation
 import CoreMedia
 import UIKit
+import os
 
 // @unchecked Sendable 的依据（不是静音警告，是已建立的线程模型）：
 //   可变状态（configured / currentPosition）**只在 sessionQueue** 触碰，
 //   session / photoOutput 是 let 且创建后不再改；跨队列只传不可变的 Bool /
 //   Position / 帧缓冲。故本类实例跨队列传递是安全的。
 final class CameraManager: NSObject, @unchecked Sendable {
+
+    private static let logger = Logger(subsystem: "com.chuanqi.cut", category: "camera.session")
 
     enum Position {
         case back
@@ -60,6 +63,21 @@ final class CameraManager: NSObject, @unchecked Sendable {
     /// configureLocked 会取用（避免「先旋转后启动」丢方向）。
     private(set) var interfaceOrientation: UIInterfaceOrientation = .portrait
     private var configured = false
+
+    // MARK: 逐传感器方向标定（CAM-017，iOS 17+）
+    //
+    // 前后摄传感器原生朝向不同 ⇒ 静态角度表（按背摄推导）对前摄失效——真机实证：
+    // 前摄竖屏出横躺画面。官方解法 = RotationCoordinator 给「本设备本镜头」的
+    // 正确角度；在「设备位姿 = 界面方向」（无系统旋转锁、位姿有效）时采样一次，
+    // 折算成对静态表的**常量偏移**叠加。偏移只在换 position 时重标。
+    /// iOS 17+ RotationCoordinator（存 AnyObject 规避存储属性的可用性标注限制，
+    /// 用点在 #available 内 cast）。
+    private var rotationCoordinator: AnyObject?
+    /// 传感器安装偏移（coordinator 角度 − 静态表角度），90° 栅格值。sessionQueue 专属。
+    private var sensorAngleOffset: CGFloat = 0
+    /// 设备位姿。iOS 26 SDK 起 UIDevice 是 @MainActor 隔离（P70 同族），sessionQueue
+    /// 不能直接读 —— 由主线程入口（configureAndStart / switchPosition）显式传入。
+    private var devicePose: UIDeviceOrientation = .unknown
 
     override init() {
         super.init()
@@ -102,9 +120,12 @@ final class CameraManager: NSObject, @unchecked Sendable {
     // MARK: 会话生命周期（全部内部 sessionQueue）
 
     /// 配置并启动（幂等）。完成后主线程回调 isRunning。
-    func configureAndStart(onReady: @escaping @MainActor (_ isRunning: Bool) -> Void) {
+    /// - Parameter devicePose: 调用瞬间（主线程）的设备位姿，供方向标定用。
+    func configureAndStart(devicePose: UIDeviceOrientation,
+                           onReady: @escaping @MainActor (_ isRunning: Bool) -> Void) {
         sessionQueue.async { [weak self] in
             guard let self else { return }
+            self.devicePose = devicePose
             if !self.configured {
                 self.configureLocked(position: self.currentPosition)
                 self.configured = true
@@ -120,9 +141,13 @@ final class CameraManager: NSObject, @unchecked Sendable {
     }
 
     /// 前后切换。配置变更在 sessionQueue 串行执行；切换结果主线程回调。
-    func switchPosition(to position: Position, onDone: @escaping @MainActor (_ position: Position) -> Void) {
+    /// - Parameter devicePose: 调用瞬间（主线程）的设备位姿，供方向标定用。
+    func switchPosition(to position: Position,
+                        devicePose: UIDeviceOrientation,
+                        onDone: @escaping @MainActor (_ position: Position) -> Void) {
         sessionQueue.async { [weak self] in
             guard let self, self.configured else { return }
+            self.devicePose = devicePose
             self.currentPosition = position
             self.reconfigureVideoInputLocked(position: position)
             Task { @MainActor in
@@ -171,6 +196,8 @@ final class CameraManager: NSObject, @unchecked Sendable {
         relay.onPhoto = onDone
         sessionQueue.async { [weak self] in
             guard let self, self.configured, self.session.outputs.contains(self.photoOutput) else {
+                // 遥测（CAM-017）：「拍照无效」定位口 —— 输出没挂上/会话未配置在此现形。
+                Self.logger.error("拍照中止 configured=\(self?.configured ?? false, privacy: .public) photoOutputInSession=\(self.map { $0.session.outputs.contains($0.photoOutput) } ?? false, privacy: .public)")
                 relay.deliver(nil)
                 return
             }
@@ -242,6 +269,21 @@ final class CameraManager: NSObject, @unchecked Sendable {
         }
         session.addInput(input)
         videoInput = input
+        // 逐传感器标定（iOS 17+）：换镜头即重标，先归零防串位。
+        sensorAngleOffset = 0
+        if #available(iOS 17.0, *) {
+            let coordinator = AVCaptureDevice.RotationCoordinator(device: device, previewLayer: nil)
+            rotationCoordinator = coordinator
+            let pose = devicePose
+            if let poseInterface = Self.interfaceOrientation(fromDevicePose: pose),
+               poseInterface == interfaceOrientation {
+                let horizon = coordinator.videoRotationAngleForHorizonLevelPreview
+                sensorAngleOffset = Self.snappedToQuarter(horizon - Self.rotationAngle(for: poseInterface))
+                Self.logger.info("方向标定 pos=\(position == .front ? "front" : "back", privacy: .public) horizon=\(horizon, privacy: .public) offset=\(self.sensorAngleOffset, privacy: .public)")
+            } else {
+                Self.logger.info("方向标定跳过（位姿 \(pose.rawValue, privacy: .public) ≠ 界面方向）沿用静态表")
+            }
+        }
         // 新 input 生效后 connection 需重设方向/镜像（addInput 会重建 connection）。
         for output in session.outputs {
             guard let connection = output.connection(with: .video) else { continue }
@@ -260,7 +302,8 @@ final class CameraManager: NSObject, @unchecked Sendable {
     /// ⚠️ 横屏两项是文档推导，真机若出现横屏 180° 反接，交换 0/180（一行）。
     private func applyOrientation(_ connection: AVCaptureConnection, _ io: UIInterfaceOrientation) {
         if #available(iOS 17.0, *) {
-            let angle = Self.rotationAngle(for: io)
+            // 静态表 + 逐传感器偏移（CAM-017），snap 到 90° 栅格。
+            let angle = Self.snappedToQuarter(Self.rotationAngle(for: io) + sensorAngleOffset)
             if connection.isVideoRotationAngleSupported(angle) {
                 connection.videoRotationAngle = angle
             }
@@ -290,6 +333,25 @@ final class CameraManager: NSObject, @unchecked Sendable {
         case .portraitUpsideDown: return 270
         default: return 90
         }
+    }
+
+    /// 设备位姿 → 界面方向。**landscape 名互换**（UIOrientation.h：UI.L = Device.R，
+    /// P67）；faceUp/faceDown/unknown 无对应界面方向。
+    static func interfaceOrientation(fromDevicePose pose: UIDeviceOrientation) -> UIInterfaceOrientation? {
+        switch pose {
+        case .portrait: return .portrait
+        case .portraitUpsideDown: return .portraitUpsideDown
+        case .landscapeLeft: return .landscapeRight
+        case .landscapeRight: return .landscapeLeft
+        default: return nil
+        }
+    }
+
+    /// 角度 snap 到 0/90/180/270 栅格（coordinator 角度理论上为 90 的倍数，防御取整）。
+    static func snappedToQuarter(_ angle: CGFloat) -> CGFloat {
+        let snapped = (angle / 90).rounded() * 90
+        let normalized = snapped.truncatingRemainder(dividingBy: 360)
+        return normalized < 0 ? normalized + 360 : normalized
     }
 
     /// 界面方向 → 旧版 videoOrientation（iOS 16 fallback）。
@@ -331,6 +393,8 @@ private final class FrameRelay: NSObject, AVCaptureVideoDataOutputSampleBufferDe
 
 private final class PhotoRelay: NSObject, AVCapturePhotoCaptureDelegate, @unchecked Sendable {
 
+    private static let logger = Logger(subsystem: "com.chuanqi.cut", category: "camera.photo")
+
     var onPhoto: ((_ pixelBuffer: CVImageBuffer?) -> Void)?
 
     /// 派发一次性拍照回调并清空（拍照单发，不重复触发）。
@@ -344,6 +408,8 @@ private final class PhotoRelay: NSObject, AVCapturePhotoCaptureDelegate, @unchec
                      didFinishProcessingPhoto photo: AVCapturePhoto,
                      error: Error?) {
         guard error == nil, let buffer = photo.pixelBuffer else {
+            // 遥测（CAM-017）：失败原因直接可见，不靠 UI 层猜。
+            Self.logger.error("拍照回调失败：\(error?.localizedDescription ?? "pixelBuffer 缺失", privacy: .public)")
             deliver(nil)
             return
         }

@@ -9,6 +9,11 @@
 // startWriting 之前 add**。本类在**首个视频帧**上一次性建立 writer + 视频轨 +
 // （若带音频）音频轨，然后才 startWriting —— 不允许运行中补轨。
 //
+// ⚠️ pixelBufferPool 时序（P69，CAM-017 实证）：`adaptor.pixelBufferPool` 在
+// `startWriting()` **之前是 nil**。池守卫若排在 startSession 之前 = 每帧必丢、
+// writer 永不启动的死锁（真机首验「录制无效」根因）。现序：setup →
+// startSession（首帧）→ 取池（懒取+缓存，取不到直配兜底）→ 渲染 → append。
+//
 // PTS 纪律（对齐 pal-apple.md PALA-012 口径）：会话起点 = 首个视频帧 PTS，
 // 早于首帧到达的音频块被丢弃（首帧几乎即时到达，头部截断可忽略且语义诚实）。
 //
@@ -20,6 +25,7 @@ import CoreImage
 import CoreVideo
 import Foundation
 import SharedUI
+import os
 
 // @unchecked Sendable 的依据：状态迁移由 `lock` 保护，append 只在 videoQueue /
 // audioQueue，start/finish 主线程调用（见文件头线程模型）；本类实例在
@@ -30,15 +36,19 @@ final class CameraRecorder: @unchecked Sendable {
         case writerCreationFailed
         case notRecording
         case alreadyRecording
+        case nothingWritten
 
         var errorDescription: String? {
             switch self {
             case .writerCreationFailed: return "AVAssetWriter 创建失败"
             case .notRecording: return "没有进行中的录制"
             case .alreadyRecording: return "录制已在进行"
+            case .nothingWritten: return "没有录制到任何画面"
             }
         }
     }
+
+    private static let logger = Logger(subsystem: "com.chuanqi.cut", category: "camera.recorder")
 
     private(set) var outputURL: URL
 
@@ -46,7 +56,11 @@ final class CameraRecorder: @unchecked Sendable {
     private var videoInput: AVAssetWriterInput?
     private var audioInput: AVAssetWriterInput?
     private var adaptor: AVAssetWriterInputPixelBufferAdaptor?
+    /// 池缓存（P69：startWriting 后才非 nil，取到后复用）。只在 videoQueue 触碰。
     private var pixelBufferPool: CVPixelBufferPool?
+    private var bufferWidth = 0
+    private var bufferHeight = 0
+    private var appendedFrames = 0
 
     private let preset: CameraFilterPreset
     private let beauty: CameraBeautyParams
@@ -123,7 +137,10 @@ final class CameraRecorder: @unchecked Sendable {
         self.videoInput = videoInput
         self.audioInput = audioInput
         self.adaptor = adaptor
-        self.pixelBufferPool = adaptor.pixelBufferPool  // 预热池（逐帧 8MB 分配不可接受）
+        self.bufferWidth = width
+        self.bufferHeight = height
+        // ⚠️ 此处**不取** pixelBufferPool：startWriting 前它是 nil（P69）。
+        Self.logger.info("录制开始 \(width, privacy: .public)×\(height, privacy: .public) audio=\(self.withAudio, privacy: .public)")
         return true
     }
 
@@ -147,21 +164,28 @@ final class CameraRecorder: @unchecked Sendable {
         }
         lock.unlock()
 
-        // 美颜 → 滤镜（与预览 process 同序）→ 渲染进池缓冲。失败丢帧不崩溃（实时优先）。
+        // ⚠️ startSession（含 startWriting）必须在取池**之前**（P69：池在
+        // startWriting 前是 nil；旧实现池守卫在前 = 每帧必丢死锁）。
+        startSessionIfNeeded(at: time)
+
+        // 美颜 → 滤镜（与预览 process 同序）。
         var image = CIImage(cvPixelBuffer: sourceBuffer)
         image = beauty.apply(to: image)
         if let filtered = preset.apply(to: image) {
             image = filtered
         }
-        guard let pool = pixelBufferPool, let pixelBuffer = createBuffer(from: pool) else {
-            return  // 池耗尽：丢帧（同采集侧 latest-wins 语义）
+        guard let pixelBuffer = createBuffer(from: adaptor) else {
+            return  // 池与直配都失败：丢帧（同采集侧 latest-wins 语义）
         }
         // render(toCVPixelBuffer:) 非 throws（P48）；CI 内部失败不会抛出到此层。
         ciContext.render(image, to: pixelBuffer)
 
-        startSessionIfNeeded(at: time)
         guard videoInput.isReadyForMoreMediaData else { return }
         adaptor.append(pixelBuffer, withPresentationTime: time)
+        appendedFrames += 1
+        if appendedFrames % 240 == 0 {
+            Self.logger.info("录制已写入 \(self.appendedFrames, privacy: .public) 帧")
+        }
         // pixelBuffer 由 ARC 释放回池（append 内部按需 retain）。
     }
 
@@ -203,33 +227,65 @@ final class CameraRecorder: @unchecked Sendable {
             }
             return
         }
-        videoInput?.markAsFinished()
-        audioInput?.markAsFinished()
+        // markAsFinished 仅合法于 .writing 态；从未 startWriting 的 writer（未知态）
+        // 调它会触发 NSInternalInconsistencyException —— 走显式失败路径。
+        if writer.status == .writing {
+            videoInput?.markAsFinished()
+            audioInput?.markAsFinished()
+        }
         // AVAssetWriter 不 Sendable。依据：finishWriting 的回调由 writer 自己在
         // 串行队列上调用一次，闭包只读 status/error，且 writer 此后不再被写入
         // （markAsFinished 已调用）—— 跨闭包持有没有数据竞争。
         nonisolated(unsafe) let finishingWriter = writer
+        let writtenFrames = appendedFrames  // Int：Sendable，直接捕获
         finishingWriter.finishWriting { [weak self] in
             let status = finishingWriter.status
             let error = finishingWriter.error
             let url = self?.outputURL
+            Self.logger.info("录制收尾 status=\(status.rawValue, privacy: .public) frames=\(writtenFrames, privacy: .public) error=\(error?.localizedDescription ?? "nil", privacy: .public)")
             Task { @MainActor in
-                if status == .completed, let url {
+                if status == .completed, let url, writtenFrames > 0 {
                     completion(.success(url))
                 } else {
                     if let url {
                         try? FileManager.default.removeItem(at: url)
                     }
-                    completion(.failure(error ?? RecordingError.writerCreationFailed))
+                    // 0 帧完成 ≠ 成功（P60 族：计数必须绑定真出了效果）——不产空文件假成功。
+                    completion(.failure(writtenFrames == 0
+                        ? RecordingError.nothingWritten
+                        : (error ?? RecordingError.writerCreationFailed)))
                 }
             }
         }
     }
 
-    private func createBuffer(from pool: CVPixelBufferPool) -> CVPixelBuffer? {
-        var maybeBuffer: CVPixelBuffer?
-        // 本 SDK 桥接为 3 参（auxAttributes 被导入器吞掉，P48）：allocator, pool, &out。
-        CVPixelBufferPoolCreatePixelBuffer(kCFAllocatorDefault, pool, &maybeBuffer)
-        return maybeBuffer
+    /// 取渲染目标缓冲：池（startWriting 后可用，P69）优先并缓存复用；
+    /// 池未就绪或耗尽时直配兜底（adaptor 接受外部缓冲，代价是慢一点，不丢帧）。
+    private func createBuffer(from adaptor: AVAssetWriterInputPixelBufferAdaptor) -> CVPixelBuffer? {
+        if pixelBufferPool == nil {
+            pixelBufferPool = adaptor.pixelBufferPool
+        }
+        if let pool = pixelBufferPool {
+            var maybeBuffer: CVPixelBuffer?
+            // 本 SDK 桥接为 3 参（auxAttributes 被导入器吞掉，P48）：allocator, pool, &out。
+            if CVPixelBufferPoolCreatePixelBuffer(kCFAllocatorDefault, pool, &maybeBuffer) == kCVReturnSuccess,
+               let buffer = maybeBuffer {
+                return buffer
+            }
+            pixelBufferPool = nil  // 池耗尽/失效：下次重建缓存
+        }
+        guard bufferWidth > 0, bufferHeight > 0 else { return nil }
+        var direct: CVPixelBuffer?
+        let attributes: [CFString: Any] = [
+            kCVPixelBufferPixelFormatTypeKey: kCVPixelFormatType_32BGRA,
+            kCVPixelBufferWidthKey: bufferWidth,
+            kCVPixelBufferHeightKey: bufferHeight,
+        ]
+        guard CVPixelBufferCreate(kCFAllocatorDefault, bufferWidth, bufferHeight,
+                                  kCVPixelFormatType_32BGRA, attributes as CFDictionary,
+                                  &direct) == kCVReturnSuccess else {
+            return nil
+        }
+        return direct
     }
 }

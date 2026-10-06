@@ -59,6 +59,20 @@ usage，而 CI 的 CIRenderDestination 要求 ShaderWrite → destination nil �
 预览 / 拍照 / 录制都走同一条：**美颜 → 滤镜**。录制在开始时锁定 preset+beauty。
 录制路径渲染到 `CVPixelBufferPool` 的像素缓冲（不是 MTL 纹理），故不受 P60 影响。
 
+## 4.5 录制器时序（CAM-017，pitfalls P69）
+
+`pixelBufferPool` 在 `startWriting()` **之前是 nil**（探针实证）⇒ 取池必须排在
+`startSession`（首帧，内含 startWriting）之后：**setup → startSession → 懒取池+
+缓存（取不到直配兜底）→ 渲染 → append**。收尾：`markAsFinished` 仅 `.writing` 态；
+0 帧落盘 = 显式 `.nothingWritten` 失败（不产空文件假成功）。遥测
+`camera.recorder`：开始尺寸 / 每 240 帧计数 / 收尾 status+frames+error。
+
+## 4.6 磨皮引擎回落纪律（CAM-017）
+
+引擎闭包带**黏性回落**：连续 3 次 nil 本会话停用引擎、只走默认 CI 实现——
+否则间歇失败会让画面逐帧在两种视觉间翻转（真机「磨皮闪屏」主嫌）。nil 计数
+走 `camera.beauty` 遥测；kernel 离屏 20 帧同输入指纹唯一（算法层确定，排除）。
+
 ## 5. 方向（CAM-016，SPEC v1.2 目标5：竖 + 左右横屏全支持）
 
 - **采集**：`connection.videoRotationAngle` 按 UIInterfaceOrientation 映射
@@ -71,5 +85,10 @@ usage，而 CI 的 CIRenderDestination 要求 ShaderWrite → destination nil �
   采样 `scene.interfaceOrientation`（通知早于 scene 提交转场的竞态）；
   **录制中锁定**（`!isRecording` 门控，Spec v1.2 非目标）。
 - **渲染**：aspect-fill 采样窗逐帧按帧/drawable 尺寸重算，转屏零重建成本。
+- **逐传感器标定（CAM-017）**：前后摄传感器原生朝向不同（真机实证前摄竖屏横躺），
+  iOS 17+ 用 `AVCaptureDevice.RotationCoordinator` 在「设备位姿=界面方向」时采样
+  `videoRotationAngleForHorizonLevelPreview`，折算成对静态表的**常量偏移**
+  （`sensorAngleOffset`，换镜头重标归零）；设备位姿无效/旋转锁时沿用静态表。
+  设备位姿由主线程入口显式传入（iOS 26 SDK 起 UIDevice 是 @MainActor，P70）。
 - 前摄镜像在各方向保持（旋转后应用，Apple 语义）。
-- 待真机一验：行序常数（`ciWritesBottomUp`）与横屏映射的定案口径见 TASK-CAM-016 risk。
+- 待真机一验：行序常数（`ciWritesBottomUp`）与标定偏移的定案口径见 TASK-CAM-016/017。

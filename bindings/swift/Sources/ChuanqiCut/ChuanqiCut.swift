@@ -51,6 +51,49 @@ public enum ChuanqiCut {
     }
 }
 
+// MARK: - 日志：按链路（workflow）筛选（CORE-010）
+
+extension ChuanqiCut {
+
+    /// 日志「链路」维：排查时想单独拎出来看的那一条。
+    ///
+    /// 这是与**级别**（多详细）正交的一维 —— 级别回答不了「只要 decode 链路」。
+    /// 取值与内核 `Workflow` 枚举同构（那份注释在 `cq/base/log.h`，是契约）。
+    public enum LogWorkflow: String, CaseIterable, Sendable {
+        case core, model, `import`, demux, decode, framecache
+        case preview, render, export, camera, gfx, perf, mem, ai
+    }
+
+    /// 日志级别。数值与内核 `LogLevel` 同构。
+    public enum LogLevel: Int32, Sendable {
+        /// 最详细：逐帧、每包、每次进出。Release 构建下由宏层**编译期剔除**。
+        case trace = 0
+        case debug = 1
+        case info = 2
+        /// 降级发生过：缺硬解→软解、命中缓存/追帧上界、显示序缺口重锚。Release 可见。
+        case warn = 3
+        case error = 4
+    }
+
+    /// 读取内核日志的三个环境变量并生效（幂等，可重复调用）：
+    ///
+    ///   CQ_LOG_LEVEL    = trace|debug|info|warn|error   全局兜底级别
+    ///   CQ_LOG_WORKFLOW = preview,decode,mem            白名单，不设 = 全开
+    ///   CQ_LOG_WF_LEVEL = decode=trace,preview=debug    单链路提级
+    ///
+    /// 建议在 App 启动处调一次。真机上直接在 Xcode Scheme 的
+    /// Arguments → Environment Variables 里加上述变量即可切换，
+    /// **不需要改代码、不需要重编译** —— 真机出差弄得起重编译的场景很少。
+    public static func configureLogFromEnvironment() {
+        cq_log_configure_from_env()
+    }
+
+    /// 全局兜底最低级别。低于该级别的日志不发。
+    public static func setLogLevel(_ level: LogLevel) {
+        cq_log_set_level(level.rawValue)
+    }
+}
+
 // MARK: - 状态码
 
 /// 内核状态码。数值与内核 `StatusCode` **同构**（内核已固化数值区间），

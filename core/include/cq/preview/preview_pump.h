@@ -131,12 +131,14 @@ private:
 
 #ifndef NDEBUG
     // MEDIA-023 排障仪器（Debug only）：分段耗时样本（acquire/import/draw/total），
-    // 每 60 帧打印直方图。
+    // 每 60 帧打印直方图。逐帧采样 vector 的开销不适合 Release，保留条件编译。
     std::vector<IPreviewFrameSource::StageTimings> stage_samples_;
-    // 看门狗：渲染卡在某段 >1s 时打印段名与耗时（析构式警报对"永不返回"失明）。
+#endif
+    // 看门狗：渲染卡在某段 >1s 时报出段名与耗时。
+    // CORE-010 变更：**Release 也保留**。析构式慢调用警报对「永不返回」的调用
+    // 是失明的，看门狗是唯一能指认卡点的手段（MEDIA-026/027 都靠它）。
     void WatchdogLoop();
     std::thread watchdog_;
-#endif
 };
 
 }  // namespace cq

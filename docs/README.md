@@ -122,7 +122,9 @@ cat docs/handoff/HANDOFF-004-*.md      # 3. 最近交接（状态以最新一份
 | [HANDOFF-004-相机模块会话交接](handoff/HANDOFF-004-相机模块会话交接.md) | **相机线**当前状态（CAM 线，随 CAM 系列任务持续刷新） |
 | [HANDOFF-005-智能成片会话交接](handoff/HANDOFF-005-智能成片会话交接.md) | **智能成片线**当前状态（AIEDIT-000~011 立项轮，RESEARCH-003/ADR-0020/SPEC） |
 
-**规则**：新交接取下一个编号（下一份 = 006）；双线并行期间允许**同号双卡**（后缀区分主题），
+| [HANDOFF-006-MEDIA播放链路会话交接](handoff/HANDOFF-006-MEDIA播放链路会话交接.md) | **MEDIA 播放链路**当前状态（MEDIA-021/023~027 + CORE-010 日志设施，含真机复现手法） |
+
+**规则**：新交接取下一个编号（下一份 = 007）；双线并行期间允许**同号双卡**（后缀区分主题），
 引用时务必带主题（"HANDOFF-004 相机版 §x"）。状态核对必须对着 commit 历史与门禁数字，不照抄上一版（pitfalls E10）。
 
 ---
@@ -145,7 +147,7 @@ cat docs/handoff/HANDOFF-004-*.md      # 3. 最近交接（状态以最新一份
 - [`BUILD.md`](BUILD.md) — 构建指南（core 门禁命令、Apple 双工程）
 - [`COCOAPODS.md`](COCOAPODS.md) — CocoaPods 源码集成说明
 - [`CODESTYLE.md`](CODESTYLE.md) — **代码风格唯一标准**（CODE-001 成文，`cq-code-review` skill 据此执行）
-- [`reviews/`](reviews/) — 审查记录（如 [REVIEW-2026-10-05 全库风格巡检](reviews/REVIEW-2026-10-05-全库风格巡检.md)）
+- [`reviews/`](reviews/) — 审查记录（如 [REVIEW-2026-10-05 全库风格巡检](reviews/REVIEW-2026-10-05-全库风格巡检.md)、[REVIEW-2026-10-06 MEDIA-027 播放冻结与 jetsam 复盘](reviews/REVIEW-2026-10-06-MEDIA027-播放5秒冻结与jetsam复盘.md)）
 - [`../tools/ci/run_gate.sh`](../tools/ci/run_gate.sh) — 统一门禁脚本（本机总门禁入口）
 - [`tasks/PLAN-三线并行.md`](tasks/PLAN-三线并行.md) — 相机/编辑器/智能成片三线并行的号段与写集规划
 

@@ -14,6 +14,8 @@
 #include <chrono>
 #include <utility>  // std::move
 
+#include "cq/base/log.h"  // CQ_LOG_*_WF：带 workflow 的分级日志（CORE-010）
+
 namespace cq {
 namespace {
 
@@ -194,9 +196,8 @@ Status PreviewRenderer::RenderFrame(const RationalTime& pts, TextureHandle& out_
     // ---- 0. 加载模型快照（UIA-009 子步骤 2）----
     // 一次加载、本帧全程使用：渲染期间 session 线程再变更也不影响本帧
     // （不可变数据，无竞争）；下帧自然看到新快照（最终一致）。
-#ifndef NDEBUG
+    // CORE-010：Release 也记账（看门狗数据源），开销仅一次 atomic store。
     DebugStageGuard g0(debug_stage_, debug_stage_since_, "snapshot");
-#endif
     std::shared_ptr<const ModelSnapshot> snapshot = snapshots_->CurrentSnapshot();
     if (!snapshot || !snapshot->timeline || !snapshot->assets) {
         return Status(StatusCode::kInternal);
@@ -209,9 +210,8 @@ Status PreviewRenderer::RenderFrame(const RationalTime& pts, TextureHandle& out_
     // RT 背后的纹理句柄在 RT 重建前一直有效，故可先给出，便于失败时 UI 仍有可显示目标。
     out_texture = target_->GetColorTexture();
 
-#ifndef NDEBUG
+    // CORE-010：Release 也记账（看门狗数据源），开销仅一次 atomic store。
     DebugStageGuard g1(debug_stage_, debug_stage_since_, "clip-find");
-#endif
     // ---- 1. 定位片段：只取**第一条命中的视频轨**（本期不支持多轨合成）----
     const Clip* clip = nullptr;
     for (const Track& track : timeline.Tracks()) {
@@ -224,9 +224,8 @@ Status PreviewRenderer::RenderFrame(const RationalTime& pts, TextureHandle& out_
     }
     if (clip == nullptr) {
         // 空隙：清屏为黑，并如实返回「此处无内容」，不伪造成功。
-#ifndef NDEBUG
+        // CORE-010：Release 也记账（看门狗数据源），开销仅一次 atomic store。
         DebugStageGuard gc(debug_stage_, debug_stage_since_, "clear-gap");
-#endif
         Status cs = ClearTarget(token);
         if (!cs.IsOk()) return cs;
         return Status(StatusCode::kIoNotFound);
@@ -263,15 +262,12 @@ Status PreviewRenderer::RenderFrame(const RationalTime& pts, TextureHandle& out_
             timings_.acquire_ns = 0;
             timings_.import_ns = 0;
             last_frame_pts_ = last_import_pts_;  // 展示的仍是上一导入帧
-#ifndef NDEBUG
             if (debug_reuse_logs_ < 3) {
                 ++debug_reuse_logs_;
-                std::fprintf(stderr, "[PreviewRenderer] reuse 命中 pts=%lld/%d\n",
-                             static_cast<long long>(last_import_pts_.value),
-                             static_cast<int>(last_import_pts_.timescale));
-                fflush(stderr);
+                CQ_LOG_TRACE_WF(Workflow::kFrameCache, "reuse 命中 pts=%lld/%d",
+                                static_cast<long long>(last_import_pts_.value),
+                                static_cast<int>(last_import_pts_.timescale));
             }
-#endif
         }
     }
 
@@ -286,9 +282,8 @@ Status PreviewRenderer::RenderFrame(const RationalTime& pts, TextureHandle& out_
         tex = imported_;
     } else {
         // ---- 3. 取帧（AcquireFrame 内部按需 seek，未 seek 或目标变化时幂等对齐）----
-#ifndef NDEBUG
+        // CORE-010：Release 也记账（看门狗数据源），开销仅一次 atomic store。
         DebugStageGuard g3(debug_stage_, debug_stage_since_, "provider+acquire");
-#endif
         FrameProvider* provider = nullptr;
         s = GetProvider(clip->source.asset_id, assets, provider);
         if (!s.IsOk()) return s;
@@ -324,9 +319,8 @@ Status PreviewRenderer::RenderFrame(const RationalTime& pts, TextureHandle& out_
             provider->ReleaseFrame(frame);
             return s;
         }
-#ifndef NDEBUG
+        // CORE-010：Release 也记账（看门狗数据源），开销仅一次 atomic store。
         DebugStageGuard g4(debug_stage_, debug_stage_since_, "import");
-#endif
         bool cpu_fallback = false;
         const Clock::time_point t_import = Clock::now();
         s = importer_->Import(frame.video.image, TextureUsage::kSampled, tex, cpu_fallback);
@@ -351,19 +345,19 @@ Status PreviewRenderer::RenderFrame(const RationalTime& pts, TextureHandle& out_
         last_import_w_ = src_w;
         last_import_h_ = src_h;
         last_import_valid_ = frame_dur.value > 0;
-#ifndef NDEBUG
         if (debug_import_logs_ < 3) {
             ++debug_import_logs_;
-            std::fprintf(stderr,
-                         "[PreviewRenderer] import pts=%lld/%d dur=%lld/%d %ux%u\n",
-                         static_cast<long long>(frame.video.pts.value),
-                         static_cast<int>(frame.video.pts.timescale),
-                         static_cast<long long>(frame.video.duration.value),
-                         static_cast<int>(frame.video.duration.timescale),
-                         src_w, src_h);
-            fflush(stderr);
+            // ⚠️ 这里打的是**已 Record 的 last_import_* 字段**：MEDIA-027 期间这行打的是
+            //    frame.video.* —— 而那时 frame 已被 ReleaseFrame 清零，输出恒为
+            //    pts=0/1 dur=0/1，是条看着正常、实为废纸的诊断（该陷阱在本仓库第 4 次）。
+            //    **别改回 frame.video.***。
+            CQ_LOG_TRACE_WF(Workflow::kRender,
+                            "import 已记录 pts=%lld/%d dur=%lld/%d %ux%u",
+                            static_cast<long long>(last_import_pts_.value),
+                            static_cast<int>(last_import_pts_.timescale),
+                            static_cast<long long>(last_import_dur_.value),
+                            static_cast<int>(last_import_dur_.timescale), src_w, src_h);
         }
-#endif
     }
 
     // ---- 5. 绘制到离屏 RT ----
@@ -381,9 +375,8 @@ Status PreviewRenderer::RenderFrame(const RationalTime& pts, TextureHandle& out_
     const bool has_viewport = !(viewport[0] == 0.0f && viewport[1] == 0.0f &&
                                 viewport[2] == static_cast<float>(cfg_.width) &&
                                 viewport[3] == static_cast<float>(cfg_.height));
-#ifndef NDEBUG
+    // CORE-010：Release 也记账（看门狗数据源），开销仅一次 atomic store。
     DebugStageGuard g5(debug_stage_, debug_stage_since_, "draw");
-#endif
     BlitClient client(blit_, tex, has_viewport ? viewport : nullptr);
     const Clock::time_point t_draw = Clock::now();
     s = gfx_->RenderFrame(ctx, target_.get(), client, token);

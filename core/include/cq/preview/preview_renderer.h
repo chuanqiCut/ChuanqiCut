@@ -123,9 +123,11 @@ public:
 
     IRenderTarget* Target() override { return target_.get(); }
 
-#ifndef NDEBUG
-    // MEDIA-023 排障仪器：把内部分段计时暴露给泵（Debug only；经缓存避免跨线程
-    // 读 LiveTimings —— timings_ 本身只有泵线程写，此处消费也在泵线程，无竞争）。
+    // MEDIA-023 排障仪器：把内部分段计时暴露给泵（经缓存避免跨线程读 LiveTimings
+    // —— timings_ 本身只有泵线程写，此处消费也在泵线程，无竞争）。
+    //
+    // CORE-010 变更：这两个接口**不再是 Debug-only**。它们是被看门狗消费的
+    // 「当前卡在哪一段」，属于可观测性基础设施，Release 没有就等于现场没有。
     const IPreviewFrameSource::StageTimings* DebugLastTimings() const override {
         stage_cache_.acquire_ns = timings_.acquire_ns;
         stage_cache_.import_ns = timings_.import_ns;
@@ -139,7 +141,6 @@ public:
     int64_t DebugStageSinceNanos() const override {
         return debug_stage_since_.load(std::memory_order_relaxed);
     }
-#endif
 
     // 上一帧的各阶段耗时（见 Timings 注释）。首帧之前全 0。
     const Timings& LastTimings() const { return timings_; }
@@ -191,10 +192,10 @@ private:
     // 纹理独立于 provider 生命周期（IOSurface 锁在纹理上），provider 重建无需失效。
     bool last_import_valid_ = false;
     uint64_t last_import_asset_ = 0;
-#ifndef NDEBUG
+    // CORE-010：这两个限流计数器提到 Release —— 它们被 Trace 级的诊断使用，
+    // 而 Release 下 CQ_LOG_TRACE_WF 展开为空，if 体会被优化掉；留着成员开销为零。
     int debug_import_logs_ = 0;
     int debug_reuse_logs_ = 0;
-#endif
     RationalTime last_import_pts_{0, 1};
     RationalTime last_import_dur_{0, 1};
     uint32_t last_import_w_ = 0;
@@ -205,9 +206,12 @@ private:
     RationalTime last_source_time_{0, 1};
     RationalTime last_frame_pts_{0, 1};
     Timings timings_{};
-#ifndef NDEBUG
     mutable IPreviewFrameSource::StageTimings stage_cache_{};
     // MEDIA-026 看门狗：当前渲染阶段与进入时刻（泵的看门狗线程轮询，超 1s 报告）。
+    //
+    // CORE-010 变更：提到 Release。开销是每段一次 relaxed atomic store +
+    // 一次 steady_clock 读取，相对各段本身的毫秒级耗时可忽略；换来的是 Release
+    // 包也能回答「卡在哪一段」——这是本仓库连续两次冻结踩坑的唯一指认手段。
     std::atomic<const char*> debug_stage_{""};
     std::atomic<int64_t> debug_stage_since_{0};
     struct DebugStageGuard {
@@ -223,7 +227,6 @@ private:
         }
         ~DebugStageGuard() { stage.store("", std::memory_order_relaxed); }
     };
-#endif
     std::atomic<int> fit_mode_{static_cast<int>(FitMode::kStretch)};  // 见 SetFitMode
 };
 

@@ -65,6 +65,26 @@
 - **修性能前先分段埋点**（没加 `cq_preview_last_timings` 会误判方向：实测取帧占 94%）。挪线程 ≠ 提帧率。
 - 取帧循环一律「先 Feed 一包，再连续 PopFrame」（MEDIA-021/ADR-0017）：平台回调序 = 完成序不是显示序；区间归属依赖 duration 报准（首帧兜底用 dts 差）；异步 Flush = 先等在途落地再清（P41）；seek 目标被消费后重复同目标须重新 seek；测试请求网格用整数 ticks。
 
+## 内存与异步等待纪律（MEDIA-027 血泪）
+- **任何「等某个判据成立」的重排/同步循环，都必须配一条不依赖该判据的内存上界闸门**。
+  反例（P75）：解码输出队列靠「显示序连续性」判据弹出，判据一失效就只进不出 →
+  真机 8.3MB/帧 × 数百帧 = footprint 3375MB → jetsam signal 9，表现为「播放 5 秒后
+  永久冻结」。判据正确性不可能零缺陷，闸门不能省。
+- **判据失败分支必须区分「还没来」与「永远不会来」**，且后者的放行阈值按**连续次数**
+  给（B 帧重排窗口的余量），**不能取 1** —— 取 1 会把 B 帧跳掉（实测 fast=128000 /
+  slow=116000，提前 3 帧，media_sequential_real 直接挂）。
+- **回调内「登记完成」必须在「交付数据」之后**：反过来的顺序让等待方的「完成」判据
+  不蕴含数据可见，旧区间数据会漏进新区间（MEDIA-021 的「Seek 后首弹弹出旧 GOP」同形）。
+- **等异步回调一律禁止无上界阻塞**（VTWait 系）：PopFrame 与 **Flush** 都要管 ——
+  Flush 每次 Seek 都走，漏了它就是慢路径的永久阻塞入口。
+- **泵线程是纯 C++ `std::thread`，没有 autorelease pool**：PAL 侧被它逐帧调用的函数
+  （demux 的 RebuildReader/ReadPacket、decode 的 Feed）必须自带 `@autoreleasepool`，
+  否则 AVFoundation 的自动释放对象攒到线程退出（实测 +13.8MB/60s → 加池后 +0.5MB/60s）。
+- **真机「卡死 + signal 9」必须能区分 jetsam 与纯解码追赶失败** → DEBUG 剖面行恒带
+  `footprint`（`task_vm_info.phys_footprint`，比 RSS 更贴近 jetsam 判定）与 `nonok/s`。
+- 真机剖面用 `devicectl device process launch --console` + **stderr**（stdout 全缓冲）；
+  设备锁定会直接报 `FBSOpenApplicationErrorDomain error 7`，测量窗口前先确认已解锁。
+
 ## 排障纪律
 - **flaky 消除的判定 = 根因机制闭环 + 失败签名可解释**，不是连绿次数（P33 两层根因：同一签名背后有第二个根因）。
 - 异步命令「等待落地」等**目标效果本身**（如 queryTracks 出现视频轨，10ms 轮询），不要等版本号越过基线。
@@ -100,6 +120,31 @@
   `CIContext.render(_:to:commandBuffer:)` 非 throws 且失败不进 `commandBuffer.error`，
   黑屏也能让帧计数一路涨。UI 侧计数器一律加到「命令缓冲完成且无错」的回调里，
   并配套一个 `failureCount` 作为伪绿嗅探针。
+
+## 日志：三维模型与 workflow 筛选（CORE-010，2026-10-06）
+
+日志有**三维**，彼此正交，别混：
+- **Level** —— 多详细（trace/debug/info/warn/error）
+- **Stage** —— 帧走到哪一步（只用于带 pts 的帧级 trace）
+- **Workflow** —— **我在排查哪条链路**（core/model/import/demux/decode/framecache/
+  preview/render/export/camera/gfx/perf/mem/ai）
+
+前两维答不出「只开 decode 链路」。输出前缀 `[wf:xxx]`，`grep '\[wf:decode\]'` 即可筛。
+真机切换靠环境变量，**不改代码不重编译**（Xcode Scheme → Run → Arguments）：
+`CQ_LOG_LEVEL` / `CQ_LOG_WORKFLOW`（白名单）/ `CQ_LOG_WF_LEVEL`（单链路提级）。
+App 侧在 `EditorViewModel.init()` 最早处调 `ChuanqiCut.configureLogFromEnvironment()`。
+
+**分级原则（判断某条日志该不该进 Release）**：问它报的是「系统正在偏离正轨」还是
+「我想看细节」。前者 —— 降级发生、队列/追帧上界命中、慢调用、看门狗 —— 一律 **Warn
+且 Release 可见**；后者才 Debug/Trace。
+
+**硬规则**：
+- 日志一律走 `CQ_LOG_*_WF(wf, ...)`，禁裸 `fprintf(stderr, ...)`。
+- 慢调用告警统一 `CQ_SLOW_CALL_WF`（core/base/perf.h，阈值 500ms），
+  **不许在 .cpp/.mm 里自抄 RAII**（旧版 4 个文件各抄一份，阈值还不一致）。
+- **Debug-only 的诊断在 Release 包里等于不存在**（P76）。Release 才是真机常态。
+- **改了任何依赖 NDEBUG 的代码，必须 Debug + Release 双向编译验证** ——
+  解开一处 NDEBUG 后，它依赖的成员/计数器往往还在块里，Debug 绿、Release 炸（踩过 3 次）。
 
 ## 构建验证纪律（iOS 侧）
 - **iOS App 编译验证必须 `-scheme ChuanqiCutApp`**：workspace 里 `ChuanqiCut` 是 Pods 生成的

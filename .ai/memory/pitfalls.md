@@ -1195,3 +1195,29 @@ Swift 下经 `toDestination:` 标签也找不到（ObjC selector `renderImage:to
   isFinished 已挡新帧）。
 - 防复发规则：跨队列状态判定成败时，**判定依据的读取必须与写入同一同步原语**；
   「成功条件里的计数」读到 0 与「真的没做」必须区分（0 也可能是读早了）。
+
+### P71 · 同一 AVAsset 并发建 AVAssetReader → NSInternalInconsistencyException 崩溃
+> 日期 / 来源 / 验证状态：2026-10-06 / TASK-MEDIA-026 后台扫描方案 / **verified**（真机崩溃复现 + 回退后消失）
+
+后台线程给 `asset_`（与播放路径共享的 AVURLAsset）另建 AVAssetReader + TrackOutput，
+与播放路径的 reader 操作并发 → `*** -[AVAssetReader addOutput:] cannot add an output
+that has already been added to another AVAssetReader`（signal 6）。AVAsset 同 URL 的
+并发 reader 操作不可靠。防复发：**同一文件的 demux 生命周期内只允许一个 AVAssetReader
+实例**；需要并行读（索引/预览缩略图）时用独立的 AVURLAsset 实例。
+
+### P72 · VT 静默丢帧 + `VTDecompressionSessionWaitForAsynchronousFrames` 永久阻塞 —— 播放 ~5s 冻结真因
+> 日期 / 来源 / 验证状态：2026-10-06 / TASK-MEDIA-026 / **根因 verified**（成对日志：
+> PopFrame enter 后无 exit，且无任何单次慢调用警报——卡在 VTWait 内部）；修复本机全绿，
+> 真机复测待重签
+
+- 现象：播放 ~5s 后 rendered/s=0（泵停转），请求照流（180/s）、t 正常推进、无单次
+  慢调用警报。成对日志（enter/exit）定位：`PopFrame` 进入后**永不返回**。
+- 根因：PopFrame 空队列分支的 `VTDecompressionSessionWaitForAsynchronousFrames`
+  在 VT **静默丢弃**某帧（既不完成也不回调错误）时**永久阻塞**；解析式警报
+  （析构时打印）对"永不返回"的调用天然失明，此前多轮警报未响即此故。
+- 修复：PopFrame 内以 **2ms 轮询**替代 VTWait（回调异步入队），配最老 pending
+  （含提交时刻表）>1s 的丢帧超时——超时清 pending + has_prev_ 失效 + kIoNotFound，
+  上层重新 seek，播放自恢复。⚠️ Flush 内的 VTWait 同风险暂保留（Seek 路径触发，
+  provider Seek 警报可见）。
+- 防复发规则：**凡是"等异步回调"的等待一律禁止无上界阻塞**——要么轮询+超时，
+  要么事件句柄；析构式（RAII）警报必须配合成对 enter/exit 日志才能抓"永不返回"。

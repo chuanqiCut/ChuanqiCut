@@ -16,7 +16,7 @@
 
 #include "cq/base/status.h"
 #include "cq/base/time.h"
-#include "cq/media/pal_frame_provider.h"
+#include "cq/pal/media.h"
 
 int32_t cq_media_probe_duration(const char* path, int64_t* out_value,
                                 int32_t* out_timescale) {
@@ -28,16 +28,21 @@ int32_t cq_media_probe_duration(const char* path, int64_t* out_value,
 
     cq::MediaSource src;
     src.path = path;
-    src.path_len = std::strlen(path);  // PAL 侧拒绝 path_len==0（frame_provider_apple 校验）
+    src.path_len = std::strlen(path);  // PAL 侧拒绝 path_len==0（demuxer 校验）
 
-    cq::PalFrameProviderFactory factory;
-    std::unique_ptr<cq::FrameProvider> provider;
-    cq::Status s = factory.Create(src, provider);
+    // MEDIA-026：探测走 **demuxer OpenLight**（只读容器时长），不再走完整
+    // provider 打开 —— 全量 Open 对大文件做逐样本关键帧扫描（秒级），而探测
+    // 只需要 duration。解码会话/VT/扫描全部不触碰。
+    cq::PalPtr<cq::IMediaDemuxer> demuxer;
+    cq::Status s = cq::CreateMediaDemuxer(src, demuxer);
     if (!s.IsOk()) return static_cast<int32_t>(s.code);
-    if (provider == nullptr) return static_cast<int32_t>(cq::StatusCode::kInternal);
+    if (!demuxer) return static_cast<int32_t>(cq::StatusCode::kInternal);
+
+    s = demuxer->OpenLight(src);
+    if (!s.IsOk()) return static_cast<int32_t>(s.code);
 
     cq::RationalTime duration;
-    s = provider->GetDuration(duration);
+    s = demuxer->GetDuration(duration);
     if (!s.IsOk()) return static_cast<int32_t>(s.code);
     if (duration.timescale <= 0) return static_cast<int32_t>(cq::StatusCode::kDecodeError);
     // 容器打开但时长为 0 = 解析失败（如 P33：AVAsset 加载失败/取消时

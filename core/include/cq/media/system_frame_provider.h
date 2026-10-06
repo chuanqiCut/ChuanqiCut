@@ -139,6 +139,21 @@ public:
     // 重置解码器 DPB；具体「解码到 t 帧」发生在 AcquireFrame。
     Status Seek(const RationalTime& target, SeekPolicy policy,
                 const CancelToken& token) override {
+#ifndef NDEBUG
+        struct SeekAlarm {
+            std::chrono::steady_clock::time_point start{std::chrono::steady_clock::now()};
+            ~SeekAlarm() {
+                const auto ns = std::chrono::duration_cast<std::chrono::milliseconds>(
+                                    std::chrono::steady_clock::now() - start)
+                                    .count();
+                if (ns >= 500) {
+                    std::fprintf(stderr, "[SlowCall] provider Seek took %lldms\n",
+                                 static_cast<long long>(ns));
+                    fflush(stderr);
+                }
+            }
+        } seek_alarm{};
+#endif
         if (token.IsCancelled()) return token.Cancelled();
         if (!demuxer_) return Status{StatusCode::kInvalidArgument};
         Status s = demuxer_->Seek(target, token);
@@ -260,6 +275,7 @@ public:
 private:
 #ifndef NDEBUG
     int debug_finalize_logs_ = 0;
+    int debug_chase_iters_ = 0;
 #endif
     // =========================================================================
     // MEDIA-021：顺序取帧快路径（不重新 seek 的前进取帧）
@@ -423,6 +439,17 @@ private:
                 if (drained) break;
                 continue;  // 解码管线尚未出帧：继续喂下一包
             }
+#ifndef NDEBUG
+            // MEDIA-026 追帧探针：每 240 次弹出打印 t 与解码位置的距离 ——
+            // 判别「t 跳变不可达」vs「解码追赶正常」。
+            if (++debug_chase_iters_ % 240 == 0) {
+                std::fprintf(stderr,
+                             "[Chase] t=%.2fs popped=%.2fs drained=%d lag_iters=%d\n",
+                             t.ToSeconds(), f.video.pts.ToSeconds(), drained ? 1 : 0,
+                             debug_chase_iters_);
+                fflush(stderr);
+            }
+#endif
             if (FrameContains(f, t)) return Finalize(f);
             if (CompareRational(f.video.pts, t) <= 0) {
                 before = f;

@@ -10,6 +10,8 @@
 #include "cq/preview/preview_pump.h"
 
 #include <algorithm>
+#include <chrono>
+#include <cstdio>
 #include <new>
 #include <utility>
 #include <vector>
@@ -19,6 +21,26 @@
 #endif
 
 namespace cq {
+
+#ifndef NDEBUG
+// MEDIA-026 慢调用警报（Debug only）：>1000ms 打印（P70 stderr 通道）。
+struct SlowCallAlarm {
+    const char* name;
+    std::chrono::steady_clock::time_point start;
+    explicit SlowCallAlarm(const char* n)
+        : name(n), start(std::chrono::steady_clock::now()) {}
+    ~SlowCallAlarm() {
+        const auto ns = std::chrono::duration_cast<std::chrono::milliseconds>(
+                            std::chrono::steady_clock::now() - start)
+                            .count();
+        if (ns >= 1000) {
+            std::fprintf(stderr, "[SlowCall] %s took %lldms\n", name,
+                         static_cast<long long>(ns));
+            fflush(stderr);
+        }
+    }
+};
+#endif
 
 PreviewPump::PreviewPump(IPreviewFrameSource* source) : source_(source) {}
 
@@ -34,6 +56,9 @@ Status PreviewPump::Start() {
     worker_ = std::thread([this] { Loop(); });
     if (!worker_.joinable()) return Status(StatusCode::kResourceExhausted);
     running_ = true;
+#ifndef NDEBUG
+    watchdog_ = std::thread([this] { WatchdogLoop(); });
+#endif
     return Status::Ok();
 }
 
@@ -47,6 +72,10 @@ void PreviewPump::Stop() {
     cv_.notify_one();
     if (worker_.joinable()) worker_.join();
     worker_ = std::thread();
+#ifndef NDEBUG
+    if (watchdog_.joinable()) watchdog_.join();
+    watchdog_ = std::thread();
+#endif
 }
 
 bool PreviewPump::IsRunning() const {
@@ -137,6 +166,11 @@ void PreviewPump::Loop() {
         // ---- 唯一触碰解码会话 / 纹理缓存的地方（其余线程不得再调 RenderFrame）----
         TextureHandle tex = nullptr;
         CancelToken token;
+#ifndef NDEBUG
+        // MEDIA-026 总警报：单帧 >1s 打印（分段警报之外的静默阻塞在此现形——
+        // draw 的 GPU 等待 / gap 清屏 / 快照加载等无警报段）。
+        SlowCallAlarm total_alarm("pump RenderFrame(total)");
+#endif
         const Status s = source_->RenderFrame(pts, tex, token);
         if (!s.IsOk()) non_ok_.fetch_add(1, std::memory_order_relaxed);
 #ifndef NDEBUG
@@ -177,5 +211,36 @@ void PreviewPump::Loop() {
         rendered_.fetch_add(1, std::memory_order_relaxed);
     }
 }
+
+#ifndef NDEBUG
+void PreviewPump::WatchdogLoop() {
+    // 每 500ms 检查渲染器的当前阶段；同一阶段 >1s = 渲染卡死，打印段名与耗时
+    // （析构式警报对"永不返回"的调用失明——本线程就是为它存在的）。
+    const char* last_stage = "";
+    int repeats = 0;
+    while (!stop_) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(500));
+        if (stop_) return;
+        const char* stage = source_->DebugStage();
+        const int64_t since = source_->DebugStageSinceNanos();
+        if (stage == nullptr || stage[0] == '\0') {
+            last_stage = "";
+            repeats = 0;
+            continue;
+        }
+        const auto elapsed_ms =
+            (std::chrono::steady_clock::now().time_since_epoch().count() - since) /
+            1'000'000;
+        if (elapsed_ms >= 1000) {
+            std::fprintf(stderr,
+                         "[Watchdog] RenderFrame 卡在 '%s' 已 %lldms\n",
+                         stage, static_cast<long long>(elapsed_ms));
+            fflush(stderr);
+        }
+        (void)last_stage;
+        (void)repeats;
+    }
+}
+#endif
 
 }  // namespace cq

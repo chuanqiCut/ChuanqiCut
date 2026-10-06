@@ -176,7 +176,13 @@ private:
     std::deque<OutputFrame> output_queue_;
     // 已喂入、尚未收到完成回调的包：dts.value → pts（重排依据）。key 约束：
     // demuxer 已把 pts/dts 统一转换到项目网格（timescale 120000），故用 value 作 key。
+    // 登记未完成包（重排依据）。key 约束：
+    // demuxer 已把 pts/dts 统一转换到项目网格（timescale 120000），故用 value 作 key。
     std::map<int64_t, RationalTime> pending_dts_pts_;
+    // MEDIA-026：各未完成包的提交时刻（steady clock ns）——PopFrame 等待上界
+    // 依据：VT 偶发**静默丢弃**某帧（永不回调，真机 ~5-7s 必现一次），等待无上界
+    // 会把泵永久卡死。超时的帧按丢失处理（清理 + kIoNotFound，上层重新 seek）。
+    std::map<int64_t, uint64_t> pending_submit_nanos_;
     RationalTime prev_popped_pts_{0, 0};  // timescale=0 表示未初始化
     RationalTime prev_duration_{0, 1};    // 上一弹出帧 duration（显示序连续性判据：期望=pts+duration）
     bool has_prev_ = false;

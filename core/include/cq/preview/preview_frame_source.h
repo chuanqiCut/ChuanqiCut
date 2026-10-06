@@ -48,6 +48,9 @@ public:
         int64_t total_ns = 0;
     };
     virtual const StageTimings* DebugLastTimings() const { return nullptr; }
+    // MEDIA-026 看门狗：当前渲染阶段名（空串 = 空闲）。无仪器的实现返回空。
+    virtual const char* DebugStage() const { return ""; }
+    virtual int64_t DebugStageSinceNanos() const { return 0; }
 #endif
 };
 

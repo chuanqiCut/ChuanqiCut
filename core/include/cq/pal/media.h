@@ -99,6 +99,11 @@ public:
 
     // 读下一个压缩包。data 生命周期见 MediaPacket 注释。队列末尾返回 kIoNotFound（非错误计数）。
     virtual Status ReadPacket(MediaPacket& out_packet) = 0;
+
+    // 轻量打开（MEDIA-026）：只取容器时长，不建 reader、不扫关键帧、不解码 ——
+    // 供「导入探测」这类只需要 duration 的调用方（全量 Open 会对大文件做
+    // 逐样本关键帧扫描，秒级）。默认退化到 Open（未实现轻量版的平台）。
+    virtual Status OpenLight(const MediaSource& src) { return Open(src); }
 };
 
 // ---------------------------------------------------------------------------

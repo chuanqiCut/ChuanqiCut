@@ -21,6 +21,7 @@
 #define CQ_PREVIEW_PREVIEW_RENDERER_H_
 
 #include <atomic>
+#include <chrono>
 #include <cstdint>
 #include <memory>
 #include <unordered_map>
@@ -132,6 +133,12 @@ public:
         stage_cache_.total_ns = timings_.total_ns;
         return &stage_cache_;
     }
+    const char* DebugStage() const override {
+        return debug_stage_.load(std::memory_order_relaxed);
+    }
+    int64_t DebugStageSinceNanos() const override {
+        return debug_stage_since_.load(std::memory_order_relaxed);
+    }
 #endif
 
     // 上一帧的各阶段耗时（见 Timings 注释）。首帧之前全 0。
@@ -200,6 +207,22 @@ private:
     Timings timings_{};
 #ifndef NDEBUG
     mutable IPreviewFrameSource::StageTimings stage_cache_{};
+    // MEDIA-026 看门狗：当前渲染阶段与进入时刻（泵的看门狗线程轮询，超 1s 报告）。
+    std::atomic<const char*> debug_stage_{""};
+    std::atomic<int64_t> debug_stage_since_{0};
+    struct DebugStageGuard {
+        std::atomic<const char*>& stage;
+        std::atomic<int64_t>& since;
+        explicit DebugStageGuard(std::atomic<const char*>& st,
+                                 std::atomic<int64_t>& since, const char* name)
+            : stage(st), since(since) {
+            stage.store(name, std::memory_order_relaxed);
+            since.store(static_cast<int64_t>(
+                            std::chrono::steady_clock::now().time_since_epoch().count()),
+                        std::memory_order_relaxed);
+        }
+        ~DebugStageGuard() { stage.store("", std::memory_order_relaxed); }
+    };
 #endif
     std::atomic<int> fit_mode_{static_cast<int>(FitMode::kStretch)};  // 见 SetFitMode
 };

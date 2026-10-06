@@ -104,6 +104,11 @@ FFmpeg upstream = `https://github.com/FFmpeg/FFmpeg.git`（官方镜像），本
 - **CIKernel 纪律**（P47）：`metal -fcikernel` 一步编（两步 air→metallib 出 96 字节空壳、退出码 0）；运行时只走 `CIKernel(functionName:fromMetalLibraryData:)`，失败静默降级。验收：`strings` 查 kernel 名 + 大小（正常 ~8.4KB）。
 - 相机 Swift 文件合入前必过 **iphonesimulator SDK 全量 `-typecheck` 且带 `-swift-version 6`**（P46/P48/P49：`-parse` 两次放行真错误）。
 
+## 相机 CI 色彩域与蒙版契约（CAM-015/016，2026-10-06 定）
+- **CIContext 一律显式 `workingColorSpace`（gamma sRGB）**，禁止依赖默认线性域（P62）：凡 harness 定标的 CI 参数，真机运行域必须与定标域一致；新增 CI 消费方先核域再调参。
+- **美颜区域化三态契约**：`apply(to:faces:)` —— nil=全画面兜底、[]=**直通**（与美型"无脸直通"同口径）、非空=归一化框（左上）→ FaceMask 蒙版。引擎注入签名 `(CIImage, Double) -> CIImage?` 不加 mask 参数，蒙版在 SharedUI apply 内 `CIBlendWithMask` 施加。
+- **CIImage DAG 宿主脚本先行**（P63）：自定义几何/渐变/合成先跑宿主实渲染采样再落正式测试；`CIRadialGradient` extent 有限、`cropped` 只做交集、`CGPoint+CGVector` 不存在——三个已实锤的 API 语义陷阱。
+
 ## 智能成片（ADR-0020）
 - **原始素材默认不出设备**：上云只有 FeatureReport + 用户消息；人脸只报 count/area_ratio；帧上传须显式授权、默认关闭。
 - **LLM 输出 = EditPlan（`cq.editplan/1`）action 列表**（8 动词封顶），不是时间线；时间字段 `{value, timescale}` 且 timescale==120000，**浮点秒非法**；未知 schema 拒绝并降级，C++ 校验器是唯一权威。

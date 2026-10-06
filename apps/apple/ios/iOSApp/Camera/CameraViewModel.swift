@@ -63,6 +63,10 @@ final class CameraViewModel: ObservableObject {
     let renderer: CameraPreviewRenderer?
     private let ciContext: CIContext?
     private let manager = CameraManager()
+    /// CAM-011 检测桥（CAM-016 接入美颜区域化）：offer 在采集队列非阻塞，
+    /// 检测降频 15Hz [E] + 忙丢弃；onResult 在检测队列 → FaceBoxStore（锁）。
+    private let detector = VisionDetector()
+    private let faceBoxes = FaceBoxStore()
     /// 录制器引用盒：帧回调在采集队列，**不得**触碰 MainActor 属性 —— 录制器
     /// 的启停经此线程安全中转（append 自身有锁，见 CameraRecorder）。
     private let recorderBox = RecorderBox()
@@ -71,7 +75,14 @@ final class CameraViewModel: ObservableObject {
     init() {
         if let device = MTLCreateSystemDefaultDevice(),
            let queue = device.makeCommandQueue() {
-            let context = CIContext(mtlDevice: device)
+            // CAM-015：显式 gamma sRGB 工作空间 —— 真机 kernel 输入域对齐
+            // beauty_harness 的 σr 定标域（未标记 BGRA 实测 gamma 域）。
+            // 默认线性域下皮肤边缘亮度差被放大约 1.5~2 倍 [E]，双边权重塌陷
+            // → 磨皮逐帧沸腾/闪烁、保边失效（SPEC-CAM-015-016 §1.1）。
+            // 滤镜观感基线可能随之变化，真机人工定案（TASK-CAM-015 风险栏）。
+            let options: [CIContextOption: Any] = CGColorSpace(name: CGColorSpace.sRGB)
+                .map { [.workingColorSpace: $0] } ?? [:]
+            let context = CIContext(mtlDevice: device, options: options)
             ciContext = context
             let previewRenderer = CameraPreviewRenderer(ciContext: context, commandQueue: queue)
             renderer = previewRenderer
@@ -85,6 +96,15 @@ final class CameraViewModel: ObservableObject {
         //    赋值前访问 self.filter 会触发 phase-1 报错
         //    （'self' used in property access 'filter' before all stored properties are initialized）。
         renderer?.setFilter(filter)
+        // CAM-016：检测结果 → 平滑后的人脸框。onResult 在检测队列串行回调，
+        // FaceBoxStore 内加锁；weak detector 断开 detector → onResult → detector 环。
+        detector.onResult = { [faceBoxes, weak detector] snapshot in
+            faceBoxes.update(with: snapshot.face?.box)
+            if ProcessInfo.processInfo.environment["CQ_DEBUG_PROFILE"] == "1", let detector {
+                let ms = detector.lastDetectionDurationMs.map { String(format: "%.1f", $0) } ?? "nil"
+                print("cq.debug: face detect lastMs=\(ms) total=\(detector.totalDetections) failed=\(detector.totalFailed) dropped=\(detector.totalDroppedByRate)")
+            }
+        }
     }
 
     // MARK: 生命周期
@@ -131,6 +151,7 @@ final class CameraViewModel: ObservableObject {
 
     func switchPosition() {
         let target: Position = (position == .back) ? .front : .back
+        faceBoxes.reset()   // 旧摄人脸框/平滑历史不污染新画面（CAM-016）
         manager.switchPosition(to: target.managerPosition) { [weak self] newPos in
             self?.position = (newPos == .front) ? .front : .back
         }
@@ -145,6 +166,7 @@ final class CameraViewModel: ObservableObject {
             ciContext: ciContext!,
             preset: filter,       // 录制开始时锁定滤镜（WYSIWYG）
             beauty: beauty,       // 美颜同步锁定
+            faceBoxes: faceBoxes, // 人脸框实时读取（主体移动时蒙版跟随，WYSIWYG）
             withAudio: micAvailable)
         recorderBox.set(recorder)
         isRecording = true
@@ -215,7 +237,7 @@ final class CameraViewModel: ObservableObject {
                 do {
                     var image = CIImage(cvPixelBuffer: buffer)
                     if let renderer = self?.renderer {
-                        image = renderer.process(image)
+                        image = renderer.process(image, faces: self?.faceBoxes.current())
                     }
                     if let cgImage = ciContext.createCGImage(image, from: image.extent) {
                         processed = .success(cgImage)
@@ -277,8 +299,10 @@ final class CameraViewModel: ObservableObject {
         // 显式捕获要求，又避免 manager → 闭包 → self 的保留环）；闭包体内
         // 不触碰 MainActor 状态。
         let recorderBox = self.recorderBox
+        let detector = self.detector
         manager.onVideoFrame = { buffer, pts in
             renderer.frameSlot.push(buffer)      // 预览（latest-wins）
+            detector.offer(buffer, at: pts)      // 检测（内部降频+忙丢弃，永不阻塞采集）
             recorderBox.get()?.appendVideo(sourceBuffer: buffer, at: pts)  // 录制
         }
         manager.onAudioBuffer = { sampleBuffer in

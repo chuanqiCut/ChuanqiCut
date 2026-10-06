@@ -120,6 +120,16 @@ void VideoToolboxDecoder::Enqueue(CVPixelBufferRef pb, const RationalTime& pts,
     CFRetain(pb);  // 取所有权（回调的 imageBuffer 由 VT 持有，须保留）
     std::lock_guard<std::mutex> lk(queue_mutex_);
     output_queue_.push_back({pb, pts, dts});
+#ifndef NDEBUG
+    if (debug_enqueue_logs_ < 3) {
+        ++debug_enqueue_logs_;
+        std::fprintf(stderr, "[VideoToolboxDecoder] enqueue pts=%lld/%d dts=%lld/%d (q=%zu)\n",
+                     static_cast<long long>(pts.value), static_cast<int>(pts.timescale),
+                     static_cast<long long>(dts.value), static_cast<int>(dts.timescale),
+                     output_queue_.size());
+        fflush(stderr);
+    }
+#endif
 }
 
 void VideoToolboxDecoder::MarkDecoded(const RationalTime& dts) {
@@ -628,10 +638,23 @@ Status VideoToolboxDecoder::PopFrame(MediaFrame& out) {
         CFRelease(pb);  // 释放队列对 pb 的所有权，交由 CqNativeImage 独占
         out.video.pixel_format = PixelFormat::kBGRA8;
         out.video.color_space = ColorSpace::kRec709;
-        out.video.width = width_;
-        out.video.height = height_;
+        // MEDIA-023：实际输出尺寸（降采样后）—— 调用方（视口计算/复用判据）
+        // 依赖它与真实 CVPixelBuffer 一致；源尺寸见 width_/height_。
+        out.video.width = output_width_;
+        out.video.height = output_height_;
         out.video.pts = pts;
         out.video.duration = dur;
+#ifndef NDEBUG
+        if (debug_pop_logs_ < 3) {
+            ++debug_pop_logs_;
+            std::fprintf(stderr, "[VideoToolboxDecoder] pop pts=%lld/%d dur=%lld/%d\n",
+                         static_cast<long long>(out.video.pts.value),
+                         static_cast<int>(out.video.pts.timescale),
+                         static_cast<long long>(out.video.duration.value),
+                         static_cast<int>(out.video.duration.timescale));
+            fflush(stderr);
+        }
+#endif
 
         // lease 模型：同一时刻只持有一个可消费帧，释放上一个返回的实例。
         if (last_returned_ != nullptr) {

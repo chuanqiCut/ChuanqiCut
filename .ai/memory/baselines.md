@@ -694,3 +694,16 @@ UI 重建（ADR-0022）解决不了它 → 立即立 MEDIA-023（VT 输出降采
 
 同期 [perf]：pump_rendered/s = 19~37（请求 180/s）。**卡顿归因定案：acquire 段 GOP
 重解码 + 渲染帧外秒级尖刺**；VT 解码、Metal 导入、离屏渲染、SwiftUI 全部健康。
+
+### 修复后复测（MEDIA-024 修复①②，同素材同机，2026-10-06）
+
+| 项 | 修复前 | 修复后 |
+|---|---|---|
+| pump_rendered/s | 19~37 | **74（追帧）→ 120（ProMotion 满帧）** |
+| acquire p50 | 17.6→32.5ms | **0.0ms（区间内复用命中，跳过 acquire+import）** |
+| acquire p95 | 237–253ms | **53.1ms 且逐窗口收敛**（233.6 为首个含 seek 的样本） |
+| total p50 | 19.4–33.7ms | **1.2–1.8ms** |
+| 遗留 | — | 偶发多秒渲染停顿（rendered/s=0 窗口，stuck render 不进样本）→ watchdog 定位 |
+
+修复内容：①渲染器区间内复用导入纹理（跳过 acquire+import）；②解码器输出尺寸
+元数据改实际 CVPixelBuffer 尺寸。另 MEDIA-025 色彩转换已应用（2020/HLG→709）。

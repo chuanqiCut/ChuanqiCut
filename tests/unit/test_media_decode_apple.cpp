@@ -325,6 +325,32 @@ int main() {
         Check(c.first % 2 == 0 && c.second % 2 == 0, "非整尺寸输出取偶");
     }
 
+    // MEDIA-025：HDR 源判定纯函数（传递函数 HLG/PQ → 转；2020+非709 → 转；
+    // SDR 709/标签缺失 → 不转，行为同旧）。
+    {
+        const bool hlg = cq::VideoToolboxDecoder::IsHdrColorSource(
+            kCMFormatDescriptionColorPrimaries_ITU_R_2020,
+            kCMFormatDescriptionTransferFunction_ITU_R_2100_HLG);
+        Check(hlg, "BT.2020 + HLG → HDR（转换）");
+        const bool pq = cq::VideoToolboxDecoder::IsHdrColorSource(
+            kCMFormatDescriptionColorPrimaries_ITU_R_2020,
+            kCMFormatDescriptionTransferFunction_SMPTE_ST_2084_PQ);
+        Check(pq, "BT.2020 + PQ → HDR（转换）");
+        const bool sdr_wide = cq::VideoToolboxDecoder::IsHdrColorSource(
+            kCMFormatDescriptionColorPrimaries_ITU_R_2020,
+            kCMFormatDescriptionTransferFunction_ITU_R_709_2);
+        Check(!sdr_wide, "BT.2020 + 709（SDR 宽色域）→ 不转换");
+        const bool sdr = cq::VideoToolboxDecoder::IsHdrColorSource(
+            kCMFormatDescriptionColorPrimaries_ITU_R_709_2,
+            kCMFormatDescriptionTransferFunction_ITU_R_709_2);
+        Check(!sdr, "BT.709 SDR → 不转换");
+        const bool unknown = cq::VideoToolboxDecoder::IsHdrColorSource(nullptr, nullptr);
+        Check(!unknown, "标签缺失 → 不转换（诚实：未知按旧行为）");
+        const bool wide_unknown_tf = cq::VideoToolboxDecoder::IsHdrColorSource(
+            kCMFormatDescriptionColorPrimaries_ITU_R_2020, nullptr);
+        Check(!wide_unknown_tf, "2020 原色域 + 传递函数缺失 → 不转换（未知按旧行为）");
+    }
+
     // H.264（既有基线）+ HEVC（MEDIA-022：iPhone 相册默认编码，此前 Open 一律
     // 返回 kDecodeUnsupported，导入链路在探测步即挂）。
     RunCodecAcceptance(

@@ -161,3 +161,14 @@ ARCH-004 §3、`PALA-0xx` 任务、ADR-0009（RationalTime 网格）、EXPORT-00
   probe（完整解码管线打开）对 HEVC golden 返回 0。
 - 绑定层：`probeMediaDurationDetailed`（失败透传原始状态码）+ `Status: Error`；
   UI 文案按 1000/2000/2001 分级（SharedUI `Status.userText`）。
+
+## PALA-011 增补（MEDIA-025，2026-10-06）：解码色彩空间管理
+
+- `VideoToolboxDecoder::Open` 读源色彩标签（CMFormatDescription 扩展 ColorPrimaries/
+  TransferFunction/YCbCrMatrix）；HDR 判定纯函数 `IsHdrColorSource`（HLG/PQ 传递函数
+  或 2020 原色域+非 709 传递 → 转；**标签缺失 = 不转换，行为同旧**）。
+- HDR 源对 VT 会话设 `kVTPixelTransferPropertyKey_Destination{ColorPrimaries,
+  TransferFunction,YCbCrMatrix}` = ITU_R_709_2 —— 解码+色彩转换 VT 内部一体完成；
+  属性被拒时如实日志并保持旧行为（不 fail Open）。
+- 诊断：`Open 完成` 行带源标签与转换状态。⚠️ 'hvc1' 重建会丢色彩扩展——标签必须
+  在重建前从原 fd 读取（MEDIA-022 与 025 的顺序耦合）。

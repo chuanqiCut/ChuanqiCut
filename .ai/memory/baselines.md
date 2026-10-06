@@ -738,3 +738,34 @@ UI 重建（ADR-0022）解决不了它 → 立即立 MEDIA-023（VT 输出降采
 
 ⚠️ 桌面吞吐退化未定位（可能是 autorelease pool 开销 / 机器负载差异 / 修复引入的
 额外解码），**不得当作"没变"**，需单独量一次。真机侧吞吐是**提升**的（0 → 155/s）。
+## 播放器（UIA-015，2026-10-05）：**全部未实测**
+
+> 独立文件播放器 MVP（AVPlayer 过渡，ADR-0022）。本节逐项登记"未实测"，
+> 构建机编译 + 真机验收后**替换为实测数字**（数字纪律：估算不得作验收阈值）。
+
+| 项 | 值 | 待测条件 |
+|---|---|---|
+| 起播延迟（本地 1080p mp4，`automaticallyWaitsToMinimizeStalling=false`） | **未实测** [E 估算百毫秒级] | 构建机 + 真机 |
+| 零容差 seek 落点延迟（长 GOP 源 vs 短 GOP） | **未实测** | 真机，对比 golden 片段 |
+| 双击 ±10s（关键帧容差 seek）感知延迟 | **未实测** | 真机 |
+| 变速 2x（audioTimePitchAlgorithm=.timeDomain）CPU 占用 | **未实测** | 真机 Instruments |
+| 缩略图 LRU 120 张内存占用（maximumSize 480） | **未实测** [E ≈32MB] | 真机 Memory gauge |
+| 单张缩略图生成耗时（tolerance ±1s） | **未实测** | 真机 |
+| 逐帧步进（，/.）单步延迟 | **未实测** | 真机 |
+| A-B 循环回跳延迟（tick 0.25s 粒度） | **未实测** | 真机 |
+| 长按倍速 2x→恢复 1x 的引擎切换顺滑度 | **未实测** | 真机 |
+| 缩略图批量预热（≤24 桶 × 50ms 错峰）CPU 峰值 | **未实测** | 真机 Instruments |
+| 音轨/字幕切换生效延迟（selectMediaOption） | **未实测** | 真机，多轨样本 |
+| 播放队列连播换片间隙（swapMedia 现载路径） | **未实测** [E <1s] | 真机 |
+| iOS security-scoped bookmark 跨会话重开 | **未实测** | 真机（Files 选入的文件） |
+| ASS 2MB 解析耗时 | **未实测** [E <200ms] | 构建机 |
+| 关窗续播（PlayerController App 级 VM） | **未实测** | 构建机 + 真机 |
+| 章节/轨道/时长元数据装载耗时（三异步任务） | **未实测** | 真机 |
+| SharedUI swift test（含 PlayerTests 8 用例） | **未跑**（本机 Swift 5.5，P45/P46） | 构建机 |
+| iOS/macOS xcodebuild（0 error 0 warning） | **未跑** | 构建机 |
+### 音频地基（AUDIO-001，2026-10-05）
+| 项 | 实测 | 环境 | 日期 | 备注 |
+|---|---|---|---|---|
+| 音频线程零分配（pool/ring/graph.Process 全路径） | operator new 增量 = 0 | Intel Iris Plus 640 / macOS 13.7（宿主） | 2026-10-05 | core_audio_graph 单测实测，kAudio 标记线程，热身后测 256 块 |
+| SPSC 环往返 20 万序号 | 通过（序号连续无丢失） | 同上 | 2026-10-05 | core_audio_pcm 压测；吞吐/延迟未做 microbench，**未实测** |
+| AudioBlockPool 并发 4 线程 × 2 万次 | 无污染、InUse 记账闭合 | 同上 | 2026-10-05 | 末态整池可取空再全还 |

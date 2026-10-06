@@ -25,6 +25,7 @@
 - 单一真源 `.ai/source/AGENTS.root.md` → `tools/ai/sync_context.py` 生成 AGENTS.md / CLAUDE.md / .cursorrules / .windsurfrules / copilot-instructions.md。**改规则改真源再跑脚本**，禁手改产物。
 - 编码阶段：**一个任务一个新会话**，开场读真源 + 模块文档 + 任务单卡。
 - **收工逐项勾清单**（真源「任务结束必须同步上下文」）：`.ai/modules/` → ADR（改了既有惯例必须新增）→ TASK 卡 → HANDOFF → pitfalls → baselines → 当日日志 → MEMORY.md。模糊的"要回写"等于没写（连漏两轮的教训）。
+- 门类补充：门禁状态写**具体数字**（如 `Debug 44/44、Release 44/44`），不写"全绿"；HANDOFF 里的任务状态要**对着 commit 历史核**，不能照抄上一版。
 - 「本期明确不支持」要写进头文件/文档，不要只在对话里说。
 
 ## 产物打包与链接
@@ -57,6 +58,7 @@
 - **源码集成的 git 依赖一律 `pin="commit"` + 40 位 hash，禁 `pin="tag"`**；「定期拉最新」= 人工 bump + 完整 CI，CI 绝不跟随分支/HEAD。
 - `version` 字段必须 `git ls-remote` 核对（曾 6 处编造版本号，E6）。
 - LGPL：不用 GPL、保持 LGPL-2.1+。**LGPL ≠ 无义务**，静态链接需提供 relink 能力。当前产物**未接入任何构建目标**，义务未触发。CORE-006 PAL Media 接口**不得依赖 FFmpeg 类型**。
+- **FFmpeg 授权档位（传哲 2026-09-25 明确）**：`LGPL-2.1-or-later`、`CONFIG_GPL=0`、`CONFIG_LGPLV3=0`、`profile=demux`。
 
 ## 预览 / 解码 / 取帧
 - **取帧渲染只在 `PreviewPump` 泵线程**（内核拥有）；主线程只 Request + Lock→blit→Unlock。挂泵后任何线程禁调 `cq_preview_render_frame` / `cq_preview_resize`（改尺寸走 `cq_preview_pump_request_resize`）。
@@ -159,6 +161,11 @@ App 侧在 `EditorViewModel.init()` 最早处调 `ChuanqiCut.configureLogFromEnv
 - **门禁 = `tools/ci/run_gate.sh`**（deps + PAL 头纯净 + Debug/Release 全量单测 + XCFramework + Swift 绑定 + SharedUI + golden，一票否决）。远端"已验证"按未验证处理。
 - 风格唯一标准 `docs/CODESTYLE.md`，巡检落 `docs/reviews/`；文档里的命令路径必须真实存在（P58）；脚本 `$var` 写 `${var}`（bash 3.2，P50）。
 - 多人/多会话共用机器加 `-derivedDataPath` 隔离（否则 `database is locked`）。
+- **合并/同步后必查冲突标记残留**（P59）：全仓 grep `<<<<<<<` / `=======` / `>>>>>>>`。注意 `tests/golden/*.py` 有 45 字符 `=====` 注释分隔线，不是冲突标记。
+
+## 播放器域边界（UIA-015 / ADR-0022，2026-10-05 确立）
+- **AVFoundation/AVKit 只许出现在 `SharedUI/Sources/SharedUI/Player/` 域的五个文件**（PlayerEngine / AVPlayerEngine / PlayerSurfaceView / VideoThumbnailLoader / PlayerPipCoordinator）；控制层、PlayerViewModel、App target 一律不 import。跨文件传 `AVPlayer`/`AVPlayerLayer` 用「不点名的不透明值」（不写出类型名即可传值）。控制层只依赖 `PlayerEngine` 协议 —— 换 C++ 播放 session 时不改 UI。
+- **SharedUI 新代码按 Swift 5.5 可解析风格写**（显式 `guard let x = x`、不用 `any P`）—— 本机 swiftc 5.5 是唯一静态验证手段，5.7 简写会把语法检查变成噪音（P45/P46 环境约束的推论）。
 
 ## 智能成片（ADR-0020）
 - **原始素材默认不出设备**：上云只有 FeatureReport（聚合统计），人脸只报 count/area_ratio；可选帧上传须显式授权。
@@ -170,7 +177,7 @@ App 侧在 `EditorViewModel.init()` 最早处调 `ChuanqiCut.configureLogFromEnv
 | 机器 | 系统 / 工具链 |
 |---|---|
 | A（早期全部"本机实测"） | macOS 15.4 / AppleClang 17（Intel i7 + AMD GPU，无 ANE、无 ProRes 硬编） |
-| B | macOS 13.7 / Xcode 15.2（AppleClang 15） |
+| B | macOS 13.7 / Xcode 15.2（AppleClang 15，Swift 5.9.2）。SwiftPM 声明 `swift-tools-version:6.1` 本机解析不了 → swift-bindings 门禁 FAIL 属**环境上限，不是回归** |
 | C（当前） | macOS 26.7.1 / Xcode 26.6（iPhoneSimulator 26.5 SDK） |
 - B 机：`pip3 install --user cmake` 后 `export CMAKE_BIN=$(ls ~/Library/Python/*/bin/cmake | head -1)`。
 - 跨工具链兼容：用 `::va_list` + `<cstdarg>`；不对 volatile 复合赋值/自增。

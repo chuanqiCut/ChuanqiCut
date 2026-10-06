@@ -464,3 +464,139 @@ EditorView（sheet 状态在编辑器层）
 
 Theme 增量（UIA-016）：`transportBackground/toolbarBackground/accent/accentText`
 + `Space`/`Radius` 阶梯；全量令牌清扫仍归后续批次（BACKLOG §11 登记）。
+# UIA-015 落地（2026-10-05）：独立视频播放器 MVP（Player/ 域）
+
+Spec UIA-020 / ADR-0022 / RESEARCH-006。**内核 = AVPlayer 过渡实现 +
+`PlayerEngine` 协议接缝**（ADR-0022：自研预览线无声（PALA-030 未实现），
+播有声成片唯一即时路径；先例 ADR-0014/0015 的 UI 域系统 API 豁免）。
+`core/`、C ABI、绑定层零改动。
+
+- **新域** `SharedUI/Sources/SharedUI/Player/`（七文件）：
+  `PlayerEngine`（@MainActor 协议接缝：load/play/pause/seek(to:precise:)/
+  invalidate + state/duration/currentTime/rate/volume/isMuted/videoSize/
+  frameDuration + onTick/onStateChange/onEnded/onPlayStateChange）→
+  `AVPlayerEngine`（过渡实现：defaultRate 承载倍速、零容差/关键帧双档
+  seek、timeControlStatus KVO 覆盖耳机拔出/来电自动暂停、
+  `automaticallyWaitsToMinimizeStalling=false`）→ `PlayerViewModel`
+  （状态机：拖动=暂停+静音预览、松手零容差 seek；播放中 4s 自动隐藏）→
+  `PlayerControlsView`（自绘进度条+缩略图气泡+双击 ±10s+上下滑亮度/音量
+  （iOS）+倍率菜单 0.5~2x+失败横幅+VoiceOver adjustable 进度条）→
+  `PlayerSurfaceView`（AVPlayerLayer 桥，iOS UIView(layerClass) /
+  macOS NSView(makeBackingLayer)，gravity 用自有枚举隔离）→
+  `PlayerPipCoordinator`（AVPictureInPictureController 强持有 + 退后台
+  自动进 + 可用性 KVO）→ `VideoThumbnailLoader`（按秒取桶 + LRU ≤120 张
+  + 按桶去重，失败静默降级纯时间气泡）。
+- **AVFoundation 域边界（ADR-0022 决策 4，代码审查按此检查）**：只许出现在
+  Player 域五文件（引擎×2、surface、缩略图、PiP 协调器）；控制层/VM/
+  App target 不 import。跨文件传 `AVPlayer`/`AVPlayerLayer` 用
+  **"不点名的不透明值"**手法（Swift 允许传递未在本文件导入的类型值，
+  只要本文件不写出类型名）。
+- **装配**：`HomeView` 第三入口卡「播放器」→ `PlayerLauncherScreen`
+  （fileImporter movie/video）；macOS `ChuanqiCutMacApp` 新增
+  `Window("视频播放器", id: "player")`。`ios/project.yml` info 段新增
+  `UIBackgroundModes: [audio]`（PiP/后台播放前置）。键盘（macOS）：
+  `.onKeyPress`（空格/←→/，. /0-9/m）。
+- **测试**：`PlayerTests`（StubPlayerEngine 注入，8 用例：拖动只在松手
+  一次零容差 seek 且恢复静音、skip/jump 越界钳制、倍速透传、逐帧按
+  frameDuration、播完停住、失败上抛+控制层常显、时间码格式化）。
+- ⚠️ 门禁：本机 Swift 5.5（P45/P46 环境）`swiftc -parse` 10 文件全绿
+  （**新代码按 5.5 可解析风格写**：`guard let self = self` 显式绑定、
+  不用 `any P` —— 与部分既有文件的 5.7 简写噪音区分开）；linkcheck ✅；
+  `swift test` / 双平台 xcodebuild / SPEC §6.4 行为清单待构建机+真机。
+  播放性能数字全部未实测（baselines 有未实测清单）。
+
+## UIA-015 第二轮（2026-10-05 深夜，V1 批次同日追加）
+
+- **长按倍速**：overlay 上 `onLongPressGesture(0.35s, maxDist 12)` →
+  VM `beginSpeedBoost/endSpeedBoost`（2x，松手恢复，重复触发幂等，仅播放中生效），
+  触觉复用 MediaPicker 域的 `PickerFeedback.selectionChanged()`（同模块内跨域复用，
+  均为 @MainActor）。中央气泡 "2x 快进中"。
+- **循环**：单片循环（onEnded → seek 0 + play，纯 VM 不动引擎协议）+
+  **A-B 循环**（三态 off→aSet→looping；tick 粒度 0.25s 越界回跳零容差；
+  区间 <1s 视为误触；手动 seek 落区间外自动清除；播完（B≈片尾）回 A 续播；
+  进度条画高亮区间/起点刻度）。入口收进 moreMenu（ellipsis.circle）避免控制行溢出。
+- **倍速记忆**：VM 注入 `UserDefaults`（测试用独立 suite），键
+  `cq.player.rate`，init 恢复 + didSet 写入。
+- **缩略图批量预热**：ready 后 `VideoThumbnailLoader.warmup`（≤24 桶、
+  ≥6 桶、短片 5s/桶，50ms 错峰防瞬间并发解码），气泡基本命中缓存。
+- **换片与拖放**：VM `swapMedia(to:)`（scope 换绑 + 状态复位 + loader 重建 +
+  AB 清除；循环开关/倍速记忆保留）；控制层 moreMenu"打开新视频"（fileImporter）；
+  Launcher 增加 `dropDestination(for: URL.self)` 拖放打开（macOS 惯例）。
+- **第二轮测试**：PlayerTests 8 → 14 用例（boost 恢复/循环续播/AB 回跳/
+  短区间取消/区间外清除/倍速记忆/换片复位）。parse 全绿。
+
+## 播放器进阶版实施（2026-10-05 深夜，Batch A–E，PLAN 十卡落地）
+
+提交链：d2122f8（A：021 最近播放 + 022 队列）→ cc7267a（B：024 网络流 + 017 缩放）→
+a7d197d（C：ADR-0023 + 018/025 字幕）→ 7fa0826（D：016 章节/PiP 占位/AirPlay）→
+935b4d8（E：023 设置页 + 026 素材库联动 + 027 mini player）。
+
+- **域形状新增**：`PlayerRecentStore`（shared 单例 + tests 注入 suite；iOS bookmark
+  与 macOS 路径双分支）、`PlayerController`（public 门面：App 级共享 VM，
+  objectWillChange 合并转发 = 关窗续播；open/playStandalone）、`PlayerMiniBar`
+  （MenuBarExtra .window）、`PlayerSettingsView`、`SubtitleParser`/
+  `SubtitleOverlayView`（ADR-0023：值类型接缝，解析下沉 C++ 时渲染零改动）、
+  `PlayerScreenBody`（internal 共享 body；teardownOnDisappear 区分自管/控制器双模式）、
+  `PlayerTestSupport`（StubPlayerEngine + makePlayerViewModel 跨测试类共用）。
+- **PlayerEngine 协议累计增量**：onPlayStateChange、chapters（PlayerChapter）、
+  isRemoteSource、onBufferingChange——控制语义全在接缝内，AVPlayer 替换面不变。
+- **域边界更新**：AVKit 的 AVRoutePickerView 落 PlayerSurfaceView（"画面/系统播控"
+  域文件）；AVFoundation 名义引用新增文件 = SubtitleParser/OverlayView（纯 Foundation
+  + CoreGraphics + SwiftUI，无 AV 依赖——Overlay 只吃值类型）。
+- **测试**：PlayerTests 20 + PlayerQueueTests 19 + PlayerSubtitleTests 9 = **48 用例**
+  （stub 引擎全状态机覆盖；ASS 样式切换切段 bug 在写测试时暴露并修复——纯函数
+  全量单测策略的价值实证）。
+- **UIA-023 收尾补**：macOS PiP 按钮（isPipPossible 显隐）+ F/S/A 快捷键
+  （字符键映射抽 `characterKeyResult` static 可测；F = NSApp.keyWindow
+  .toggleFullScreen 经闭包注入）。自审：PiP delegate 内存语义经 SDK 头文件
+  验证为 weak，无 coordinator↔controller 循环。
+- **待构建机（共性）**：swift test 48、双平台 xcodebuild 0 警告、Swift 6 风险点
+  （AVMediaSelectionGroup/AVAssetImageGenerator Sendable、PiP delegate 线程、
+  MenuBarExtra 注入、requestGeometryUpdate）；**待真机**：HLS 样本、bookmark 跨会话、
+  连播间隙、捏合手感、章节/字幕真实样本。
+
+## UIA-015 第三轮（2026-10-05 深夜，V1 收尾）
+
+- **音轨/字幕选择**：`PlayerEngine` 协议扩展（+`PlayerTrackOption`
+  [id=当次装载会话内的组内下标, name=本地化显示名] + audioTracks/
+  currentAudioTrackID/subtitleTracks/currentSubtitleTrackID +
+  selectAudioTrack/selectSubtitleTrack，nil=默认/关闭）。
+  `AVPlayerEngine` 用 `asset.loadMediaSelectionGroup(for: .audible/.legible)`
+  异步装载，装载完成经**同值状态广播**刷新 VM（与时长广播同机制）；
+  `item.selectMediaOption(_:in:)` 执行切换；换片先清旧列表防闪现。
+  控制层 moreMenu 两个子菜单（waveform / captions.bbox 图标，当前项
+  checkmark），切换经 showFeedback 气泡反馈。
+- **双击步长可设**：`vm.doubleTapSeconds`（5/10/15/30，UserDefaults
+  `cq.player.doubleTapSeconds` 持久化）；双击区、skip 按钮图标
+  （gobackward/goforward.5/10/15/30）、VoiceOver adjustable 全部随步长走。
+- **第三轮测试**：PlayerTests 14 → **17 用例**（轨道列表同步/选择透传/
+  步长持久化）。parse 全绿。
+- ⚠️ 章节标记（V1 最后一项）暂缓：AVAsset 章节 API 的 async 形状无法在
+  本机（Swift 5.5）验证，待构建机在线做。音轨/字幕的
+  `AVMediaSelectionGroup` 跨执行器 Sendable 标注与缩略图同属
+  [hypothesis]，构建机 typecheck 见分晓。
+---
+
+# UI 操作逻辑深拆调研（2026-10-05）：RESEARCH-007 结论
+
+应"调研全球顶级拍摄编辑 UI 布局与面板逻辑"命题完成，全文见
+`docs/research/RESEARCH-007-顶级拍摄剪辑App布局与操作逻辑深度调研.md`
+（18 家：Blackmagic/Kino/Halide/FC Camera/FiLMiC/iOS 26 相机/TikTok/Reels/
+Snapchat + CapCut/Edits/VN/Videoleap + FCP/Resolve/FCP iPad/Premiere/CapCut 桌面）。
+RESEARCH-004/005 结论全部维持，本文补**操作层**，关键增量：
+
+- **拍摄页八律**：高频下沉拇指弧；侧列只放录制前设置；自动默认+手动按需浮层
+  （Kino/Halide/FC Camera 范式，**不学** BMD 常驻芯片条）；色彩预设一级入口实时可换；
+  单指变焦（Snapchat）；状态反馈一条带；拍完必进编辑（流水线）；改版保肌肉记忆回退
+  （iOS 26 相机争议与回调的教训）。
+- **编辑页八律**：核心 = **一个工具栏槽位、两套内容、选中驱动**（CapCut 定式：
+  一级项目工具栏 ↔ 片段编辑条同槽替换）——UIA-016 的关键细化；撤销/重做恒置预览区顶；
+  参数不遮预览；二级面板 sheet 幅度随复杂度；关键帧三层收纳；面板组织三范式
+  （分页/情境/浮动，轻剪辑取情境）；Inspector 按属性域分组（Video/Audio/Color）；
+  新范式默认+旧范式逃生门（FCP Position、VN Quick/Pro）。
+- **手势词汇表趋同**（双指缩放/平移时间线、长按拿起、边缘 trim）——UIA-016/018 对齐，
+  不自创手势。
+- **落地**：§5 delta 表逐任务列了 UIA-015~019 的新增输入（编号备注：UIA-015~018 现为播放器卡实际占用，§5 表为 RESEARCH-004 时代建议位，视觉升级批次届时按 PLAN-播放器进阶 §5 取新号）；
+  UIA-019 PanelRoute 状态机需增加"工具栏槽位状态"。明确不采纳：Resolve Pages、
+  Premiere 浮动面板、BMD 芯片条。未核实项已标 [hypothesis]，精确控件排布
+  待真机走查截图核对（§6.2）。

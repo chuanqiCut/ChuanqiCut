@@ -924,3 +924,24 @@ ADR-0020 文件头带着完整冲突块（`<<<<<<<< HEAD ... ======== ... >>>>>>
   cq-code-review 收尾清单）；编号类合并收口必须做一次全库旧号扫描。
 - 日期 / 来源 / 验证状态：2026-10-05 / 双机第四轮合并本机巡检 / **verified**
   （ADR-0020 文件头已修复；全库 `<<<<<<<` 扫描 0 残留）
+
+### P60 · 无锁 freelist 边写边定并发模型 —— 初版 Acquire 逻辑不自洽，靠自审在提交前抓住
+AUDIO-001 的 AudioBlockPool 初版把「Treiber 栈」写成了一半：没有 per-slot next 数组，
+CAS 弹栈后无处取后继，且注释里临时反悔换方案，逻辑闭合不上（自审发现，未进 commit）。
+- 根因：并发容器**边写边设计**。CAS 期望值参数还必须是非 const（CAS 会写回），const 局部变量编译期才暴露。
+- 防复发规则：**无锁数据结构动手前，先在代码注释/任务卡里定死并发模型**——谁 push/pop、
+  防 ABA 手段（tag）、双重释放防护（per-slot 状态位）、内存序（acq_rel/acquire）四要素齐全才开写。
+  本任务最终形态 = tag 索引 Treiber 栈 + per-slot 状态 CAS 双保险，见 `core/src/audio/pcm_pool.cpp`。
+- 日期 / 来源 / 验证状态：2026-10-05 / AUDIO-001 实现 / **verified**
+  （Debug+Release 全量 44/44 通过，含 4 线程×2 万次并发与 20 万序号 SPSC 压测）
+
+### P61 · 测试等「早事件」断言「晚事件」—— core_thread_model 门禁抖动
+`test_thread_model` 等 `finished`（任务体内置位，worker 先做）后立刻断言
+`ExecutedCount()==1`，但 worker 是任务**返回后**才 fetch_add 计数——存在
+「store 已见、自增未到」窗口。平日 invisibility（100ms 任务 + 空闲机器），
+run_gate.sh 负载下实测抖出（Debug 43/44，"执行计数为 1" FAIL）。
+- 修复：等待对象换成更晚的 `ExecutedCount`（超时 5s 护栏），再断言两者。
+- 防复发规则：**并发测试的等待对象必须是断言链上最晚发生的事件**；
+  时序断言在满负载门禁下会暴露，空闲单跑不绿≠稳定。
+- 日期 / 来源 / 验证状态：2026-10-05 / run_gate.sh 首跑（AUDIO-001 轮）/
+  **verified**（修复后连跑 5 次 50/50，重跑门禁见当日日志）

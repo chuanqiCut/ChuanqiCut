@@ -47,6 +47,7 @@ cat docs/handoff/HANDOFF-004-*.md      # 3. 最近交接（状态以最新一份
 | [`RESEARCH-003-智能成片竞品调研.md`](research/RESEARCH-003-智能成片竞品调研.md) | 智能成片竞品调研（剪映图文成片 / iMovie / 必剪等），下游 ADR-0020 / AIEDIT-001 |
 | [`RESEARCH-004-拍摄与编辑UI主流方案调研.md`](research/RESEARCH-004-拍摄与编辑UI主流方案调研.md) | 拍摄与编辑 UI 主流方案调研 |
 | [`RESEARCH-005-功能面板信息架构与四端布局调研.md`](research/RESEARCH-005-功能面板信息架构与四端布局调研.md) | 功能面板信息架构与四端布局调研，下游 UIA-019 |
+| [`RESEARCH-006-顶级拍摄剪辑App布局与操作逻辑深度调研.md`](research/RESEARCH-006-顶级拍摄剪辑App布局与操作逻辑深度调研.md) | 全球顶级拍摄/剪辑 App 的控件分区、手势与面板切换规则深拆（18 家），§5 delta 表为 UIA-015~019 Spec 的操作层输入 |
 | `legacy/`（7 份） | 第一代调研素材（2026-09-23 前）：6 份 `技术调研_*.md` + `技术方案决策书`。**只读**，每份头部有状态横幅；性能数字一律 [E]、结论已被评审修正 |
 
 **规则**：新的调研产出一律建 `RESEARCH-00x-<标题>.md`（编号纪律见 ADR-0019）；
@@ -121,6 +122,7 @@ cat docs/handoff/HANDOFF-004-*.md      # 3. 最近交接（状态以最新一份
 | [HANDOFF-004-编码阶段会话交接](handoff/HANDOFF-004-编码阶段会话交接.md) | **编辑器线**当前状态（UIA / BIND / MEDIA 线） |
 | [HANDOFF-004-相机模块会话交接](handoff/HANDOFF-004-相机模块会话交接.md) | **相机线**当前状态（CAM 线，随 CAM 系列任务持续刷新） |
 | [HANDOFF-005-智能成片会话交接](handoff/HANDOFF-005-智能成片会话交接.md) | **智能成片线**当前状态（AIEDIT-000~011 立项轮，RESEARCH-003/ADR-0020/SPEC） |
+| [HANDOFF-006-音频线会话交接](handoff/HANDOFF-006-音频线会话交接.md) | **音频线**当前状态（AUDIO-001 已落地：池/环/图骨架；下一步 AUDIO-004 或 PALA-030） |
 
 **规则**：新交接取下一个编号（下一份 = 006）；双线并行期间允许**同号双卡**（后缀区分主题），
 引用时务必带主题（"HANDOFF-004 相机版 §x"）。状态核对必须对着 commit 历史与门禁数字，不照抄上一版（pitfalls E10）。

@@ -438,7 +438,9 @@ RENDER-001/红线 #6 路线，勿把相机滤镜直接当 SDK 能力引用。
 | MEDIA-022 | SDK | HEVC 解码支持 + 探测失败诚实透传 ✅ 2026-10-05 | — | `pal/apple/media_decode.mm`、绑定 probe 透传、AppEntry 文案 | HEVC golden probe=0 + 像素断言；门禁全绿（诊断见任务卡 §背景） |
 
 **批次**：020 ∥ 016 → 015。**关键路径**：020 → 015。
-**登记未开工**：UIA-017（macOS 惯例化）、UIA-018（时间线视觉——被 RESEARCH-006/UIA-024 吸收时标注让位）、Theme 2.0 全量清扫（RESEARCH-004 §6.0，待批）、UIA-019 面板框架立项。
+| MEDIA-024 | SDK | 顺序快路径对真实 4K60 失效修复 + 泵帧外秒级尖刺定位（播放卡顿定案修复） | — | `system_frame_provider.cpp`、`preview_renderer.cpp`、单测 | 真机 rendered/s ≥ 55 且无秒级尖刺（数据见 baselines） |
+
+**登记未开工**：UIA-017（macOS 惯例化）、UIA-018（时间线视觉——被 RESEARCH-006/UIA-024 吸收时标注让位）、Theme 2.0 全量清扫（RESEARCH-004 §6.0，待批）、UIA-019 面板框架立项、MEDIA-024（2026-10-06 立项，数据已定案）。
 
 ## 12. 编辑页 UIKit 重建（UIA-021~024，2026-10-05 新增；RESEARCH-006 + ADR-0022）
 

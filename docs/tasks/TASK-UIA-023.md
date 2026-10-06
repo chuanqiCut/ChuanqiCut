@@ -2,13 +2,12 @@
 > 前置：构建机门禁 PASS（TASK-UIA-015）；开工前 git fetch 核对号（PLAN-播放器进阶 §5）。
 # TASK-UIA-023：播放器设置页 + macOS PiP 按钮 + 快捷键扩充
 
-> **状态**：✅ 代码落地（2026-10-05，Batch E）。落地：`PlayerSettingsView`
-> （默认循环/双击步长/倍速/字幕字号聚合，即时生效 + 跨会话记忆；键
-> `cq.player.loopDefault`、`cq.player.subtitleScale` 新增）+ VM setDefaultLoopEnabled/
-> subtitleScale + SubtitleOverlayView scale 参数 + moreMenu"播放设置"sheet。
-> macOS PiP 按钮与快捷键 F/S/A **未落**（PiP 按钮受 macOS 系统能力表现待真机
-> 验证；快捷键扩充与 F/S/A 归入下一轮，卡内 acceptance 相应项保持未勾）。
-> PlayerQueueTests +2 用例。本机 parse 全绿。
+> **状态**：✅ 全项代码落地（2026-10-05，Batch E + 收尾补）。落地：`PlayerSettingsView`
+> （默认循环/双击步长/倍速/字幕字号聚合，即时生效 + 跨会话记忆）+ macOS PiP 按钮
+> （与 iOS 同位，isPipPossible 显隐）+ 快捷键 F（NSApp.keyWindow.toggleFullScreen，
+> 经闭包注入以便测试）/S（外挂字幕开关）/A（循环）——字符键映射抽为
+> `PlayerScreenBody.characterKeyResult` static 可测函数。PlayerQueueTests +3 用例
+> （累计 49）。本机 parse 全绿；macOS PiP 行为待构建机/真机。
 
 ```yaml
 id:          TASK-UIA-023

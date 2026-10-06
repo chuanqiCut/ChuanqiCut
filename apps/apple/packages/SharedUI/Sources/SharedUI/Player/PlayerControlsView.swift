@@ -178,6 +178,17 @@ struct PlayerControlsOverlay: View {
                 .accessibilityLabel("画中画")
             }
             #endif
+            #if os(macOS)
+            if vm.isPipPossible {
+                Button {
+                    vm.pip.start()
+                } label: {
+                    Image(systemName: "rectangle.on.rectangle")
+                        .foregroundStyle(.white)
+                }
+                .accessibilityLabel("画中画")
+            }
+            #endif
             AirPlayRoutePicker()
                 .frame(width: 24, height: 24)
                 .accessibilityLabel("隔空播放")

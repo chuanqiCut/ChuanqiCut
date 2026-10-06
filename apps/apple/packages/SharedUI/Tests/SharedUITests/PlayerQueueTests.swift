@@ -237,6 +237,45 @@ final class PlayerQueueTests: XCTestCase {
         XCTAssertNotNil(controller.model)
     }
 
+    // MARK: 键盘播控（UIA-023 收尾；仅 macOS 宿主编译）
+
+    #if os(macOS)
+    func testCharacterKeyMapping() {
+        let (vm, engine) = makePlayerViewModel(duration: 100)
+
+        // F 全屏：经闭包注入（测试不碰 NSApp）
+        var fullscreenCalls = 0
+        XCTAssertEqual(PlayerScreenBody.characterKeyResult("f", vm: vm,
+                                                           toggleFullscreen: { fullscreenCalls += 1 }),
+                       .handled)
+        XCTAssertEqual(fullscreenCalls, 1)
+
+        // S：未加载字幕 → ignored
+        XCTAssertEqual(PlayerScreenBody.characterKeyResult("s", vm: vm, toggleFullscreen: {}), .ignored)
+
+        // S：加载外挂字幕（真实 srt 临时文件走真解析路径）→ handled 且关闭
+        let srt = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("cq-key-s-\(UUID().uuidString).srt")
+        FileManager.default.createFile(atPath: srt.path,
+                                       contents: Data("1\n00:00:01,000 --> 00:00:02,000\n你好".utf8))
+        defer {
+            // 清理失败无害（临时目录系统会回收）
+            try? FileManager.default.removeItem(at: srt)
+        }
+        vm.loadExternalSubtitle(from: srt)
+        XCTAssertNotNil(vm.externalSubtitle, "srt 加载成功")
+        XCTAssertEqual(PlayerScreenBody.characterKeyResult("s", vm: vm, toggleFullscreen: {}), .handled)
+        XCTAssertNil(vm.externalSubtitle, "S 关闭外挂字幕")
+
+        // A 循环 + 数字跳转 + 未映射键
+        XCTAssertEqual(PlayerScreenBody.characterKeyResult("a", vm: vm, toggleFullscreen: {}), .handled)
+        XCTAssertTrue(vm.loopEnabled)
+        XCTAssertEqual(PlayerScreenBody.characterKeyResult("5", vm: vm, toggleFullscreen: {}), .handled)
+        XCTAssertEqual(engine.seeks.first?.target ?? -1, 50, accuracy: 0.001, "数字 5 = 跳 50%")
+        XCTAssertEqual(PlayerScreenBody.characterKeyResult("x", vm: vm, toggleFullscreen: {}), .ignored)
+    }
+    #endif
+
     // MARK: 最近播放
 
     func testRecentStoreRecordDedupsCapsAndPersists() {

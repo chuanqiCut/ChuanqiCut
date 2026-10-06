@@ -67,9 +67,11 @@
 ## 实施总览（2026-10-05 深夜：PLAN 十卡全部代码落地）
 
 P1 六卡（016/017/018/021/022/023）+ P2 四卡（024/025/026/027）分五批提交：
-d2122f8 → cc7267a → a7d197d → 7fa0826 → 935b4d8。测试 **48 用例**
-（PlayerTests 20 / PlayerQueueTests 19 / PlayerSubtitleTests 9）。唯一未落：
-UIA-023 的 macOS PiP 按钮 + F/S/A 快捷键（卡内标注）。
+d2122f8 → cc7267a → a7d197d → 7fa0826 → 935b4d8，收尾补（aa1ba60 后）补齐
+UIA-023 macOS PiP 按钮 + F/S/A 快捷键。测试 **49 用例**
+（PlayerTests 20 / PlayerQueueTests 20 / PlayerSubtitleTests 9）。**十卡全项落地。**
+自审补充：PiP delegate 内存语义经本机 SDK 头文件验证为 weak（无 coordinator↔controller
+循环）。
 
 **构建机一轮清单（最终版）**：
 1. swift test --disable-sandbox（48 用例；重点 ASS 解析、队列优先级、controller 转发）

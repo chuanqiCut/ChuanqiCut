@@ -187,6 +187,16 @@ struct PlayerScreenBody: View {
             break
         }
         let characters = press.characters
+        return Self.characterKeyResult(characters, vm: vm) {
+            // 系统窗口全屏切换（macOS 惯例；iOS 全屏走 UIA-015 的 isExpanded 按钮）
+            NSApp.keyWindow?.toggleFullScreen(nil)
+        }
+    }
+
+    /// 字符键播控映射（static 便于单测；全屏动效经闭包注入，测试不碰 NSApp）。
+    static func characterKeyResult(_ characters: String,
+                                   vm: PlayerViewModel,
+                                   toggleFullscreen: () -> Void) -> KeyPress.Result {
         switch characters {
         case ",":
             vm.stepFrames(-1)
@@ -196,6 +206,19 @@ struct PlayerScreenBody: View {
             return .handled
         case "m", "M":
             vm.toggleMute()
+            return .handled
+        case "f", "F":
+            toggleFullscreen()
+            return .handled
+        case "s", "S":
+            // 外挂字幕开关：已加载则关闭；未加载走 moreMenu 的加载入口
+            if vm.externalSubtitle != nil {
+                vm.closeExternalSubtitle()
+                return .handled
+            }
+            return .ignored
+        case "a", "A":
+            vm.toggleLoop()
             return .handled
         default:
             if let digit = characters.first?.wholeNumberValue, (0...9).contains(digit) {

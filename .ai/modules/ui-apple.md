@@ -496,7 +496,10 @@ a7d197d（C：ADR-0023 + 018/025 字幕）→ 7fa0826（D：016 章节/PiP 占�
 - **测试**：PlayerTests 20 + PlayerQueueTests 19 + PlayerSubtitleTests 9 = **48 用例**
   （stub 引擎全状态机覆盖；ASS 样式切换切段 bug 在写测试时暴露并修复——纯函数
   全量单测策略的价值实证）。
-- **未落项**：UIA-023 的 macOS PiP 按钮 + F/S/A 快捷键（系统行为待真机，卡内标注）。
+- **UIA-023 收尾补**：macOS PiP 按钮（isPipPossible 显隐）+ F/S/A 快捷键
+  （字符键映射抽 `characterKeyResult` static 可测；F = NSApp.keyWindow
+  .toggleFullScreen 经闭包注入）。自审：PiP delegate 内存语义经 SDK 头文件
+  验证为 weak，无 coordinator↔controller 循环。
 - **待构建机（共性）**：swift test 48、双平台 xcodebuild 0 警告、Swift 6 风险点
   （AVMediaSelectionGroup/AVAssetImageGenerator Sendable、PiP delegate 线程、
   MenuBarExtra 注入、requestGeometryUpdate）；**待真机**：HLS 样本、bookmark 跨会话、

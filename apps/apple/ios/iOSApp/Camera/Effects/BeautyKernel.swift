@@ -23,6 +23,7 @@
 
 import CoreImage
 import Foundation
+import os.log
 import SharedUI
 
 // MARK: - 强度 → kernel 参数映射（纯函数，可单测）
@@ -112,15 +113,23 @@ final class BeautyKernel: @unchecked Sendable {
     }
 
     /// 幂等安装：bundle 里有本卡 metallib 才装，否则保持 SharedUI 默认实现。
-    /// 相机页每次进入都会调用（CameraViewModel init），已安装时不重复构建。
+    /// 每条路径一次性日志（CAM-015 诊断：修「引擎是否在跑」不可知——历史上
+    /// 96B 空壳 metallib 曾静默回落默认实现且无从发现，见 ADR-0021）。
     static func installSharedSmoothingIfNeeded() {
-        guard CameraBeautyEngine.smoothing == nil,
-              let data = libraryData(),
-              let kernel = BeautyKernel(libraryData: data) else {
+        guard CameraBeautyEngine.smoothing == nil else { return }
+        guard let data = libraryData() else {
+            statusLogger.error("beauty engine FALLBACK: bundle 无含 cq_beauty kernels 的 metallib → SharedUI 默认 CI 实现")
+            return
+        }
+        guard let kernel = BeautyKernel(libraryData: data) else {
+            statusLogger.error("beauty engine FALLBACK: metallib 存在但 CIKernel 初始化失败 → 默认实现")
             return
         }
         CameraBeautyEngine.smoothing = kernel.smoothingEngine()
+        statusLogger.notice("beauty engine INSTALLED: Metal 双边滤波（两 pass CIKernel）")
     }
+
+    private static let statusLogger = Logger(subsystem: "com.chuanqi.cut", category: "beauty")
 
     /// 双 pass 磨皮。失败返回 nil（回落默认实现），不抛错不崩溃。
     func apply(_ image: CIImage, strength: Double) -> CIImage? {

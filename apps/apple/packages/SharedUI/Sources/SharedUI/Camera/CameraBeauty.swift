@@ -80,30 +80,50 @@ public struct CameraBeautyParams: Equatable, Sendable {
     public var isOff: Bool { smoothing <= 0 && brightening <= 0 }
 
     /// 应用美颜。off 时原样返回入参（=== 恒等，调用方无需特判）。
-    public func apply(to image: CIImage) -> CIImage {
+    ///
+    /// faces 三态（CAM-016，SPEC-CAM-015-016 §4）：
+    ///   nil  = 无检测数据（能力缺失/未接入）→ 全画面（旧行为，向后兼容）；
+    ///   []   = 检测过但无脸 → **直通**（对齐 CAM-013 美型「无脸直通」口径）；
+    ///   非空 = 图像归一化人脸框（origin 左上，CAM-011 契约）→ 磨皮/美白
+    ///          经羽化蒙版（FaceMask）只作用于人脸区域，背景保持原样。
+    public func apply(to image: CIImage, faces: [CGRect]? = nil) -> CIImage {
         guard !isOff else { return image }
+        guard faces?.isEmpty != true else { return image }
+        let mask = faces.flatMap { FaceMask.mask(forNormalizedBoxes: $0, in: image.extent) }
 
         var result = image
 
-        // 磨皮：注入引擎优先，放弃/未注入回落默认实现。
+        // 磨皮：注入引擎优先，放弃/未注入回落默认实现；有蒙版则混合回原图。
         if smoothing > 0 {
-            result = CameraBeautyEngine.smoothing?(result, smoothing)
+            let smoothed = CameraBeautyEngine.smoothing?(result, smoothing)
                 ?? defaultSmoothing(result, strength: smoothing)
+            result = blended(smoothed, over: result, mask: mask)
         }
 
-        // 美白：小步长曝光 + 亮度（保守上限，避免过曝死白）。
+        // 美白：小步长曝光 + 亮度（保守上限，避免过曝死白）；有蒙版则混合。
         if brightening > 0 {
-            result = result.applyingFilter("CIExposureAdjust", parameters: [
+            var brightened = result.applyingFilter("CIExposureAdjust", parameters: [
                 kCIInputEVKey: 0.45 * brightening,
             ])
-            result = result.applyingFilter("CIColorControls", parameters: [
+            brightened = brightened.applyingFilter("CIColorControls", parameters: [
                 kCIInputBrightnessKey: 0.04 * brightening,
                 kCIInputSaturationKey: 1.0,
                 kCIInputContrastKey: 1.0,
             ])
+            result = blended(brightened, over: result, mask: mask)
         }
 
         return result
+    }
+
+    /// 蒙版混合：白（蒙版）区取处理结果、黑区取原图。mask = nil（含蒙版构造
+    /// 失败的兜底）→ 全画面采用处理结果（旧行为）。
+    private func blended(_ processed: CIImage, over original: CIImage, mask: CIImage?) -> CIImage {
+        guard let mask else { return processed }
+        return processed.applyingFilter("CIBlendWithMask", parameters: [
+            kCIInputBackgroundImageKey: original,
+            kCIInputMaskImageKey: mask,
+        ])
     }
 
     /// 默认磨皮（A 期口径：高斯模糊 + 亮度锐化近似保边）。

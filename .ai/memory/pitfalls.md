@@ -1304,3 +1304,52 @@ run_gate.sh 负载下实测抖出（Debug 43/44，"执行计数为 1" FAIL）。
   时序断言在满负载门禁下会暴露，空闲单跑不绿≠稳定。
 - 日期 / 来源 / 验证状态：2026-10-05 / run_gate.sh 首跑（AUDIO-001 轮）/
   **verified**（修复后连跑 5 次 50/50，重跑门禁见当日日志）
+
+### P77 · 「回调可能在另一线程完成」的注释只让我补了顺序，没让我补互斥 —— Feed() 无锁写 pending map 写坏红黑树，SIGSEGV @0x0
+**日期**：2026-10-06　**来源**：MEDIA-027 验证期门禁 core-dbg 失败　**验证状态**：已定位并修复（A/B 对照 未修复 5/14 崩 vs 修复 0/14）
+
+- 现象：`media_sequential_real` 在门禁 core-dbg 里 SIGSEGV（EXC_BAD_ACCESS @0x0）。本机单独重跑
+  连绿 4 次，一度被当成 flaky。真堆栈（DiagnosticReports .ips）：
+  `Feed()` → `std::map<int64_t,RationalTime>::operator[]` → `__tree_balance_after_insert` →
+  `__tree_is_left_child` 解引用空节点。
+- 根因：`pending_dts_pts_` / `pending_submit_nanos_` 的**全部 17 个访问点里，只有 `Feed()` 的
+  两处插入是无锁的**；另一侧写入方是 VT 输出回调（`OutputCallback` → `Enqueue`/`MarkDecoded`，
+  CoreMedia 线程，持 `queue_mutex_`）。异步硬解下「喂第 N+1 包」与「第 N 包回调」天然并发 ——
+  两头并发写同一棵 `std::map`，红黑树被写坏。
+- **引入点不是本次改动**：`pending_dts_pts_` 的无锁插入来自 `437bc16e`（2026-10-04，MEDIA-021
+  重排登记）。当时的注释已经写明「回调可能在另一线程**立即完成并 erase**」——作者为了解决
+  **顺序**（必须先登记后提交）而把它前移，却没意识到这句话本身就在告诉你**有第二个线程**，
+  于是漏了互斥。MEDIA-027（`63c5100a`）在同一处加了第二笔无锁插入 `pending_submit_nanos_`，
+  把竞态窗口扩大一倍，才在今天炸出来。
+- **教训（一句话）**：**顺序对了 ≠ 互斥对了。** 只要注释里出现「回调/另一线程/异步」字样，
+  顺手必须问一句「那把锁是谁？」并处理=无锁=的默认假设。
+- 修复（`pal/apple/media_decode.mm`）：两处插入收进 `queue_mutex_`，且**必须在
+  `VTDecompressionSessionDecodeFrame` 之前释放** —— 回调要抢同一把锁，持锁提交会自锁死。
+  同时在 `media_decode.h` 成员处写明「受 `queue_mutex_` 保护」的不变量。
+- **验证方法（关键，别只报连绿）**：并发故障不能用「跑几次没崩」结案。本次做法是
+  **A/B 同源代码单变量对照** —— 只差这一把锁编两个二进制，12 核各挂 2 个 `yes` 制造负载，
+  交错各跑 8 轮：未修复 3/8 崩（合并前一轮 2/6），修复 0/8；合计 5/14 vs 0/14。
+  按 p≈0.36 计，「修复后 14 次全过是巧合」的概率 ≈ 0.2%。
+- 防复发规则：**给共享容器加字段时，先 `grep` 该字段的每一个访问点并逐个指认守卫互斥量**；
+  跨线程容器的不变量要写在**头文件成员旁**（代码会留下来，对话不会）。
+
+### P78 · 另一会话用 `swiftc -parse` 当 SharedUI 验收标准 —— 38 处类型错误 + 一个从未提交的类型进了主干
+**日期**：2026-10-06　**来源**：合并 `origin/main`（17 个远端提交）跑门禁发现　**验证状态**：已定位，**未修复**（归属为远端会话产物，待 owner 处置）
+
+- 现象：门禁 `apple-sharedui` FAIL，`apps/apple/packages/SharedUI/Sources/SharedUI/Player/`
+  下 10 个文件、38 个唯一编译错误站点。核 dgb/rel（45/45）与 Swift 绑定不受影响。
+- 两类硬错误：①`PlayerViewModel.swift` 引用 **`PlayerZoomMath`，而这个类型在整个仓库历史里
+  从未存在** —— 提交 `cc7267a`（UIA-024/017 进阶版 Batch B）的 message 里写明了它的规格
+  （1x–3x 钳制 / 回弹阈值 1.15 / 拖移边界半幅×(scale-1)），但实现文件**压根没进 commit**；
+  ②`SubtitleParser.swift` 缺 `import SwiftUI`（`Alignment`/`HorizontalAlignment` 全部 not in scope）、
+  `guard let x = <Double>`、`text` 是 `let` 却被赋值、`current` 未定义 —— 全是**类型检查级**错误。
+- 根因：该会话的验证命令是 `for f in Player/*.swift; do swiftc -parse "$f"; done`（写在其任务卡
+  `verification` 里），而 **`-parse` 只做语法，不做类型检查** —— P46/P48/P49 已经踩过三次同一个坑，
+  这次是它第一次把主干打红。**构建机 / 门禁从未在那一侧跑过。**
+- 归属判定方法（可复用）：`git diff --cached origin/main -- <dir>` 显示该目录只有我这侧
+  `AppEntry.swift` 的改动 → 13 个 Player 文件与 origin/main 逐字一致 → **不是我合并错了**；
+  `git log --all -S <缺失符号>` 能找到「提到它但没实现它」的那个提交。
+- 防复发规则：①**`-parse` 绿不是绿**，Swift 必须 `-typecheck`（SharedUI 侧还要带
+  `-swift-version 6`）；②外部会话的产物进主干前，**必须在合并侧跑一次完整门禁**，
+  不能因为「对方自称验证过」放行（远端的"已验证"按未验证处理，见 CLAUDE.md 委托小节）；
+  ③任务卡 `verification` 里出现 `-parse` 应直接驳回。

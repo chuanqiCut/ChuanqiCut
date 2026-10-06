@@ -254,15 +254,18 @@ Status AppleVideoEncoder::Open(const char* output_path, const EncodeConfig& cfg)
     std::remove(output_path);
 
     // —— 硬件编码能力探针（一次性 VT 会话，诚实上报；不强制，软解回退仍可用）——
-    // ⚠️ 与解码侧同理（见 media_decode.mm 的注释）：这两个常量在 iOS 上要求
-    //    **iOS 17.4+**，而项目最低部署目标是 **iOS 16**（ADR-0010）。
-    //    直接引用会被 -Werror（-Wunguarded-availability-new）判为错误。
-    //    2026-09-28 实测：iOS device 切片构建在此处失败（脚本如实失败，未放宽编译选项）。
-    //    处理：@available 守卫。iOS 16/17.0~17.3 下**不做探针**，hw_encode_ 保持 false
-    //    ——即"不知为不知"，绝不谎报"已硬件编码"。不为此抬高部署目标。
-    //    注：@available(iOS 17.4, *) 在 macOS 上恒为真（macOS 自 10.9 起可用），行为不变。
+    // ⚠️ 平台事实（2026-10-05 本机 iPhoneOS17.2 SDK 头文件实证）：这两个常量在
+    //    VTCompressionProperties.h 中被 `#if !TARGET_OS_IPHONE` **整体包裹** ——
+    //    iOS 上任何版本都不声明（macOS-only API，头部标注的 ios(8.0) 不生效），
+    //    `@available` 守卫救不了「use of undeclared identifier」。
+    //    修正旧注释的误判（"iOS 17.4+ 起可用"）：那是把 Decoder 侧（ios(17.0)，
+    //    无 TARGET_OS_IPHONE 守卫，见 media_decode.mm）的规则错套到了 Encoder 侧。
+    //    处理：探针仅在 macOS 切片编译（常量 macOS 10.9 起可用，部署目标 15.4 无需
+    //    运行时守卫）；iOS 上 VTCompressionSession 自动选择硬件且不暴露查询键，
+    //    hw_encode_ 恒 false —— "不知为不知"，绝不谎报"已硬件编码"。
     hw_encode_ = false;
-    if (@available(iOS 17.4, *)) {
+#if !TARGET_OS_IPHONE
+    {
         VTCompressionSessionRef probe = nullptr;
         CFDictionaryRef spec = (__bridge CFDictionaryRef) @{
             (__bridge id)kVTVideoEncoderSpecification_EnableHardwareAcceleratedVideoEncoder: @YES,
@@ -285,6 +288,7 @@ Status AppleVideoEncoder::Open(const char* output_path, const EncodeConfig& cfg)
             CFRelease(probe);
         }
     }
+#endif  // !TARGET_OS_IPHONE
 
     NSString* ns_path = [NSString stringWithUTF8String:output_path];
     if (ns_path == nil) return Status{StatusCode::kInvalidArgument};

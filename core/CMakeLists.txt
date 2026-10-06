@@ -72,7 +72,13 @@ add_library(cq_core STATIC
     # UIA-010 子步骤 5：预览取帧泵 —— 把 seek+解码+导入+离屏绘制搬到自有线程，
     # 主线程只做 blit + present。平台无关（只用 std::thread / mutex / condvar），
     # 帧源走 IPreviewFrameSource 接缝，故可注入假实现做确定性并发测试。
-    src/preview/preview_pump.cpp)
+    src/preview/preview_pump.cpp
+    # AUDIO-001：音频地基 —— 预分配缓冲池（lock-free Treiber freelist）、
+    # SPSC 无锁样本环、AudioGraph 拓扑骨架（ARCH-001 铁律 2：音频线程无锁无分配，
+    # 单测以 operator new 计数实测）。全部预分配，耗尽返回 Status 不扩容。
+    src/audio/audio_graph.cpp
+    src/audio/pcm_pool.cpp
+    src/audio/spsc_ring.cpp)
 
 # 版本号由 CMake 注入，不在 cq_sdk.h 里硬编码（否则必然与 project VERSION 漂移）。
 target_compile_definitions(cq_core PRIVATE

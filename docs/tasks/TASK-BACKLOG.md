@@ -265,7 +265,7 @@ parallel:    false          # 是否与同批次其他任务并行
 
 | ID | 层 | 任务 | 依赖 | 写集 | 验收 |
 |---|---|---|---|---|---|
-| AUDIO-001 | 跨平台 | 音频图与 PCM 缓冲管理 | CORE-006 | `core/src/audio/*` | 音频线程无锁无分配 |
+| AUDIO-001 | 跨平台 | [音频图与 PCM 缓冲管理](TASK-AUDIO-001.md)（预分配池/SPSC 环/AudioGraph 骨架）✅ 2026-10-05 | CORE-006 ✅ | `core/src/audio/*` | 音频线程无锁无分配（operator new 计数实测增量 0） |
 | AUDIO-002 | 跨平台 | 时间拉伸节点（signalsmith-stretch 集成） | DEPS-020 | `core/src/audio/stretch.*` | **变速后时长误差 ≤ 1 帧** |
 | AUDIO-003 | 跨平台 | 变声节点（pitch + formant） | AUDIO-002 | `core/src/audio/pitch.*` | formant 可独立控制 |
 | AUDIO-004 | 跨平台 | 多轨混音 | AUDIO-001 | `core/src/audio/mix.*` | 电平正确，无溢出 |

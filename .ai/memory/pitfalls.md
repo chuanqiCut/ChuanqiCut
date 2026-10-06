@@ -1143,8 +1143,10 @@ Swift 下经 `toDestination:` 标签也找不到（ObjC selector `renderImage:to
   排在该状态达成之后，且有「未达成」路径的行为定义**；跨状态资源禁止在 setup
   阶段预取缓存。
 
-### P70 · iOS 26 SDK 起 UIDevice 整体 @MainActor 隔离 —— 后台队列读 orientation 直接告警
+### P71 · iOS 26 SDK 起 UIDevice 整体 @MainActor 隔离 —— 后台队列读 orientation 直接告警
 > 日期 / 来源 / 验证状态：2026-10-06 / TASK-CAM-017 / **verified**（编译告警实证）
+> ⚠️ 编号更正：原编 P70，与先取号的「真机测量基建」（P67 撞号让位而来）重号，
+> 按「先入库保留」让位为 P71。
 
 - `UIDevice.current` / `.orientation` 在 iOS 26 SDK 被标 @MainActor；sessionQueue 等
   非主线程上下文直接读 = "main actor-isolated class property 'current' can not be

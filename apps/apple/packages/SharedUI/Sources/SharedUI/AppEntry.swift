@@ -12,6 +12,7 @@
 
 import SwiftUI
 import Foundation
+import Darwin
 import os
 import ChuanqiCut
 
@@ -110,7 +111,24 @@ public final class EditorViewModel: ObservableObject {
     private var debugTickSamples = 0
     private var debugTickCostP95Nanos: UInt64 = 0
     /// 泵统计基线（startPlaybackLoop 时快照，报告时取差值）。
-    private var debugPumpBaseline: (rendered: UInt64, requested: UInt64) = (0, 0)
+    private var debugPumpBaseline: (rendered: UInt64, requested: UInt64, nonOk: UInt64) = (0, 0, 0)
+
+    /// 进程物理内存足迹（MB）。失败返回 -1 —— 宁可显示 -1 也不伪造 0。
+    ///
+    /// `phys_footprint` 是 iOS jetsam 判定实际使用的量（比 resident_size 更能反映
+    /// 被杀风险），故剖面用它而不是 RSS。
+    static func memoryFootprintMB() -> Double {
+        var info = task_vm_info_data_t()
+        var count = mach_msg_type_number_t(
+            MemoryLayout<task_vm_info_data_t>.size / MemoryLayout<integer_t>.size)
+        let kr = withUnsafeMutablePointer(to: &info) { ptr -> kern_return_t in
+            ptr.withMemoryRebound(to: integer_t.self, capacity: Int(count)) {
+                task_info(mach_task_self_, task_flavor_t(TASK_VM_INFO), $0, &count)
+            }
+        }
+        guard kr == KERN_SUCCESS else { return -1 }
+        return Double(info.phys_footprint) / 1048576.0
+    }
 
     private func debugRecordTickCost(start: DispatchTime) {
         let nanos = DispatchTime.now().uptimeNanoseconds &- start.uptimeNanoseconds
@@ -125,7 +143,7 @@ public final class EditorViewModel: ObservableObject {
             let renderedPerSec = st.map { $0.rendered &- debugPumpBaseline.rendered } ?? 0
             let requestedPerSec = st.map { $0.requested &- debugPumpBaseline.requested } ?? 0
             if let st {
-                debugPumpBaseline = (st.rendered, st.requested)
+                debugPumpBaseline = (st.rendered, st.requested, st.nonOk)
             }
             let drawsPerSec = PlaybackDrawCounter.shared.count
             PlaybackDrawCounter.shared.reset()
@@ -135,10 +153,19 @@ public final class EditorViewModel: ObservableObject {
             let nowSec = self.player.map {
                 Double($0.currentTime.value) / Double($0.currentTime.timescale)
             } ?? 0
-            let line = "playback-perf: t=\(String(format: "%.2f", nowSec))s tick_p95=\(self.ms(p95))ms pump_req/s=\(requestedPerSec) pump_rendered/s=\(renderedPerSec) mtk_draw/s=\(drawsPerSec)"
-            log.info("\(line, privacy: .public)")
+            // MEDIA-027 排障：把进程物理内存足迹并进剖面行 ——「播放几十秒后卡死 +
+            // signal 9」必须能区分是 jetsam（内存）还是纯解码追赶失败。
+            let nonOk = st.map { $0.nonOk &- debugPumpBaseline.nonOk } ?? 0
+            if let st {
+                debugPumpBaseline = (st.rendered, st.requested, st.nonOk)
+            }
+            // `wf:` 前缀与内核日志同一套：grep '\[wf:perf\]' 就能把这一份剖面
+            // 和解码/取帧链路的 C++ 日志捞在一起按时间看。
+            let line = "playback-perf: t=\(String(format: "%.2f", nowSec))s tick_p95=\(self.ms(p95))ms pump_req/s=\(requestedPerSec) pump_rendered/s=\(renderedPerSec) pump_nonok/s=\(nonOk) mtk_draw/s=\(drawsPerSec) footprint=\(String(format: "%.1f", Self.memoryFootprintMB()))MB"
+            let tagged = "[wf:perf] \(line)"
+            log.info("\(tagged, privacy: .public)")
             // stderr 无缓冲：`devicectl device process launch --console` 必现。
-            fputs(("[perf] \(line)\n"), stderr)
+            fputs((tagged + "\n"), stderr)
             fflush(stderr)
         }
     }
@@ -149,6 +176,16 @@ public final class EditorViewModel: ObservableObject {
     #endif
 
     public init() throws {
+        // CORE-010：日志按链路可筛选。必须在**任何内核调用之前** ——
+        // 否则启动阶段（解封装 Open / ScanKeyframes）的日志赶不上配置。
+        //
+        // 三个环境变量（Xcode Scheme → Run → Arguments → Environment Variables）：
+        //   CQ_LOG_LEVEL    = trace|debug|info|warn|error
+        //   CQ_LOG_WORKFLOW = preview,decode,mem          （白名单，不设 = 全开）
+        //   CQ_LOG_WF_LEVEL = decode=trace,preview=debug  （单链路提级）
+        // 真机排障时改 Scheme 即可生效，**无需重编译**（重编译 + 重签名的时间成本
+        // 在排查现场往往付不起）。
+        ChuanqiCut.configureLogFromEnvironment()
         guard let session = Session() else {
             throw EditorError.sessionCreationFailed
         }
@@ -247,7 +284,7 @@ public final class EditorViewModel: ObservableObject {
         debugTickSamples = 0
         debugTickCosts = []
         if let st = previewPump?.stats {
-            debugPumpBaseline = (st.rendered, st.requested)
+            debugPumpBaseline = (st.rendered, st.requested, st.nonOk)
         }
         #endif
         let timer = Timer.scheduledTimer(withTimeInterval: 1.0 / 60.0, repeats: true) {

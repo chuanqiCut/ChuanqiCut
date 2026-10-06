@@ -1221,3 +1221,66 @@ that has already been added to another AVAssetReader`（signal 6）。AVAsset �
   provider Seek 警报可见）。
 - 防复发规则：**凡是"等异步回调"的等待一律禁止无上界阻塞**——要么轮询+超时，
   要么事件句柄；析构式（RAII）警报必须配合成对 enter/exit 日志才能抓"永不返回"。
+
+### P75 · 解码输出队列「只进不出」→ 3.4GB → jetsam signal 9（播放 5 秒后永久冻结的真身）
+> 日期 / 来源 / 验证状态：2026-10-06 / TASK-MEDIA-027 / **根因 verified**（真机两次
+> 逐字节级复现：footprint=3375.0MB + `App terminated due to signal 9`；修复后本机
+> ctest 42/42）。**修复后真机复验未做**（设备锁定，见 TASK-MEDIA-027 §5）
+
+- 现象：真机（iPhone 17 Pro，相册 4K60 HDR MOV，解码输出 1080x1920 BGRA）播放前 4 秒
+  正常（rendered/s=131→116），第 5 秒起 `rendered/s=0` 且**再不恢复**；Watchdog
+  「卡在 provider+acquire」1174ms→8226ms 单调增长；DEBUG 剖面行 `footprint=3375.0MB`；
+  进程被 signal 9 杀掉（jetsam，不是崩溃）。
+- 根因：`VideoToolboxDecoder::PopFrame` 显示序连续性判据的第三条分支 ——「无在途帧且
+  队列最小 pts ≠ 期望」时**原样返回 kIoNotFound 且不弹出**。期望值与队列最小帧都不变，
+  下次 PopFrame 判定完全相同 → 无限重复；调用方 `AcquireExact` 收到 kIoNotFound 继续
+  Feed → VT 继续解码入队 → 队列单调增长。8.3MB/帧 × 约 400~500 帧 = 3.4GB，与实测吻合。
+  触发源：①**VFR**（iPhone 实拍常见）—— 「期望」由上一帧 duration 外推，帧长一变就
+  永远对不上；②VT 静默丢帧。
+- 排查手法（有效，可复用）：**把内存足迹并进周期性剖面行**（`task_vm_info.phys_footprint`），
+  否则「卡死 + signal 9」无法区分 jetsam 与纯解码追赶失败。真机 `devicectl --console`
+  抓 stderr 即可。
+- 修复：①连续 8 次（`kMaxMismatchStreak`）等不到期望即判定缺口 → 交付队列最小帧并重锚
+  `has_prev_=false`；②队列超 12 帧（`kMaxQueuedFrames`）跳过重排判据强制交付（不依赖
+  判据正确性的内存闸门）；③`Flush()` 的 VTWait 换为轮询 + 1s 超时（P72 的债，每次 Seek
+  都走，等于慢路径的永久阻塞入口）；④`OutputCallback` 改为**先入队后登记**
+  （原顺序让「pending 空」不蕴含「帧已入队」，旧 GOP 帧会漏进新序列）。
+- 排障踩到的反例（务必记住）：**首版修复「一见到不匹配就按缺口放行」把
+  `media_sequential_real` 打挂**（fast=128000 / slow=116000，提前 3 帧）—— B 帧重排下
+  「无在途帧且不匹配」是**常态**（参考 P 先到，其 B 帧在其后才喂入），必须按**连续次数**
+  而非单次判定区分「重排窗口」与「缺口」。
+- 防复发规则：**①任何"等某个条件成立"的重排/同步判据，都必须有一条不依赖该判据的
+  内存上界闸门**；②判据失败分支必须区分「还没来」与「永远不会来」，且后者的放行阈值
+  要按 B 帧重排窗口给余量，不能取 1；③回调内「登记完成」必须在「交付数据」**之后**，
+  否则等待方的完成判据不蕴含数据可见。
+
+### 编号纪律提醒（2026-10-06）
+> P72 被两个来源各占一次：CAM-017 二修（RotationCoordinator 未初始化）与 MEDIA-026
+> （VTWait 永久阻塞）。取号前必须 `grep -n "^### P" .ai/memory/pitfalls.md` 核水位，
+> 不能只看当日日志里的号。
+
+### P76 · Debug-only 的诊断设施在 Release 包里等于不存在 —— 本次排障赖以取胜的两个工具都是
+  **日期**：2026-10-06　**来源**：MEDIA-027 → CORE-010　**验证状态**：已定位并修复（本机门禁 PASS=9/FAIL=0；core-dbg 43/43、core-rel 43/43）
+
+- 现象：MEDIA-027 定位成功之后回头看，当时起到决定性作用的两处设施在**真机 Release 包里
+  一条日志都不会留**：①`SlowCallAlarm`（>500ms 告警）在 **4 个文件里各抄一份**且全部是
+  `#ifndef NDEBUG`（media_decode.mm / media_demux.mm / preview_pump.cpp /
+  system_frame_provider.h，其中 pump 那份阈值还是 1000ms —— 同一工程两套阈值）；
+  ②`WatchdogLoop`（报出「RenderFrame 卡在 'provider+acquire' 8226ms」的那个）连同它依赖的
+  `DebugStage()`/`DebugStageSinceNanos()` 与 6 个 `DebugStageGuard` 全在 NDEBUG 块里。
+- 为什么这是坑而不是取舍：**Release 才是真机使用的常态**，而冻结/内存类故障恰恰不会在
+  Debug 包上发生。辛苦攒出来的诊断，只在「已经能复现的人」手里有用 —— 而排障现场
+  往往正是那个还没复现出来的人。
+- 同类衍生（本次踩到 3 次）：把一处的 `#ifndef NDEBUG` 解开后，**它依赖的成员变量/计数器
+  仍留在 NDEBUG 块里** → Debug 通过、Release 编译失败。发生在
+  `preview_renderer.h` 的 `debug_import_logs_`/`debug_reuse_logs_`、
+  `system_frame_provider.h` 的 `debug_finalize_logs_`/`debug_chase_iters_`、
+  `media_decode.h` 的 `debug_order_stall_*`/`debug_queue_cap_*`。
+  **本机 Debug 全绿发现不了，只有 Release 构建才会炸。**
+- 修复（CORE-010）：①`SlowCallAlarm` 收到 `core/base/perf.h` 成统一设施，带 workflow、
+  默认阈值 500ms、Release 可用；②看门狗与阶段跟踪提到 Release（其余开销仅一次 relaxed
+  atomic store + 一次 steady_clock）；③所有本来收进 NDEBUG 的**成员/计数器**同步解开。
+- 防复发规则（见 [TASK-CORE-010](../docs/tasks/TASK-CORE-010.md)）：
+  **改完任何依赖 NDEBUG 的代码，必须 Debug + Release 双向编译验证**，不能只跑 Debug；
+  判断某诊断「该不该进 Release」的标准是 —— **它报的是「系统在偏离正轨」还是「我想看细节」**，
+  前者（降级发生、上界命中、慢调用、看门狗）一律 Warn 且 Release 可见，后者才留 Debug/Trace。

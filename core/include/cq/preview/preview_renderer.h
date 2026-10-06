@@ -178,6 +178,21 @@ private:
     // 必须由本类显式释放，否则每帧泄漏一张（含其 IOSurface 引用）。
     TextureHandle imported_ = nullptr;
 
+    // MEDIA-024：上一导入帧的展示区间复用判据。src_time 落在
+    // [last_import_pts_, +duration) 且素材相同 → 直接重画 imported_（跳过
+    // acquire+import），消除「区间内重复请求走慢路径重解 GOP」的尖刺。
+    // 纹理独立于 provider 生命周期（IOSurface 锁在纹理上），provider 重建无需失效。
+    bool last_import_valid_ = false;
+    uint64_t last_import_asset_ = 0;
+#ifndef NDEBUG
+    int debug_import_logs_ = 0;
+    int debug_reuse_logs_ = 0;
+#endif
+    RationalTime last_import_pts_{0, 1};
+    RationalTime last_import_dur_{0, 1};
+    uint32_t last_import_w_ = 0;
+    uint32_t last_import_h_ = 0;
+
     bool last_hit_clip_ = false;
     bool last_cpu_fallback_ = false;
     RationalTime last_source_time_{0, 1};

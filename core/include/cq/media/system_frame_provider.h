@@ -258,6 +258,9 @@ public:
     }
 
 private:
+#ifndef NDEBUG
+    int debug_finalize_logs_ = 0;
+#endif
     // =========================================================================
     // MEDIA-021：顺序取帧快路径（不重新 seek 的前进取帧）
     // =========================================================================
@@ -372,6 +375,17 @@ private:
     // 把命中的帧写入 result_ 并返回 Ok（lease 模型：真实实现应移交池所有权）。
     Status Finalize(const MediaFrame& src) {
         result_ = src;
+#ifndef NDEBUG
+        if (debug_finalize_logs_ < 3) {
+            ++debug_finalize_logs_;
+            std::fprintf(stderr, "[SystemFrameProvider] finalize pts=%lld/%d dur=%lld/%d\n",
+                         static_cast<long long>(result_.video.pts.value),
+                         static_cast<int>(result_.video.pts.timescale),
+                         static_cast<long long>(result_.video.duration.value),
+                         static_cast<int>(result_.video.duration.timescale));
+            fflush(stderr);
+        }
+#endif
         return Status::Ok();
     }
 

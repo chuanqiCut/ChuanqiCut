@@ -190,6 +190,8 @@ private:
     void DebugRecordLatency(int64_t dts_value, uint64_t nanos);
     std::map<int64_t, uint64_t> debug_submit_nanos_;
     std::vector<uint64_t> debug_latency_nanos_;
+    int debug_enqueue_logs_ = 0;
+    int debug_pop_logs_ = 0;
 #endif
 
     CqNativeImage* last_returned_ = nullptr;  // 供 Flush/析构释放，避免泄漏

@@ -511,3 +511,28 @@ MEDIA-027 收尾时把散在的 32 处 `fprintf(stderr, ...)` 全部迁进了带
 ```
 CQ_LOG_LEVEL=debug  CQ_LOG_WORKFLOW=decode,mem,perf  CQ_LOG_WF_LEVEL=decode=trace
 ```
+
+## 并发不变量：`VideoToolboxDecoder` 的共享容器（P77，2026-10-06）
+
+`pal/apple/media_decode.h` 里 `queue_mutex_` 保护 `output_queue_`、`pending_dts_pts_`、
+`pending_submit_nanos_` 三个容器。**两个写入方，天然并发**：
+
+| 线程 | 入口 | 动作 |
+|---|---|---|
+| 调用方线程（pump） | `Feed` / `PopFrame` / `Flush` | 登记 pending、重排弹出、清理 |
+| CoreMedia 回调线程 | `OutputCallback` → `Enqueue` / `MarkDecoded` | 入队 + 完成登记 |
+
+异步硬解（`kVTDecodeFrame_EnableAsynchronousDecompression`）下「喂第 N+1 包」与
+「第 N 包回调」必然重叠。2026-10-06 查实：全部 17 个访问点里只有 `Feed()` 的两处插入
+无锁（自 `437bc16e` 起），结果并发写坏 `std::map` 红黑树，SIGSEGV @0x0 落在
+`map::operator[] → __tree_balance_after_insert`。已修（受 `queue_mutex_` 保护，
+且**必须在 `VTDecompressionSessionDecodeFrame` 之前释放**，否则回调自锁死）。
+
+**改动这三条链时的检查清单**：
+
+1. 新增/访问上述容器，逐个 `grep` 该字段**全部**访问点并指认守卫互斥量 —— 顺序对了不等于互斥对了。
+2. 持有 `queue_mutex_` 时不得调用会触发回调的 VT API。
+3. 「先入队、后完成登记」的顺序约束仍然成立（等待方以 pending 集合空为「全部完成」判据）。
+
+排障手册：真机「门禁偶发 SEGFAULT」先看 `~/Library/Logs/DiagnosticReports/*.ips`，
+`std::map` / `std::deque` 的树平衡/迭代器帧出现 = 并发写坏容器，不是内存踩踏。

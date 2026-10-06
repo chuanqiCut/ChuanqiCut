@@ -88,13 +88,16 @@ void TestPostDoesNotBlockMainThread() {
     std::printf("    Post() 实测耗时: %.3f ms\n", post_ms);
 
     // 任务确实执行了（异步完成后）。
+    // ⚠️ 等待对象必须是 ExecutedCount（更晚发生的事件）：worker 先执行任务
+    // （任务内部置 finished）再 fetch_add 计数，若等 finished 就断言计数，
+    // 会撞上「store 已见、自增未到」的窗口 —— 门禁负载下实测抖出过一次。
     int waited = 0;
-    while (!finished.load(std::memory_order_acquire) && waited < 5000) {
+    while (runner.ExecutedCount() < 1 && waited < 5000) {
         SleepMs(1);
         waited += 1;
     }
-    Check(finished.load(std::memory_order_acquire), "耗时任务最终完成");
     Check(runner.ExecutedCount() == 1, "执行计数为 1");
+    Check(finished.load(std::memory_order_acquire), "耗时任务最终完成");
 
     Check(runner.Shutdown().IsOk(), "Shutdown 成功");
     Check(!runner.IsRunning(), "Shutdown 后不在运行");

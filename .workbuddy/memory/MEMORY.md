@@ -89,6 +89,13 @@
 
 ## 排障纪律
 - **flaky 消除的判定 = 根因机制闭环 + 失败签名可解释**，不是连绿次数（P33 两层根因：同一签名背后有第二个根因）。
+- **并发 bug 的验收一定是 A/B 单变量对照，不是"跑几次没崩"**（P77）：只差那一行修复编两个二进制，
+  制造负载（12 核各挂 2 个 `yes`）交错轮流跑，报出「未修复 x/N 崩 vs 修复 y/N」并给出巧合概率。
+  真机/门禁偶发 SIGSEGV 先看 `~/Library/Logs/DiagnosticReports/*.ips` —— 堆栈里出现
+  `std::map/std::deque` 的树平衡或迭代器帧 = **并发写坏容器**，不是内存踩踏。
+- **跨线程共享容器：顺序对了 ≠ 互斥对了。** 注释里出现「回调 / 另一线程 / 异步」字样时，
+  顺手必须问「那把锁是谁」。给共享容器加字段/加访问点时，先 `grep` 该字段**全部**访问点并
+  逐个指认守卫互斥量；不变量写在**头文件成员旁**（P77）。
 - 异步命令「等待落地」等**目标效果本身**（如 queryTracks 出现视频轨，10ms 轮询），不要等版本号越过基线。
 - 框架回调「被触发」≠「成功」；对平台回调的 `DISPATCH_TIME_FOREVER` 无限等是挂死隐患，一律有限超时 + 诚实错误码。
 - 手法：给可疑分支加「分支名 + 内核原始状态码 + 计时」临时诊断，全量复跑抓现行。
@@ -154,6 +161,13 @@ App 侧在 `EditorViewModel.init()` 最早处调 `ChuanqiCut.configureLogFromEnv
   日志里 `Target dependency graph (1 target)` 就是线索。
 - **不确定某个 Swift 文件是否被真编译 → 先塞一个必然报错的 canary（`1 + "x"`）跑一次，
   确认它真炸了再拿掉**（呼应 P46/P48：轻量检查多次放过真错误）。
+- **`swiftc -parse` 绿不是绿**（P46/P48/P49 第四犯，P78）：`-parse` 只验语法不验类型。
+  Swift 的轻量验证唯一合格形态是 **iphonesimulator SDK 全量 `-typecheck` 且带 `-swift-version 6`**。
+  任务卡 `verification` 里出现 `-parse` 条目应直接驳回 —— 已有人靠它把 38 处类型错误
+  和一个从未提交的类型（`PlayerZoomMath`）推上了主干。
+- **外部/其他会话的产物进主干前，必须在合并侧跑一次完整门禁**，不能因对方自称验证过就放行。
+  归属不清时：`git diff --cached origin/main -- <dir>` 证明「我这边没动它」+
+  `git log --all -S <缺失符号>` 定位「提到它但没实现它」的提交。
 
 ## Apple 端工程与门禁（ADR-0021 / CODE-001）
 - "cannot find X in scope" 先查工程引用：xcodeproj 是 xcodegen 生成产物、不入库、易陈旧。核对：`git ls-files` vs `find` vs grep `project.pbxproj`。
@@ -191,3 +205,8 @@ App 侧在 `EditorViewModel.init()` 最早处调 `ChuanqiCut.configureLogFromEnv
 ## 悬而未决（需传哲拍板，AI 不得代决）
 1. **FFmpeg LGPL v2.1+ 链接处置**（目标文件归档 / 商业授权 / 动态链接 / 不接入改平台原生）—— 需法务，**已确认延后不阻塞**。
 2. 性能基线未建立（PERF-001 未做），文档性能数字仍是估算；本机 Intel Mac 无 ANE、无 ProRes 硬编，不得采样本机数字。
+3. **`SharedUI/Player/` 处于不可编译状态（P78，2026-10-07 起）**：10 文件 38 个类型错误站点，
+   且 `PlayerZoomMath` 类型从未进过仓库。门禁 `apple-sharedui` 因此 FAIL，与本次改动无关。
+   处置方式（修复 / 从 SPM target 摘除 / 回退该批提交）待拍板。
+4. **UIA-015 / UIA-016 撞号**：本地侧分别是「编辑页重构」「Theme 令牌扩展」，远端侧分别是
+   「独立播放器 MVP」「播放器系统级播控补完」—— 同名不同物。两卡头部已加告警，是否改名待拍板。

@@ -56,44 +56,51 @@ CapabilityValue QueryHwDecode(CMVideoCodecType codec) {
 // ⚠️ Apple **没有** VTIsHardwareEncodeSupported 这类直接查询 API。
 //    唯一可靠手段：建立一次性 VTCompressionSession，再查询
 //    kVTCompressionPropertyKey_UsingHardwareAcceleratedVideoEncoder。
-//    而该常量要求 **iOS 17.4+**（macOS 自 10.9 起可用）—— 与 PALA-012 的处理一致
-//    （见 media_encode.mm 注释）。
 //
-//    iOS 16 / 17.0~17.3：无法探测。此处**不能**简单返回 kNo —— 那等于断言
-//    "设备没有硬件编码"，而真实情况是"未知"（iOS 16 设备实际普遍具备 H.264 硬编）。
-//    返回 **kDegraded**：语义为「未确认，上层须按软编路径处理，并在真正创建会话时
-//    再按 PALA-012 的方式探测一次」。
+// ⚠️ 平台事实（2026-10-05 本机 iPhoneOS17.2 SDK 头文件实证）：这两个常量在
+//    VTCompressionProperties.h 中被 `#if !TARGET_OS_IPHONE` **整体包裹** ——
+//    iOS 上任何版本都不声明（macOS-only API，头部标注的 ios(8.0) 不生效）。
+//    旧注释「常量要求 iOS 17.4+」是误判（把 Decoder 侧 ios(17.0) 的规则错套
+//    到了 Encoder 侧），`@available` 守卫救不了「use of undeclared identifier」。
+//
+//    iOS：**无法探测**。此处**不能**返回 kNo —— 那等于断言"设备没有硬件编码"，
+//    而真实情况是"未知"（iOS 设备实际普遍具备 H.264 硬编）。
+//    返回 **kDegraded**：语义为「未确认，上层须按软编路径处理，并在真正创建
+//    会话时按实际结果处理」。
 CapabilityValue DoProbeHwEncode(CMVideoCodecType codec) {
+#if !TARGET_OS_IPHONE
+    // macOS：常量自 10.9 起在 SDK 中声明，部署目标 15.4，直接探针。
     // 探针用 1080p：分辨率会影响硬件编码器可用性，取项目最常用的档位。
     constexpr int32_t kProbeWidth = 1920;
     constexpr int32_t kProbeHeight = 1080;
 
-    if (@available(iOS 17.4, *)) {
-        NSDictionary* spec = @{
-            (__bridge id)kVTVideoEncoderSpecification_EnableHardwareAcceleratedVideoEncoder: @YES,
-        };
-        VTCompressionSessionRef session = nullptr;
-        OSStatus st = VTCompressionSessionCreate(
-            kCFAllocatorDefault, kProbeWidth, kProbeHeight, codec,
-            (__bridge CFDictionaryRef)spec, nullptr, nullptr, nullptr, nullptr, &session);
-        if (st != noErr || session == nullptr) {
-            // 连会话都建不起来 → 该编码格式在此设备上不可用（硬软皆无）。
-            return CapabilityValue::kNo;
-        }
-        CapabilityValue result = CapabilityValue::kNo;
-        CFBooleanRef hw = nullptr;
-        if (VTSessionCopyProperty(
-                session, kVTCompressionPropertyKey_UsingHardwareAcceleratedVideoEncoder,
-                kCFAllocatorDefault, &hw) == noErr &&
-            hw != nullptr) {
-            result = (hw == kCFBooleanTrue) ? CapabilityValue::kYes : CapabilityValue::kNo;
-            CFRelease(hw);
-        }
-        VTCompressionSessionInvalidate(session);
-        CFRelease(session);
-        return result;
+    NSDictionary* spec = @{
+        (__bridge id)kVTVideoEncoderSpecification_EnableHardwareAcceleratedVideoEncoder: @YES,
+    };
+    VTCompressionSessionRef session = nullptr;
+    OSStatus st = VTCompressionSessionCreate(
+        kCFAllocatorDefault, kProbeWidth, kProbeHeight, codec,
+        (__bridge CFDictionaryRef)spec, nullptr, nullptr, nullptr, nullptr, &session);
+    if (st != noErr || session == nullptr) {
+        // 连会话都建不起来 → 该编码格式在此设备上不可用（硬软皆无）。
+        return CapabilityValue::kNo;
     }
-    return CapabilityValue::kDegraded;  // iOS < 17.4：不可探测，未知
+    CapabilityValue result = CapabilityValue::kNo;
+    CFBooleanRef hw = nullptr;
+    if (VTSessionCopyProperty(
+            session, kVTCompressionPropertyKey_UsingHardwareAcceleratedVideoEncoder,
+            kCFAllocatorDefault, &hw) == noErr &&
+        hw != nullptr) {
+        result = (hw == kCFBooleanTrue) ? CapabilityValue::kYes : CapabilityValue::kNo;
+        CFRelease(hw);
+    }
+    VTCompressionSessionInvalidate(session);
+    CFRelease(session);
+    return result;
+#else
+    (void)codec;  // iOS：无法探测，如实返回"未知"
+    return CapabilityValue::kDegraded;
+#endif
 }
 
 // 探针会创建并销毁一个 VTCompressionSession，有开销，故每个 codec 缓存一次结果。

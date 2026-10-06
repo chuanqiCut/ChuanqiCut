@@ -75,7 +75,7 @@ final class CameraManager: NSObject, @unchecked Sendable {
     private var rotationCoordinator: AnyObject?
     /// 传感器安装偏移（coordinator 角度 − 静态表角度），90° 栅格值。sessionQueue 专属。
     private var sensorAngleOffset: CGFloat = 0
-    /// 设备位姿。iOS 26 SDK 起 UIDevice 是 @MainActor 隔离（P70 同族），sessionQueue
+    /// 设备位姿。iOS 26 SDK 起 UIDevice 是 @MainActor 隔离（P71），sessionQueue
     /// 不能直接读 —— 由主线程入口（configureAndStart / switchPosition）显式传入。
     private var devicePose: UIDeviceOrientation = .unknown
 

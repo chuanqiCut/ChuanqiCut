@@ -89,6 +89,6 @@ usage，而 CI 的 CIRenderDestination 要求 ShaderWrite → destination nil �
   iOS 17+ 用 `AVCaptureDevice.RotationCoordinator` 在「设备位姿=界面方向」时采样
   `videoRotationAngleForHorizonLevelPreview`，折算成对静态表的**常量偏移**
   （`sensorAngleOffset`，换镜头重标归零）；设备位姿无效/旋转锁时沿用静态表。
-  设备位姿由主线程入口显式传入（iOS 26 SDK 起 UIDevice 是 @MainActor，P70）。
+  设备位姿由主线程入口显式传入（iOS 26 SDK 起 UIDevice 是 @MainActor，P71）。
 - 前摄镜像在各方向保持（旋转后应用，Apple 语义）。
 - 待真机一验：行序常数（`ciWritesBottomUp`）与标定偏移的定案口径见 TASK-CAM-016/017。

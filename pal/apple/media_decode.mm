@@ -155,6 +155,26 @@ void VideoToolboxDecoder::DebugRecordLatency(int64_t dts_value, uint64_t now_nan
 #endif
 
 // ---------------------------------------------------------------------------
+// MEDIA-025：HDR 源判定（纯函数，供单测）
+// ---------------------------------------------------------------------------
+bool VideoToolboxDecoder::IsHdrColorSource(CFStringRef primaries, CFStringRef transfer) {
+    // 传递函数 HLG/PQ = HDR，无论原色域 —— 必须转换后再进 SDR 渲染链。
+    if (transfer != nullptr &&
+        (CFEqual(transfer, kCMFormatDescriptionTransferFunction_ITU_R_2100_HLG) ||
+         CFEqual(transfer, kCMFormatDescriptionTransferFunction_SMPTE_ST_2084_PQ))) {
+        return true;
+    }
+    // BT.2020 宽色域 + 非 709 传递函数（或标签缺失的未知传递函数）= 按 HDR 处理。
+    // 709 传递函数的 2020 素材（SDR 宽色域）不转 —— 只有色域差异，转换收益小 [E]。
+    const bool wide_gamut =
+        primaries != nullptr &&
+        CFEqual(primaries, kCMFormatDescriptionColorPrimaries_ITU_R_2020);
+    const bool sdr_709 = transfer == nullptr ||
+                         CFEqual(transfer, kCMFormatDescriptionTransferFunction_ITU_R_709_2);
+    return wide_gamut && !sdr_709;
+}
+
+// ---------------------------------------------------------------------------
 // Open：取得 codec 描述并建立 VT 会话
 // ---------------------------------------------------------------------------
 Status VideoToolboxDecoder::Open(const StreamInfo& info) {
@@ -235,6 +255,28 @@ Status VideoToolboxDecoder::Open(const StreamInfo& info) {
         if (CMFormatDescriptionGetMediaType(fd) != kCMMediaType_Video) {
             return Status{StatusCode::kDecodeUnsupported};
         }
+        // MEDIA-025：读源色彩标签（重建 'hvc1' 格式描述会丢扩展，必须在此处读；
+        // CFString 由 fd 持有，先拷成 std::string 防 fd 释放后悬空）。
+        // iPhone 实拍 = BT.2020 原色域 + HLG/PQ（或杜比视界封装）——全链路此前
+        // 零色彩管理，HDR 素材直接吐 BGRA 按 sRGB 显示 → 颜色失真（用户实测反馈）。
+        const CFStringRef prim = static_cast<CFStringRef>(CMFormatDescriptionGetExtension(
+            fd, kCMFormatDescriptionExtension_ColorPrimaries));
+        const CFStringRef transfer = static_cast<CFStringRef>(CMFormatDescriptionGetExtension(
+            fd, kCMFormatDescriptionExtension_TransferFunction));
+        const CFStringRef matrix = static_cast<CFStringRef>(CMFormatDescriptionGetExtension(
+            fd, kCMFormatDescriptionExtension_YCbCrMatrix));
+        hdr_source_ = IsHdrColorSource(prim, transfer);
+        auto tag_to_str = [](CFStringRef s) {
+            if (s == nullptr) return std::string();
+            char buf[64] = {};
+            if (CFStringGetCString(s, buf, sizeof(buf), kCFStringEncodingUTF8)) {
+                return std::string(buf);
+            }
+            return std::string();
+        };
+        src_primaries_ = tag_to_str(prim);
+        src_transfer_ = tag_to_str(transfer);
+        src_matrix_ = tag_to_str(matrix);
         // 格式描述 codec 必须与 demuxer 报告的流编码一致（HEVC = 'hvc1'/'hev1'；
         // 杜比视界 'dvh1'/'dvhe' 是 HEVC 基底 + 扩展，按 HEVC 会话尝试 —— VT 不接受
         // 时如实 kDecodeError，不伪造成功）。
@@ -375,6 +417,30 @@ Status VideoToolboxDecoder::Open(const StreamInfo& info) {
     // 生效），无创建后属性可设；若 VT 对该格式拒绝降采样，会话创建本身会失败并
     // 走上方 -12906/-12907 诊断打印，行为诚实可见。
 
+    // MEDIA-025：HDR 源 → 命令 VT 的 PixelTransfer 把输出转换到 BT.709 SDR
+    // （解码+色彩转换 VT 内部一体完成，零额外 pass）。属性被拒 = 如实日志并
+    // 保持旧行为（颜色仍不对但不阻塞解码；hypothesis：个别平台/编码可能拒绝）。
+    if (hdr_source_) {
+        const OSStatus ps[] = {
+            VTSessionSetProperty(session_, kVTPixelTransferPropertyKey_DestinationColorPrimaries,
+                                 kCMFormatDescriptionColorPrimaries_ITU_R_709_2),
+            VTSessionSetProperty(session_, kVTPixelTransferPropertyKey_DestinationTransferFunction,
+                                 kCMFormatDescriptionTransferFunction_ITU_R_709_2),
+            VTSessionSetProperty(session_, kVTPixelTransferPropertyKey_DestinationYCbCrMatrix,
+                                 kCMFormatDescriptionYCbCrMatrix_ITU_R_709_2),
+        };
+        const bool all_ok = ps[0] == noErr && ps[1] == noErr && ps[2] == noErr;
+        color_converted_ = all_ok;
+        std::fprintf(stderr,
+                     "[VideoToolboxDecoder] 色彩管理: src(prim=%s transfer=%s matrix=%s) "
+                     "hdr=%d -> 709/SDR %s (status=%d,%d,%d)\n",
+                     src_primaries_.c_str(), src_transfer_.c_str(), src_matrix_.c_str(),
+                     hdr_source_ ? 1 : 0, all_ok ? "已应用" : "被拒（保持旧行为）",
+                     static_cast<int>(ps[0]), static_cast<int>(ps[1]),
+                     static_cast<int>(ps[2]));
+        fflush(stderr);
+    }
+
     // 运行时查询：本次会话是否真的走了硬件解码（如实上报，不伪造）。
     // iOS 16 下该属性不可用 → 保持默认（未知），绝不谎报"已硬解"。
     if (@available(iOS 17.0, *)) {
@@ -387,8 +453,10 @@ Status VideoToolboxDecoder::Open(const StreamInfo& info) {
             CFRelease(hw);
         }
     }
-    std::fprintf(stderr, "[VideoToolboxDecoder] Open 完成 hw=%s out=%ux%u\n",
-                 session_hw_ ? "YES" : "NO/unknown", output_width_, output_height_);
+    std::fprintf(stderr, "[VideoToolboxDecoder] Open 完成 hw=%s out=%ux%u 色彩(源=%s/%s%s)\n",
+                 session_hw_ ? "YES" : "NO/unknown", output_width_, output_height_,
+                 src_primaries_.c_str(), src_transfer_.c_str(),
+                 color_converted_ ? " →已转709" : (hdr_source_ ? " →转换失败" : ""));
     fflush(stderr);
 
     return Status::Ok();

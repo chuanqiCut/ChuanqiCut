@@ -109,6 +109,10 @@ public:
     uint32_t OutputWidth() const { return output_width_; }
     uint32_t OutputHeight() const { return output_height_; }
 
+    // MEDIA-025：色彩管理状态（供诊断；true = 已命令 VT 转换到 BT.709 SDR）。
+    bool HdrSource() const { return hdr_source_; }
+    bool ColorConvertedToSdr() const { return color_converted_; }
+
     // 输出尺寸钳制（MEDIA-023，纯函数可测）：长边 >1920 时等比缩到长边 1920，
     // 宽高取偶（YUV 采样对齐）；≤1080p 原样返回。
     static std::pair<int32_t, int32_t> ClampOutputDimensions(int32_t width, int32_t height) {
@@ -126,6 +130,11 @@ public:
         h -= h % 2;
         return {w, h};
     }
+
+    // HDR 源判定（MEDIA-025，纯函数可测）：传递函数为 HLG/PQ，或原色域为
+    // BT.2020 且传递函数非 709 —— 需要转换到 BT.709 SDR 再进渲染链。
+    // 标签缺失（nullptr/无扩展）= 未知 → 按 SDR 处理（不转换，行为同旧）。
+    static bool IsHdrColorSource(CFStringRef primaries, CFStringRef transfer);
 
 private:
     // 输出回调（C 函数，经 refCon 取回 this）。
@@ -146,6 +155,13 @@ private:
     uint32_t height_ = 0;
     uint32_t output_width_ = 0;   // MEDIA-023：实际输出尺寸（降采样后）
     uint32_t output_height_ = 0;
+    // MEDIA-025：源色彩标签（std::string 拷贝 —— CFString 由源 fd 持有，fd 释放后
+    // 原指针失效）与转换状态（供诊断与单测）。
+    bool hdr_source_ = false;
+    bool color_converted_ = false;
+    std::string src_primaries_;
+    std::string src_transfer_;
+    std::string src_matrix_;
 
     CMFormatDescriptionRef format_desc_ = nullptr;  // Open 时取得，会话与 CMSampleBuffer 共用
     VTDecompressionSessionRef session_ = nullptr;

@@ -143,11 +143,12 @@ void VideoToolboxDecoder::DebugRecordLatency(int64_t dts_value, uint64_t now_nan
         std::vector<uint64_t> sorted = debug_latency_nanos_;
         std::sort(sorted.begin(), sorted.end());
         auto ms = [](uint64_t n) { return n / 1'000'000; };
-        std::printf("[VideoToolboxDecoder] decode latency (n=%zu) min=%llums p50=%llums "
-                    "p95=%llums max=%llums\n",
-                    sorted.size(), ms(sorted.front()),
-                    ms(sorted[sorted.size() / 2]),
-                    ms(sorted[sorted.size() * 95 / 100]), ms(sorted.back()));
+        std::fprintf(stderr,
+                     "[VideoToolboxDecoder] decode latency (n=%zu) min=%llums p50=%llums "
+                     "p95=%llums max=%llums\n",
+                     sorted.size(), ms(sorted.front()),
+                     ms(sorted[sorted.size() / 2]),
+                     ms(sorted[sorted.size() * 95 / 100]), ms(sorted.back()));
         fflush(stderr);
     }
 }
@@ -290,8 +291,9 @@ Status VideoToolboxDecoder::Open(const StreamInfo& info) {
             if (rst != noErr || rebuilt == nullptr) {
                 CFRelease(fd);
                 format_desc_ = nullptr;
-                std::printf("[VideoToolboxDecoder] hvc1 重建失败 osstatus=%d\n",
-                            static_cast<int>(rst));
+                std::fprintf(stderr, "[VideoToolboxDecoder] hvc1 重建失败 osstatus=%d\n",
+                             static_cast<int>(rst));
+                fflush(stderr);
                 return Status{StatusCode::kDecodeError};
             }
             CFRelease(fd);      // 换用重建后的格式描述（原 fd 仅为 hvcC 来源）
@@ -318,10 +320,11 @@ Status VideoToolboxDecoder::Open(const StreamInfo& info) {
         output_height_ != static_cast<uint32_t>(src_dims.height)) {
         attrs[(__bridge id)kCVPixelBufferWidthKey] = @(output_width_);
         attrs[(__bridge id)kCVPixelBufferHeightKey] = @(output_height_);
-        std::printf("[VideoToolboxDecoder] 输出降采样 %ux%u -> %ux%u（MEDIA-023）\n",
-                    static_cast<unsigned>(src_dims.width),
-                    static_cast<unsigned>(src_dims.height),
-                    output_width_, output_height_);
+        std::fprintf(stderr, "[VideoToolboxDecoder] 输出降采样 %ux%u -> %ux%u（MEDIA-023）\n",
+                     static_cast<unsigned>(src_dims.width),
+                     static_cast<unsigned>(src_dims.height),
+                     output_width_, output_height_);
+        fflush(stderr);
     }
     // ⚠️ 这两个常量在 iOS 上要求 **iOS 17.0+**（macOS 为 10.9 起）。
     //    项目最低部署目标是 **iOS 16**（ADR-0010），直接引用会被 -Werror
@@ -356,13 +359,15 @@ Status VideoToolboxDecoder::Open(const StreamInfo& info) {
             }
         }
         CMVideoDimensions dims = CMVideoFormatDescriptionGetDimensions(format_desc_);
-        std::printf(
+        std::fprintf(
+            stderr,
             "[VideoToolboxDecoder] VTDecompressionSessionCreate failed osstatus=%d "
             "(codec=%c%c%c%c %ux%u chroma=%d luma=%dbit chroma_depth=%dbit)\n",
             static_cast<int>(st), static_cast<int>((fcc >> 24) & 0xFF),
             static_cast<int>((fcc >> 16) & 0xFF), static_cast<int>((fcc >> 8) & 0xFF),
             static_cast<int>(fcc & 0xFF), static_cast<unsigned>(dims.width),
             static_cast<unsigned>(dims.height), chroma, depth_luma, depth_chroma);
+        fflush(stderr);
         return Status{StatusCode::kDecodeError};
     }
 
@@ -382,8 +387,9 @@ Status VideoToolboxDecoder::Open(const StreamInfo& info) {
             CFRelease(hw);
         }
     }
-    std::printf("[VideoToolboxDecoder] Open 完成 hw=%s out=%ux%u\n",
-                session_hw_ ? "YES" : "NO/unknown", output_width_, output_height_);
+    std::fprintf(stderr, "[VideoToolboxDecoder] Open 完成 hw=%s out=%ux%u\n",
+                 session_hw_ ? "YES" : "NO/unknown", output_width_, output_height_);
+    fflush(stderr);
 
     return Status::Ok();
 }

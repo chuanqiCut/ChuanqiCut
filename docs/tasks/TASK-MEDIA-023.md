@@ -19,7 +19,9 @@ acceptance:
   - 4K 素材解码输出 CVPixelBuffer ≤ 1920×1080（保持宽高比，偶数对齐）✅ 钳制纯函数断言
   - 1080p 及以下素材输出尺寸不变（逐字节行为兼容）✅ golden 1080p 全绿
   - pala_decode 双 codec 断言全绿（含新降采样断言）✅ 门禁 PASS=9/0
-  - 真机复测 pump_rendered/s ≥ 55 ⏸ 待设备（降采样单独未达吞吐，看延迟直方图定下一步）
+  - 真机复测 pump_rendered/s ≥ 55 ⏸ 待设备解锁（仪器已装包：VT 单帧延迟
+    p50 8-10ms / p95 12ms——解码本身很快；泵内 acquire/import/draw 分段直方图
+    待采集定案下一步修法）
 verification:
   - ctest --test-dir build -R pala_decode
   - tools/ci/run_gate.sh

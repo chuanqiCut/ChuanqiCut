@@ -11,36 +11,18 @@
 
 #include <algorithm>
 #include <chrono>
-#include <cstdio>
 #include <new>
 #include <utility>
 #include <vector>
 
-#ifndef NDEBUG
-#include <cstdio>
-#endif
+#include "cq/base/log.h"   // CQ_LOG_*_WF：带 workflow 的分级日志（CORE-010）
+#include "cq/base/perf.h"  // CQ_SLOW_CALL_WF
 
 namespace cq {
 
-#ifndef NDEBUG
-// MEDIA-026 慢调用警报（Debug only）：>1000ms 打印（P70 stderr 通道）。
-struct SlowCallAlarm {
-    const char* name;
-    std::chrono::steady_clock::time_point start;
-    explicit SlowCallAlarm(const char* n)
-        : name(n), start(std::chrono::steady_clock::now()) {}
-    ~SlowCallAlarm() {
-        const auto ns = std::chrono::duration_cast<std::chrono::milliseconds>(
-                            std::chrono::steady_clock::now() - start)
-                            .count();
-        if (ns >= 1000) {
-            std::fprintf(stderr, "[SlowCall] %s took %lldms\n", name,
-                         static_cast<long long>(ns));
-            fflush(stderr);
-        }
-    }
-};
-#endif
+// 慢调用告警统一走 core/base 的 CQ_SLOW_CALL_WF（CORE-010）。旧版是本文件自抄的
+// Debug-only 结构体，阈值还与其它文件不一致（这里 1000ms、别处 500ms）——
+// 同一个工程里两套阈值本身就是排障噪音源，现已统一到 perf.h 的 500ms。
 
 PreviewPump::PreviewPump(IPreviewFrameSource* source) : source_(source) {}
 
@@ -124,10 +106,7 @@ PreviewPump::Stats PreviewPump::GetStats() const {
 }
 
 void PreviewPump::Loop() {
-#ifndef NDEBUG
-    std::fprintf(stderr, "[PreviewPump] loop start (instrumented v2)\n");
-    fflush(stderr);
-#endif
+    CQ_LOG_DEBUG_WF(Workflow::kPreview, "loop start");
     for (;;) {
         bool do_render = false;
         bool do_resize = false;
@@ -166,11 +145,10 @@ void PreviewPump::Loop() {
         // ---- 唯一触碰解码会话 / 纹理缓存的地方（其余线程不得再调 RenderFrame）----
         TextureHandle tex = nullptr;
         CancelToken token;
-#ifndef NDEBUG
-        // MEDIA-026 总警报：单帧 >1s 打印（分段警报之外的静默阻塞在此现形——
-        // draw 的 GPU 等待 / gap 清屏 / 快照加载等无警报段）。
-        SlowCallAlarm total_alarm("pump RenderFrame(total)");
-#endif
+        // CORE-010：Release 可见。总警报覆盖无分段警报的静默阻塞
+        // （draw 的 GPU 等待 / gap 清屏 / 快照加载等）。阈值统一为 500ms，
+        // 与旧版本文件自抄的 1000ms 不同——同一个工程两套阈值本身就是排障噪音。
+        CQ_SLOW_CALL_WF(Workflow::kPreview, "pump RenderFrame(total)");
         const Status s = source_->RenderFrame(pts, tex, token);
         if (!s.IsOk()) non_ok_.fetch_add(1, std::memory_order_relaxed);
 #ifndef NDEBUG
@@ -186,17 +164,15 @@ void PreviewPump::Loop() {
                         v.push_back(static_cast<double>(get(st)) / 1e6);
                     }
                     std::sort(v.begin(), v.end());
-                    std::fprintf(stderr,
-                                 "[PreviewPump] %s (n=%zu) min=%.1fms p50=%.1fms "
-                                 "p95=%.1fms max=%.1fms\n",
-                                 name, v.size(), v.front(),
-                                 v[v.size() / 2], v[v.size() * 95 / 100], v.back());
+                    CQ_LOG_DEBUG_WF(Workflow::kPerf,
+                                    "%s (n=%zu) min=%.1fms p50=%.1fms p95=%.1fms max=%.1fms",
+                                    name, v.size(), v.front(), v[v.size() / 2],
+                                    v[v.size() * 95 / 100], v.back());
                 };
                 report("acquire", [](const auto& t) { return t.acquire_ns; });
                 report("import ", [](const auto& t) { return t.import_ns; });
                 report("draw   ", [](const auto& t) { return t.draw_ns; });
                 report("total  ", [](const auto& t) { return t.total_ns; });
-                fflush(stderr);
             }
         }
 #endif
@@ -212,7 +188,6 @@ void PreviewPump::Loop() {
     }
 }
 
-#ifndef NDEBUG
 void PreviewPump::WatchdogLoop() {
     // 每 500ms 检查渲染器的当前阶段；同一阶段 >1s = 渲染卡死，打印段名与耗时
     // （析构式警报对"永不返回"的调用失明——本线程就是为它存在的）。
@@ -232,15 +207,16 @@ void PreviewPump::WatchdogLoop() {
             (std::chrono::steady_clock::now().time_since_epoch().count() - since) /
             1'000'000;
         if (elapsed_ms >= 1000) {
-            std::fprintf(stderr,
-                         "[Watchdog] RenderFrame 卡在 '%s' 已 %lldms\n",
-                         stage, static_cast<long long>(elapsed_ms));
-            fflush(stderr);
+            // Warn **且 Release 可见**：这是「确定了系统在变慢/变卡」的告警，不是
+            // 调试细节。MEDIA-026/027 两次冻结都是靠这一行指认卡点在哪一段
+            // （'provider+acquire'），而旧版它被 #ifndef NDEBUG 挡着——
+            // 真机 Release 包里一条不留。
+            CQ_LOG_WARN_WF(Workflow::kPerf, "RenderFrame 卡在 '%s' 已 %lldms", stage,
+                           static_cast<long long>(elapsed_ms));
         }
         (void)last_stage;
         (void)repeats;
     }
 }
-#endif
 
 }  // namespace cq

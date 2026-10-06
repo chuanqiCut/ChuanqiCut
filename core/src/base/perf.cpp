@@ -26,6 +26,10 @@ std::atomic<IPerfSink*> g_sink{nullptr};
 std::atomic<uint64_t> g_call_counter{0};  // 用于采样判定
 
 // 默认 sink：写 stderr。格式固定、便于脚本解析。
+//
+// ⚠️ 这是全仓库**唯一允许直写 stderr 的地方**（CORE-010 之后）—— sink 实现的本职就是
+//    输出，它下面是没有更底层的路可走了。业务代码一律用 CQ_LOG_*_WF / IPerfSink，
+//    不要把这里的写法当成范例抄走。
 class StderrPerfSink : public IPerfSink {
 public:
     void Record(const PerfRecord& rec) override {
@@ -125,6 +129,31 @@ void PerfScope::SetBytes(int64_t bytes) {
 }
 void PerfScope::SetQueueDepth(int32_t depth) {
     if (active_) rec_.queue_depth = depth;
+}
+
+// ---------------------------------------------------------------------------
+// 慢调用告警
+// ---------------------------------------------------------------------------
+SlowCallAlarm::SlowCallAlarm(Workflow wf, const char* name, int64_t threshold_ms)
+    : wf_(wf), name_(name != nullptr ? name : "(unnamed)"), threshold_ms_(threshold_ms) {
+    begin_ns_ = PerfNowNs();  // 单调时钟：不受系统时间调整影响
+}
+
+SlowCallAlarm::~SlowCallAlarm() {
+    const int64_t elapsed_ns = PerfNowNs() - begin_ns_;
+    if (threshold_ms_ <= 0) {
+        return;
+    }
+    const int64_t elapsed_ms = elapsed_ns / 1000000;
+    if (elapsed_ms < threshold_ms_) {
+        return;
+    }
+    // Warn 级别 + workflow 标：Release 可见，且能按链路筛选。
+    //
+    // 这里刻意把「谁的锅」说清楚：只打印耗时而不带函数名+workflow，现场就只能
+    // 对着一行 `took 8226ms` 干瞪眼（MEDIA-027 排查时走过这段弯路）。
+    CQ_LOG_WARN_WF(wf_, "慢调用 %s took %lldms（阈值 %lldms）", name_,
+                   static_cast<long long>(elapsed_ms), static_cast<long long>(threshold_ms_));
 }
 
 }  // namespace cq

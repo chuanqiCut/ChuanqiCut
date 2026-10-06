@@ -59,6 +59,14 @@ cq_require_cxx20(cq_tests_core_log)
 apply_cq_warnings(cq_tests_core_log)
 add_test(NAME core_log COMMAND cq_tests_core_log)
 
+# ---- CORE-010：日志 workflow（按链路筛选 + 环境变量提级）----
+add_executable(cq_tests_core_log_workflow
+    unit/test_log_workflow.cpp)
+target_link_libraries(cq_tests_core_log_workflow PRIVATE cq_core)
+cq_require_cxx20(cq_tests_core_log_workflow)
+apply_cq_warnings(cq_tests_core_log_workflow)
+add_test(NAME core_log_workflow COMMAND cq_tests_core_log_workflow)
+
 # ---- CORE-004：内存池 / Arena / 纹理预算记账 ----
 add_executable(cq_tests_core_alloc
     unit/test_alloc.cpp)

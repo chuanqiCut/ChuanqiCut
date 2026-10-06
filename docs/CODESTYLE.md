@@ -36,12 +36,39 @@
   （`unique_ptr` > `shared_ptr`）。
 - **错误处理**：统一 `Status` 值类型；新 ABI 返回值语义单一——错误码 XOR 数据，
   条数走 out 参数。
-- **日志**：`CQ_LOG_*` 宏 + `ILogSink` 注入，禁止直写 stdout/cerr。
+- **日志**：`CQ_LOG_*` 宏 + `ILogSink` 注入，禁止直写 stdout/cerr/NSLog/print。
 - **时间**：一律 `RationalTime`，唯一浮点出口 `ToSeconds()`（日志/UI 展示）。
 - **include 顺序**：自带头 → 本 TU 平台头（`#import`，仅 .mm）→ `<std>` →
   `cq/` 项目头 → 同目录本地头。（pal 侧 media_decode.mm 等旧文件按此收敛。）
 - **注释**：中文为主；注释中引用的 `cq_*` 函数名与 `k*` 常量必须真实存在
   （出现过幽灵引用案底，审查时按此检查）。
+
+### 2.1 日志：三级设施与 workflow 维度（CORE-010）
+
+新增或修改日志时按下表执行。**这三条规则都是从真机排障现场赎回的，不是洁癖。**
+
+1. **必须走 `CQ_LOG_*_WF(wf, ...)` 并带上链路**（`core/include/cq/base/log.h` 的
+   `Workflow` 枚举）。禁止裸 `fprintf(stderr, ...)` —— 那种写法不分级、不限流、
+   不可关，且会污染 Release 产物。
+2. **级别按「它报的是什么」选**：
+
+   | 级别 | 用在哪 | Release |
+   |---|---|---|
+   | Trace | 逐帧 / 每包 / 每次进出的高频细节 | 编译期剔除 |
+   | Debug | 阶段切换、Open/Close、一次性配置结果 | 保留（默认不可见） |
+   | Info | 生命周期里用户可感知的节点 | 保留（默认可见） |
+   | **Warn** | **系统在偏离正轨**：降级发生、上界命中、慢调用、看门狗告警 | **必须可见** |
+   | Error | 失败但流程可继续 | **必须可见** |
+
+   判据：**「降级/异常发生了」一律 Warn 并留到 Release**；只有「我想看细节」才放
+   Debug/Trace。把 Warn 关进 `#ifndef NDEBUG` 等于让 Release 包对这类故障保持沉默
+   —— 坑 P76 就是这么来的。
+3. **改了任何依赖 `NDEBUG` 的代码，必须 Debug + Release 双向编译验证。**
+   本机 Debug 全绿发现不了「成员/计数器留在 NDEBUG 块里但用法已解开」这一类错误
+   （本次踩到 3 次，全在 core-rel 才炸）。
+
+慢调用告警统一用 `CQ_SLOW_CALL_WF(wf, name)`（`cq/base/perf.h`，阈值 500ms），
+**不要再在 .cpp/.mm 里自抄一份 RAII** —— 旧版在 4 个文件各抄一份，阈值还不一致。
 
 ## 3. Swift 层
 

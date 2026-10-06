@@ -9,7 +9,7 @@
 2. 按 [`../../.ai/templates/task.md`](../../.ai/templates/task.md) 建卡，写集不得与其他在飞任务相交；
 3. 在 BACKLOG 对应行标注 ✅（完成后）；在本表登记一行。
 
-## 已建卡登记表（46 张，2026-10-05）
+## 已建卡登记表（48 张，2026-10-06）
 
 ### 基建 INFRA / DOC
 | 卡 | 标题 |
@@ -27,9 +27,11 @@
 | [CORE-007](TASK-CORE-007.md) | 能力查询 `ICapabilities` 与枚举（实现） |
 | [CORE-008](TASK-CORE-008.md) | 线程模型与队列骨架 |
 | [CORE-009](TASK-CORE-009.md) | EditorSession 门面与快照机制 |
+| [CORE-010](TASK-CORE-010.md) | 日志按「链路（workflow）」筛选 + 排障日志沉淀进受控设施（MEDIA-027 后续） |
 | [MODEL-001](TASK-MODEL-001.md) | 时间线数据模型（Timeline / Track / Clip / Transition） |
 | [MODEL-002](TASK-MODEL-002.md) | Command 模式与 CommandHistory（Undo/Redo） |
 | [MEDIA-021](TASK-MEDIA-021.md) | 顺序取帧不必每帧 seek（预览帧率的真瓶颈） |
+| [MEDIA-027](TASK-MEDIA-027.md) | 播放 5 秒后永久冻结 + 内存 3.4GB 被 jetsam（真因与修复） |
 
 ### 绑定 BIND
 | 卡 | 标题 |

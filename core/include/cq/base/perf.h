@@ -24,6 +24,7 @@
 
 #include <cstdint>
 
+#include "cq/base/log.h"
 #include "cq/base/time.h"
 
 namespace cq {
@@ -104,7 +105,52 @@ private:
     PerfRecord rec_{};
 };
 
+// ---- 慢调用告警（RAII）----
+//
+// 背景（MEDIA-027 的血泪）：真机上「某个平台调用突然变成永久阻塞」是本项目最
+// 难查的一类故障——它不崩、不报错，表现为帧率归零。当时的定位完全依赖
+// `[SlowCall] xxx took 8226ms` 这一行；而那一版 SlowCallAlarm 是 `#ifndef NDEBUG`
+// 的、**且在四个文件里各抄了一份**，Release 包里什么都不留。
+//
+// 因此这一版的两点要求：
+//   1. **Release 必须可用**。它不是调试细节，是「系统正在变得不可用」的告警，
+//      属于 Warn 级别。只有 Release 能看到的现场才正是要它的地方。
+//   2. **带 workflow**。默认情况下 perf 链路的告警不能盖住其它链路的日志。
+//
+// 用法：
+//   void Foo() {
+//       CQ_SLOW_CALL_WF(cq::Workflow::kDecode, "VTDecompressionSessionDecodeFrame");
+//       ...
+//   }   // 超过阈值则打一行 WARN [wf:decode] 慢调用 ... took Nms
+//
+// 开销：构造一次 steady_clock::now()，析构再一次。不是热路径零成本设施，
+// 因此**只套在可能真的阻塞几百毫秒的调用**上（平台解解码/解封装/ Seek / 同步等待），
+// 不要套在逐帧函数里。
+class SlowCallAlarm {
+public:
+    SlowCallAlarm(Workflow wf, const char* name, int64_t threshold_ms = kDefaultThresholdMs);
+    ~SlowCallAlarm();
+
+    SlowCallAlarm(const SlowCallAlarm&) = delete;
+    SlowCallAlarm& operator=(const SlowCallAlarm&) = delete;
+
+    // 默认阈值：500ms。人眼可感知的卡顿量级；再小会把正常抖动也算进来。
+    static constexpr int64_t kDefaultThresholdMs = 500;
+
+private:
+    Workflow wf_ = Workflow::kCore;
+    const char* name_ = nullptr;
+    int64_t threshold_ms_ = kDefaultThresholdMs;
+    int64_t begin_ns_ = 0;
+};
+
 }  // namespace cq
+
+// 便捷宏。变量名带行号，允许同一作用域套多个。
+#define CQ_SLOW_CALL_WF(wf, name) \
+    ::cq::SlowCallAlarm cq_slow_call_##__LINE__((wf), (name))
+#define CQ_SLOW_CALL_THRESHOLD_WF(wf, name, ms) \
+    ::cq::SlowCallAlarm cq_slow_call_##__LINE__((wf), (name), (ms))
 
 // 便捷宏。关闭时展开为一条空语句，**不取时钟、不构造对象**。
 #define CQ_PERF_SCOPE(stage, pts) \

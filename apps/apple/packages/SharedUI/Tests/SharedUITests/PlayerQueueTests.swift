@@ -1,0 +1,359 @@
+// SharedUI — 播放队列与最近播放验收（UIA-021/022；PLAN-播放器进阶 P1）
+//
+// 队列：播完推进、优先级语义（A-B 循环 > 单片循环 > 队列）、失败跳片、
+// 跳转/清空/单文件退出队列。最近播放：去重置顶上限、持久化恢复、
+// 本地缺失不可播。共享桩见 PlayerTestSupport.swift。
+//
+// 运行：cd apps/apple/packages/SharedUI && swift test --disable-sandbox
+
+import XCTest
+@testable import SharedUI
+
+@MainActor
+final class PlayerQueueTests: XCTestCase {
+
+    private let urlA = URL(fileURLWithPath: "/tmp/cq-q-a.mp4")
+    private let urlB = URL(fileURLWithPath: "/tmp/cq-q-b.mp4")
+    private let urlC = URL(fileURLWithPath: "/tmp/cq-q-c.mp4")
+
+    // MARK: 队列推进
+
+    func testQueueAdvancesOnEndAndContinuesPlayback() {
+        let (vm, engine) = makePlayerViewModel(isPlaying: true)
+        vm.setQueue([urlA, urlB, urlC], startIndex: 0)
+        XCTAssertEqual(vm.queueIndex, 0)
+
+        engine.onEnded?()
+        XCTAssertEqual(vm.queueIndex, 1, "播完推进到第二片")
+        XCTAssertEqual(engine.loadCalls.count, 2, "activate 一次 + advanceQueue 换片一次")
+        XCTAssertEqual(engine.playCount, 1, "下一片自动续播")
+        XCTAssertTrue(vm.isPlaying)
+    }
+
+    func testSingleLoopBeatsQueue() {
+        let (vm, engine) = makePlayerViewModel(duration: 60, currentTime: 59, isPlaying: true)
+        vm.setQueue([urlA, urlB])
+        vm.toggleLoop()
+
+        engine.onEnded?()
+        XCTAssertEqual(vm.queueIndex, 0, "单片循环优先于队列推进")
+        XCTAssertEqual(engine.loadCalls.count, 1, "不换片")
+        XCTAssertEqual(engine.seeks.first?.target ?? -1, 0, accuracy: 0.001, "回零续播")
+    }
+
+    func testABLoopBeatsQueue() {
+        let (vm, engine) = makePlayerViewModel(duration: 120, isPlaying: true)
+        vm.setQueue([urlA, urlB])
+        engine.onTick?(10)
+        vm.cycleABLoop()
+        engine.onTick?(30)
+        vm.cycleABLoop()
+        XCTAssertEqual(vm.abLoopState, .looping)
+
+        engine.onEnded?()
+        XCTAssertEqual(vm.queueIndex, 0, "A-B 循环优先于队列推进")
+        XCTAssertEqual(engine.seeks.first?.target ?? -1, 10, accuracy: 0.001, "回 A 续播")
+    }
+
+    func testFailureSkipsToNextQueueItem() {
+        let (vm, engine) = makePlayerViewModel()
+        vm.setQueue([urlA, urlB, urlC])
+
+        engine.onStateChange?(.failed("坏文件"))
+        XCTAssertEqual(vm.queueIndex, 1, "失败自动跳下一片")
+        XCTAssertEqual(engine.loadCalls.count, 2, "activate + 跳片重载")
+        XCTAssertEqual(vm.feedback, "已跳过无法播放的文件")
+    }
+
+    func testFailureOnLastQueueItemKeepsErrorBanner() {
+        let (vm, engine) = makePlayerViewModel()
+        vm.setQueue([urlA])
+
+        engine.onStateChange?(.failed("坏文件"))
+        if case .failed = vm.state {
+            // 预期：无下一片可跳时落错误横幅
+        } else {
+            XCTFail("队列末尾失败应保持 failed 态（错误横幅）")
+        }
+        XCTAssertTrue(vm.showsControls)
+    }
+
+    func testJumpQueueForcesReloadAndPlays() {
+        let (vm, engine) = makePlayerViewModel()
+        vm.setQueue([urlA, urlB, urlC])
+
+        vm.jumpQueue(to: 2)
+        XCTAssertEqual(vm.queueIndex, 2)
+        XCTAssertEqual(engine.loadCalls.count, 2, "跳转强制重载")
+        XCTAssertEqual(engine.playCount, 1, "跳转后起播")
+
+        vm.jumpQueue(to: 2)
+        XCTAssertEqual(engine.loadCalls.count, 3, "跳到当前项 = 从头重播（force 语义）")
+    }
+
+    func testPlayStandaloneClearsQueue() {
+        let (vm, engine) = makePlayerViewModel()
+        vm.setQueue([urlA, urlB])
+
+        vm.playStandalone(urlC)
+        XCTAssertTrue(vm.queue.isEmpty, "手动换片 = 退出队列模式")
+        XCTAssertNil(vm.queueIndex)
+        XCTAssertEqual(engine.loadCalls.count, 2)
+    }
+
+    func testClearQueue() {
+        let (vm, _) = makePlayerViewModel()
+        vm.setQueue([urlA, urlB])
+        vm.clearQueue()
+        XCTAssertTrue(vm.queue.isEmpty)
+        XCTAssertNil(vm.queueIndex)
+        XCTAssertEqual(vm.feedback, "已清空播放队列")
+    }
+
+    // MARK: 源类型与缓冲（UIA-024）
+
+    func testRemoteSourcePolicyClassification() {
+        let https = URL(string: "https://example.com/a.m3u8") ?? URL(fileURLWithPath: "/f")
+        let http = URL(string: "http://example.com/a.mp4") ?? URL(fileURLWithPath: "/f")
+        let ftp = URL(string: "ftp://example.com/a.mp4") ?? URL(fileURLWithPath: "/f")
+        let local = URL(fileURLWithPath: "/tmp/a.mp4")
+
+        XCTAssertTrue(AVPlayerEngine.isRemoteMediaURL(https), "https = 远程")
+        XCTAssertTrue(AVPlayerEngine.isRemoteMediaURL(http), "http = 远程")
+        XCTAssertFalse(AVPlayerEngine.isRemoteMediaURL(ftp), "非 http(s) 不视为远程（拒绝面外）")
+        XCTAssertFalse(AVPlayerEngine.isRemoteMediaURL(local), "本地文件 = 非远程")
+    }
+
+    func testRemoteAndBufferingStatesSyncFromEngine() {
+        let (vm, engine) = makePlayerViewModel()
+        XCTAssertFalse(vm.isRemoteSource)
+        XCTAssertFalse(vm.isBuffering)
+
+        engine.isRemoteSource = true
+        engine.onStateChange?(.ready)
+        XCTAssertTrue(vm.isRemoteSource, "源类型随状态广播同步")
+
+        engine.onBufferingChange?(true)
+        XCTAssertTrue(vm.isBuffering, "缓冲态上抛控制层")
+        engine.onBufferingChange?(false)
+        XCTAssertFalse(vm.isBuffering)
+    }
+
+    // MARK: 章节与画中画（UIA-016）
+
+    func testChaptersSyncAndJumpSeekToStart() {
+        let (vm, engine) = makePlayerViewModel(duration: 600)
+        XCTAssertTrue(vm.chapters.isEmpty, "装载前无章节")
+
+        engine.chapters = [
+            PlayerChapter(id: 0, start: 0, name: "片头"),
+            PlayerChapter(id: 1, start: 120, name: "发展"),
+            PlayerChapter(id: 2, start: 480, name: "高潮"),
+        ]
+        engine.onStateChange?(.ready)
+        XCTAssertEqual(vm.chapters.count, 3, "章节随状态广播同步")
+
+        vm.jumpToChapter(engine.chapters[1])
+        XCTAssertEqual(engine.seeks.first?.target ?? -1, 120, accuracy: 0.001, "跳到章节起点")
+        XCTAssertEqual(engine.seeks.first?.precise ?? false, true, "章节跳转零容差")
+        XCTAssertEqual(vm.currentTime, 120, accuracy: 0.001)
+        XCTAssertEqual(vm.feedback, "跳转：发展")
+    }
+
+    func testPipActiveStateDrivesPlaceholder() {
+        let (vm, _) = makePlayerViewModel()
+        XCTAssertFalse(vm.isInPip)
+        vm.pip.onActiveChange?(true)
+        XCTAssertTrue(vm.isInPip, "进入 PiP → 占位态")
+        vm.pip.onActiveChange?(false)
+        XCTAssertFalse(vm.isInPip, "退出 PiP → 恢复")
+    }
+
+    // MARK: 队列跳片助手（UIA-027 迷你播控）
+
+    func testQueueSkipHelpersAndBoundaryRestart() {
+        let (vm, engine) = makePlayerViewModel()
+        vm.setQueue([urlA, urlB, urlC])
+
+        vm.playNextInQueue()
+        XCTAssertEqual(vm.queueIndex, 1, "下一片")
+        XCTAssertEqual(engine.loadCalls.count, 2)
+        vm.playNextInQueue()
+        XCTAssertEqual(vm.queueIndex, 2)
+        vm.playNextInQueue()
+        XCTAssertEqual(vm.queueIndex, 2, "末片之后无动作")
+
+        vm.playPreviousInQueue()
+        XCTAssertEqual(vm.queueIndex, 1, "上一片")
+        vm.playPreviousInQueue()
+        XCTAssertEqual(vm.queueIndex, 0)
+        vm.playPreviousInQueue()
+        XCTAssertEqual(vm.queueIndex, 0, "首片无上一片")
+        XCTAssertEqual(engine.seeks.last?.target ?? -1, 0, accuracy: 0.001, "边界回零重播")
+    }
+
+    // MARK: 设置页持久化（UIA-023）
+
+    func testSettingsPersistLoopDefaultAndSubtitleScale() {
+        let suiteName = "PlayerQueueTests.settings." + UUID().uuidString
+        let defaults = UserDefaults(suiteName: suiteName) ?? .standard
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        let (vm, _) = makePlayerViewModel(defaults: defaults)
+        XCTAssertFalse(vm.loopEnabled, "默认循环初始为关")
+        vm.setDefaultLoopEnabled(true)
+        XCTAssertTrue(defaults.bool(forKey: PlayerViewModel.loopDefaultsKey), "默认循环写入 UserDefaults")
+        XCTAssertTrue(vm.loopEnabled, "写入即应用")
+
+        vm.subtitleScale = 1.4
+        XCTAssertEqual(defaults.double(forKey: PlayerViewModel.subtitleScaleDefaultsKey), 1.4, accuracy: 0.0001, "字幕缩放写入")
+
+        let (vm2, _) = makePlayerViewModel(defaults: defaults)
+        XCTAssertTrue(vm2.loopEnabled, "新实例恢复默认循环")
+        XCTAssertEqual(vm2.subtitleScale, 1.4, accuracy: 0.0001, "新实例恢复字幕缩放")
+    }
+
+    // MARK: PlayerController 门面（UIA-027）
+
+    func testControllerOpenCreatesSharedModelAndReusesIt() {
+        let controller = PlayerController()
+        XCTAssertNil(controller.model, "初始无媒体")
+
+        controller.open(urls: [urlA, urlB])
+        let first = controller.model
+        XCTAssertNotNil(first, "首次 open 创建共享 VM")
+        XCTAssertEqual(first?.queue.count, 2)
+
+        controller.open(urls: [urlC])
+        XCTAssertTrue(controller.model === first, "再次 open 复用同一共享 VM（关窗续播前提）")
+        XCTAssertEqual(controller.model?.queue.count, 1, "队列被替换")
+        XCTAssertEqual(controller.model?.queueIndex, 0)
+    }
+
+    func testControllerPlayStandaloneWithoutMediaOpensSingle() {
+        let controller = PlayerController()
+        controller.playStandalone(urlA)
+        XCTAssertEqual(controller.model?.queue.isEmpty, true, "单文件播放无队列")
+        XCTAssertNotNil(controller.model)
+    }
+
+    // MARK: 键盘播控（UIA-023 收尾；仅 macOS 宿主编译）
+
+    #if os(macOS)
+    func testCharacterKeyMapping() {
+        let (vm, engine) = makePlayerViewModel(duration: 100)
+
+        // F 全屏：经闭包注入（测试不碰 NSApp）
+        var fullscreenCalls = 0
+        XCTAssertEqual(PlayerScreenBody.characterKeyResult("f", vm: vm,
+                                                           toggleFullscreen: { fullscreenCalls += 1 }),
+                       .handled)
+        XCTAssertEqual(fullscreenCalls, 1)
+
+        // S：未加载字幕 → ignored
+        XCTAssertEqual(PlayerScreenBody.characterKeyResult("s", vm: vm, toggleFullscreen: {}), .ignored)
+
+        // S：加载外挂字幕（真实 srt 临时文件走真解析路径）→ handled 且关闭
+        let srt = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("cq-key-s-\(UUID().uuidString).srt")
+        FileManager.default.createFile(atPath: srt.path,
+                                       contents: Data("1\n00:00:01,000 --> 00:00:02,000\n你好".utf8))
+        defer {
+            // 清理失败无害（临时目录系统会回收）
+            try? FileManager.default.removeItem(at: srt)
+        }
+        vm.loadExternalSubtitle(from: srt)
+        XCTAssertNotNil(vm.externalSubtitle, "srt 加载成功")
+        XCTAssertEqual(PlayerScreenBody.characterKeyResult("s", vm: vm, toggleFullscreen: {}), .handled)
+        XCTAssertNil(vm.externalSubtitle, "S 关闭外挂字幕")
+
+        // A 循环 + 数字跳转 + 未映射键
+        XCTAssertEqual(PlayerScreenBody.characterKeyResult("a", vm: vm, toggleFullscreen: {}), .handled)
+        XCTAssertTrue(vm.loopEnabled)
+        XCTAssertEqual(PlayerScreenBody.characterKeyResult("5", vm: vm, toggleFullscreen: {}), .handled)
+        XCTAssertEqual(engine.seeks.first?.target ?? -1, 50, accuracy: 0.001, "数字 5 = 跳 50%")
+        XCTAssertEqual(PlayerScreenBody.characterKeyResult("x", vm: vm, toggleFullscreen: {}), .ignored)
+    }
+    #endif
+
+    // MARK: 最近播放
+
+    func testRecentStoreRecordDedupsCapsAndPersists() {
+        let suiteName = "PlayerQueueTests.recent." + UUID().uuidString
+        let defaults = UserDefaults(suiteName: suiteName) ?? .standard
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        // 真实临时文件：装载时的可达性清理只剔除不存在的路径
+        let dir = URL(fileURLWithPath: NSTemporaryDirectory())
+        var created: [URL] = []
+        defer {
+            // 清理失败无害（临时目录系统会回收）
+            for url in created {
+                try? FileManager.default.removeItem(at: url)
+            }
+        }
+        for index in 0..<25 {
+            let fileUrl = dir.appendingPathComponent("cq-recent-\(UUID().uuidString)-\(index).mp4")
+            FileManager.default.createFile(atPath: fileUrl.path, contents: Data([0x00]))
+            created.append(fileUrl)
+        }
+
+        let store = PlayerRecentStore(defaults: defaults)
+        for (index, fileUrl) in created.enumerated() {
+            store.record(url: fileUrl, name: "片 \(index)")
+        }
+        XCTAssertEqual(store.items.count, PlayerRecentStore.maxItems, "上限 20 条")
+        XCTAssertEqual(store.items.first?.name, "片 24", "最新置顶")
+
+        store.record(url: created[10], name: "片 10 重看")
+        XCTAssertEqual(store.items.count, PlayerRecentStore.maxItems, "去重不新增")
+        XCTAssertEqual(store.items.first?.name, "片 10 重看", "重看置顶")
+        XCTAssertEqual(store.items.filter { $0.urlString == created[10].absoluteString }.count, 1, "同一文件唯一")
+
+        let reloaded = PlayerRecentStore(defaults: defaults)
+        XCTAssertEqual(reloaded.items.count, PlayerRecentStore.maxItems, "跨会话持久化恢复")
+        XCTAssertEqual(reloaded.items.first?.name, "片 10 重看")
+    }
+
+    func testRecentStoreMissingLocalFileIsNotPlayable() {
+        let suiteName = "PlayerQueueTests.recent.missing." + UUID().uuidString
+        let defaults = UserDefaults(suiteName: suiteName) ?? .standard
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let store = PlayerRecentStore(defaults: defaults)
+
+        let missing = URL(fileURLWithPath: "/tmp/cq-recent-missing-\(UUID().uuidString).mp4")
+        store.record(url: missing, name: "缺失")
+        guard let item = store.items.first else {
+            return XCTFail("record 后应有条目")
+        }
+        XCTAssertNil(store.playbackURL(for: item), "本地文件不存在 = 不可播（调用方剔除）")
+
+        store.remove(item)
+        XCTAssertTrue(store.items.isEmpty, "remove 生效")
+    }
+
+    func testRemoteURLRecordedAndPlayableWithoutBookmark() {
+        let suiteName = "PlayerQueueTests.recent.remote." + UUID().uuidString
+        let defaults = UserDefaults(suiteName: suiteName) ?? .standard
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let store = PlayerRecentStore(defaults: defaults)
+
+        let remote = URL(string: "https://example.com/video/stream.m3u8") ?? URL(fileURLWithPath: "/fallback")
+        store.record(url: remote, name: "远程片")
+        XCTAssertEqual(store.items.first?.isRemote, true)
+        XCTAssertNotNil(store.playbackURL(for: store.items[0]), "远程 URL 无需 bookmark 直接可播")
+    }
+
+    func testVMRecordsRecentOnReadyOncePerMedia() {
+        let suiteName = "PlayerQueueTests.recent.vm." + UUID().uuidString
+        let defaults = UserDefaults(suiteName: suiteName) ?? .standard
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let store = PlayerRecentStore(defaults: defaults)
+
+        let (vm, engine) = makePlayerViewModel(defaults: defaults, recent: store)
+        engine.onStateChange?(.ready)
+        engine.onStateChange?(.ready)
+        XCTAssertEqual(store.items.count, 1, "ready 记录一次，重复广播不重复记")
+        XCTAssertEqual(store.items.first?.name, vm.mediaTitle)
+    }
+}

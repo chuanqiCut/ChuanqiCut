@@ -56,6 +56,10 @@ targets:
           - UIInterfaceOrientationPortrait
           - UIInterfaceOrientationLandscapeLeft
           - UIInterfaceOrientationLandscapeRight
+        # 后台播放 / 画中画（UIA-015 播放器：AVAudioSession .playback +
+        # 退后台自动 PiP 的前置声明）
+        UIBackgroundModes:
+          - audio
         # 相机模块权限（CAM-002/004，ADR-0014；plist 由本文件生成，不存手工副本）
         NSCameraUsageDescription: 需要使用相机进行拍摄与实时特效预览
         NSMicrophoneUsageDescription: 录制视频需要使用麦克风采集声音

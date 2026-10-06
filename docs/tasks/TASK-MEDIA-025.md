@@ -38,9 +38,12 @@ HDR 素材（iPhone 实拍 = BT.2020 原色域 + HLG/PQ 传递函数，常见杜
    ColorPrimaries/TransferFunction/YCbCrMatrix`）。
 2. HDR 判定纯函数 `IsHdrColorSource(prim, transfer)`：transfer ∈ {ITU_R_2100_HLG,
    SMPTE_ST_2084_PQ} 或 prim == ITU_R_2020（配合非 709 transfer）。
-3. HDR 时对 VT 会话设 `kVTPixelTransferPropertyKey_Destination{ColorPrimaries,
-   TransferFunction,YCbCrMatrix}` = ITU_R_709_2 —— 解码+转换一体（VT 内部完成，
-   零额外 pass）。SDR 素材不设任何属性（行为不变）。
+3. HDR 时对 VT 会话设 **`kVTDecompressionPropertyKey_PixelTransferProperties`**
+   （字典，值 = `kVTPixelTransferPropertyKey_Destination{ColorPrimaries,
+   TransferFunction,YCbCrMatrix}` = ITU_R_709_2）—— 解码+转换一体（VT 内部完成，
+   零额外 pass）。⚠️ 真机实测：把 PixelTransfer 子键**直接**设到解码会话返回
+   -12900 kVTParameterErr，必须打包成字典经该键设置。SDR 素材不设任何属性
+   （行为不变）。
 4. 诊断：`Open 完成` 行带源标签与转换标记；属性被拒时如实日志（不阻塞）。
 5. 媒体管线六问：线程不变（Open 同步段）；RationalTime 不变；内存不变；取消不变；
    错误码不变（属性失败不阻塞）；一致性——SDR golden 逐字节不变，HDR 输出由真机

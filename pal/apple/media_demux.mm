@@ -25,6 +25,8 @@
 #include <sys/stat.h>
 #include <vector>
 
+#include "cq/base/perf.h"       // CQ_SLOW_CALL_WF（CORE-010）
+#include "cq/base/log.h"        // 带 workflow 的分级日志
 #include "cq/base/time.h"        // RationalTime / Rescale / RoundMode / kProjectTimeScale
 #include "cq/base/status.h"      // Status / StatusCode
 #include "cq/base/concurrency.h" // CancelToken
@@ -33,26 +35,8 @@
 
 namespace cq {
 
-#ifndef NDEBUG
-// MEDIA-026 慢调用警报（Debug only）：作用域内单次调用 >500ms 时打印段名与耗时。
-// stderr 无缓冲（P70），devicectl --console 可见。
-struct SlowCallAlarm {
-    const char* name;
-    std::chrono::steady_clock::time_point start;
-    explicit SlowCallAlarm(const char* n)
-        : name(n), start(std::chrono::steady_clock::now()) {}
-    ~SlowCallAlarm() {
-        const auto ns = std::chrono::duration_cast<std::chrono::milliseconds>(
-                            std::chrono::steady_clock::now() - start)
-                            .count();
-        if (ns >= 500) {
-            std::fprintf(stderr, "[SlowCall] %s took %lldms\n", name,
-                         static_cast<long long>(ns));
-            fflush(stderr);
-        }
-    }
-};
-#endif
+// 慢调用告警统一走 core/base 的 CQ_SLOW_CALL_WF（CORE-010）：Release 可见 +
+// 按链路可筛，不再在每个文件里各抄一份 Debug-only 的结构体。
 namespace {
 
 // CMTime -> RationalTime（项目网格 120000），显式舍入方向（非整除也不默认）。
@@ -342,9 +326,8 @@ public:
     void Destroy() override { delete this; }
 
     Status Open(const MediaSource& src) override {
-#ifndef NDEBUG
-        SlowCallAlarm open_alarm("demuxer Open(含 ScanKeyframes)");
-#endif
+        // CORE-010：Release 可见（慢调用不是调试细节，是「系统正在变得不可用」）。
+        CQ_SLOW_CALL_WF(Workflow::kDemux, "demuxer Open(含 ScanKeyframes)");
         if (src.path == nullptr) return Status{StatusCode::kInvalidArgument};
 
         NSString* ns_path = [[NSString alloc] initWithUTF8String:src.path];
@@ -528,22 +511,23 @@ public:
     // pts=0 首帧）。这类样本在 demux 层直接跳过，只向外吐出带有效编码数据的包。
     Status ReadPacket(MediaPacket& out_packet) override {
         out_packet = MediaPacket{};
+        // CORE-010：Release 可见。逐包路径（每帧一次）的额外开销是两次单调时钟
+        // 读取，相对毫秒级的解封装耗时可忽略。
+        CQ_SLOW_CALL_WF(Workflow::kDemux, "demux ReadPacket");
 #ifndef NDEBUG
-        // MEDIA-026 慢调用警报 + 成对日志（进入/返回都打——析构式警报对
-        // "永不返回"的调用失明，成对日志的"最后一个无配对进入"即卡点）。
+        // 成对日志（进入/返回都打——析构式警报对「永不返回」的调用失明，
+        // 「最后一个无配对进入」即卡点）。逐包高频，只在 Debug 保留。
         static std::atomic<int> seq{0};
         const int my_seq = seq.fetch_add(1);
-        SlowCallAlarm alarm("demux ReadPacket");
-        std::fprintf(stderr, "[Trace] ReadPacket enter #%d\n", my_seq);
-        fflush(stderr);
+        CQ_LOG_TRACE_WF(Workflow::kDemux, "ReadPacket enter #%d", my_seq);
         struct ExitLog {
             int seq;
-            ~ExitLog() {
-                std::fprintf(stderr, "[Trace] ReadPacket exit  #%d\n", seq);
-                fflush(stderr);
-            }
+            ~ExitLog() { CQ_LOG_TRACE_WF(Workflow::kDemux, "ReadPacket exit #%d", seq); }
         } exit_log{my_seq};
 #endif
+        // MEDIA-027：同 RebuildReader —— 泵线程无 autorelease pool，逐包调用必须
+        // 自带池，否则 AVFoundation 的自动释放对象整段播放期内只增不减。
+        @autoreleasepool {
         for (;;) {
             // 找 pts 最小的可用轨。
             int best = -1;
@@ -609,6 +593,7 @@ public:
             CFRelease(sbuf);
             return Status::Ok();
         }
+        }  // @autoreleasepool（MEDIA-027）
     }
 
 private:
@@ -629,6 +614,11 @@ private:
     // 以 [start, asset.duration) 为时间范围重建 reader 与每条轨的 passthrough 输出，
     // 并预取每条轨首个样本。start = kCMTimeZero 即从头/重置。
     Status RebuildReader(CMTime start, const CancelToken& token) {
+        // MEDIA-027：本函数被**泵线程**按帧调用（每次 Seek 一次），而泵线程是纯
+        // C++ std::thread，**没有 autorelease pool**。AVFoundation 在这里产出的
+        // 自动释放对象（AVAssetReader / NSError / tracks 数组等）会一直挂到线程
+        // 退出才回收 —— 播放越久攒越多。显式池把生命周期压到单次调用。
+        @autoreleasepool {
         TearDownReader();
         tracks_.clear();  // 幂等：Open 可能重复调用（如 CreateMediaDemuxer + SystemFrameProvider::Open），
                           // 不清空会累积失效（output=nil）的旧轨，导致 ScanKeyframes 读到 0 样本。
@@ -703,14 +693,14 @@ private:
             ts.next = [ts.output copyNextSampleBuffer];  // +1 retained（可能为 nil）
         }
         return Status::Ok();
+        }  // @autoreleasepool（MEDIA-027）
     }
 
     // 一次性扫描视频轨关键帧 pts 集合（Seek 吸附到 <=target 关键帧用）。
     // 注意：扫描会消费当前 reader；调用方需在之后 RebuildReader(kCMTimeZero) 重置。
     void ScanKeyframes() {
-#ifndef NDEBUG
-        SlowCallAlarm scan_alarm("ScanKeyframes(全文件)");
-#endif
+        // CORE-010：Release 可见。全文件扫描是最容易在大素材上爆时间的调用之一。
+        CQ_SLOW_CALL_WF(Workflow::kDemux, "ScanKeyframes(全文件)");
         keyframe_times_.clear();
         for (auto& ts : tracks_) {
             if (ts.media_type != MediaType::kVideo) continue;

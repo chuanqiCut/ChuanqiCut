@@ -456,3 +456,58 @@ AcquireFrame(req)
 与「每帧 seek」旧语义逐帧 pts 一致；数字见 `.ai/memory/baselines.md`。
 测试：`media_sequential_acquire`（46 断言，多 GOP mock）+
 `media_sequential_real`（真实硬解 + 快/慢对照）。
+
+### MEDIA-027：解码输出队列的内存上界与缺口处置（VideoToolboxDecoder）
+
+装配形状变化（`pal/apple/media_decode.{h,mm}`）：
+
+- **队列上界 `kMaxQueuedFrames = 12`**：`output_queue_.size()` 超过即**跳过重排判据、
+  强制交付最小 pts 帧**并重锚。这是**不依赖判据正确性**的内存闸门 —— 播放期队列常态
+  深度 1~2（喂一包弹一帧），12 给足 B 帧重排窗口，同时把最坏常驻内存压在 ~100MB。
+- **缺口判定 `kMaxMismatchStreak = 8`**：「无在途帧且队列最小 pts ≠ 期望」连续 8 次
+  即判定为缺口 → 交付最小帧 + `has_prev_ = false`（重锚）。
+  ⚠️ **不能取 1**：B 帧重排下该条件是常态（参考 P 先到，其 B 帧在其后才喂入），
+  首版取 1 直接把 `media_sequential_real` 打挂（快路径比慢路径提前 3 帧）。
+  8 = 常见 B 帧深度（≤4）的一倍余量。
+- **`Flush()` 不再用 VTWait**：改为轮询 `pending_dts_pts_` 空 + 1s 超时。
+  VTWait 在 VT 静默丢帧时永久阻塞（P72），而 Flush **每次 Seek 都走**，等于给慢路径
+  留永久阻塞入口。
+- **`OutputCallback` 顺序改为「先入队、后登记完成」**：`MarkDecoded` 在前会让
+  「pending 空」不蕴含「帧已在队列里」，等待方据此清队/放行后该帧才入队 → 旧 GOP 帧
+  漏进新序列（MEDIA-021 实测的「Seek 后首弹弹出旧 GOP 的 128000」即此形态）。
+- **`@autoreleasepool`**（`media_demux.mm` 的 `RebuildReader` / `ReadPacket`，
+  `media_decode.mm` 的 `Feed`）：泵线程是纯 C++ `std::thread`，**没有** autorelease
+  pool，AVFoundation 的自动释放对象会攒到线程退出。实测桌面 soak 的 rss 增长由此
+  从 +13.8MB/60s 降到 +0.5MB/60s。
+
+`SystemFrameProvider::AcquireExact` 新增**追帧上界 `kMaxChasePops = 600`**：单次调用
+解码帧数上限，超过如实返回 kIoNotFound。防「单次 AcquireExact 独占泵线程 8 秒以上」
+（真机实测形态：播放头按墙钟继续走，下一次请求目标更远，永不收敛）。
+
+数据与分析见 `docs/tasks/TASK-MEDIA-027.md` 与 `.ai/memory/baselines.md`；坑见 P75。
+
+## MEDIA / PREVIEW 链路的日志归属（CORE-010，2026-10-06）
+
+MEDIA-027 收尾时把散在的 32 处 `fprintf(stderr, ...)` 全部迁进了带 workflow 的日志设施。
+排查一条链路时按这个映射开开关即可（`CQ_LOG_WORKFLOW=`）：
+
+| 位置 | 链路 | 说明 |
+|---|---|---|
+| `pal/apple/media_demux.mm` | `demux` | Open / ReadPacket / ScanKeyframes |
+| `pal/apple/media_decode.mm` | `decode`（Queue 闸门归 `mem`） | Feed / PopFrame / 显示序缺口 / Flush 超时 |
+| `core/.../system_frame_provider.h` | `framecache` | Seek / Finalize / 追帧探针与追帧上界 |
+| `core/src/preview/preview_pump.cpp` | `preview`（统计归 `perf`） | 请求/合并/发布；看门狗归 `perf` |
+| `core/src/preview/preview_renderer.cpp` | `render`（复用命中归 `framecache`） | 分段耗时、纹理导入记录 |
+
+**几条 Release 可见的 Warn（jetsam / 冻结类故障的最早信号，别再塞回 NDEBUG）**：
+
+- `[wf:decode] 显示序缺口` —— 重排判据认定缺口并按缺口交付（MEDIA-027 的真身）
+- `[wf:mem] 队列超上界` —— 内存闸门被触发，说明重排判据没能正常消化队列
+- `[wf:framecache] 追帧上界` —— 这一帧没追上，取帧链路病掉的最外层症状
+- `[wf:perf] 慢调用 / RenderFrame 卡在 '<段>'` —— 慢调用告警与看门狗（旧版全在 Release 里消失）
+
+**调试用法**（Xcode Scheme 环境变量，无需重编译）：
+
+```
+CQ_LOG_LEVEL=debug  CQ_LOG_WORKFLOW=decode,mem,perf  CQ_LOG_WF_LEVEL=decode=trace
+```

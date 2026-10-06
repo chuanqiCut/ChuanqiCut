@@ -25,31 +25,18 @@
 #include <thread>
 #include <vector>
 
+#include "cq/base/log.h"
+#include "cq/base/perf.h"
 #include "cq/base/status.h"
 #include "cq/base/time.h"
 #include "media_decode.h"
 
 namespace cq {
 
-#ifndef NDEBUG
-// MEDIA-026 慢调用警报（Debug only）：>500ms 打印（P70 stderr 通道）。
-struct SlowCallAlarm {
-    const char* name;
-    std::chrono::steady_clock::time_point start;
-    explicit SlowCallAlarm(const char* n)
-        : name(n), start(std::chrono::steady_clock::now()) {}
-    ~SlowCallAlarm() {
-        const auto ns = std::chrono::duration_cast<std::chrono::milliseconds>(
-                            std::chrono::steady_clock::now() - start)
-                            .count();
-        if (ns >= 500) {
-            std::fprintf(stderr, "[SlowCall] %s took %lldms\n", name,
-                         static_cast<long long>(ns));
-            fflush(stderr);
-        }
-    }
-};
-#endif
+// 慢调用告警统一走 core/base 的 CQ_SLOW_CALL_WF（CORE-010）。
+// 旧版是本文件自己抄的一份 `#ifndef NDEBUG` 结构体——**Release 包里什么都不留**，
+// 而 MEDIA-027 定位冻结时唯一指认到 `provider+acquire 8226ms` 的就是它。
+// 现在它属于 kPerf 链路的 Warn，**Release 也能看见**，且可用 CQ_LOG_WORKFLOW 筛。
 
 // ---------------------------------------------------------------------------
 // 构造 / 析构
@@ -119,6 +106,18 @@ void VideoToolboxDecoder::OutputCallback(void* ref_con, void* source_ref_con, OS
         CFRelease(sbuf);
     }
     if (self == nullptr) return;
+    // ⚠️ MEDIA-027 顺序约束：**先入队，再做完成登记**。
+    //
+    // 反过来的顺序（原实现：先 MarkDecoded 再 Enqueue）有一个真实竞态：等待方
+    // （PopFrame 的重排等待 / Flush 的「等在途帧落地」）以 pending 集合空为
+    // 「全部完成」的判据，而 MarkDecoded 先清空 pending 时该帧**还没进队列** ——
+    // 等待方据此清队/放行，随后这一帧才入队，于是上一解码区间的旧帧漏进新序列。
+    // MEDIA-021 实测到的「Seek 后首弹弹出旧 GOP 的 128000」即此形态。
+    // 先入队后登记，「pending 空」才真正蕴含「已产出的帧都已在队列里」。
+    if (status == noErr && image_buffer != nullptr) {
+        CVPixelBufferRef pb = reinterpret_cast<CVPixelBufferRef>(image_buffer);
+        self->Enqueue(pb, self->ToRational(pts), dts);
+    }
     // 完成登记：无论成败都从 pending 移除 —— 丢帧/解错的包不能永远压住重排等待。
     if (dts.timescale != 0) {
         self->MarkDecoded(dts);
@@ -129,10 +128,6 @@ void VideoToolboxDecoder::OutputCallback(void* ref_con, void* source_ref_con, OS
                 std::chrono::steady_clock::now().time_since_epoch().count()));
 #endif
     }
-    if (status != noErr) return;
-    if (image_buffer == nullptr) return;
-    CVPixelBufferRef pb = reinterpret_cast<CVPixelBufferRef>(image_buffer);
-    self->Enqueue(pb, self->ToRational(pts), dts);
 }
 
 void VideoToolboxDecoder::Enqueue(CVPixelBufferRef pb, const RationalTime& pts,
@@ -142,13 +137,17 @@ void VideoToolboxDecoder::Enqueue(CVPixelBufferRef pb, const RationalTime& pts,
     std::lock_guard<std::mutex> lk(queue_mutex_);
     output_queue_.push_back({pb, pts, dts});
 #ifndef NDEBUG
+    // MEDIA-027：队列深度是「解码出的帧有没有被消费掉」的直接观测量 —— 播放期
+    // 间它应当稳定在个位数（喂一包弹一帧），持续单调增长即队列只进不出。
+    if (output_queue_.size() % 50 == 0) {
+        CQ_LOG_TRACE_WF(Workflow::kDecode, "output_queue_ 深度=%zu", output_queue_.size());
+    }
     if (debug_enqueue_logs_ < 3) {
         ++debug_enqueue_logs_;
-        std::fprintf(stderr, "[VideoToolboxDecoder] enqueue pts=%lld/%d dts=%lld/%d (q=%zu)\n",
-                     static_cast<long long>(pts.value), static_cast<int>(pts.timescale),
-                     static_cast<long long>(dts.value), static_cast<int>(dts.timescale),
-                     output_queue_.size());
-        fflush(stderr);
+        CQ_LOG_TRACE_WF(Workflow::kDecode, "enqueue pts=%lld/%d dts=%lld/%d (q=%zu)",
+                        static_cast<long long>(pts.value), static_cast<int>(pts.timescale),
+                        static_cast<long long>(dts.value), static_cast<int>(dts.timescale),
+                        output_queue_.size());
     }
 #endif
 }
@@ -175,13 +174,10 @@ void VideoToolboxDecoder::DebugRecordLatency(int64_t dts_value, uint64_t now_nan
         std::vector<uint64_t> sorted = debug_latency_nanos_;
         std::sort(sorted.begin(), sorted.end());
         auto ms = [](uint64_t n) { return n / 1'000'000; };
-        std::fprintf(stderr,
-                     "[VideoToolboxDecoder] decode latency (n=%zu) min=%llums p50=%llums "
-                     "p95=%llums max=%llums\n",
-                     sorted.size(), ms(sorted.front()),
-                     ms(sorted[sorted.size() / 2]),
-                     ms(sorted[sorted.size() * 95 / 100]), ms(sorted.back()));
-        fflush(stderr);
+        CQ_LOG_TRACE_WF(Workflow::kDecode,
+                        "decode latency (n=%zu) min=%llums p50=%llums p95=%llums max=%llums",
+                        sorted.size(), ms(sorted.front()), ms(sorted[sorted.size() / 2]),
+                        ms(sorted[sorted.size() * 95 / 100]), ms(sorted.back()));
     }
 }
 #endif
@@ -210,9 +206,8 @@ bool VideoToolboxDecoder::IsHdrColorSource(CFStringRef primaries, CFStringRef tr
 // Open：取得 codec 描述并建立 VT 会话
 // ---------------------------------------------------------------------------
 Status VideoToolboxDecoder::Open(const StreamInfo& info) {
-#ifndef NDEBUG
-    SlowCallAlarm decoder_open_alarm("decoder Open(VT 会话)");
-#endif
+    // CORE-010：Release 也要看见（旧版被 #ifndef NDEBUG 挡住，Release 包零告警）。
+    CQ_SLOW_CALL_WF(Workflow::kDecode, "decoder Open(VT 会话)");
     // 幂等：先清旧会话（若存在），避免重复 Open 累积。
     TeardownSession();
     ReleaseOutputQueue();
@@ -221,10 +216,12 @@ Status VideoToolboxDecoder::Open(const StreamInfo& info) {
         last_returned_ = nullptr;
     }
     has_prev_ = false;
+    order_mismatch_streak_ = 0;  // MEDIA-027
     prev_popped_pts_ = RationalTime{0, 0};
     {
         std::lock_guard<std::mutex> lk(queue_mutex_);
         pending_dts_pts_.clear();
+        pending_submit_nanos_.clear();  // 与 pending_dts_pts_ 必须同清（MEDIA-027）
     }
     fed_first_ = false;
     fed_second_ = false;
@@ -368,9 +365,9 @@ Status VideoToolboxDecoder::Open(const StreamInfo& info) {
             if (rst != noErr || rebuilt == nullptr) {
                 CFRelease(fd);
                 format_desc_ = nullptr;
-                std::fprintf(stderr, "[VideoToolboxDecoder] hvc1 重建失败 osstatus=%d\n",
-                             static_cast<int>(rst));
-                fflush(stderr);
+                // Error：这是**失败返回路径**，Release 必须留痕。
+                CQ_LOG_ERROR_WF(Workflow::kDecode, "hvc1 重建失败 osstatus=%d",
+                                static_cast<int>(rst));
                 return Status{StatusCode::kDecodeError};
             }
             CFRelease(fd);      // 换用重建后的格式描述（原 fd 仅为 hvcC 来源）
@@ -397,11 +394,10 @@ Status VideoToolboxDecoder::Open(const StreamInfo& info) {
         output_height_ != static_cast<uint32_t>(src_dims.height)) {
         attrs[(__bridge id)kCVPixelBufferWidthKey] = @(output_width_);
         attrs[(__bridge id)kCVPixelBufferHeightKey] = @(output_height_);
-        std::fprintf(stderr, "[VideoToolboxDecoder] 输出降采样 %ux%u -> %ux%u（MEDIA-023）\n",
-                     static_cast<unsigned>(src_dims.width),
-                     static_cast<unsigned>(src_dims.height),
-                     output_width_, output_height_);
-        fflush(stderr);
+        // Info：降采样是**用户可见的行为变化**（画质下来了），值得留到 Release。
+        CQ_LOG_INFO_WF(Workflow::kDecode, "输出降采样 %ux%u -> %ux%u（MEDIA-023）",
+                       static_cast<unsigned>(src_dims.width),
+                       static_cast<unsigned>(src_dims.height), output_width_, output_height_);
     }
     // ⚠️ 这两个常量在 iOS 上要求 **iOS 17.0+**（macOS 为 10.9 起）。
     //    项目最低部署目标是 **iOS 16**（ADR-0010），直接引用会被 -Werror
@@ -471,13 +467,11 @@ Status VideoToolboxDecoder::Open(const StreamInfo& info) {
             (__bridge CFDictionaryRef)xfer);
         const bool ok = ps == noErr;
         color_converted_ = ok;
-        std::fprintf(stderr,
-                     "[VideoToolboxDecoder] 色彩管理: src(prim=%s transfer=%s matrix=%s) "
-                     "hdr=%d -> 709/SDR %s (status=%d)\n",
-                     src_primaries_.c_str(), src_transfer_.c_str(), src_matrix_.c_str(),
-                     hdr_source_ ? 1 : 0, ok ? "已应用" : "被拒（保持旧行为）",
-                     static_cast<int>(ps));
-        fflush(stderr);
+        CQ_LOG_INFO_WF(Workflow::kDecode,
+                       "色彩管理: src(prim=%s transfer=%s matrix=%s) hdr=%d -> 709/SDR %s (status=%d)",
+                       src_primaries_.c_str(), src_transfer_.c_str(), src_matrix_.c_str(),
+                       hdr_source_ ? 1 : 0, ok ? "已应用" : "被拒（保持旧行为）",
+                       static_cast<int>(ps));
     }
 
     // 运行时查询：本次会话是否真的走了硬件解码（如实上报，不伪造）。
@@ -492,10 +486,10 @@ Status VideoToolboxDecoder::Open(const StreamInfo& info) {
             CFRelease(hw);
         }
     }
-    std::fprintf(stderr, "[VideoToolboxDecoder] Open 完成 hw=%s out=%ux%u 色彩(源=%s/%s%s)\n",
-                 session_hw_ ? "YES" : "NO/unknown", output_width_, output_height_,
-                 src_primaries_.c_str(), src_transfer_.c_str(),
-                 color_converted_ ? " →已转709" : (hdr_source_ ? " →转换失败" : ""));
+    CQ_LOG_INFO_WF(Workflow::kDecode, "Open 完成 hw=%s out=%ux%u 色彩(源=%s/%s%s)",
+                   session_hw_ ? "YES" : "NO/unknown", output_width_, output_height_,
+                   src_primaries_.c_str(), src_transfer_.c_str(),
+                   color_converted_ ? " →已转709" : (hdr_source_ ? " →转换失败" : ""));
     fflush(stderr);
 
     return Status::Ok();
@@ -505,6 +499,8 @@ Status VideoToolboxDecoder::Open(const StreamInfo& info) {
 // Feed：把 AVCC/HVCC 压缩包拷成 CMSampleBuffer 喂入解码器
 // ---------------------------------------------------------------------------
 Status VideoToolboxDecoder::Feed(const MediaPacket& pkt) {
+    // MEDIA-027：泵线程无 autorelease pool（同 demuxer 侧），逐包调用自带池。
+    @autoreleasepool {
     if (session_ == nullptr || format_desc_ == nullptr) {
         return Status{StatusCode::kDecodeError};
     }
@@ -555,18 +551,17 @@ Status VideoToolboxDecoder::Feed(const MediaPacket& pkt) {
                                    nullptr, &sbuf);
     CFRelease(block);  // sbuf 已 retain block
     if (st != noErr || sbuf == nullptr) return Status{StatusCode::kDecodeError};
+    // CORE-010：Release 也要看见（旧版 SlowCallAlarm 被 NDEBUG 挡住，Release 包零告警）。
+    CQ_SLOW_CALL_WF(Workflow::kDecode, "decoder Feed(VT 提交)");
 #ifndef NDEBUG
-    SlowCallAlarm feed_alarm("decoder Feed(VT 提交)");
+    // 成对 enter/exit：**用于定位「进去了没出来」** —— Watchdog 只能报「当前卡在
+    // 哪」，但一次性的永久阻塞要靠这一对才能指认到函数。Release 下整段消失。
     static std::atomic<int> feed_seq{0};
     const int my_feed_seq = feed_seq.fetch_add(1);
-    std::fprintf(stderr, "[Trace] Feed enter #%d\n", my_feed_seq);
-    fflush(stderr);
+    CQ_LOG_TRACE_WF(Workflow::kDecode, "Feed enter #%d", my_feed_seq);
     struct FeedExitLog {
         int seq;
-        ~FeedExitLog() {
-            std::fprintf(stderr, "[Trace] Feed exit  #%d\n", seq);
-            fflush(stderr);
-        }
+        ~FeedExitLog() { CQ_LOG_TRACE_WF(Workflow::kDecode, "Feed exit #%d", seq); }
     } feed_exit{my_feed_seq};
 #endif
 
@@ -599,6 +594,7 @@ Status VideoToolboxDecoder::Feed(const MediaPacket& pkt) {
         return Status{StatusCode::kDecodeError};
     }
     return Status::Ok();
+    }  // @autoreleasepool（MEDIA-027）
 }
 
 // ---------------------------------------------------------------------------
@@ -614,18 +610,15 @@ Status VideoToolboxDecoder::Feed(const MediaPacket& pkt) {
 // 流尾丢帧（demux 尽后仍缺帧）时 provider 走 drain 分支交付 before，会话不挂死。
 // ---------------------------------------------------------------------------
 Status VideoToolboxDecoder::PopFrame(MediaFrame& out) {
+    // CORE-010：PopFrame 是 MEDIA-026/027 两次冻结的现场，告警必须 Release 可见。
+    CQ_SLOW_CALL_WF(Workflow::kDecode, "decoder PopFrame(VT wait)");
 #ifndef NDEBUG
-    SlowCallAlarm pop_alarm("decoder PopFrame(VT wait)");
     static std::atomic<int> pop_seq{0};
     const int my_pop_seq = pop_seq.fetch_add(1);
-    std::fprintf(stderr, "[Trace] PopFrame enter #%d\n", my_pop_seq);
-    fflush(stderr);
+    CQ_LOG_TRACE_WF(Workflow::kDecode, "PopFrame enter #%d", my_pop_seq);
     struct PopExitLog {
         int seq;
-        ~PopExitLog() {
-            std::fprintf(stderr, "[Trace] PopFrame exit  #%d\n", seq);
-            fflush(stderr);
-        }
+        ~PopExitLog() { CQ_LOG_TRACE_WF(Workflow::kDecode, "PopFrame exit #%d", seq); }
     } pop_exit{my_pop_seq};
 #endif
     out = MediaFrame{};
@@ -646,12 +639,11 @@ Status VideoToolboxDecoder::PopFrame(MediaFrame& out) {
                     bool aged = false;
                     for (const auto& [dts_value, submit] : pending_submit_nanos_) {
                         if (now_nanos - submit > 1'000'000'000ull) {
-                            std::fprintf(stderr,
-                                         "[VideoToolboxDecoder] 丢帧超时：dts=%lld 等 "
-                                         "%llums 未完成，放弃等待（重新 seek 恢复）\n",
-                                         static_cast<long long>(dts_value),
-                                         static_cast<long long>((now_nanos - submit) / 1'000'000));
-                            fflush(stderr);
+                            // Warn：本帧被放弃，媒体已不完整。Release 必须可见。
+                            CQ_LOG_WARN_WF(Workflow::kDecode,
+                                           "丢帧超时：dts=%lld 等 %llums 未完成，放弃等待（重新 seek 恢复）",
+                                           static_cast<long long>(dts_value),
+                                           static_cast<long long>((now_nanos - submit) / 1'000'000));
                             aged = true;
                             break;
                         }
@@ -676,6 +668,25 @@ Status VideoToolboxDecoder::PopFrame(MediaFrame& out) {
             for (size_t i = 1; i < output_queue_.size(); ++i) {
                 if (CompareRational(output_queue_[i].pts, output_queue_[best].pts) < 0) best = i;
             }
+            // MEDIA-027 闸门：队列超过上界即**跳过重排判据、强制交付最小帧**。
+            // 不依赖判据正确性也能保证「队列一定会出」，内存因此有界。
+            if (output_queue_.size() > kMaxQueuedFrames) {
+                ++debug_queue_cap_hits_;
+                if (debug_queue_cap_logs_ < 5 || debug_queue_cap_hits_ % 100 == 0) {
+                    ++debug_queue_cap_logs_;
+                    // Warn **且 Release 可见**：闸门被触发意味着「重排判据没能正常消化
+                    // 队列」，是 MEDIA-027 那种病的最早信号。#ifndef NDEBUG 挡住它
+                    // 等于把这个信号从所有真机 Release 包里抹掉。
+                    CQ_LOG_WARN_WF(Workflow::kMem,
+                                   "队列超上界(%zu)：跳过重排判据强制交付 pts=%lld/%d（第 %d 次）",
+                                   kMaxQueuedFrames,
+                                   static_cast<long long>(output_queue_[best].pts.value),
+                                   static_cast<int>(output_queue_[best].pts.timescale),
+                                   debug_queue_cap_hits_);
+                }
+                has_prev_ = false;  // 重锚显示序：后续 duration 用标称值，不拿缺口算差
+                break;
+            }
             if (!has_prev_) break;  // 流首 / Flush 后：无显示序连续性约束，队列最小帧即首帧
             // 显示序连续性检查。
             RationalTime expected{0, 1};
@@ -694,11 +705,9 @@ Status VideoToolboxDecoder::PopFrame(MediaFrame& out) {
                     std::chrono::steady_clock::now().time_since_epoch().count());
                 for (const auto& [dts_value, submit] : pending_submit_nanos_) {
                     if (now_nanos - submit > 1'000'000'000ull) {
-                        std::fprintf(stderr,
-                                     "[VideoToolboxDecoder] 显示序等待超时：pending=%zu 有帧 "
-                                     "超 1s 未完成，放弃（重新 seek 恢复）\n",
-                                     pending_submit_nanos_.size());
-                        fflush(stderr);
+                        CQ_LOG_WARN_WF(Workflow::kDecode,
+                                       "显示序等待超时：pending=%zu 有帧超 1s 未完成，放弃（重新 seek 恢复）",
+                                       pending_submit_nanos_.size());
                         pending_dts_pts_.clear();
                         pending_submit_nanos_.clear();
                         has_prev_ = false;
@@ -707,12 +716,47 @@ Status VideoToolboxDecoder::PopFrame(MediaFrame& out) {
                 }
                 continue;
             }
-            // 无在途帧且队列最小帧不匹配期望：显示序下一帧尚未 Feed（或已丢失）。
-            // 报告缺输入，由 provider 继续喂包揭示后续帧。
-            return Status{StatusCode::kIoNotFound};
+            // 无在途帧且队列最小帧不匹配期望：可能是
+            //   (a) 显示序下一帧还没喂进来（B 帧重排 —— **常态**，必须继续等）；
+            //   (b) 缺口已成事实（VT 静默丢帧，或 VFR 让「上一帧 duration」外推
+            //       失效），期望的那一帧永远不会来 —— 必须按缺口放行。
+            //
+            // ⚠️ MEDIA-027：旧实现在此**一律原样返回 kIoNotFound 且不弹出**。由于
+            //    期望值与队列最小帧都不变，下一次 PopFrame 会做出完全相同的判定，
+            //    于是无限重复：provider 继续 Feed → 解码继续入队 → 队列只进不出。
+            //    实测真机 iPhone 17 Pro（1080x1920 BGRA ≈ 8.3MB/帧）：累积数百帧
+            //    即 footprint 3.4GB，进程被 jetsam 以 signal 9 杀掉 —— 这就是
+            //    「播放 5 秒后永久卡死」的真身。
+            //
+            //    但**不能**一见到不匹配就按缺口放行：B 帧重排下这是常态（先喂到的
+            //    是参考 P，其 B 帧在其后才喂入），立即放行会跳过 B 帧 —— 首版修复
+            //    就是这样把 media_sequential_real 打挂的（快路径比慢路径提前 3 帧）。
+            //    故用「连续 mismatch 且已无在途帧」的**次数**区分二者：重排窗口内
+            //    的几次是正常的，超过上界即判定为缺口。
+            ++order_mismatch_streak_;
+            if (order_mismatch_streak_ < kMaxMismatchStreak) {
+                return Status{StatusCode::kIoNotFound};
+            }
+            ++debug_order_stall_;
+            if (debug_order_stall_logs_ < 5 || debug_order_stall_ % 100 == 0) {
+                ++debug_order_stall_logs_;
+                // Warn **且 Release 可见**：这一行就是 MEDIA-027 指认真因（VFR 导致
+                // 期望值与队列最小帧永不匹配）的直接证据。限流保留，等级提升。
+                CQ_LOG_WARN_WF(Workflow::kDecode,
+                               "显示序缺口 #%d：连续 %d 次未等到期望=%lld/%d，按缺口交付 pts=%lld/%d（q=%zu）",
+                               debug_order_stall_, order_mismatch_streak_,
+                               static_cast<long long>(expected.value),
+                               static_cast<int>(expected.timescale),
+                               static_cast<long long>(output_queue_[best].pts.value),
+                               static_cast<int>(output_queue_[best].pts.timescale),
+                               output_queue_.size());
+            }
+            has_prev_ = false;  // 重锚：缺口的 duration 不能拿来外推下一帧
+            break;
         }
         OutputFrame of = output_queue_[best];
         output_queue_.erase(output_queue_.begin() + static_cast<long>(best));
+        order_mismatch_streak_ = 0;  // 本次等待结束（MEDIA-027）
         pb = of.pb;
         pts = of.pts;
 
@@ -739,12 +783,11 @@ Status VideoToolboxDecoder::PopFrame(MediaFrame& out) {
 #ifndef NDEBUG
         if (debug_pop_logs_ < 3) {
             ++debug_pop_logs_;
-            std::fprintf(stderr, "[VideoToolboxDecoder] pop pts=%lld/%d dur=%lld/%d\n",
-                         static_cast<long long>(out.video.pts.value),
-                         static_cast<int>(out.video.pts.timescale),
-                         static_cast<long long>(out.video.duration.value),
-                         static_cast<int>(out.video.duration.timescale));
-            fflush(stderr);
+            CQ_LOG_TRACE_WF(Workflow::kDecode, "pop pts=%lld/%d dur=%lld/%d",
+                            static_cast<long long>(out.video.pts.value),
+                            static_cast<int>(out.video.pts.timescale),
+                            static_cast<long long>(out.video.duration.value),
+                            static_cast<int>(out.video.duration.timescale));
         }
 #endif
 
@@ -766,9 +809,29 @@ void VideoToolboxDecoder::Flush() {
     // 完成），若不清会把上一解码区间的旧帧漏进新序列的首弹（MEDIA-021 实测：
     // Seek 后首弹弹出旧 GOP 的 128000）。provider 串行调用 Flush/Feed，无并发。
     if (session_ != nullptr) {
-        // ⚠️ 此处 VTWait 同样存在静默丢帧永久阻塞风险（MEDIA-026）；Flush 仅在
-        // Seek 路径触发，暂保留（真机警报 provider Seek 可见），后续按需加界。
-        VTDecompressionSessionWaitForAsynchronousFrames(session_);
+        // MEDIA-026 已证：VT 在**静默丢帧**（永不回调）时该 API 永久阻塞 —— 泵线程
+        // 卡死即「播放 5 秒后冻结」的真身（真机成对日志实测：PopFrame 进入后无 exit）。
+        // PopFrame 已换成轮询，这里必须同步换掉：Flush 在**每次 Seek** 上都会调用，
+        // 留着它就等于给慢路径留一个永久阻塞入口（原注释「暂保留」是已知债）。
+        // 纪律一致：等「在途帧落地」这件事本身 + 有限超时，超时如实放弃。
+        const uint64_t t0 = static_cast<uint64_t>(
+            std::chrono::steady_clock::now().time_since_epoch().count());
+        for (;;) {
+            {
+                std::lock_guard<std::mutex> lk(queue_mutex_);
+                if (pending_dts_pts_.empty()) break;
+            }
+            const uint64_t now = static_cast<uint64_t>(
+                std::chrono::steady_clock::now().time_since_epoch().count());
+            if (now - t0 > 1'000'000'000ull) {
+                // Warn **且 Release 可见**：Flush 超时意味着上一区间的残余帧可能漏进
+                // 下一区间（MEDIA-021 的「Seek 后首弹弹出旧 GOP」就是这个形态）。
+                CQ_LOG_WARN_WF(Workflow::kDecode,
+                               "Flush 等待在途帧超时(1s)：按丢失处理，残余帧可能漏进下一区间");
+                break;
+            }
+            std::this_thread::sleep_for(std::chrono::milliseconds(2));
+        }
     }
     ReleaseOutputQueue();
     {
@@ -781,6 +844,7 @@ void VideoToolboxDecoder::Flush() {
         last_returned_ = nullptr;
     }
     has_prev_ = false;
+    order_mismatch_streak_ = 0;  // MEDIA-027：等待依据随队列一并失效
     prev_popped_pts_ = RationalTime{0, 0};
 }
 

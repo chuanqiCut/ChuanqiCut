@@ -707,3 +707,34 @@ UI 重建（ADR-0022）解决不了它 → 立即立 MEDIA-023（VT 输出降采
 
 修复内容：①渲染器区间内复用导入纹理（跳过 acquire+import）；②解码器输出尺寸
 元数据改实际 CVPixelBuffer 尺寸。另 MEDIA-025 色彩转换已应用（2020/HLG→709）。
+
+### 播放冻结 / 内存（MEDIA-027，真机 iPhone 17 Pro，2026-10-06）
+
+> 环境：iPhone 17 Pro（iPhone18,1）/ iOS 26.x / DEBUG 包（core 走 Source pod）。
+> 素材：相册导入 4K60 HDR MOV（2160x3840，BT.2020 + HLG），解码输出 1080x1920 BGRA。
+> 仪器：DEBUG 剖面行（每 2s：`pump_rendered/s` / `pump_nonok/s` / `footprint`）+
+> 渲染阶段 watchdog + 解码器队列日志。
+
+| 指标 | 修复前（MEDIA-026 之后） | 修复后（MEDIA-027） |
+|---|---|---|
+| 播放可持续时间 | ~5s 后 `rendered/s` 归零且**永不恢复**；t=11.98s 被 signal 9 | **跑满 t=121.99s**（素材播完） |
+| pump_rendered/s | 131 → 116 → **0** | **151~168 全程稳定** |
+| `footprint`（phys_footprint） | **3375.0MB**（单调增长到死） | **134~184MB** 平稳波动 |
+| pump_nonok/s | — | **0** |
+| 结局 | `App terminated due to signal 9`（jetsam） | 正常播完 |
+
+**素材是 VFR**（缺口日志实证）：期望 pts=420000 与实际 420200 差 200/120000 ≈ 1.67ms
+—— 帧长不恒定，「上一帧 duration 外推」的显示序期望永远对不上 → 队列只进不出。
+两分钟内共 5 次「显示序缺口」+ 2 次「队列超上界」，全部自恢复。
+
+**桌面参照（macOS 26.7.1 / Intel + AMD，720p30 CFR 自造素材，60Hz 请求，3600 次）**：
+
+| 项 | 修复前 | 修复后 |
+|---|---|---|
+| rss 增量（60s 内容） | +13.8MB（单调增长） | **+7.4MB，其中 60s 内仅 +0.5MB（持平）** |
+| footprint | 5.4 → 11.5MB | 4.6 → 4.9MB |
+| acquire p50 / p95 | 10 / 158ms | 14 / 401ms ⚠️ |
+| wall（3600 请求） | 178s | 306s ⚠️ |
+
+⚠️ 桌面吞吐退化未定位（可能是 autorelease pool 开销 / 机器负载差异 / 修复引入的
+额外解码），**不得当作"没变"**，需单独量一次。真机侧吞吐是**提升**的（0 → 155/s）。

@@ -113,6 +113,30 @@ public:
     bool HdrSource() const { return hdr_source_; }
     bool ColorConvertedToSdr() const { return color_converted_; }
 
+    // MEDIA-027：输出队列上界（帧数）。**内存安全闸门**，不是性能调优参数。
+    //
+    // 背景（真机 iPhone 17 Pro 实测，1080x1920 BGRA ≈ 8.3MB/帧）：显示序连续性
+    // 判据一旦「卡死」（VFR 帧长变化 / VT 静默丢帧后，队列最小 pts 与期望值不等
+    // 且已无在途帧），PopFrame 会原样返回 kIoNotFound 而**不弹出**，队列从此只进
+    // 不出 —— 数百帧即 3.4GB，进程被 jetsam 以 signal 9 杀掉，表现为「播放几秒后
+    // 永久卡死」。重排判据的正确性不可能零缺陷，故必须有这道不依赖它的上界。
+    //
+    // 取值依据：播放期队列常态是「喂一包弹一帧」（深度 1~2），只有 B 帧重排窗口
+    // 会短暂抬高；12 帧远超任何合理 B 帧深度（常见 ≤ 4），同时把最坏常驻内存
+    // 压在 ~100MB（4K 素材降采样后）以内。
+    static constexpr size_t kMaxQueuedFrames = 12;
+
+    // MEDIA-027：判定「显示序缺口」所需的**连续**不匹配次数上界。
+    //
+    // 判据：PopFrame 观察到「队列最小 pts ≠ 期望值」且**已无在途帧**。B 帧重排下
+    // 这是常态（参考 P 先到，其 B 帧在其后才喂入），连续几次是正常的；超过本上界
+    // 即说明期望的那一帧永远不会来（丢帧 / VFR 外推失效），按缺口放行。
+    //
+    // 取值依据：B 帧重排窗口 = 连续 B 帧数 + 1，常见 ≤ 4（本仓库 golden 素材即 3）。
+    // 取 8 留一倍余量；代价是缺口判定的延迟最多 8 次 Feed（≈8 帧缓冲），内存上界
+    // 仍由 kMaxQueuedFrames 兜住。
+    static constexpr int kMaxMismatchStreak = 8;
+
     // 输出尺寸钳制（MEDIA-023，纯函数可测）：长边 >1920 时等比缩到长边 1920，
     // 宽高取偶（YUV 采样对齐）；≤1080p 原样返回。
     static std::pair<int32_t, int32_t> ClampOutputDimensions(int32_t width, int32_t height) {
@@ -192,6 +216,7 @@ private:
 #ifndef NDEBUG
     // MEDIA-023 排障仪器（仅 Debug 构建）：Feed→解码回调的单帧延迟直方图。
     // 每完成 60 帧打印一次 min/p50/p95/max —— 判别「VT 异步往返」vs「转换慢路径」。
+    // 逐帧累积 vector/map，不适合 Release，保留条件编译。
     void DebugRecordSubmit(int64_t dts_value, uint64_t nanos);
     void DebugRecordLatency(int64_t dts_value, uint64_t nanos);
     std::map<int64_t, uint64_t> debug_submit_nanos_;
@@ -200,7 +225,22 @@ private:
     int debug_pop_logs_ = 0;
 #endif
 
+    // CORE-010：下面两组计数**提到 Release** —— 它们驱动的日志是 Warn 级
+    // （「显示序缺口」「队列超上界」），而这两个信号正是 MEDIA-027 冻结真身的
+    // 直接证据。把它们关在 Debug 里，等于 Release 包对这类故障保持沉默。
+    // Release 下这两处的额外成本是几个自增与一次比较，可以忽略。
+    // 显示序连续性「卡死」计数：队列最小 pts 与期望不等且**无在途帧**时 PopFrame
+    // 会返回 kIoNotFound 而**不弹出**，队列从此只进不出（内存无界增长的真凶）。
+    int debug_order_stall_ = 0;
+    int debug_order_stall_logs_ = 0;
+    // 队列上界命中次数（>0 即说明重排判据把队列憋住了，属异常信号）。
+    int debug_queue_cap_hits_ = 0;
+    int debug_queue_cap_logs_ = 0;
+
     CqNativeImage* last_returned_ = nullptr;  // 供 Flush/析构释放，避免泄漏
+    // MEDIA-027：连续「无在途帧且不匹配期望」的次数（判定显示序缺口的依据）。
+    // 成功弹出一帧即清零 —— 它衡量的是**一次**等待被拖延了多久，不是累计。
+    int order_mismatch_streak_ = 0;
 
     // 首帧时长兜底：记录前两个喂入包的解码序差（假定恒定帧率），用于首帧 duration。
     // 必须用 dts 差：B 帧文件前两个包的 pts 差 = (bframes+1) 帧（media_decode.mm

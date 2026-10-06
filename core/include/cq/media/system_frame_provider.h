@@ -24,7 +24,8 @@
 #include <memory>
 
 #include "cq/base/concurrency.h"  // CancelToken
-#include "cq/base/perf.h"        // 性能埋点（真机实测用）
+#include "cq/base/log.h"          // CQ_LOG_*_WF：带 workflow 的分级日志（CORE-010）
+#include "cq/base/perf.h"        // 性能埋点 + CQ_SLOW_CALL_WF（真机实测用）
 #include "cq/base/status.h"       // Status / StatusCode
 #include "cq/base/time.h"         // RationalTime
 #include "cq/media/frame_provider.h"  // FrameProvider（MEDIA-010 抽象）
@@ -139,21 +140,9 @@ public:
     // 重置解码器 DPB；具体「解码到 t 帧」发生在 AcquireFrame。
     Status Seek(const RationalTime& target, SeekPolicy policy,
                 const CancelToken& token) override {
-#ifndef NDEBUG
-        struct SeekAlarm {
-            std::chrono::steady_clock::time_point start{std::chrono::steady_clock::now()};
-            ~SeekAlarm() {
-                const auto ns = std::chrono::duration_cast<std::chrono::milliseconds>(
-                                    std::chrono::steady_clock::now() - start)
-                                    .count();
-                if (ns >= 500) {
-                    std::fprintf(stderr, "[SlowCall] provider Seek took %lldms\n",
-                                 static_cast<long long>(ns));
-                    fflush(stderr);
-                }
-            }
-        } seek_alarm{};
-#endif
+        // CORE-010：统一走 base 的 SlowCallAlarm —— Release 可见。Seek 一旦卡住
+        // 会顺着调用链把整条预览链拖死，而这类故障恰恰不会发生在 Debug 包上。
+        CQ_SLOW_CALL_WF(Workflow::kFrameCache, "provider Seek");
         if (token.IsCancelled()) return token.Cancelled();
         if (!demuxer_) return Status{StatusCode::kInvalidArgument};
         Status s = demuxer_->Seek(target, token);
@@ -273,10 +262,11 @@ public:
     }
 
 private:
-#ifndef NDEBUG
+    // CORE-010：这两个限流计数器提到 Release。它们服务于 Trace 级诊断，Release 下
+    // CQ_LOG_TRACE_WF 展开为空、if 体被优化掉，成员本身零开销；留在 NDEBUG 块里
+    // 则 Release 编译不过（用法已不再被条件编译保护）。
     int debug_finalize_logs_ = 0;
     int debug_chase_iters_ = 0;
-#endif
     // =========================================================================
     // MEDIA-021：顺序取帧快路径（不重新 seek 的前进取帧）
     // =========================================================================
@@ -391,17 +381,14 @@ private:
     // 把命中的帧写入 result_ 并返回 Ok（lease 模型：真实实现应移交池所有权）。
     Status Finalize(const MediaFrame& src) {
         result_ = src;
-#ifndef NDEBUG
         if (debug_finalize_logs_ < 3) {
             ++debug_finalize_logs_;
-            std::fprintf(stderr, "[SystemFrameProvider] finalize pts=%lld/%d dur=%lld/%d\n",
-                         static_cast<long long>(result_.video.pts.value),
-                         static_cast<int>(result_.video.pts.timescale),
-                         static_cast<long long>(result_.video.duration.value),
-                         static_cast<int>(result_.video.duration.timescale));
-            fflush(stderr);
+            CQ_LOG_TRACE_WF(Workflow::kFrameCache, "finalize pts=%lld/%d dur=%lld/%d",
+                            static_cast<long long>(result_.video.pts.value),
+                            static_cast<int>(result_.video.pts.timescale),
+                            static_cast<long long>(result_.video.duration.value),
+                            static_cast<int>(result_.video.duration.timescale));
         }
-#endif
         return Status::Ok();
     }
 
@@ -415,10 +402,24 @@ private:
     // 是否有 pts 更小者）无信息可用，kExact 会交付 P（差帧 + 负 duration）。
     // 预喂让每个 B 的存在在其前驱弹出前被 pending 判据看见；异步解码管线中
     // 预喂帧的解码与等待重叠，增量成本≈一次 demux ReadPacket。
+    // MEDIA-027：单次 kExact 的**追帧上界**（成功弹出帧数）。
+    //
+    // 背景：真机实测出现单次 AcquireExact 连续解码 8 秒以上仍不返回 —— 泵线程被
+    // 一帧独占，表现为播放永久冻结（rendered/s 掉到 0 后再不起来），期间播放头按
+    // 墙钟继续走，下一次请求的目标又更远，形成永不收敛的追赶。顺序快路径靠
+    // proven_span_ 约束跨度，但该跨度是从素材实证长出来的，最大可达一个 GOP 甚至
+    // 更长的「关键帧到交付帧」距离，不足以兜住这个形态。
+    //
+    // 取值依据：一次精确 seek 最坏解码距离 = 一个 GOP。4K60 常见 GOP 2~5s = 120~300
+    // 帧；给到 600（≈10s@60fps）留足余量，超过即判定「异常追赶」并如实返回
+    // kIoNotFound，让泵继续下一帧而不是把整条预览链吊死。
+    static constexpr int kMaxChasePops = 600;
+
     Status AcquireExact(const RationalTime& t, const CancelToken& token) {
         MediaFrame before{};
         bool have_before = false;
         bool drained = false;
+        int chase_pops = 0;
         for (;;) {
             if (token.IsCancelled()) return token.Cancelled();
             if (!drained) {
@@ -439,18 +440,27 @@ private:
                 if (drained) break;
                 continue;  // 解码管线尚未出帧：继续喂下一包
             }
-#ifndef NDEBUG
-            // MEDIA-026 追帧探针：每 240 次弹出打印 t 与解码位置的距离 ——
-            // 判别「t 跳变不可达」vs「解码追赶正常」。
+            // MEDIA-026 追帧探针（每 240 次弹出一次）：判别「t 跳变不可达」vs
+            // 「解码追赶正常」。放进 Trace 后由开关控制，不必再改代码。
             if (++debug_chase_iters_ % 240 == 0) {
-                std::fprintf(stderr,
-                             "[Chase] t=%.2fs popped=%.2fs drained=%d lag_iters=%d\n",
-                             t.ToSeconds(), f.video.pts.ToSeconds(), drained ? 1 : 0,
-                             debug_chase_iters_);
-                fflush(stderr);
+                CQ_LOG_TRACE_WF(Workflow::kFrameCache,
+                                "chase t=%.2fs popped=%.2fs drained=%d lag_iters=%d",
+                                t.ToSeconds(), f.video.pts.ToSeconds(), drained ? 1 : 0,
+                                debug_chase_iters_);
             }
-#endif
             if (FrameContains(f, t)) return Finalize(f);
+            if (++chase_pops > kMaxChasePops) {
+                // 追帧上界（MEDIA-027）：如实报告「这一帧没追上」，交还调用方
+                // （泵计一次非 Ok 并继续下一请求），不把预览链吊死。
+                // Warn **且 Release 可见**：追帧上界命中意味着「这一帧没按时交付」，
+                // 是取帧链路病掉的最外层症状（MEDIA-027 时表现为帧率归零）。
+                // 旧版这行被 NDEBUG 挡着——真机 Release 包只会给我们沉默。
+                CQ_LOG_WARN_WF(Workflow::kFrameCache,
+                               "追帧上界 %d：放弃 t=%.2fs（解码位置 %.2fs，drained=%d）",
+                               kMaxChasePops, t.ToSeconds(), f.video.pts.ToSeconds(),
+                               drained ? 1 : 0);
+                return Status{StatusCode::kIoNotFound};
+            }
             if (CompareRational(f.video.pts, t) <= 0) {
                 before = f;
                 have_before = true;

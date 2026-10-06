@@ -679,3 +679,18 @@ fit 为每帧一次整数几何计算（4 次乘除）+ 一次视口状态设置
 
 **结论**：卡顿 = 解码管线（VT→BGRA 转换写带宽 hypothesis 主嫌，4K 帧 33MB/帧），
 UI 重建（ADR-0022）解决不了它 → 立即立 MEDIA-023（VT 输出降采样 ≤1080p）。
+
+## 泵内分段耗时（MEDIA-023 仪器，真机 iPhone 17 Pro，2026-10-06）
+
+> 素材同上节（422MB 4K60 实拍 HEVC，输出已降采样 1080x1920，hw=YES）。
+> 仪器：PreviewPump 分段直方图（每 20 帧）。
+
+| 段 | p50 | p95 | max | 结论 |
+|---|---|---|---|---|
+| acquire（取帧+解码） | 17.6→32.5ms | **237–253ms** | 253.7 | **大头1**：远超 VT 裸解码（8-10ms）→ kExact 编排/GOP 重解码爆发，顺序快路径（ADR-0017）对该真实素材未生效 |
+| import（Metal 导入） | 0.0ms | 0.2ms | 0.2 | 零拷贝健康 |
+| draw（离屏渲染） | 1.5ms | 2.0ms | 2.2 | 健康 |
+| **total** | 19.4–33.7ms | **1068ms** | 1068 | **大头2**：秒级尖刺不在 acquire/import/draw 三段内（RenderFrame 其余路径：快照加载/provider 查找/EnsureTarget 等），待定点位 |
+
+同期 [perf]：pump_rendered/s = 19~37（请求 180/s）。**卡顿归因定案：acquire 段 GOP
+重解码 + 渲染帧外秒级尖刺**；VT 解码、Metal 导入、离屏渲染、SwiftUI 全部健康。

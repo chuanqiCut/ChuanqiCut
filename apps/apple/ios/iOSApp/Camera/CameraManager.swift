@@ -192,9 +192,22 @@ final class CameraManager: NSObject, @unchecked Sendable {
             }
             // ⚠️ 必须显式要 pixel buffer 格式（CAM-017 二修，P73）：默认 settings 走
             // HEIF/JPEG 文件编码管线，`photo.pixelBuffer` 为 nil —— PhotoRelay 只能
-            // 回 nil，表现为「拍照无效」。BGRA 与预览/录制链同口径，WYSIWYG 直通。
+            // 回 nil，表现为「拍照无效」。BGRA 与预览/录制链同口径，WYSIWYG 直通；
+            // 机型不含 BGRA 时取支持的第一个（CIImage 可直接吃 420f/420v），不赌。
+            // available 列表 Swift 导入为 [OSType]，直接与 fourcc 枚举比较。
+            let supportedTypes = self.photoOutput.availablePhotoPixelFormatTypes
+            let pixelFormat: OSType
+            if supportedTypes.contains(kCVPixelFormatType_32BGRA) {
+                pixelFormat = kCVPixelFormatType_32BGRA
+            } else if let first = supportedTypes.first {
+                pixelFormat = first
+            } else {
+                Self.logger.error("拍照中止：photoOutput 无可用 pixel-buffer 格式")
+                relay.deliver(nil)
+                return
+            }
             let settings = AVCapturePhotoSettings(format: [
-                kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA,
+                kCVPixelBufferPixelFormatTypeKey as String: pixelFormat,
             ])
             // 方向/镜像沿用 connection 的呈现设置（按当前界面方向，CAM-016）。
             if let connection = self.photoOutput.connection(with: .video) {

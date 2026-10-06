@@ -1157,3 +1157,41 @@ Swift 下经 `toDestination:` 标签也找不到（ObjC selector `renderImage:to
 - 防复发规则：UIKit 高频对象（UIDevice/UIApplication/UIWindowScene）按 iOS 26 口径
   全部视作 MainActor 专属；后台线程需要的信息由主线程入口作为**值参数**带下去，
   不要在后台闭包里现读。
+
+### P72 · RotationCoordinator 新建即读 = 拿到未初始化的 0 —— 把对的改成错的
+> 日期 / 来源 / 验证状态：2026-10-06 / TASK-CAM-017 二修（后摄方向回归）/ **verified**
+>（真机双现象反推定案：CAM-017 版本前摄 0° 正确 + 后摄 0° 横躺）
+
+- 现象：CAM-017 用 `AVCaptureDevice.RotationCoordinator` 在 addInput 时同步读
+  `videoRotationAngleForHorizonLevelPreview` 折算安装偏移，结果**后摄竖屏从正确
+  （90°）变成横躺**——新建的 coordinator 该值依赖传感器数据、KVO 异步生效，
+  同步初读拿到 0，偏移被算成 270° 叠给了后摄。
+- 事故的正面价值：**恰好实证了前摄正确角度 = 0°**（前摄 90+270=0 显示正确、
+  后摄 90+270=0 横躺 ⇒ 前后摄安装差 = 270° 常量，iPhone 族）。
+- 终态：砍掉 coordinator，`videoRotationAngle = 静态表(P67) + (front ? 270 : 0)`，
+  snap 90° 栅格。iOS 16 旧 API 是语义方向（系统内处理安装差），**不加**偏移。
+- 防复发规则：**依赖传感器/motion 的 API（RotationCoordinator 角度、位姿）新建后
+  同步初读不可信**——要么 KVO 等首个有效值，要么用无时序依赖的常量/查表。
+  用它之前先问：这个值此刻真的已经算出来了吗？
+
+### P73 · AVCapturePhotoSettings 默认走 HEIF 文件管线 —— photo.pixelBuffer 恒 nil
+> 日期 / 来源 / 验证状态：2026-10-06 / TASK-CAM-017 二修（拍照无效根因）/ verified
+>（API 契约：非 pixel-buffer 格式的 photo 不带 pixelBuffer；真机复验归传哲）
+
+- `AVCapturePhotoSettings()` 默认 HEIF/JPEG 编码管线，回调里 `photo.pixelBuffer`
+  为 nil —— PhotoRelay deliver(nil) →「拍照失败：未取到照片数据」= 真机「拍照无效」。
+- 修法：`AVCapturePhotoSettings(format: [kCVPixelBufferPixelFormatTypeKey:
+  kCVPixelFormatType_32BGRA])` 显式要 pixel buffer（与预览/录制链同口径，WYSIWYG）。
+- 防复发规则：用 `photo.pixelBuffer` 前必须确认 settings format 是 pixel-buffer 类；
+  「回调成功但数据字段 nil」是静默失败一族（P60/P69 同族），遥测要打数据字段本身。
+
+### P74 · 收尾回调在主线程直读跨队列计数 —— 脏读 0 把成功录制判成失败删文件
+> 日期 / 来源 / 验证状态：2026-10-06 / TASK-CAM-017 二修（池修复后录制仍无效的残余）/ verified（代码审查 + 锁修复）
+
+- `finish()` 在主线程直读 `appendedFrames`（videoQueue 在 +=），脏读到 0 时
+  `writtenFrames > 0` 不成立 → `.nothingWritten` → **删除已成功落盘的文件**。
+  P69 修复后录制链路已通，这层把成功结果又吞了。
+- 修法：自增与读全部收进锁；帧数改在 `finishWriting` 回调内经锁取（此刻
+  isFinished 已挡新帧）。
+- 防复发规则：跨队列状态判定成败时，**判定依据的读取必须与写入同一同步原语**；
+  「成功条件里的计数」读到 0 与「真的没做」必须区分（0 也可能是读早了）。

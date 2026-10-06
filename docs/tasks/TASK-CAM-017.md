@@ -69,6 +69,19 @@ CAM-016 落地后传哲真机首验四问题。本卡三修一诊：
       `camera.preview` 日志（引擎 nil 计数已内置）。
 - [ ] 真机数据回填 baselines（录制帧率/磨皮引擎失败率）。
 
+## 二修（2026-10-06 下午，真机三轮反馈：后摄方向回归 / 拍照录制仍无效）
+
+三根因（pitfalls P72/P73/P74）：
+1. **后摄回归（P72）**：RotationCoordinator 新建即读拿到未初始化 0，后摄 90° 被
+   偏到 0°。砍掉 coordinator → 静态表 + 前摄安装差 270° 常量（该常数由事故反推
+   实证：前摄 0° 正确 / 后摄 0° 横躺）。
+2. **拍照（P73）**：`AVCapturePhotoSettings()` 默认 HEIF 管线，`photo.pixelBuffer`
+   恒 nil。改显式 BGRA pixel-buffer format。
+3. **录制残余（P74）**：finish 主线程脏读 appendedFrames=0 → 成功落盘被判
+   .nothingWritten 删文件。计数自增/读取全收锁内，帧数改回调内取。
+
+验证：BUILD SUCCEEDED 0 error / 0 warning；模拟器冷启动无崩。真机复验归传哲。
+
 ## 回写
 
 pitfalls P69（pool 时序）+ baselines（真机数据回传后）+ camera.md 装配形状 + 日志。

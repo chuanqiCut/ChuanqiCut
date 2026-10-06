@@ -64,20 +64,15 @@ final class CameraManager: NSObject, @unchecked Sendable {
     private(set) var interfaceOrientation: UIInterfaceOrientation = .portrait
     private var configured = false
 
-    // MARK: 逐传感器方向标定（CAM-017，iOS 17+）
+    // MARK: 前摄安装朝向补偿（CAM-017 二修，pitfalls P72）
     //
-    // 前后摄传感器原生朝向不同 ⇒ 静态角度表（按背摄推导）对前摄失效——真机实证：
-    // 前摄竖屏出横躺画面。官方解法 = RotationCoordinator 给「本设备本镜头」的
-    // 正确角度；在「设备位姿 = 界面方向」（无系统旋转锁、位姿有效）时采样一次，
-    // 折算成对静态表的**常量偏移**叠加。偏移只在换 position 时重标。
-    /// iOS 17+ RotationCoordinator（存 AnyObject 规避存储属性的可用性标注限制，
-    /// 用点在 #available 内 cast）。
-    private var rotationCoordinator: AnyObject?
-    /// 传感器安装偏移（coordinator 角度 − 静态表角度），90° 栅格值。sessionQueue 专属。
-    private var sensorAngleOffset: CGFloat = 0
-    /// 设备位姿。iOS 26 SDK 起 UIDevice 是 @MainActor 隔离（P71），sessionQueue
-    /// 不能直接读 —— 由主线程入口（configureAndStart / switchPosition）显式传入。
-    private var devicePose: UIDeviceOrientation = .unknown
+    // videoRotationAngle 的 0° = **传感器 native 方向**（iPhone 横装，前后摄安装
+    // 轴向相反）⇒ 后摄竖屏 90° 正确时前摄需 0°（真机两代现象反推：CAM-016 静态表
+    // 后摄三方向正确 / 前摄竖屏横躺 = 恰差 270°）。
+    // 曾试 RotationCoordinator 采样安装偏移 —— 新建即读 `videoRotationAngle-
+    // ForHorizonLevelPreview` 拿到的是**未初始化的 0**（该值依赖传感器数据、KVO
+    // 异步生效），后摄 90° 被偏到 0° 反向横躺（真机回归）。常量方案无时序依赖；
+    // 例外机型出现时（无证据）再上 KVO 方案。
 
     override init() {
         super.init()
@@ -120,12 +115,9 @@ final class CameraManager: NSObject, @unchecked Sendable {
     // MARK: 会话生命周期（全部内部 sessionQueue）
 
     /// 配置并启动（幂等）。完成后主线程回调 isRunning。
-    /// - Parameter devicePose: 调用瞬间（主线程）的设备位姿，供方向标定用。
-    func configureAndStart(devicePose: UIDeviceOrientation,
-                           onReady: @escaping @MainActor (_ isRunning: Bool) -> Void) {
+    func configureAndStart(onReady: @escaping @MainActor (_ isRunning: Bool) -> Void) {
         sessionQueue.async { [weak self] in
             guard let self else { return }
-            self.devicePose = devicePose
             if !self.configured {
                 self.configureLocked(position: self.currentPosition)
                 self.configured = true
@@ -141,13 +133,10 @@ final class CameraManager: NSObject, @unchecked Sendable {
     }
 
     /// 前后切换。配置变更在 sessionQueue 串行执行；切换结果主线程回调。
-    /// - Parameter devicePose: 调用瞬间（主线程）的设备位姿，供方向标定用。
     func switchPosition(to position: Position,
-                        devicePose: UIDeviceOrientation,
                         onDone: @escaping @MainActor (_ position: Position) -> Void) {
         sessionQueue.async { [weak self] in
             guard let self, self.configured else { return }
-            self.devicePose = devicePose
             self.currentPosition = position
             self.reconfigureVideoInputLocked(position: position)
             Task { @MainActor in
@@ -201,7 +190,12 @@ final class CameraManager: NSObject, @unchecked Sendable {
                 relay.deliver(nil)
                 return
             }
-            let settings = AVCapturePhotoSettings()
+            // ⚠️ 必须显式要 pixel buffer 格式（CAM-017 二修，P73）：默认 settings 走
+            // HEIF/JPEG 文件编码管线，`photo.pixelBuffer` 为 nil —— PhotoRelay 只能
+            // 回 nil，表现为「拍照无效」。BGRA 与预览/录制链同口径，WYSIWYG 直通。
+            let settings = AVCapturePhotoSettings(format: [
+                kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA,
+            ])
             // 方向/镜像沿用 connection 的呈现设置（按当前界面方向，CAM-016）。
             if let connection = self.photoOutput.connection(with: .video) {
                 self.applyOrientation(connection, self.interfaceOrientation)
@@ -269,21 +263,6 @@ final class CameraManager: NSObject, @unchecked Sendable {
         }
         session.addInput(input)
         videoInput = input
-        // 逐传感器标定（iOS 17+）：换镜头即重标，先归零防串位。
-        sensorAngleOffset = 0
-        if #available(iOS 17.0, *) {
-            let coordinator = AVCaptureDevice.RotationCoordinator(device: device, previewLayer: nil)
-            rotationCoordinator = coordinator
-            let pose = devicePose
-            if let poseInterface = Self.interfaceOrientation(fromDevicePose: pose),
-               poseInterface == interfaceOrientation {
-                let horizon = coordinator.videoRotationAngleForHorizonLevelPreview
-                sensorAngleOffset = Self.snappedToQuarter(horizon - Self.rotationAngle(for: poseInterface))
-                Self.logger.info("方向标定 pos=\(position == .front ? "front" : "back", privacy: .public) horizon=\(horizon, privacy: .public) offset=\(self.sensorAngleOffset, privacy: .public)")
-            } else {
-                Self.logger.info("方向标定跳过（位姿 \(pose.rawValue, privacy: .public) ≠ 界面方向）沿用静态表")
-            }
-        }
         // 新 input 生效后 connection 需重设方向/镜像（addInput 会重建 connection）。
         for output in session.outputs {
             guard let connection = output.connection(with: .video) else { continue }
@@ -302,8 +281,10 @@ final class CameraManager: NSObject, @unchecked Sendable {
     /// ⚠️ 横屏两项是文档推导，真机若出现横屏 180° 反接，交换 0/180（一行）。
     private func applyOrientation(_ connection: AVCaptureConnection, _ io: UIInterfaceOrientation) {
         if #available(iOS 17.0, *) {
-            // 静态表 + 逐传感器偏移（CAM-017），snap 到 90° 栅格。
-            let angle = Self.snappedToQuarter(Self.rotationAngle(for: io) + sensorAngleOffset)
+            // 静态表 + 前摄安装差常量（CAM-017 二修，P72）。旧 API（else 分支）是
+            // 语义方向（portrait=竖直），系统内处理安装差异，**不**加偏移。
+            let offset: CGFloat = (currentPosition == .front) ? 270 : 0
+            let angle = Self.snappedToQuarter(Self.rotationAngle(for: io) + offset)
             if connection.isVideoRotationAngleSupported(angle) {
                 connection.videoRotationAngle = angle
             }

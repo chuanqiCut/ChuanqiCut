@@ -85,10 +85,9 @@ usage，而 CI 的 CIRenderDestination 要求 ShaderWrite → destination nil �
   采样 `scene.interfaceOrientation`（通知早于 scene 提交转场的竞态）；
   **录制中锁定**（`!isRecording` 门控，Spec v1.2 非目标）。
 - **渲染**：aspect-fill 采样窗逐帧按帧/drawable 尺寸重算，转屏零重建成本。
-- **逐传感器标定（CAM-017）**：前后摄传感器原生朝向不同（真机实证前摄竖屏横躺），
-  iOS 17+ 用 `AVCaptureDevice.RotationCoordinator` 在「设备位姿=界面方向」时采样
-  `videoRotationAngleForHorizonLevelPreview`，折算成对静态表的**常量偏移**
-  （`sensorAngleOffset`，换镜头重标归零）；设备位姿无效/旋转锁时沿用静态表。
-  设备位姿由主线程入口显式传入（iOS 26 SDK 起 UIDevice 是 @MainActor，P71）。
+- **前摄安装差（CAM-017 二修，P72）**：videoRotationAngle 的 0° = 传感器 native
+  （iPhone 横装，前后摄轴向相反）。**常量补偿：`静态表 + (front ? 270 : 0)`**
+  （后摄 90° / 前摄 0° 由真机两代现象反推定案；RotationCoordinator 新建即读拿到
+  未初始化 0 曾致后摄回归，已砍掉）。iOS 16 旧 API 是语义方向，不加偏移。
 - 前摄镜像在各方向保持（旋转后应用，Apple 语义）。
 - 待真机一验：行序常数（`ciWritesBottomUp`）与标定偏移的定案口径见 TASK-CAM-016/017。

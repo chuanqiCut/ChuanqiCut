@@ -108,7 +108,7 @@ final class CameraViewModel: ObservableObject {
                 return
             }
             self.wireCallbacks()
-            self.manager.configureAndStart(devicePose: UIDevice.current.orientation) { [weak self] running in
+            self.manager.configureAndStart { [weak self] running in
                 self?.phase = running ? .running : .preparing
                 if !running {
                     self?.errorMessage = "相机启动失败（设备被占用或不存在）"
@@ -125,7 +125,7 @@ final class CameraViewModel: ObservableObject {
     /// 回到前台恢复。
     func resumeIfNeeded() {
         guard phase == .running || phase == .preparing else { return }
-        manager.configureAndStart(devicePose: UIDevice.current.orientation) { [weak self] running in
+        manager.configureAndStart { [weak self] running in
             self?.phase = running ? .running : self?.phase ?? .preparing
         }
     }
@@ -134,7 +134,7 @@ final class CameraViewModel: ObservableObject {
 
     func switchPosition() {
         let target: Position = (position == .back) ? .front : .back
-        manager.switchPosition(to: target.managerPosition, devicePose: UIDevice.current.orientation) { [weak self] newPos in
+        manager.switchPosition(to: target.managerPosition) { [weak self] newPos in
             self?.position = (newPos == .front) ? .front : .back
         }
     }

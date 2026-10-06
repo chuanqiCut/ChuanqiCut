@@ -198,9 +198,13 @@ private:
         RationalTime dts{0, kProjectTimeScale};
     };
     std::deque<OutputFrame> output_queue_;
+    // ⚠️ P77 不变量：**下面两个容器 + output_queue_ 一律由 queue_mutex_ 保护**，
+    // 没有例外。它们有两个写入方：①调用方线程（Feed 登记 / PopFrame、Flush 清理）；
+    // ②VT 输出回调线程（OutputCallback → Enqueue / MarkDecoded，在 CoreMedia 队列上）。
+    // 异步硬解下「喂第 N+1 包」与「第 N 包回调」天然并发 —— 曾经只有 Feed 的插入
+    // 无锁，结果是并发写坏红黑树，SIGSEGV @0x0 落在 map::operator[] 的再平衡里。
+    // 加字段 / 加访问点时，逐个 grep 该字段的全部访问点并指认守卫互斥量。
     // 已喂入、尚未收到完成回调的包：dts.value → pts（重排依据）。key 约束：
-    // demuxer 已把 pts/dts 统一转换到项目网格（timescale 120000），故用 value 作 key。
-    // 登记未完成包（重排依据）。key 约束：
     // demuxer 已把 pts/dts 统一转换到项目网格（timescale 120000），故用 value 作 key。
     std::map<int64_t, RationalTime> pending_dts_pts_;
     // MEDIA-026：各未完成包的提交时刻（steady clock ns）——PopFrame 等待上界

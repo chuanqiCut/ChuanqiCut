@@ -567,9 +567,20 @@ Status VideoToolboxDecoder::Feed(const MediaPacket& pkt) {
 
     // 登记未完成包（重排依据）——必须在 DecodeFrame **之前**：回调可能在另一线程
     // 立即完成并 erase，若先提交后登记会产生永不清理的幽灵条目。
-    pending_dts_pts_[pkt.dts.value] = pkt.pts;
-    pending_submit_nanos_[pkt.dts.value] =
-        static_cast<uint64_t>(std::chrono::steady_clock::now().time_since_epoch().count());
+    //
+    // ⚠️ P77：登记还必须在 queue_mutex_ **之下**做。这两张 map 的另一侧写入方是
+    // VT 输出回调（CoreMedia 线程，MarkDecoded 持锁 erase / Enqueue 持锁入队）。
+    // 早先这里是无锁插入，与回调的持锁 erase 构成并发读写 std::map —— 红黑树被
+    // 写坏，表现为 Feed() 内 map::operator[] → __tree_balance_after_insert 解引用
+    // 空节点 SIGSEGV（门禁 core-dbg 复现，堆栈见 .ips）。顺序对了不等于互斥对了。
+    // 锁必须在 VTDecompressionSessionDecodeFrame **之前释放**：回调要抢同一把锁，
+    // 持锁提交会自锁死。
+    {
+        std::lock_guard<std::mutex> lk(queue_mutex_);
+        pending_dts_pts_[pkt.dts.value] = pkt.pts;
+        pending_submit_nanos_[pkt.dts.value] =
+            static_cast<uint64_t>(std::chrono::steady_clock::now().time_since_epoch().count());
+    }
 
     VTDecodeInfoFlags info = 0;
     // sourceFrameRefCon 传 CFRetain(sbuf)：回调从中取 dts 做完成登记，并负责释放。

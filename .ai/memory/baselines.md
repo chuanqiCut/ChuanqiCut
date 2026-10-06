@@ -660,3 +660,9 @@ fit 为每帧一次整数几何计算（4 次乘除）+ 一次视口状态设置
 | 章节/轨道/时长元数据装载耗时（三异步任务） | **未实测** | 真机 |
 | SharedUI swift test（含 PlayerTests 8 用例） | **未跑**（本机 Swift 5.5，P45/P46） | 构建机 |
 | iOS/macOS xcodebuild（0 error 0 warning） | **未跑** | 构建机 |
+### 音频地基（AUDIO-001，2026-10-05）
+| 项 | 实测 | 环境 | 日期 | 备注 |
+|---|---|---|---|---|
+| 音频线程零分配（pool/ring/graph.Process 全路径） | operator new 增量 = 0 | Intel Iris Plus 640 / macOS 13.7（宿主） | 2026-10-05 | core_audio_graph 单测实测，kAudio 标记线程，热身后测 256 块 |
+| SPSC 环往返 20 万序号 | 通过（序号连续无丢失） | 同上 | 2026-10-05 | core_audio_pcm 压测；吞吐/延迟未做 microbench，**未实测** |
+| AudioBlockPool 并发 4 线程 × 2 万次 | 无污染、InUse 记账闭合 | 同上 | 2026-10-05 | 末态整池可取空再全还 |

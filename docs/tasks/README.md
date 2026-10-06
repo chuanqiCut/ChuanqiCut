@@ -9,8 +9,7 @@
 2. 按 [`../../.ai/templates/task.md`](../../.ai/templates/task.md) 建卡，写集不得与其他在飞任务相交；
 3. 在 BACKLOG 对应行标注 ✅（完成后）；在本表登记一行。
 
-## 已建卡登记表（57 张，2026-10-05）
-
+## 已建卡登记表（58 张，2026-10-05）
 ### 基建 INFRA / DOC
 | 卡 | 标题 |
 |---|---|
@@ -30,6 +29,11 @@
 | [MODEL-001](TASK-MODEL-001.md) | 时间线数据模型（Timeline / Track / Clip / Transition） |
 | [MODEL-002](TASK-MODEL-002.md) | Command 模式与 CommandHistory（Undo/Redo） |
 | [MEDIA-021](TASK-MEDIA-021.md) | 顺序取帧不必每帧 seek（预览帧率的真瓶颈） |
+
+### 音频 AUDIO（跨平台层，BACKLOG §4.2）
+| 卡 | 标题 |
+|---|---|
+| [AUDIO-001](TASK-AUDIO-001.md) | 音频图骨架与 PCM 缓冲管理（预分配池 / SPSC 无锁环 / 拓扑骨架） |
 
 ### 绑定 BIND
 | 卡 | 标题 |

@@ -182,11 +182,28 @@ final class CameraRecorder: @unchecked Sendable {
 
         guard videoInput.isReadyForMoreMediaData else { return }
         adaptor.append(pixelBuffer, withPresentationTime: time)
-        appendedFrames += 1
-        if appendedFrames % 240 == 0 {
-            Self.logger.info("录制已写入 \(self.appendedFrames, privacy: .public) 帧")
+        let total = recordAppendedFrame()
+        if total % 240 == 0 {
+            Self.logger.info("录制已写入 \(total, privacy: .public) 帧")
         }
         // pixelBuffer 由 ARC 释放回池（append 内部按需 retain）。
+    }
+
+    /// 帧计数自增（锁内：跨线程读经 currentAppendedFrameCount，P74）。
+    /// 返回自增后的值供节流日志。只在 videoQueue 调用。
+    private func recordAppendedFrame() -> Int {
+        lock.lock()
+        appendedFrames += 1
+        let total = appendedFrames
+        lock.unlock()
+        return total
+    }
+
+    /// 当前已写入帧数（线程安全读；收尾回调用）。
+    private func currentAppendedFrameCount() -> Int {
+        lock.lock()
+        defer { lock.unlock() }
+        return appendedFrames
     }
 
     // MARK: 音频注入（audioQueue）
@@ -237,11 +254,14 @@ final class CameraRecorder: @unchecked Sendable {
         // 串行队列上调用一次，闭包只读 status/error，且 writer 此后不再被写入
         // （markAsFinished 已调用）—— 跨闭包持有没有数据竞争。
         nonisolated(unsafe) let finishingWriter = writer
-        let writtenFrames = appendedFrames  // Int：Sendable，直接捕获
         finishingWriter.finishWriting { [weak self] in
             let status = finishingWriter.status
             let error = finishingWriter.error
             let url = self?.outputURL
+            // ⚠️ 帧数必须在回调内经锁读（P74）：finish 主线程直读会与 videoQueue 的
+            // 自增竞争，脏读成 0 时把成功录制误判 .nothingWritten 删文件 —— 真机
+            // 「修了池仍然录制无效」的残余根因。回调此刻 isFinished 已挡新帧。
+            let writtenFrames = self?.currentAppendedFrameCount() ?? 0
             Self.logger.info("录制收尾 status=\(status.rawValue, privacy: .public) frames=\(writtenFrames, privacy: .public) error=\(error?.localizedDescription ?? "nil", privacy: .public)")
             Task { @MainActor in
                 if status == .completed, let url, writtenFrames > 0 {

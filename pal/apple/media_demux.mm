@@ -19,7 +19,9 @@
 #import <AVFoundation/AVFoundation.h>
 #import <dispatch/dispatch.h>
 
+#include <chrono>
 #include <cstdint>
+#include <cstdio>
 #include <sys/stat.h>
 #include <vector>
 
@@ -30,6 +32,27 @@
 #include "cq/pal/common.h"       // CodecId / MediaType / PixelFormat 等枚举
 
 namespace cq {
+
+#ifndef NDEBUG
+// MEDIA-026 慢调用警报（Debug only）：作用域内单次调用 >500ms 时打印段名与耗时。
+// stderr 无缓冲（P70），devicectl --console 可见。
+struct SlowCallAlarm {
+    const char* name;
+    std::chrono::steady_clock::time_point start;
+    explicit SlowCallAlarm(const char* n)
+        : name(n), start(std::chrono::steady_clock::now()) {}
+    ~SlowCallAlarm() {
+        const auto ns = std::chrono::duration_cast<std::chrono::milliseconds>(
+                            std::chrono::steady_clock::now() - start)
+                            .count();
+        if (ns >= 500) {
+            std::fprintf(stderr, "[SlowCall] %s took %lldms\n", name,
+                         static_cast<long long>(ns));
+            fflush(stderr);
+        }
+    }
+};
+#endif
 namespace {
 
 // CMTime -> RationalTime（项目网格 120000），显式舍入方向（非整除也不默认）。
@@ -319,6 +342,9 @@ public:
     void Destroy() override { delete this; }
 
     Status Open(const MediaSource& src) override {
+#ifndef NDEBUG
+        SlowCallAlarm open_alarm("demuxer Open(含 ScanKeyframes)");
+#endif
         if (src.path == nullptr) return Status{StatusCode::kInvalidArgument};
 
         NSString* ns_path = [[NSString alloc] initWithUTF8String:src.path];
@@ -397,9 +423,10 @@ public:
         CancelToken no_cancel;
         Status s = RebuildReader(kCMTimeZero, no_cancel);
         if (!s.IsOk()) return s;
-        // 一次性扫描视频轨关键帧 pts 集合（供 Seek 吸附到 <=target 关键帧）。
+        // 关键帧扫描在 Open 同步完成（供 Seek 吸附）。⚠️ 后台线程方案已否决：
+        // 与播放路径在同一 AVAsset 上并发建 AVAssetReader 会触发
+        // NSInternalInconsistencyException（output already added，P71）。
         ScanKeyframes();
-        // 扫描已消费 reader，重置回干净起始态。
         s = RebuildReader(kCMTimeZero, no_cancel);
         if (!s.IsOk()) return s;
         return Status::Ok();
@@ -407,6 +434,48 @@ public:
 
     Status GetDuration(RationalTime& out_duration) const override {
         out_duration = duration_;
+        return Status::Ok();
+    }
+
+    // MEDIA-026：轻量打开——只加载 duration，不建 reader / 不扫关键帧。
+    // 导入探测（cq_media_probe_duration）专用：大文件从秒级降到毫秒级。
+    Status OpenLight(const MediaSource& src) override {
+        if (src.path == nullptr) return Status{StatusCode::kInvalidArgument};
+        NSString* ns_path = [[NSString alloc] initWithUTF8String:src.path];
+        if (ns_path == nil) return Status{StatusCode::kInvalidArgument};
+        NSURL* url = [NSURL fileURLWithPath:ns_path];
+        if (url == nil) return Status{StatusCode::kInvalidArgument};
+
+        AVURLAsset* asset = [AVURLAsset URLAssetWithURL:url options:nil];
+        if (asset == nil) return Status{StatusCode::kIoError};
+
+        // 有限超时 + 单次重试：与全量 Open 的加载纪律一致（P33：加载失败后
+        // completion 可能永不触发，无限等 = 挂死）。
+        constexpr int64_t kLoadTimeoutNs = 5LL * 1000 * 1000 * 1000;
+        for (int attempt = 0;; ++attempt) {
+            dispatch_semaphore_t sem = dispatch_semaphore_create(0);
+            [asset loadValuesAsynchronouslyForKeys:@[ @"duration" ]
+                                 completionHandler:^{
+                                     dispatch_semaphore_signal(sem);
+                                 }];
+            const bool completed = dispatch_semaphore_wait(
+                sem, dispatch_time(DISPATCH_TIME_NOW, kLoadTimeoutNs)) == 0;
+            if (completed) {
+                NSError* err = nil;
+                if ([asset statusOfValueForKey:@"duration" error:&err] ==
+                    AVKeyValueStatusLoaded) {
+                    break;
+                }
+                std::printf("[AppleDemuxer] OpenLight duration load failed (attempt %d)\n",
+                            attempt);
+            } else {
+                std::printf("[AppleDemuxer] OpenLight load timeout (attempt %d)\n", attempt);
+            }
+            if (attempt >= 1) return Status{StatusCode::kIoError};
+            asset = [AVURLAsset URLAssetWithURL:url options:nil];  // 重建重试
+            if (asset == nil) return Status{StatusCode::kIoError};
+        }
+        duration_ = ToRational([asset duration], RoundMode::kRound);
         return Status::Ok();
     }
 
@@ -459,7 +528,22 @@ public:
     // pts=0 首帧）。这类样本在 demux 层直接跳过，只向外吐出带有效编码数据的包。
     Status ReadPacket(MediaPacket& out_packet) override {
         out_packet = MediaPacket{};
-
+#ifndef NDEBUG
+        // MEDIA-026 慢调用警报 + 成对日志（进入/返回都打——析构式警报对
+        // "永不返回"的调用失明，成对日志的"最后一个无配对进入"即卡点）。
+        static std::atomic<int> seq{0};
+        const int my_seq = seq.fetch_add(1);
+        SlowCallAlarm alarm("demux ReadPacket");
+        std::fprintf(stderr, "[Trace] ReadPacket enter #%d\n", my_seq);
+        fflush(stderr);
+        struct ExitLog {
+            int seq;
+            ~ExitLog() {
+                std::fprintf(stderr, "[Trace] ReadPacket exit  #%d\n", seq);
+                fflush(stderr);
+            }
+        } exit_log{my_seq};
+#endif
         for (;;) {
             // 找 pts 最小的可用轨。
             int best = -1;
@@ -624,6 +708,9 @@ private:
     // 一次性扫描视频轨关键帧 pts 集合（Seek 吸附到 <=target 关键帧用）。
     // 注意：扫描会消费当前 reader；调用方需在之后 RebuildReader(kCMTimeZero) 重置。
     void ScanKeyframes() {
+#ifndef NDEBUG
+        SlowCallAlarm scan_alarm("ScanKeyframes(全文件)");
+#endif
         keyframe_times_.clear();
         for (auto& ts : tracks_) {
             if (ts.media_type != MediaType::kVideo) continue;

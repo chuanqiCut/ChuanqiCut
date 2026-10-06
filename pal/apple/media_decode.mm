@@ -22,6 +22,7 @@
 #include <deque>
 #include <mutex>
 #include <string>
+#include <thread>
 #include <vector>
 
 #include "cq/base/status.h"
@@ -29,6 +30,26 @@
 #include "media_decode.h"
 
 namespace cq {
+
+#ifndef NDEBUG
+// MEDIA-026 慢调用警报（Debug only）：>500ms 打印（P70 stderr 通道）。
+struct SlowCallAlarm {
+    const char* name;
+    std::chrono::steady_clock::time_point start;
+    explicit SlowCallAlarm(const char* n)
+        : name(n), start(std::chrono::steady_clock::now()) {}
+    ~SlowCallAlarm() {
+        const auto ns = std::chrono::duration_cast<std::chrono::milliseconds>(
+                            std::chrono::steady_clock::now() - start)
+                            .count();
+        if (ns >= 500) {
+            std::fprintf(stderr, "[SlowCall] %s took %lldms\n", name,
+                         static_cast<long long>(ns));
+            fflush(stderr);
+        }
+    }
+};
+#endif
 
 // ---------------------------------------------------------------------------
 // 构造 / 析构
@@ -135,6 +156,7 @@ void VideoToolboxDecoder::Enqueue(CVPixelBufferRef pb, const RationalTime& pts,
 void VideoToolboxDecoder::MarkDecoded(const RationalTime& dts) {
     std::lock_guard<std::mutex> lk(queue_mutex_);
     pending_dts_pts_.erase(dts.value);
+    pending_submit_nanos_.erase(dts.value);
 }
 
 #ifndef NDEBUG
@@ -188,6 +210,9 @@ bool VideoToolboxDecoder::IsHdrColorSource(CFStringRef primaries, CFStringRef tr
 // Open：取得 codec 描述并建立 VT 会话
 // ---------------------------------------------------------------------------
 Status VideoToolboxDecoder::Open(const StreamInfo& info) {
+#ifndef NDEBUG
+    SlowCallAlarm decoder_open_alarm("decoder Open(VT 会话)");
+#endif
     // 幂等：先清旧会话（若存在），避免重复 Open 累积。
     TeardownSession();
     ReleaseOutputQueue();
@@ -530,10 +555,26 @@ Status VideoToolboxDecoder::Feed(const MediaPacket& pkt) {
                                    nullptr, &sbuf);
     CFRelease(block);  // sbuf 已 retain block
     if (st != noErr || sbuf == nullptr) return Status{StatusCode::kDecodeError};
+#ifndef NDEBUG
+    SlowCallAlarm feed_alarm("decoder Feed(VT 提交)");
+    static std::atomic<int> feed_seq{0};
+    const int my_feed_seq = feed_seq.fetch_add(1);
+    std::fprintf(stderr, "[Trace] Feed enter #%d\n", my_feed_seq);
+    fflush(stderr);
+    struct FeedExitLog {
+        int seq;
+        ~FeedExitLog() {
+            std::fprintf(stderr, "[Trace] Feed exit  #%d\n", seq);
+            fflush(stderr);
+        }
+    } feed_exit{my_feed_seq};
+#endif
 
     // 登记未完成包（重排依据）——必须在 DecodeFrame **之前**：回调可能在另一线程
     // 立即完成并 erase，若先提交后登记会产生永不清理的幽灵条目。
     pending_dts_pts_[pkt.dts.value] = pkt.pts;
+    pending_submit_nanos_[pkt.dts.value] =
+        static_cast<uint64_t>(std::chrono::steady_clock::now().time_since_epoch().count());
 
     VTDecodeInfoFlags info = 0;
     // sourceFrameRefCon 传 CFRetain(sbuf)：回调从中取 dts 做完成登记，并负责释放。
@@ -573,6 +614,20 @@ Status VideoToolboxDecoder::Feed(const MediaPacket& pkt) {
 // 流尾丢帧（demux 尽后仍缺帧）时 provider 走 drain 分支交付 before，会话不挂死。
 // ---------------------------------------------------------------------------
 Status VideoToolboxDecoder::PopFrame(MediaFrame& out) {
+#ifndef NDEBUG
+    SlowCallAlarm pop_alarm("decoder PopFrame(VT wait)");
+    static std::atomic<int> pop_seq{0};
+    const int my_pop_seq = pop_seq.fetch_add(1);
+    std::fprintf(stderr, "[Trace] PopFrame enter #%d\n", my_pop_seq);
+    fflush(stderr);
+    struct PopExitLog {
+        int seq;
+        ~PopExitLog() {
+            std::fprintf(stderr, "[Trace] PopFrame exit  #%d\n", seq);
+            fflush(stderr);
+        }
+    } pop_exit{my_pop_seq};
+#endif
     out = MediaFrame{};
     CVPixelBufferRef pb = nullptr;
     RationalTime pts{0, kProjectTimeScale};
@@ -581,14 +636,39 @@ Status VideoToolboxDecoder::PopFrame(MediaFrame& out) {
         size_t best = 0;
         for (;;) {
             if (output_queue_.empty()) {
-                lk.unlock();
-                // 异步帧可能尚未解码完成：等其落地后再判定是否真耗尽（避免提前报告 kIoNotFound）。
-                if (session_ != nullptr) {
-                    VTDecompressionSessionWaitForAsynchronousFrames(session_);
-                }
-                lk.lock();
-                if (output_queue_.empty()) {
-                    return Status{StatusCode::kIoNotFound};  // 当前无可用帧（需继续 Feed / 已 drain）
+                // MEDIA-026：等 in-flight 帧落地——2ms 轮询替代 VTWait（VT 静默
+                // 丢帧时 VTWait **永久阻塞**，真机实测 PopFrame 进入后不返回）。
+                // 退出条件：a) 队列有帧（回主流程弹出）b) pending 全完成（真耗尽）
+                // c) 丢帧超时（最老 pending >1s → 按丢失处理，重新 seek 恢复）。
+                while (output_queue_.empty()) {
+                    const uint64_t now_nanos = static_cast<uint64_t>(
+                        std::chrono::steady_clock::now().time_since_epoch().count());
+                    bool aged = false;
+                    for (const auto& [dts_value, submit] : pending_submit_nanos_) {
+                        if (now_nanos - submit > 1'000'000'000ull) {
+                            std::fprintf(stderr,
+                                         "[VideoToolboxDecoder] 丢帧超时：dts=%lld 等 "
+                                         "%llums 未完成，放弃等待（重新 seek 恢复）\n",
+                                         static_cast<long long>(dts_value),
+                                         static_cast<long long>((now_nanos - submit) / 1'000'000));
+                            fflush(stderr);
+                            aged = true;
+                            break;
+                        }
+                    }
+                    if (aged) {
+                        pending_dts_pts_.clear();
+                        pending_submit_nanos_.clear();
+                        has_prev_ = false;  // 显示序锚点失效，下一帧重新锚定
+                        return Status{StatusCode::kIoNotFound};
+                    }
+                    if (pending_dts_pts_.empty()) {
+                        // 无在途帧且队列空：需继续 Feed / 已 drain（不丢帧）。
+                        return Status{StatusCode::kIoNotFound};
+                    }
+                    lk.unlock();
+                    std::this_thread::sleep_for(std::chrono::milliseconds(2));
+                    lk.lock();
                 }
             }
             // 队列内 pts 最小帧（完成序乱序窗口有限，O(n) 扫描开销可忽略）。
@@ -604,14 +684,26 @@ Status VideoToolboxDecoder::PopFrame(MediaFrame& out) {
             }
             if (CompareRational(output_queue_[best].pts, expected) == 0) break;  // 匹配，安全弹出
             if (!pending_dts_pts_.empty()) {
-                // 有在途帧：它完成后可能填补缺口 → 等待后重查。
+                // 有在途帧：它完成后可能填补缺口 → 等待后重查（2ms 轮询）。
                 lk.unlock();
-                if (session_ != nullptr) {
-                    VTDecompressionSessionWaitForAsynchronousFrames(session_);
-                }
+                std::this_thread::sleep_for(std::chrono::milliseconds(2));
                 lk.lock();
-                if (output_queue_.empty()) {
-                    return Status{StatusCode::kIoNotFound};
+                // MEDIA-026：丢帧超时（最老 pending >1s → 按丢失处理）。队列空时
+                // **不在此返回**——交回主循环顶部的轮询（在途帧会经回调入队）。
+                const uint64_t now_nanos = static_cast<uint64_t>(
+                    std::chrono::steady_clock::now().time_since_epoch().count());
+                for (const auto& [dts_value, submit] : pending_submit_nanos_) {
+                    if (now_nanos - submit > 1'000'000'000ull) {
+                        std::fprintf(stderr,
+                                     "[VideoToolboxDecoder] 显示序等待超时：pending=%zu 有帧 "
+                                     "超 1s 未完成，放弃（重新 seek 恢复）\n",
+                                     pending_submit_nanos_.size());
+                        fflush(stderr);
+                        pending_dts_pts_.clear();
+                        pending_submit_nanos_.clear();
+                        has_prev_ = false;
+                        return Status{StatusCode::kIoNotFound};
+                    }
                 }
                 continue;
             }
@@ -674,12 +766,15 @@ void VideoToolboxDecoder::Flush() {
     // 完成），若不清会把上一解码区间的旧帧漏进新序列的首弹（MEDIA-021 实测：
     // Seek 后首弹弹出旧 GOP 的 128000）。provider 串行调用 Flush/Feed，无并发。
     if (session_ != nullptr) {
+        // ⚠️ 此处 VTWait 同样存在静默丢帧永久阻塞风险（MEDIA-026）；Flush 仅在
+        // Seek 路径触发，暂保留（真机警报 provider Seek 可见），后续按需加界。
         VTDecompressionSessionWaitForAsynchronousFrames(session_);
     }
     ReleaseOutputQueue();
     {
         std::lock_guard<std::mutex> lk(queue_mutex_);
         pending_dts_pts_.clear();  // 重排等待依据随队列一并失效
+        pending_submit_nanos_.clear();
     }
     if (last_returned_ != nullptr) {
         if (last_returned_->refcount.fetch_sub(1) == 1) delete last_returned_;

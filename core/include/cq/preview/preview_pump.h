@@ -133,6 +133,9 @@ private:
     // MEDIA-023 排障仪器（Debug only）：分段耗时样本（acquire/import/draw/total），
     // 每 60 帧打印直方图。
     std::vector<IPreviewFrameSource::StageTimings> stage_samples_;
+    // 看门狗：渲染卡在某段 >1s 时打印段名与耗时（析构式警报对"永不返回"失明）。
+    void WatchdogLoop();
+    std::thread watchdog_;
 #endif
 };
 

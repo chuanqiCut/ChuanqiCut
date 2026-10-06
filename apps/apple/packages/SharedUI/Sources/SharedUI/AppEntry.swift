@@ -132,7 +132,10 @@ public final class EditorViewModel: ObservableObject {
             // DEBUG 剖面输出走双通道：os.Logger（常规）+ print（`devicectl device
             // process launch --console` 可见；Release 不编译，不违反 CODESTYLE §3）。
             // ⚠️ stdout 接管道是全缓冲，必须 fflush 否则两行汇总永远憋在缓冲区。
-            let line = "playback-perf: tick_p95=\(self.ms(p95))ms pump_req/s=\(requestedPerSec) pump_rendered/s=\(renderedPerSec) mtk_draw/s=\(drawsPerSec)"
+            let nowSec = self.player.map {
+                Double($0.currentTime.value) / Double($0.currentTime.timescale)
+            } ?? 0
+            let line = "playback-perf: t=\(String(format: "%.2f", nowSec))s tick_p95=\(self.ms(p95))ms pump_req/s=\(requestedPerSec) pump_rendered/s=\(renderedPerSec) mtk_draw/s=\(drawsPerSec)"
             log.info("\(line, privacy: .public)")
             // stderr 无缓冲：`devicectl device process launch --console` 必现。
             fputs(("[perf] \(line)\n"), stderr)
@@ -489,7 +492,17 @@ public final class EditorViewModel: ObservableObject {
         // 1) 探测时长（同步）。失败 = 内核原始状态码**原样透传**（MEDIA-022）：
         //    2001 = 编码格式不支持（HEVC 曾全落这里）、1000 = 文件无法读取、
         //    2000 = 解析失败 —— UI 据此给差异化文案，不再一律「解码失败」。
-        let probed = session.probeMediaDurationDetailed(path: path)
+        let probed: Result<RationalTime, Status>
+#if DEBUG
+        let probeStart = DispatchTime.now()
+        probed = session.probeMediaDurationDetailed(path: path)
+        // MEDIA-026：导入耗时定位（stderr 无缓冲通道，devicectl --console 可见）。
+        let probeMs = Int64(DispatchTime.now().uptimeNanoseconds &- probeStart.uptimeNanoseconds) / 1_000_000
+        fputs("[import] probe \(probeMs)ms path=\(path)\n", stderr)
+        fflush(stderr)
+#else
+        probed = session.probeMediaDurationDetailed(path: path)
+#endif
         let duration: RationalTime
         switch probed {
         case .success(let d):

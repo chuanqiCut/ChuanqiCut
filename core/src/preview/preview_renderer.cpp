@@ -194,6 +194,9 @@ Status PreviewRenderer::RenderFrame(const RationalTime& pts, TextureHandle& out_
     // ---- 0. 加载模型快照（UIA-009 子步骤 2）----
     // 一次加载、本帧全程使用：渲染期间 session 线程再变更也不影响本帧
     // （不可变数据，无竞争）；下帧自然看到新快照（最终一致）。
+#ifndef NDEBUG
+    DebugStageGuard g0(debug_stage_, debug_stage_since_, "snapshot");
+#endif
     std::shared_ptr<const ModelSnapshot> snapshot = snapshots_->CurrentSnapshot();
     if (!snapshot || !snapshot->timeline || !snapshot->assets) {
         return Status(StatusCode::kInternal);
@@ -206,6 +209,9 @@ Status PreviewRenderer::RenderFrame(const RationalTime& pts, TextureHandle& out_
     // RT 背后的纹理句柄在 RT 重建前一直有效，故可先给出，便于失败时 UI 仍有可显示目标。
     out_texture = target_->GetColorTexture();
 
+#ifndef NDEBUG
+    DebugStageGuard g1(debug_stage_, debug_stage_since_, "clip-find");
+#endif
     // ---- 1. 定位片段：只取**第一条命中的视频轨**（本期不支持多轨合成）----
     const Clip* clip = nullptr;
     for (const Track& track : timeline.Tracks()) {
@@ -218,6 +224,9 @@ Status PreviewRenderer::RenderFrame(const RationalTime& pts, TextureHandle& out_
     }
     if (clip == nullptr) {
         // 空隙：清屏为黑，并如实返回「此处无内容」，不伪造成功。
+#ifndef NDEBUG
+        DebugStageGuard gc(debug_stage_, debug_stage_since_, "clear-gap");
+#endif
         Status cs = ClearTarget(token);
         if (!cs.IsOk()) return cs;
         return Status(StatusCode::kIoNotFound);
@@ -277,6 +286,9 @@ Status PreviewRenderer::RenderFrame(const RationalTime& pts, TextureHandle& out_
         tex = imported_;
     } else {
         // ---- 3. 取帧（AcquireFrame 内部按需 seek，未 seek 或目标变化时幂等对齐）----
+#ifndef NDEBUG
+        DebugStageGuard g3(debug_stage_, debug_stage_since_, "provider+acquire");
+#endif
         FrameProvider* provider = nullptr;
         s = GetProvider(clip->source.asset_id, assets, provider);
         if (!s.IsOk()) return s;
@@ -312,6 +324,9 @@ Status PreviewRenderer::RenderFrame(const RationalTime& pts, TextureHandle& out_
             provider->ReleaseFrame(frame);
             return s;
         }
+#ifndef NDEBUG
+        DebugStageGuard g4(debug_stage_, debug_stage_since_, "import");
+#endif
         bool cpu_fallback = false;
         const Clock::time_point t_import = Clock::now();
         s = importer_->Import(frame.video.image, TextureUsage::kSampled, tex, cpu_fallback);
@@ -366,6 +381,9 @@ Status PreviewRenderer::RenderFrame(const RationalTime& pts, TextureHandle& out_
     const bool has_viewport = !(viewport[0] == 0.0f && viewport[1] == 0.0f &&
                                 viewport[2] == static_cast<float>(cfg_.width) &&
                                 viewport[3] == static_cast<float>(cfg_.height));
+#ifndef NDEBUG
+    DebugStageGuard g5(debug_stage_, debug_stage_since_, "draw");
+#endif
     BlitClient client(blit_, tex, has_viewport ? viewport : nullptr);
     const Clock::time_point t_draw = Clock::now();
     s = gfx_->RenderFrame(ctx, target_.get(), client, token);

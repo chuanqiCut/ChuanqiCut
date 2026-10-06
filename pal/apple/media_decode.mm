@@ -418,26 +418,30 @@ Status VideoToolboxDecoder::Open(const StreamInfo& info) {
     // 走上方 -12906/-12907 诊断打印，行为诚实可见。
 
     // MEDIA-025：HDR 源 → 命令 VT 的 PixelTransfer 把输出转换到 BT.709 SDR
-    // （解码+色彩转换 VT 内部一体完成，零额外 pass）。属性被拒 = 如实日志并
-    // 保持旧行为（颜色仍不对但不阻塞解码；hypothesis：个别平台/编码可能拒绝）。
+    // （解码+色彩转换 VT 内部一体完成，零额外 pass）。⚠️ PixelTransfer 属性必须
+    // **打包成字典**经 kVTDecompressionPropertyKey_PixelTransferProperties 设置
+    // —— 直接对会话设子键返回 -12900 kVTParameterErr（真机实测）。属性被拒 =
+    // 如实日志并保持旧行为（颜色仍不对但不阻塞解码）。
     if (hdr_source_) {
-        const OSStatus ps[] = {
-            VTSessionSetProperty(session_, kVTPixelTransferPropertyKey_DestinationColorPrimaries,
-                                 kCMFormatDescriptionColorPrimaries_ITU_R_709_2),
-            VTSessionSetProperty(session_, kVTPixelTransferPropertyKey_DestinationTransferFunction,
-                                 kCMFormatDescriptionTransferFunction_ITU_R_709_2),
-            VTSessionSetProperty(session_, kVTPixelTransferPropertyKey_DestinationYCbCrMatrix,
-                                 kCMFormatDescriptionYCbCrMatrix_ITU_R_709_2),
+        NSDictionary* xfer = @{
+            (__bridge id)kVTPixelTransferPropertyKey_DestinationColorPrimaries:
+                (__bridge id)kCMFormatDescriptionColorPrimaries_ITU_R_709_2,
+            (__bridge id)kVTPixelTransferPropertyKey_DestinationTransferFunction:
+                (__bridge id)kCMFormatDescriptionTransferFunction_ITU_R_709_2,
+            (__bridge id)kVTPixelTransferPropertyKey_DestinationYCbCrMatrix:
+                (__bridge id)kCMFormatDescriptionYCbCrMatrix_ITU_R_709_2,
         };
-        const bool all_ok = ps[0] == noErr && ps[1] == noErr && ps[2] == noErr;
-        color_converted_ = all_ok;
+        const OSStatus ps = VTSessionSetProperty(
+            session_, kVTDecompressionPropertyKey_PixelTransferProperties,
+            (__bridge CFDictionaryRef)xfer);
+        const bool ok = ps == noErr;
+        color_converted_ = ok;
         std::fprintf(stderr,
                      "[VideoToolboxDecoder] 色彩管理: src(prim=%s transfer=%s matrix=%s) "
-                     "hdr=%d -> 709/SDR %s (status=%d,%d,%d)\n",
+                     "hdr=%d -> 709/SDR %s (status=%d)\n",
                      src_primaries_.c_str(), src_transfer_.c_str(), src_matrix_.c_str(),
-                     hdr_source_ ? 1 : 0, all_ok ? "已应用" : "被拒（保持旧行为）",
-                     static_cast<int>(ps[0]), static_cast<int>(ps[1]),
-                     static_cast<int>(ps[2]));
+                     hdr_source_ ? 1 : 0, ok ? "已应用" : "被拒（保持旧行为）",
+                     static_cast<int>(ps));
         fflush(stderr);
     }
 

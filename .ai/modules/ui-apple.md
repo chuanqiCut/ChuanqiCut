@@ -411,3 +411,27 @@ Spec AIEDIT-001 / ADR-0020 / TASK-AIEDIT-000。首页 `HomeView.swift` 新增第
   UIA-015 iOS 相机页 / UIA-016 iOS 剪辑页 / UIA-017 macOS 惯例化 →
   UIA-018 时间线视觉（缩略图异步，主线程不解码红线不变）。均为纯视图层，
   Command/ViewModel/Session 不动。下一步：cq-spec-authoring 出 SPEC-UIA-014。
+
+# UI 操作逻辑深拆调研（2026-10-05）：RESEARCH-006 结论
+
+应"调研全球顶级拍摄编辑 UI 布局与面板逻辑"命题完成，全文见
+`docs/research/RESEARCH-006-顶级拍摄剪辑App布局与操作逻辑深度调研.md`
+（18 家：Blackmagic/Kino/Halide/FC Camera/FiLMiC/iOS 26 相机/TikTok/Reels/
+Snapchat + CapCut/Edits/VN/Videoleap + FCP/Resolve/FCP iPad/Premiere/CapCut 桌面）。
+RESEARCH-004/005 结论全部维持，本文补**操作层**，关键增量：
+
+- **拍摄页八律**：高频下沉拇指弧；侧列只放录制前设置；自动默认+手动按需浮层
+  （Kino/Halide/FC Camera 范式，**不学** BMD 常驻芯片条）；色彩预设一级入口实时可换；
+  单指变焦（Snapchat）；状态反馈一条带；拍完必进编辑（流水线）；改版保肌肉记忆回退
+  （iOS 26 相机争议与回调的教训）。
+- **编辑页八律**：核心 = **一个工具栏槽位、两套内容、选中驱动**（CapCut 定式：
+  一级项目工具栏 ↔ 片段编辑条同槽替换）——UIA-016 的关键细化；撤销/重做恒置预览区顶；
+  参数不遮预览；二级面板 sheet 幅度随复杂度；关键帧三层收纳；面板组织三范式
+  （分页/情境/浮动，轻剪辑取情境）；Inspector 按属性域分组（Video/Audio/Color）；
+  新范式默认+旧范式逃生门（FCP Position、VN Quick/Pro）。
+- **手势词汇表趋同**（双指缩放/平移时间线、长按拿起、边缘 trim）——UIA-016/018 对齐，
+  不自创手势。
+- **落地**：§5 delta 表逐任务列了 UIA-015/016/017/018/019 的新增输入；
+  UIA-019 PanelRoute 状态机需增加"工具栏槽位状态"。明确不采纳：Resolve Pages、
+  Premiere 浮动面板、BMD 芯片条。未核实项已标 [hypothesis]，精确控件排布
+  待真机走查截图核对（§6.2）。

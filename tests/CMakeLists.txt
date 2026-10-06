@@ -566,3 +566,25 @@ if(APPLE)
     apply_cq_warnings(cq_tests_pala_decode)
     add_test(NAME pala_decode COMMAND cq_tests_pala_decode)
 endif()
+
+# ---- AUDIO-001：音频缓冲池 + SPSC 无锁样本环 + AudioGraph 骨架 ----
+# 验收核心是 ARCH-001 铁律 2「音频线程无锁无分配」**可测**：
+# test_audio_graph 在 kAudio 标记线程上以全局 operator new 计数实测增量为 0。
+# 另覆盖：池耗尽/重复归还防护、SPSC 跨线程 20 万序号压测、拓扑成环/断链拒绝。
+add_executable(cq_tests_core_audio_pcm
+    unit/test_audio_pcm.cpp)
+target_include_directories(cq_tests_core_audio_pcm PRIVATE
+    ${CMAKE_SOURCE_DIR}/core/include)
+target_link_libraries(cq_tests_core_audio_pcm PRIVATE cq_core)
+cq_require_cxx20(cq_tests_core_audio_pcm)
+apply_cq_warnings(cq_tests_core_audio_pcm)
+add_test(NAME core_audio_pcm COMMAND cq_tests_core_audio_pcm)
+
+add_executable(cq_tests_core_audio_graph
+    unit/test_audio_graph.cpp)
+target_include_directories(cq_tests_core_audio_graph PRIVATE
+    ${CMAKE_SOURCE_DIR}/core/include)
+target_link_libraries(cq_tests_core_audio_graph PRIVATE cq_core)
+cq_require_cxx20(cq_tests_core_audio_graph)
+apply_cq_warnings(cq_tests_core_audio_graph)
+add_test(NAME core_audio_graph COMMAND cq_tests_core_audio_graph)

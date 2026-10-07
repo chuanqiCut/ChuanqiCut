@@ -31,6 +31,10 @@ struct ChuanqiCutApp: App {
             urls.count == 1 ? AnyView(PlayerScreen(url: urls[0]))
                             : AnyView(PlayerScreen(urls: urls))
         }
+        // ADR-0031：相机 → 编辑器装配 —— 录制产物进编辑器（CameraView 消费注入点）。
+        EditorEntryInjector.makeEditor = { url in
+            AnyView(EditorScreen(initialMediaURL: url))
+        }
     }
 
     var body: some Scene {

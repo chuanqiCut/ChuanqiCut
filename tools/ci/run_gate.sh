@@ -50,7 +50,7 @@ print_summary() {
             grep -hE '[0-9]+% tests passed' "${LOG_DIR}/${step}.log" | sed "s/^/ ${step}: /"
         fi
     done
-    for step in apple-swift-bindings apple-sharedui apple-player; do
+    for step in apple-swift-bindings apple-sharedui apple-player apple-camera; do
         if [ -f "${LOG_DIR}/${step}.log" ]; then
             grep -hE "Test Suite '.*' (passed|failed)" "${LOG_DIR}/${step}.log" | tail -2 | sed "s/^/ ${step}: /"
         fi
@@ -164,6 +164,15 @@ else
     else
         echo "    FAIL [apple-player] —— 最后 30 行："
         tail -30 "${LOG_DIR}/apple-player.log" | sed 's/^/    /'
+        FAIL=$((FAIL+1)); print_summary; exit 1
+    fi
+    # Camera 契约层测试（实现层 iOS 专属不进 SPM，随双壳构建验证）
+    if (cd apps/apple/packages/ChuanqiCutCamera && swift test --disable-sandbox --scratch-path "${ROOT_DIR}/build/spm/ChuanqiCutCamera") >"${LOG_DIR}/apple-camera.log" 2>&1; then
+        echo "    PASS [apple-camera]（日志：${LOG_DIR}/apple-camera.log）"
+        PASS=$((PASS+1))
+    else
+        echo "    FAIL [apple-camera] —— 最后 30 行："
+        tail -30 "${LOG_DIR}/apple-camera.log" | sed 's/^/    /'
         FAIL=$((FAIL+1)); print_summary; exit 1
     fi
 fi

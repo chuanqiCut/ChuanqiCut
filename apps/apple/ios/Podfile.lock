@@ -2,18 +2,23 @@ PODS:
   - ChuanqiCut (0.1.0):
     - ChuanqiCut/Source (= 0.1.0)
   - ChuanqiCut/Source (0.1.0)
+  - ChuanqiCutCamera (0.1.0):
+    - SharedUI
   - ChuanqiCutPlayer (0.1.0)
   - SharedUI (0.1.0):
     - ChuanqiCut
 
 DEPENDENCIES:
   - ChuanqiCut/Source (from `../../..`)
+  - ChuanqiCutCamera (from `../packages/ChuanqiCutCamera`)
   - ChuanqiCutPlayer (from `../packages/ChuanqiCutPlayer`)
   - SharedUI (from `../packages/SharedUI`)
 
 EXTERNAL SOURCES:
   ChuanqiCut:
     :path: "../../.."
+  ChuanqiCutCamera:
+    :path: "../packages/ChuanqiCutCamera"
   ChuanqiCutPlayer:
     :path: "../packages/ChuanqiCutPlayer"
   SharedUI:
@@ -21,9 +26,10 @@ EXTERNAL SOURCES:
 
 SPEC CHECKSUMS:
   ChuanqiCut: 5502b412fe987a24fb0107e94bbfee8c60366cee
+  ChuanqiCutCamera: 0695dbf5e5f245d18d5d904ec6ee7116e472f115
   ChuanqiCutPlayer: f0dd0794e4b67626604e5764e35a7456f3593001
   SharedUI: f9b669fe5192043fb60862eab9308a4179337949
 
-PODFILE CHECKSUM: e7c12f2cc717d24237a3aa90e308355cb4a79c4f
+PODFILE CHECKSUM: 55ce5100854004ede01fb42453775e499ec1d465
 
 COCOAPODS: 1.17.0

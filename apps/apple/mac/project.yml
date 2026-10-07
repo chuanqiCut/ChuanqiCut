@@ -50,3 +50,12 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: com.chuanqi.cutmac
         # 本机开发用 ad-hoc 签名即可构建运行；分发签名后续任务处理
         CODE_SIGN_IDENTITY: "-"
+
+# 显式声明 scheme（INFRA-018，2026-10-07；缘由见 iOS project.yml 尾注）
+schemes:
+  ChuanqiCutMacApp:
+    build:
+      targets:
+        ChuanqiCutMacApp: all
+    run:
+      config: Debug

@@ -22,7 +22,6 @@
 import CoreMedia
 import CoreVideo
 import Foundation
-import SharedUI
 import Vision
 
 final class VisionDetector: @unchecked Sendable {

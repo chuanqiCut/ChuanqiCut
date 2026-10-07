@@ -32,7 +32,6 @@ import CoreImage
 import Foundation
 import Metal
 import MetalKit
-import SharedUI
 import os
 
 // MARK: - 帧槽（latest-wins）

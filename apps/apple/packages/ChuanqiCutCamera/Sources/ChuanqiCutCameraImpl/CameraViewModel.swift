@@ -12,7 +12,6 @@ import Foundation
 import Metal
 import os
 import Photos
-import SharedUI
 import UIKit
 
 @MainActor

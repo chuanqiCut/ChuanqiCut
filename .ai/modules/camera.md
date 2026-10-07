@@ -105,6 +105,7 @@ usage，而 CI 的 CIRenderDestination 要求 ShaderWrite → destination nil �
 
 | Task ID | 标题 | 状态 |
 |---|---|---|
+| INFRA-018 | ChuanqiCutCamera Pod 迁移（ADR-0031 阶段 4 提前，传哲指定） | ✅ 2026-10-07：契约 4 文件+实现 6 文件+Detection/Effects+4 测试文件入独立 iOS 专属 Pod；EditorScreen 经 EditorEntryInjector 解耦；metallib 管线留壳工程（SRC 指向 Pod 源）；坑案底 P85 |
 | CAM-001~005 | 契约（回退留档）/采集/预览/首页/录制 | ✅ |
 | CAM-015/016 | 预览 CI→drawable 渲染修复 + 方向（渲染线先入库） | ✅ |
 | CAM-018/019 | 美颜色彩空间 + 人脸区域化（曾号 015/016） | ✅ 代码落地；真机 = 池 [2] |
@@ -115,6 +116,7 @@ usage，而 CI 的 CIRenderDestination 要求 ShaderWrite → destination nil �
 | 日期 | 阶段/范围 | 结论（数字） |
 |---|---|---|
 | 2026-10-07 | 壳工程双壳构建（首次 App target 真编 CAM-018 代码） | 抓出 P0：`kCVPixelBufferColorSpaceKey` 不存在于 SDK（P83）→ 已修 `kCVImageBufferCGColorSpaceKey`；iOS/mac BUILD SUCCEEDED。池 [2] 真机项不变 |
+| 2026-10-07 | 相机 Pod 迁移阶段批 | Camera 契约 swift test **36/36**；metallib **8431B** + kernelNames（cq_beauty_down_h/up_v_mix）齐全；iOS 模拟器 + macOS BUILD SUCCEEDED；全量门禁见当日日志。真机验收（磨皮/区域化/录制色）仍 = 池 [2] |
 
 ### 调研 · 决策 · 池指针
 

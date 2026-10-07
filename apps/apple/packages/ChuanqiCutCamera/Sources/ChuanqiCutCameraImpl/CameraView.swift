@@ -4,22 +4,22 @@
 // 权限拒绝态明示引导（SPEC-CAM-001 v1.1 A6：不闪退、给出路）。
 
 import AVFoundation
+import SharedUI  // EditorEntryInjector（ADR-0031：编辑器域经基座注入点进入，横向零依赖）
 import SwiftUI
-import SharedUI
 
-struct CameraView: View {
+public struct CameraView: View {
     @Environment(\.scenePhase) private var scenePhase
     @StateObject private var model: CameraViewModel
     @State private var showEditor = false
     @State private var showBeautyPanel = false
 
-    init() {
+    public init() {
         // 先建值后包装（pitfalls P8 同款）：构造不再抛错，Metal 不可用由
         // renderer == nil 的降级文案兜底。
         _model = StateObject(wrappedValue: CameraViewModel())
     }
 
-    var body: some View {
+    public var body: some View {
         Group {
             if model.renderer == nil {
                 fallbackView(text: "Metal 设备不可用，相机无法运行")
@@ -64,10 +64,16 @@ struct CameraView: View {
             Alert(title: Text("提示"), message: Text(alert.message))
         }
         .navigationDestination(isPresented: $showEditor) {
-            EditorScreen(initialMediaURL: model.recordedURL)
-                .onDisappear { model.discardRecording() }
-                // 录制产物进编辑器且不保留本地临时文件语义：导入后放弃临时文件。
-                // （importMedia 走原路径引用，见 UIA-009 的 D3 决策。）
+            // ADR-0031：编辑器域经基座注入点进入（EditorScreen 由壳层装配）；
+            // 未注入（单测环境）空占位，录制产物丢弃语义保持不变。
+            if let editor = EditorEntryInjector.makeEditor?(model.recordedURL) {
+                editor
+                    .onDisappear { model.discardRecording() }
+                    // 录制产物进编辑器且不保留本地临时文件语义：导入后放弃临时文件。
+                    // （importMedia 走原路径引用，见 UIA-009 的 D3 决策。）
+            } else {
+                Color.clear.onDisappear { model.discardRecording() }
+            }
         }
     }
 

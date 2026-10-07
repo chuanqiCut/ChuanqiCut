@@ -55,7 +55,8 @@ def pods_post_install(installer)
       next if cmod.children.any? { |c| c.display_name == disp }
       ref = cmod.new_file(File.join(repo_root, rel))
       ref.source_tree = 'SOURCE_ROOT'
-      ref.path = rel
+      # 与 core/include 树同款：SOURCE_ROOT（=Pods 目录）相对路径，须带上溯前缀
+      ref.path = Pathname.new(File.join(repo_root, rel)).relative_path_from(project.path.dirname).to_s
       added += 1
     end
   end

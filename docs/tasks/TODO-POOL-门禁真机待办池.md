@@ -97,3 +97,27 @@
 ## 已消化
 
 （集成机关闭的条目移到这里，带 ✅ + 日期 + 数字 / 结论。）
+
+### [7] CAM B 期收官 + C 期开工大批——构建机门禁 + 真机一趟多单（⏳ 待门禁 + 待真机）
+
+- 来源：开发机 / B 相机线 + 2026-10-07（commit df2a672；HANDOFF-014 全清单）
+- 改动面：B 线 · ChuanqiCutCamera Pod 全域（契约 4 文件 +3 新 / Impl 9 文件改+8 新 /
+  face_warp.metal 新）+ ios/project.yml（face_warp 编译段）+ podspec（MetalFX 框架）
+- 待办（构建机，第一优先）：[ ] iOS 双壳构建（已知风险：MetalFXScaler.swift 的
+  MTLFXSpatialScalerDescriptor 属性名 / newSpatialScaler / encode(to:) 本机无头文件
+  未经对表，按 SDK 头文件修，一行级）；[ ] Camera 契约 swift test 全量（36 存量 +
+  FaceMaskTests nil 语义用例已改 + 新契约文件用例未写）；[ ] 阶段批 + face_warp.metallib
+  验收（大小 + kernelNames=cq_face_warp）；[ ] 冲突/旧号扫描
+- 待办（真机 iPhone 17 Pro，归传哲，一趟多单）：[ ] CAM-018/019 五项（池[2] 沿用：
+  磨皮不闪/区域化生效/预览=录制色/方向复核/全链走查——**断线修复后预览区域化首次生效，
+  重点复验**）；[ ] CAM-021 双摄 A8：双摄同画预览、PiP 互换、录制产物含前后两路、
+  A12 以下开关置灰不闪退、**双摄帧率/分辨率实测入 baselines**；[ ] CAM-013/014：美型
+  三滑杆形变跟随无接缝、贴纸锚定无漂移（含贴纸旋转符号定案）；[ ] CAM-024/025：宠物
+  贴纸锚定、美体形变；[ ] CAM-030：录制成功率回归（音频先到场景）、档位/帧率切换、
+  高清拍照入相册、变焦/曝光对焦手感、录制计时；[ ] MetalFX 开/关 A/B 帧率与画质；
+  [ ] 检测 30Hz 功耗对账（不划算回 24Hz，一行）
+- 集成机落账清单：[ ] pitfalls **P86**=契约单测全绿≠装配正确（预览 FaceBoxStore 断线，
+  两线同病过全部门禁）；**P87**=AVAssetWriter 音频必须守会话起点（startSession 在首
+  视频帧，音频先到即 .failed 不可恢复；注释声称的语义必须真实现）；[ ] **ADR-0032 提案**
+  =人像能力算法驱动定则（无算法即无效果，nil→直通，传哲 2026-10-07；已落地代码与用例）；
+  [ ] BACKLOG 登记 CAM-022~030 + 算法定则行；[ ] baselines 待实测项见 HANDOFF-014

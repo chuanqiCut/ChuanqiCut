@@ -211,3 +211,7 @@ App 侧在 `EditorViewModel.init()` 最早处调 `ChuanqiCut.configureLogFromEnv
    「播放器域修复」节）。
 4. **UIA-015 / UIA-016 撞号**：本地侧分别是「编辑页重构」「Theme 令牌扩展」，远端侧分别是
    「独立播放器 MVP」「播放器系统级播控补完」—— 同名不同物。两卡头部已加告警，是否改名待拍板。
+   **撞号裁定落地前，不再从 UIA 序列取号**（新增待办一律走 `docs/tasks/TODO-*.md`）。
+5. 上述三项 + `tools/perf/` 处置已立为待办，交另一个 agent 接手：
+   [`docs/tasks/TODO-2026-10-07-播放器域收尾待他人接手.md`](../../docs/tasks/TODO-2026-10-07-播放器域收尾待他人接手.md)
+   （已在 `docs/tasks/README.md` 登记）。

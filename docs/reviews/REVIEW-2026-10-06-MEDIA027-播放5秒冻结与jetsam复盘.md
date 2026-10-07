@@ -2,7 +2,7 @@
 
 - 日期：2026-10-06
 - 任务：[TASK-MEDIA-027](../tasks/TASK-MEDIA-027.md)
-- 坑号：[P75](../.ai/memory/pitfalls.md)（P72 已被 MEDIA-026 与 CAM-017 各占一次，不复用）
+- 坑号：[P75](../../.ai/memory/pitfalls.md)（P72 已被 MEDIA-026 与 CAM-017 各占一次，不复用）
 - 实测数据：`.ai/memory/baselines.md` §「播放冻结 / 内存（MEDIA-027）」
 - 性质：**复盘**（事后总结方法与人因），不是任务卡（做法与代码）、不是 ADR（架构约束）
 

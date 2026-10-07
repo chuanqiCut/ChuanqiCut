@@ -1,7 +1,7 @@
 // CameraRecorder — 所见即所得录制（CAM-005，ADR-0014）
 //
-// 视频：采集帧 → 滤镜（录制开始时锁定的预设）→ CIContext 渲染进 CVPixelBufferPool
-//       缓冲 → PixelBufferAdaptor（H.264 / 32BGRA）。
+// 视频：采集帧 → 美颜 → 美型 warp → 滤镜 → 贴纸（开始时锁定的参数）→ CIContext
+//       渲染进 CVPixelBufferPool 缓冲 → PixelBufferAdaptor（H.264 / 32BGRA）。
 // 音频：AVCaptureAudioDataOutput 的 PCM CMSampleBuffer 直喂 AVAssetWriterInput，
 //       输出设置指定 AAC，由 AVFoundation 完成编码。
 //
@@ -64,27 +64,50 @@ final class CameraRecorder: @unchecked Sendable {
 
     private let preset: CameraFilterPreset
     private let beauty: CameraBeautyParams
+    /// 美型参数（CAM-013）：录制开始时锁定（WYSIWYG，与滤镜/美颜同语义）。
+    private let reshape: CameraReshapeParams
+    /// 美体参数（CAM-025）：录制开始时锁定。
+    private let bodyReshape: BodyReshapeParams
+    /// 贴纸资产（CAM-014）：录制开始时锁定；nil = 无贴纸。
+    private let sticker: StickerAsset?
+    /// 双摄合成器（CAM-021）：提供时以合成结果为录制源（主+PiP 已按预览同链处理）；
+    /// nil = 单摄内联链路（现行路径）。合成闭包强持有 Renderer（录制期生命周期）。
+    private let dualComposer: ((CVImageBuffer, CMTime) -> CIImage)?
     /// 人脸框槽（CAM-019）：逐帧读最新值 —— 主体移动时蒙版跟随（WYSIWYG），
     /// 与预览同源（同一 FaceBoxStore，检测队列写 / 本队列读，锁保护）。
+    /// CAM-013/014 起锚点（currentAnchors）也经本槽逐帧读取。
     private let faceBoxes: FaceBoxStore?
     private let ciContext: CIContext
     private let withAudio: Bool
     private let lock = NSLock()
     private var sessionStarted = false
+    /// 会话起点 = 首个视频帧 PTS（startSession 时记录）。音频 append 的 PTS 下界。
+    private var sessionStartPTS: CMTime?
     private var isFinished = false
+    private var appendFailures = 0
 
     /// - Parameters:
     ///   - ciContext: 与预览共享的上下文（线程安全）。
-    ///   - preset / beauty: 录制开始时锁定的滤镜与美颜（WYSIWYG；录制中面板已锁）。
-    ///   - faceBoxes: 人脸框槽（CAM-019 区域化）；nil = 不区域化（美颜全画面，兼容测试）。
+    ///   - preset / beauty / reshape: 录制开始时锁定的滤镜、美颜与美型（WYSIWYG；
+    ///     录制中面板已锁）。
+    ///   - sticker: 录制开始时锁定的贴纸资产；nil = 无（CAM-014）。
+    ///   - faceBoxes: 人脸框槽（CAM-019 区域化 + CAM-013/014/025 锚点）；nil = 全部效果
+    ///     直通（美颜无算法不生效——不做滤镜式全画面修改；美型/贴纸跳过，兼容测试）。
     ///   - withAudio: 麦克风权限被拒时传 false（录制降级为无声视频，不伪造有声音）。
     init(outputURL: URL, ciContext: CIContext,
          preset: CameraFilterPreset, beauty: CameraBeautyParams,
+         reshape: CameraReshapeParams = .off, bodyReshape: BodyReshapeParams = .off,
+         sticker: StickerAsset? = nil,
+         dualComposer: ((CVImageBuffer, CMTime) -> CIImage)? = nil,
          faceBoxes: FaceBoxStore? = nil, withAudio: Bool) {
         self.outputURL = outputURL
         self.ciContext = ciContext
         self.preset = preset
         self.beauty = beauty
+        self.reshape = reshape
+        self.bodyReshape = bodyReshape
+        self.sticker = sticker
+        self.dualComposer = dualComposer
         self.faceBoxes = faceBoxes
         self.withAudio = withAudio
     }
@@ -167,6 +190,7 @@ final class CameraRecorder: @unchecked Sendable {
         guard writer.startWriting() else { return }  // 失败在 finish 时经 writer.error 暴露
         writer.startSession(atSourceTime: time)
         sessionStarted = true
+        sessionStartPTS = time
     }
 
     // MARK: 帧注入（videoQueue）
@@ -174,7 +198,11 @@ final class CameraRecorder: @unchecked Sendable {
     func appendVideo(sourceBuffer: CVImageBuffer, at time: CMTime) {
         guard setupIfNeeded(with: sourceBuffer) else { return }
         lock.lock()
-        guard let adaptor, let videoInput, !isFinished else {
+        // writer.status == .writing 守卫：writer 一旦失败（时序错/磁盘满/编码错），
+        // 后续 append 全部无效 —— 继续渲染只是浪费，无条件计数会把失败伪装成进度
+        // （P60 伪绿同族：2026-10-07「assetwriter 报错」修复轮）。
+        guard let adaptor, let videoInput, let writer, !isFinished,
+              writer.status == .writing else {
             lock.unlock()
             return
         }
@@ -184,12 +212,37 @@ final class CameraRecorder: @unchecked Sendable {
         // startWriting 前是 nil；旧实现池守卫在前 = 每帧必丢死锁）。
         startSessionIfNeeded(at: time)
 
-        // 美颜（人脸区域化，faces 实时读取）→ 滤镜（与预览 process 同序）。
-        // 失败丢帧不崩溃（实时优先）。
-        var image = CIImage(cvPixelBuffer: sourceBuffer)
-        image = beauty.apply(to: image, faces: faceBoxes?.current())
-        if let filtered = preset.apply(to: image) {
-            image = filtered
+        // 美颜（人脸区域化，faces 实时读取）→ 美型 warp → 美体 warp → 滤镜 → 贴纸。
+        // 与 CameraRenderer.process 同序（顺序锁定，TASK-CAM-013/014/025）。
+        // 双摄：合成器已含主+PiP 两路完整链（Renderer 同源），此处直接采用。
+        // 引擎缺失/无锚点：对应段跳过（诚实降级）。失败丢帧不崩溃（实时优先）。
+        let image: CIImage
+        if let dualComposer {
+            image = dualComposer(sourceBuffer, time)
+        } else {
+            var composed = CIImage(cvPixelBuffer: sourceBuffer)
+            composed = beauty.apply(to: composed, faces: faceBoxes?.current())
+            if let warp = FaceWarp.shared {
+                if let anchors = faceBoxes?.currentAnchors() {
+                    composed = warp.apply(to: composed, anchors: anchors, params: reshape)
+                }
+                if let bodyAnchors = faceBoxes?.currentBodyAnchors() {
+                    composed = warp.apply(to: composed,
+                                          controls: BodyWarpGeometry.controls(from: bodyAnchors,
+                                                                              params: bodyReshape))
+                }
+            }
+            if let filtered = preset.apply(to: composed) {
+                composed = filtered
+            }
+            if let sticker {
+                if let anchors = faceBoxes?.currentAnchors() {
+                    composed = StickerOverlay.composite(sticker, over: composed, anchors: anchors)
+                } else if let animalEyes = faceBoxes?.currentAnimalEyes() {
+                    composed = StickerOverlay.composite(sticker, over: composed, eyeAnchor: animalEyes)
+                }
+            }
+            image = composed
         }
         guard let pixelBuffer = createBuffer(from: adaptor) else {
             return  // 池与直配都失败：丢帧（同采集侧 latest-wins 语义）
@@ -198,10 +251,21 @@ final class CameraRecorder: @unchecked Sendable {
         ciContext.render(image, to: pixelBuffer)
 
         guard videoInput.isReadyForMoreMediaData else { return }
-        adaptor.append(pixelBuffer, withPresentationTime: time)
-        let total = recordAppendedFrame()
-        if total % 240 == 0 {
-            Self.logger.info("录制已写入 \(total, privacy: .public) 帧")
+        // append 返回值必须检查：失败帧不计入进度（旧实现无条件计数 = 失败伪装成
+        // 正常写入），原因按 30 次节流落日志（P60：静默失败不能复现）。
+        if adaptor.append(pixelBuffer, withPresentationTime: time) {
+            let total = recordAppendedFrame()
+            if total % 240 == 0 {
+                Self.logger.info("录制已写入 \(total, privacy: .public) 帧")
+            }
+        } else {
+            let failures = recordAppendFailure()
+            if failures % 30 == 1 {
+                lock.lock()
+                let writerError = writer.error
+                lock.unlock()
+                Self.logger.error("视频帧 append 失败 #\(failures, privacy: .public)：\(writerError?.localizedDescription ?? "未知", privacy: .public)")
+            }
         }
         // pixelBuffer 由 ARC 释放回池（append 内部按需 retain）。
     }
@@ -216,6 +280,15 @@ final class CameraRecorder: @unchecked Sendable {
         return total
     }
 
+    /// append 失败计数（锁内自增；节流日志用，视频/音频共用）。
+    private func recordAppendFailure() -> Int {
+        lock.lock()
+        appendFailures += 1
+        let total = appendFailures
+        lock.unlock()
+        return total
+    }
+
     /// 当前已写入帧数（线程安全读；收尾回调用）。
     private func currentAppendedFrameCount() -> Int {
         lock.lock()
@@ -226,15 +299,37 @@ final class CameraRecorder: @unchecked Sendable {
     // MARK: 音频注入（audioQueue）
 
     func appendAudio(sampleBuffer: CMSampleBuffer) {
+        // ⚠️ 会话起点守卫（2026-10-07 真机「assetwriter 报错」根因修复）：
+        // startSession 在**首个视频帧**（videoQueue）执行，而音频在会话 startRunning
+        // 后立即流入（audioQueue）—— 早于 startWriting/startSession 的音频 buffer、
+        // 或 PTS 早于会话起点的音频 buffer，都会让 AVAssetWriter 直接进 .failed
+        // （不可恢复：之后所有 append 失败，收尾报错）。文件头此前声称「早于首帧的
+        // 音频块被丢弃」，但旧实现没有守卫 —— 注释与实现不符，本次补齐。
         lock.lock()
-        guard let audioInput, !isFinished else {
+        guard let audioInput, let writer, !isFinished, sessionStarted,
+              writer.status == .writing else {
             lock.unlock()
-            return  // writer 未建立（尚无视频帧）= 头部丢弃，语义见文件头
+            return  // writer 未建立/未起会话 = 头部丢弃，语义见文件头
         }
+        let startPTS = sessionStartPTS
         lock.unlock()
 
+        // PTS 早于会话起点：丢弃（音频起点几乎必然早于首个视频帧的呈现时间）。
+        if let startPTS,
+           CMTimeCompare(CMSampleBufferGetPresentationTimeStamp(sampleBuffer), startPTS) < 0 {
+            return
+        }
+
         guard audioInput.isReadyForMoreMediaData else { return }
-        audioInput.append(sampleBuffer)
+        if !audioInput.append(sampleBuffer) {
+            let failures = recordAppendFailure()
+            if failures % 30 == 1 {
+                lock.lock()
+                let writerError = writer.error
+                lock.unlock()
+                Self.logger.error("音频帧 append 失败 #\(failures, privacy: .public)：\(writerError?.localizedDescription ?? "未知", privacy: .public)")
+            }
+        }
     }
 
     // MARK: 收尾（主线程）

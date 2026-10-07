@@ -38,6 +38,23 @@ final class CameraManager: NSObject, @unchecked Sendable {
         case front
     }
 
+    /// 采集分辨率档位（2026-10-07 用户反馈轮）：预览与录制共用同一 sessionPreset
+    /// （同一条采集流，所见即所得）。4K 档位依赖机型支持，canSetSessionPreset
+    /// 不过 = 保持原档位并如实回调失败。
+    enum CaptureQuality: String, CaseIterable {
+        case hd720
+        case hd1080
+        case uhd4K
+
+        var preset: AVCaptureSession.Preset {
+            switch self {
+            case .hd720: return .hd1280x720
+            case .hd1080: return .hd1920x1080
+            case .uhd4K: return .hd4K3840x2160
+            }
+        }
+    }
+
     // MARK: 帧消费口（采集队列回调；调用方必须在会话运行前挂好）
 
     /// 视频帧（videoQueue 回调）。buffer 仅本次回调内有效，需持久消费须自行 retain
@@ -48,17 +65,41 @@ final class CameraManager: NSObject, @unchecked Sendable {
 
     // MARK: 会话与队列
 
-    let session = AVCaptureSession()
+    /// 双摄机型（A12+）用 MultiCamSession；其余机型退回普通 Session（单摄行为不变）。
+    private static func makeSession() -> AVCaptureSession {
+        AVCaptureMultiCamSession.isMultiCamSupported ? AVCaptureMultiCamSession() : AVCaptureSession()
+    }
+
+    /// 设备级双摄支持（CAM-021：UI 依此置灰开关，SPEC A8 不支持机型诚实降级）。
+    static var isMultiCamSupported: Bool { AVCaptureMultiCamSession.isMultiCamSupported }
+
+    let session: AVCaptureSession = CameraManager.makeSession()
     private let sessionQueue = DispatchQueue(label: "cq.camera.session")
     private let videoQueue = DispatchQueue(label: "cq.camera.video")
     private let audioQueue = DispatchQueue(label: "cq.camera.audio")
     private let relay = FrameRelay()
     private let photoRelay = PhotoRelay()
     private let photoOutput = AVCapturePhotoOutput()
+    /// 后摄（主画面）视频输出。
+    private let videoOutput = AVCaptureVideoDataOutput()
+    /// 前摄（PiP）视频输出（CAM-021：仅双摄模式挂会话，无连接 = 无帧）。
+    private let frontVideoOutput = AVCaptureVideoDataOutput()
+    private let frontQueue = DispatchQueue(label: "cq.camera.video.front")
+    private let frontRelay = FrameRelay()
 
     private var videoInput: AVCaptureDeviceInput?
+    private var frontVideoInput: AVCaptureDeviceInput?
     private var audioInput: AVCaptureDeviceInput?
     private(set) var currentPosition: Position = .back
+    /// 双摄模式（sessionQueue 独占；开关经 setDualCamEnabled）。
+    private(set) var dualCamEnabled = false
+    /// 前摄帧（仅双摄模式有流；回调在 frontQueue，消费契约同 onVideoFrame）。
+    var onFrontVideoFrame: ((CVImageBuffer, CMTime) -> Void)?
+    /// 采集档位/帧率（只在 sessionQueue 读写；configure/重配时取用并重放）。
+    private(set) var captureQuality: CaptureQuality = .hd1080
+    private(set) var frameRate: Int = 30
+    /// 变焦（只在 sessionQueue 读写；切摄重置为 1.0——新镜头从广角起）。
+    private(set) var zoomFactor: CGFloat = 1.0
     /// 界面方向镜像（只在 sessionQueue 读写）。初始竖屏；configure 前收到设置也先存，
     /// configureLocked 会取用（避免「先旋转后启动」丢方向）。
     private(set) var interfaceOrientation: UIInterfaceOrientation = .portrait
@@ -84,6 +125,12 @@ final class CameraManager: NSObject, @unchecked Sendable {
         }
         relay.onAudio = { [weak self] sampleBuffer in
             self?.onAudioBuffer?(sampleBuffer)
+        }
+        frontRelay.onVideo = { [weak self] sampleBuffer in
+            guard let self,
+                  let buffer = CMSampleBufferGetImageBuffer(sampleBuffer) else { return }
+            let pts = CMSampleBufferGetPresentationTimeStamp(sampleBuffer)
+            self.onFrontVideoFrame?(buffer, pts)
         }
     }
 
@@ -133,15 +180,56 @@ final class CameraManager: NSObject, @unchecked Sendable {
     }
 
     /// 前后切换。配置变更在 sessionQueue 串行执行；切换结果主线程回调。
+    /// 双摄模式下禁用（SPEC v1.2：翻转按钮永远只做单摄切换；双摄互换走 swapPiP）。
     func switchPosition(to position: Position,
                         onDone: @escaping @MainActor (_ position: Position) -> Void) {
         sessionQueue.async { [weak self] in
-            guard let self, self.configured else { return }
+            guard let self, self.configured, !self.dualCamEnabled else { return }
             self.currentPosition = position
             self.reconfigureVideoInputLocked(position: position)
             Task { @MainActor in
                 onDone(position)
             }
+        }
+    }
+
+    // MARK: 双摄（CAM-021，SPEC-CAM-001 v1.2 目标4/A8）
+
+    /// 双摄开关（主线程调用）。停会话 → 重配输入（前后同开 / 单摄回退）→ 起会话
+    /// （MultiCamSession 要求停止态改配置）。双摄建立失败（资源/机型边界）自动
+    /// 回退单摄并如实回调 false，不伪造成功。
+    func setDualCamEnabled(_ enabled: Bool,
+                           onDone: @escaping @MainActor (_ applied: Bool) -> Void) {
+        sessionQueue.async { [weak self] in
+            guard let self, self.configured else {
+                Task { @MainActor in onDone(false) }
+                return
+            }
+            guard enabled == false || AVCaptureMultiCamSession.isMultiCamSupported else {
+                Task { @MainActor in onDone(false) }
+                return
+            }
+            guard enabled != self.dualCamEnabled else {
+                Task { @MainActor in onDone(true) }
+                return
+            }
+            let wasRunning = self.session.isRunning
+            if wasRunning { self.session.stopRunning() }
+            self.session.beginConfiguration()
+            self.reconfigureInputsLocked(position: self.currentPosition, dual: enabled)
+            var applied = enabled
+            if enabled, self.videoInput == nil || self.frontVideoInput == nil {
+                applied = false   // 双摄建立失败：回退单摄（诚实降级）
+                self.reconfigureInputsLocked(position: self.currentPosition, dual: false)
+            }
+            self.session.commitConfiguration()
+            self.dualCamEnabled = applied
+            if (wasRunning || applied) && !self.session.isRunning {
+                self.session.startRunning()
+            }
+            let ok = applied && self.session.isRunning
+            if !ok { self.dualCamEnabled = false }
+            Task { @MainActor in onDone(ok) }
         }
     }
 
@@ -153,11 +241,7 @@ final class CameraManager: NSObject, @unchecked Sendable {
             guard let self, self.interfaceOrientation != io else { return }
             self.interfaceOrientation = io
             guard self.configured else { return }
-            for output in self.session.outputs {
-                guard let connection = output.connection(with: .video) else { continue }
-                self.applyOrientation(connection, io)
-                self.applyMirrorIfFront(connection)
-            }
+            self.reapplyOutputConnectionsLocked()
         }
     }
 
@@ -170,12 +254,166 @@ final class CameraManager: NSObject, @unchecked Sendable {
         }
     }
 
+    // MARK: 采集设置（2026-10-07 用户反馈轮：档位 / 帧率；预览与录制共用）
+
+    /// 采集分辨率档位（主线程调用）。走「停会话 → 换 preset → 起会话」窗口：
+    /// 运行中直接换 preset 在部分机型不可靠，统一停起最稳。不支持（
+    /// canSetSessionPreset 不过）时保持原档位并回调 false，不伪造成功。
+    /// 未配置时只存值（configureLocked 会取用）。
+    func setCaptureQuality(_ quality: CaptureQuality,
+                           onDone: @escaping @MainActor (_ applied: Bool) -> Void) {
+        sessionQueue.async { [weak self] in
+            guard let self else { return }
+            guard self.configured else {
+                self.captureQuality = quality
+                Task { @MainActor in onDone(true) }
+                return
+            }
+            let wasRunning = self.session.isRunning
+            if wasRunning { self.session.stopRunning() }
+            self.session.beginConfiguration()
+            var applied = false
+            if self.session.canSetSessionPreset(quality.preset) {
+                self.session.sessionPreset = quality.preset
+                self.captureQuality = quality
+                applied = true
+            } else {
+                Self.logger.error("采集档位 \(quality.rawValue, privacy: .public) 不被支持，保持原档位")
+            }
+            self.session.commitConfiguration()
+            if wasRunning { self.session.startRunning() }
+            Task { @MainActor in onDone(applied) }
+        }
+    }
+
+    /// 帧率（主线程调用）。对视频设备设 min=max=1/fps（统一节拍，防漂移）。
+    /// 设备 activeFormat 不支持时回调 false 并保持原值；未配置时先存值待重放。
+    func setFrameRate(_ fps: Int,
+                      onDone: @escaping @MainActor (_ applied: Bool) -> Void) {
+        sessionQueue.async { [weak self] in
+            guard let self else { return }
+            guard let input = self.videoInput, self.configured else {
+                self.frameRate = fps
+                Task { @MainActor in onDone(true) }
+                return
+            }
+            if self.applyFrameRateLocked(fps, to: input.device) {
+                self.frameRate = fps
+                Task { @MainActor in onDone(true) }
+            } else {
+                Task { @MainActor in onDone(false) }
+            }
+        }
+    }
+
+    /// 对设备应用帧率（sessionQueue 调用；lockForConfiguration 纪律）。
+    @discardableResult
+    private func applyFrameRateLocked(_ fps: Int, to device: AVCaptureDevice) -> Bool {
+        guard fps > 0 else { return false }
+        let supported = device.activeFormat.videoSupportedFrameRateRanges.contains {
+            $0.minFrameRate <= Double(fps) && Double(fps) <= $0.maxFrameRate
+        }
+        guard supported else {
+            Self.logger.error("帧率 \(fps, privacy: .public) fps 不被当前 activeFormat 支持，保持原帧率")
+            return false
+        }
+        do {
+            try device.lockForConfiguration()
+            let frameDuration = CMTime(value: 1, timescale: CMTimeScale(fps))
+            device.activeVideoMinFrameDuration = frameDuration
+            device.activeVideoMaxFrameDuration = frameDuration
+            device.unlockForConfiguration()
+            return true
+        } catch {
+            Self.logger.error("帧率设置失败：\(error.localizedDescription, privacy: .public)")
+            return false
+        }
+    }
+
+    // MARK: 变焦（2026-10-07 用户反馈轮；sessionQueue + 配置锁）
+
+    /// 变焦（主线程调用；捏合手势/滑杆实时生效）。manager 内夹取到
+    /// [1, activeFormat.videoMaxZoomFactor]——不同机型的光学/数码范围不同，
+    /// UI 端的请求值只做粗限，以设备夹取为准。
+    func setZoomFactor(_ factor: CGFloat) {
+        sessionQueue.async { [weak self] in
+            guard let self, let device = self.videoInput?.device else { return }
+            let clamped = min(max(factor, 1), device.activeFormat.videoMaxZoomFactor)
+            do {
+                try device.lockForConfiguration()
+                device.videoZoomFactor = clamped
+                device.unlockForConfiguration()
+                self.zoomFactor = clamped
+            } catch {
+                Self.logger.error("变焦设置失败：\(error.localizedDescription, privacy: .public)")
+            }
+        }
+    }
+
+    // MARK: 曝光 / 对焦（2026-10-07 用户反馈轮；全部 sessionQueue + 配置锁）
+
+    /// 曝光补偿（EV）。manager 内夹取到设备支持区间；UI 滑杆实时生效。
+    func setExposureBias(_ bias: Float) {
+        sessionQueue.async { [weak self] in
+            guard let self, let device = self.videoInput?.device else { return }
+            let clamped = min(max(bias, device.activeFormat.minExposureTargetBias),
+                              device.activeFormat.maxExposureTargetBias)
+            do {
+                try device.lockForConfiguration()
+                device.setExposureTargetBias(clamped)
+                device.unlockForConfiguration()
+            } catch {
+                Self.logger.error("曝光补偿设置失败：\(error.localizedDescription, privacy: .public)")
+            }
+        }
+    }
+
+    /// 手动对焦（lensPosition 0 = 最近，1 = 最远）。切 .locked 并锁定透镜位置。
+    func setFocusLensPosition(_ position: Float) {
+        sessionQueue.async { [weak self] in
+            guard let self, let device = self.videoInput?.device else { return }
+            let clamped = min(max(position, 0), 1)
+            do {
+                try device.lockForConfiguration()
+                if device.isFocusModeSupported(.locked) {
+                    device.setFocusModeLocked(lensPosition: clamped)
+                }
+                device.unlockForConfiguration()
+            } catch {
+                Self.logger.error("手动对焦设置失败：\(error.localizedDescription, privacy: .public)")
+            }
+        }
+    }
+
+    /// 回到连续自动对焦 + 连续自动曝光（UI「自动」重置）。
+    func resetFocusAndExposure() {
+        sessionQueue.async { [weak self] in
+            guard let self, let device = self.videoInput?.device else { return }
+            do {
+                try device.lockForConfiguration()
+                if device.isFocusModeSupported(.continuousAutoFocus) {
+                    device.focusMode = .continuousAutoFocus
+                }
+                if device.isExposureModeSupported(.continuousAutoExposure) {
+                    device.exposureMode = .continuousAutoExposure
+                }
+                device.unlockForConfiguration()
+            } catch {
+                Self.logger.error("对焦/曝光重置失败：\(error.localizedDescription, privacy: .public)")
+            }
+        }
+    }
+
     // MARK: 拍照（CAM-003 追加）
 
     /// 拍一张静态照片。完成回调带回**未处理的**原始像素缓冲（美颜/滤镜由上层
     /// 统一走 process 链，保证与预览同序），错误/失败以 nil 上抛（诚实暴露）。
     /// 可在视频录制中调用（AVFoundation 支持拍录并发）。
-    func capturePhoto(onDone: @escaping (_ pixelBuffer: CVImageBuffer?) -> Void) {
+    /// - Parameter highResolution: 高清拍照（2026-10-07 用户反馈轮）——iOS 16+
+    ///   `maxPhotoDimensions` 突破 sessionPreset 的分辨率上限取全分辨率，并以
+    ///   .quality 优先级编码（configure 时已把 photoOutput 上限设为 .quality）。
+    func capturePhoto(highResolution: Bool = false,
+                      onDone: @escaping (_ pixelBuffer: CVImageBuffer?) -> Void) {
         // onDone 的签名含 CVImageBuffer（CF 类型，不 Sendable），保持非 @Sendable，
         // 经 PhotoRelay（@unchecked Sendable）转交——@Sendable 的 async 闭包只捕获
         // relay，不捕获 onDone 本体（P49）。失败路径（设备缺失/未配置）同样回调 nil。
@@ -209,10 +447,16 @@ final class CameraManager: NSObject, @unchecked Sendable {
             let settings = AVCapturePhotoSettings(format: [
                 kCVPixelBufferPixelFormatTypeKey as String: pixelFormat,
             ])
-            // 方向/镜像沿用 connection 的呈现设置（按当前界面方向，CAM-016）。
+            // 高清拍照：maxPhotoDimensions 取 photoOutput 上限 = 超出 sessionPreset
+            // 的全分辨率（iOS 16+ API，部署目标 16.0 无需门控）；质量优先 .quality。
+            if highResolution {
+                settings.maxPhotoDimensions = self.photoOutput.maxPhotoDimensions
+            }
+            settings.photoQualityPrioritization = highResolution ? .quality : .balanced
+            // 方向/镜像沿用 connection 的呈现设置（拍照接后摄，CAM-016）。
             if let connection = self.photoOutput.connection(with: .video) {
-                self.applyOrientation(connection, self.interfaceOrientation)
-                self.applyMirrorIfFront(connection)
+                self.applyOrientation(connection, self.interfaceOrientation, for: .back)
+                self.applyMirrorIfFront(connection, for: .back)
             }
             self.photoOutput.capturePhoto(with: settings, delegate: self.photoRelay)
         }
@@ -222,11 +466,11 @@ final class CameraManager: NSObject, @unchecked Sendable {
 
     private func configureLocked(position: Position) {
         session.beginConfiguration()
-        session.sessionPreset = .high  // ≈1080p；实际分辨率以 activeFormat 为准（不猜）
+        // 档位由 captureQuality 决定（默认 1080p；用户可在设置面板换 720p/4K）。
+        session.sessionPreset = captureQuality.preset
         defer { session.commitConfiguration() }
 
         // 视频输出：32BGRA（与零拷贝链路同口径）+ 丢帧保实时。
-        let videoOutput = AVCaptureVideoDataOutput()
         videoOutput.videoSettings = [
             kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA,
         ]
@@ -235,10 +479,14 @@ final class CameraManager: NSObject, @unchecked Sendable {
         if session.canAddOutput(videoOutput) {
             session.addOutput(videoOutput)
         }
-        // 方向 + 前摄镜像约定由 connection 如实设置（跟随界面方向，CAM-016）。
+        // 前摄输出（CAM-021）：delegate/设置配置一次；仅双摄模式挂会话。
+        frontVideoOutput.videoSettings = videoOutput.videoSettings
+        frontVideoOutput.alwaysDiscardsLateVideoFrames = true
+        frontVideoOutput.setSampleBufferDelegate(frontRelay, queue: frontQueue)
+        // 方向 + 镜像约定由 connection 如实设置（跟随界面方向，CAM-016）。
         if let connection = videoOutput.connection(with: .video) {
-            applyOrientation(connection, interfaceOrientation)
-            applyMirrorIfFront(connection)
+            applyOrientation(connection, interfaceOrientation, for: position)
+            applyMirrorIfFront(connection, for: position)
         }
 
         // 音频输出（可选：麦克风被拒时跳过，录制降级为无声视频）。
@@ -258,29 +506,71 @@ final class CameraManager: NSObject, @unchecked Sendable {
         if session.canAddOutput(photoOutput) {
             session.addOutput(photoOutput)
         }
+        // 高清拍照前置：settings 的 photoQualityPrioritization 不得超过本上限
+        //（.quality 为最高，.balanced/.fast 都在其下）。
+        photoOutput.maxPhotoQualityPrioritization = .quality
 
         reconfigureVideoInputLocked(position: position)
     }
 
+    /// 单摄输入重配（switchPosition / configure 入口）。
     private func reconfigureVideoInputLocked(position: Position) {
+        reconfigureInputsLocked(position: position, dual: dualCamEnabled)
+    }
+
+    /// 输入重配（sessionQueue；MultiCamSession 要求停止态，调用方保证）。
+    /// 双摄 = 前后两路 video input + 各自 video output；单摄 = 现行路径并摘前摄输出。
+    private func reconfigureInputsLocked(position: Position, dual: Bool) {
         if let old = videoInput {
             session.removeInput(old)
             videoInput = nil
         }
+        if let old = frontVideoInput {
+            session.removeInput(old)
+            frontVideoInput = nil
+        }
+
+        if dual {
+            if !session.outputs.contains(frontVideoOutput), session.canAddOutput(frontVideoOutput) {
+                session.addOutput(frontVideoOutput)
+            }
+            videoInput = addVideoInputLocked(position: .back, output: videoOutput)
+            frontVideoInput = addVideoInputLocked(position: .front, output: frontVideoOutput)
+        } else {
+            if session.outputs.contains(frontVideoOutput) {
+                session.removeOutput(frontVideoOutput)
+            }
+            videoInput = addVideoInputLocked(position: position, output: videoOutput)
+        }
+        // 变焦重置：新镜头组从 1.0 起（与系统相机惯例一致；VM 侧同步归一）。
+        zoomFactor = 1.0
+        // 输入重建会重连全部 output connection：方向/镜像按各自摄位重放。
+        reapplyOutputConnectionsLocked()
+    }
+
+    /// 添加一路 video input 并接 output（帧率随路重放）。失败返回 nil（不伪造成功）。
+    @discardableResult
+    private func addVideoInputLocked(position: Position,
+                                     output: AVCaptureVideoDataOutput) -> AVCaptureDeviceInput? {
         let deviceType: AVCaptureDevice.DeviceType = .builtInWideAngleCamera
         let avPosition: AVCaptureDevice.Position = (position == .front) ? .front : .back
         guard let device = AVCaptureDevice.default(deviceType, for: .video, position: avPosition),
               let input = try? AVCaptureDeviceInput(device: device),
               session.canAddInput(input) else {
-            return  // 设备缺失/被占用：主线程回调侧以 isRunning 判断，不伪造成功
+            return nil  // 设备缺失/被占用：调用方以 nil 判断
         }
         session.addInput(input)
-        videoInput = input
-        // 新 input 生效后 connection 需重设方向/镜像（addInput 会重建 connection）。
+        applyFrameRateLocked(frameRate, to: input.device)
+        return input
+    }
+
+    /// 全部 video connection 重放方向/镜像（各按其摄位：双摄时前摄输出镜像 + 270° 偏移）。
+    private func reapplyOutputConnectionsLocked() {
         for output in session.outputs {
             guard let connection = output.connection(with: .video) else { continue }
-            applyOrientation(connection, interfaceOrientation)
-            applyMirrorIfFront(connection)
+            let pos: Position = (output === frontVideoOutput) ? .front : .back
+            applyOrientation(connection, interfaceOrientation, for: pos)
+            applyMirrorIfFront(connection, for: pos)
         }
     }
 
@@ -292,11 +582,13 @@ final class CameraManager: NSObject, @unchecked Sendable {
     /// UIInterfaceOrientationLandscapeLeft（Apple 对该枚举的定义即「home 在右」），
     /// 故 landscapeLeft=0、landscapeRight=180、portrait=90。
     /// ⚠️ 横屏两项是文档推导，真机若出现横屏 180° 反接，交换 0/180（一行）。
-    private func applyOrientation(_ connection: AVCaptureConnection, _ io: UIInterfaceOrientation) {
+    private func applyOrientation(_ connection: AVCaptureConnection, _ io: UIInterfaceOrientation,
+                                  for position: Position) {
         if #available(iOS 17.0, *) {
             // 静态表 + 前摄安装差常量（CAM-017 二修，P72）。旧 API（else 分支）是
             // 语义方向（portrait=竖直），系统内处理安装差异，**不**加偏移。
-            let offset: CGFloat = (currentPosition == .front) ? 270 : 0
+            // 双摄（CAM-021）按各 connection 自己的摄位取偏移，不再看 currentPosition。
+            let offset: CGFloat = (position == .front) ? 270 : 0
             let angle = Self.snappedToQuarter(Self.rotationAngle(for: io) + offset)
             if connection.isVideoRotationAngleSupported(angle) {
                 connection.videoRotationAngle = angle
@@ -306,9 +598,10 @@ final class CameraManager: NSObject, @unchecked Sendable {
         }
     }
 
-    /// 前摄镜像（旋转之后应用，Apple 语义；各界面方向保持自拍镜像惯例）。
-    private func applyMirrorIfFront(_ connection: AVCaptureConnection) {
-        if currentPosition == .front && connection.isVideoMirroringSupported {
+    /// 镜像（旋转之后应用，Apple 语义；按 connection 自己的摄位——双摄时后摄不镜像、
+    /// 前摄镜像，与 currentPosition 无关）。
+    private func applyMirrorIfFront(_ connection: AVCaptureConnection, for position: Position) {
+        if position == .front && connection.isVideoMirroringSupported {
             connection.isVideoMirrored = true
         }
     }

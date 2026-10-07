@@ -81,14 +81,16 @@ public struct CameraBeautyParams: Equatable, Sendable {
 
     /// 应用美颜。off 时原样返回入参（=== 恒等，调用方无需特判）。
     ///
-    /// faces 三态（CAM-019，SPEC-CAM-018-019 §4）：
-    ///   nil  = 无检测数据（能力缺失/未接入）→ 全画面（旧行为，向后兼容）；
-    ///   []   = 检测过但无脸 → **直通**（对齐 CAM-013 美型「无脸直通」口径）；
+    /// faces 两态（CAM-019 §4；**2026-10-07 修订**：nil 从「全画面兜底」改为「直通」，
+    /// 传哲定则：美颜/美型/美体/美妆等一切人像能力必须**算法驱动**，无算法即无效果，
+    /// 不得退化为滤镜式全画面修改）：
+    ///   nil  = 无检测数据（能力缺失/未接入/首帧前）→ **直通**（旧行为已废除）；
+    ///   []   = 检测过但无脸 → **直通**（对齐美型/美体「无脸直通」口径）；
     ///   非空 = 图像归一化人脸框（origin 左上，CAM-011 契约）→ 磨皮/美白
     ///          经羽化蒙版（FaceMask）只作用于人脸区域，背景保持原样。
     public func apply(to image: CIImage, faces: [CGRect]? = nil) -> CIImage {
         guard !isOff else { return image }
-        guard faces?.isEmpty != true else { return image }
+        guard let faces, !faces.isEmpty else { return image }
         let mask = faces.flatMap { FaceMask.mask(forNormalizedBoxes: $0, in: image.extent) }
 
         var result = image

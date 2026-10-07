@@ -34,8 +34,8 @@ Pod::Spec.new do |s|
   s.description   = <<-DESC
     Camera domain for ChuanqiCut: AVCaptureSession pipeline, Metal preview
     rendering, recording, Vision detection, beauty effects and the shared
-    contract layer. Ships the CoreImage beauty kernel metallib via a script
-    phase (ADR-0021: -fcikernel for BOTH compile and link).
+    contract layer. Ships the CoreImage beauty + face-warp kernel metallibs
+    via a script phase (ADR-0021: -fcikernel for BOTH compile and link).
   DESC
 
   s.homepage      = 'https://REPLACE_ME.invalid/ChuanqiCut'
@@ -56,9 +56,9 @@ Pod::Spec.new do |s|
   s.source_files = 'Sources/ChuanqiCutCamera/**/*.swift',
                    'Sources/ChuanqiCutCameraImpl/**/*.swift'
 
-  # 显式 import 的系统框架（采集/录制/渲染/检测/CI 特效）
+  # 显式 import 的系统框架（采集/录制/渲染/检测/CI 特效/MetalFX 升采样）
   s.frameworks = 'AVFoundation', 'CoreMedia', 'CoreVideo', 'CoreImage',
-                 'Metal', 'MetalKit', 'Vision'
+                 'Metal', 'MetalKit', 'MetalFX', 'Vision'
 
   # 基座依赖（版本不锁，仓库内本地 :path 集成）
   s.dependency 'SharedUI'

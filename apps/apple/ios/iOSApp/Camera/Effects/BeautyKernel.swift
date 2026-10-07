@@ -25,6 +25,7 @@ import CoreImage
 import Foundation
 import os.log
 import SharedUI
+import os
 
 // MARK: - 强度 → kernel 参数映射（纯函数，可单测）
 
@@ -64,6 +65,8 @@ enum BeautyKernelProfile {
 // MARK: - Metal 磨皮引擎
 
 final class BeautyKernel: @unchecked Sendable {
+
+    private static let logger = Logger(subsystem: "com.chuanqi.cut", category: "camera.beauty")
 
     static let downHFunctionName = "cq_beauty_down_h"
     static let upVMixFunctionName = "cq_beauty_up_v_mix"
@@ -106,9 +109,46 @@ final class BeautyKernel: @unchecked Sendable {
     /// kernel 本体只有两个 CIKernel 对象，常驻成本可忽略，重装时整体替换。
     /// 返回 nil = 引擎放弃（本卡两 pass 之外的情况，如非零 origin / 过小图），
     /// SharedUI 自动回落默认 CI 近似 —— 引擎永不制造黑帧或崩坏输出。
+    ///
+    /// ⚠️ 黏性回落（CAM-017）：引擎**间歇** nil 会让画面逐帧在「双边/高斯兜底」
+    /// 两种视觉之间翻转 —— 真机首验的「磨皮闪屏」。连续 3 次 nil 即本会话停用
+    /// 引擎（nil 计数走 os_log，可定位设备侧失败原因），只走默认实现。
+    /// 黏性回落状态盒（@Sendable 闭包捕获可变局部变量在 Swift 6 下非法，
+    /// 走 P49 RecorderBox 同款 `@unchecked Sendable` + 锁的既有惯例）。
+    private final class FallbackState: @unchecked Sendable {
+        private let lock = NSLock()
+        private var consecutiveFailures = 0
+        private var disabled = false
+
+        /// false = 已停用（调用方直接走默认实现，不再尝试引擎）。
+        func isEnabled() -> Bool {
+            lock.lock()
+            defer { lock.unlock() }
+            return !disabled
+        }
+
+        func record(_ succeeded: Bool) {
+            lock.lock()
+            defer { lock.unlock() }
+            if succeeded {
+                consecutiveFailures = 0
+                return
+            }
+            consecutiveFailures += 1
+            if consecutiveFailures >= 3 {
+                disabled = true
+                BeautyKernel.logger.error("磨皮引擎连续 \(self.consecutiveFailures, privacy: .public) 次放弃处理，本会话回落默认 CI 实现")
+            }
+        }
+    }
+
     func smoothingEngine() -> CameraBeautySmoothingEngine {
+        let state = FallbackState()
         return { image, strength in
-            self.apply(image, strength: strength)
+            guard state.isEnabled() else { return nil }
+            let result = self.apply(image, strength: strength)
+            state.record(result != nil)
+            return result
         }
     }
 

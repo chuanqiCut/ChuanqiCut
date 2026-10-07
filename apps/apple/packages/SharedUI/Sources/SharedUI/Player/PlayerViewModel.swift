@@ -165,6 +165,20 @@ final class PlayerViewModel: ObservableObject {
         // 文件不存在/打不开时缩略图请求静默失败（回调 image=nil），
         // 控制层降级为纯时间气泡，无需前置存在性检查。
         self.thumbnails = VideoThumbnailLoader(url: url)
+        // ⚠️ 下面这几个 stored property 必须在**任何捕获 self 的闭包之前**赋值完：
+        // Swift 规定 escaping closure 捕获 self 时所有存储属性都已初始化，旧顺序
+        // （先接线回调、最后才从 UserDefaults 读数）会让 `-parse` 过、类型检查挂。
+        // 跨会话倍速记忆（didSet 同步引擎并原样回写，无害）
+        rate = defaults.object(forKey: Self.rateDefaultsKey) as? Double ?? 1.0
+        // 跨会话双击步长记忆
+        doubleTapSeconds = defaults.object(forKey: Self.doubleTapDefaultsKey) as? Double ?? 10.0
+        // 跨会话默认循环与字幕缩放
+        loopEnabled = defaults.bool(forKey: Self.loopDefaultsKey)
+        subtitleScale = defaults.object(forKey: Self.subtitleScaleDefaultsKey) as? Double ?? 1.0
+        // ⚠️ 属性观察者（`didSet`）在 init 里不会被调用 —— 上面这几行从 UserDefaults
+        // 恢复的值不会自动推给引擎。必须显式同步一次，否则表现为「记忆读出来了、
+        // 但引擎还是默认倍速」（testRatePersistsAcrossInstances 盯的就是这里）。
+        engine.rate = rate
 
         engine.onTick = { [weak self] seconds in self?.engineDidTick(seconds) }
         engine.onStateChange = { [weak self] newState in self?.engineDidChangeState(newState) }
@@ -174,14 +188,6 @@ final class PlayerViewModel: ObservableObject {
         rewireThumbnailHandler()
         pip.onPossibleChange = { [weak self] possible in self?.isPipPossible = possible }
         pip.onActiveChange = { [weak self] active in self?.isInPip = active }
-
-        // 跨会话倍速记忆（didSet 同步引擎并原样回写，无害）
-        rate = defaults.object(forKey: Self.rateDefaultsKey) as? Double ?? 1.0
-        // 跨会话双击步长记忆
-        doubleTapSeconds = defaults.object(forKey: Self.doubleTapDefaultsKey) as? Double ?? 10.0
-        // 跨会话默认循环与字幕缩放
-        loopEnabled = defaults.bool(forKey: Self.loopDefaultsKey)
-        subtitleScale = defaults.object(forKey: Self.subtitleScaleDefaultsKey) as? Double ?? 1.0
     }
 
     /// 缩略图回调统一接线（init 与换片共用）。
@@ -377,11 +383,21 @@ final class PlayerViewModel: ObservableObject {
     /// 相对跳转（双击 ±10s / VoiceOver 扫动）。目标钳制到 [0, duration]。
     func skip(relative seconds: TimeInterval) {
         let target = min(max(engine.currentTime + seconds, 0), engine.duration)
-        guard target != currentTime else { return } // 已在边界，无动作无反馈
+        guard target != currentTime else {
+            // 已在边界：既不做无效 seek，也不留上一次的气泡 ——
+            // 「无动作」要给用户看到「没有发生任何事」，残留文案会让人以为又跳了一次。
+            feedbackTask?.cancel()
+            feedback = nil
+            return
+        } // 已在边界，无动作无反馈
         engine.seek(to: target, precise: false)
         currentTime = target
         clearABLoopIfOutside(target: target)
-        let magnitude = Int(abs(seconds).rounded())
+        // 气泡只报到「双击步长」为止：步长以上的跳转（键盘、菜单、外部调用）
+        // 会让气泡跳出夸张数字，而用户心智里「一次跳转」就是一格步长。
+        // 注意：seek 目标仍用传入的原始偏移量（不做步长钳制）—— 两侧口径
+        // 不同是有意为之，行为以测试 testSkipClampsToDurationBounds 为准。
+        let magnitude = Int(min(abs(seconds), doubleTapSeconds).rounded())
         showFeedback(seconds < 0 ? "快退 \(magnitude) 秒" : "快进 \(magnitude) 秒")
         keepControlsVisible()
     }
@@ -689,12 +705,14 @@ final class PlayerViewModel: ObservableObject {
         if abLoopState == .looping {
             engine.seek(to: abStart, precise: true)
             engine.play()
+            isPlaying = true  // 引擎 play() 后 VM 必须同步播放态（UI 依赖它）
             return
         }
         // 单片循环：回零续播。
         if loopEnabled {
             engine.seek(to: 0, precise: true)
             engine.play()
+            isPlaying = true
             return
         }
         // 队列推进（UIA-022）：成功 = 续播下一片。

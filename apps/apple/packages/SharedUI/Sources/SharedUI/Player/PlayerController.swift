@@ -12,7 +12,10 @@ import Foundation
 import SwiftUI
 
 @MainActor
-public final class PlayerController: ObservableObject {
+// `@preconcurrency`：本类的成员全在主隔离域，而 ObservableObject 本身不带隔离，
+// Swift 6 严格并发会判定「遵循跨进主隔离域」；AppEntry 的 EditorViewModel 同形态
+// 未报警是因为它走 @Published 合成，本类手动实现 `objectWillChange`。
+public final class PlayerController: @preconcurrency ObservableObject {
 
     /// 共享 VM（internal：SharedUI 内视图直读；App target 经公开转发消费）。
     private(set) var model: PlayerViewModel? {
@@ -50,7 +53,12 @@ public final class PlayerController: ObservableObject {
         if let model = model {
             model.playStandalone(url)
         } else {
-            open(urls: [url])
+            // ⚠️ 不能退化成 `open(urls: [url])`：那会 setQueue → 队列里留下 1 项，
+            // 与「独立单文件 = 无队列」语义相悖（PlayerViewModel.playStandalone
+            // 才算数）。新 VM 的 queue 本就为空，装载后立即 activate 即可。
+            let created = PlayerViewModel(url: url)
+            created.activate()
+            model = created
         }
     }
 

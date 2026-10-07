@@ -124,13 +124,13 @@ bool VerifySmpteBars(CVPixelBufferRef pb, uint32_t w, uint32_t h) {
 
 }  // namespace
 
-int main() {
-    std::setvbuf(stdout, nullptr, _IONBF, 0);
-    std::printf("== ChuanqiCut PALA-011 Apple 硬解验收（VideoToolbox / H.264）==\n");
-
-    const std::string path =
-        std::string(CQ_SOURCE_DIR) + "/tests/golden/frames/gf_1080p_h264.mp4";
-    std::printf("样本: %s\n", path.c_str());
+// 单个 codec 的完整验收流（H.264 与 HEVC 共用，MEDIA-022 参数化）：
+// demux 打开 → 解码器 Open → 喂入全部包 → 排空 → 帧数/pts 集合/显示序/像素断言。
+// 返回本节失败数（复用全局 g_failures 记账，返回值便于双节独立终止）。
+static int RunCodecAcceptance(const std::string& path, cq::CodecId expect_codec,
+                              const char* label) {
+    const int failures_at_entry = g_failures;
+    std::printf("\n---- %s（%s）----\n", label, path.c_str());
 
     cq::MediaSource src;
     src.path = path.c_str();
@@ -141,13 +141,13 @@ int main() {
     cq::Status s = cq::CreateMediaDemuxer(src, demuxer);
     Check(s.IsOk() && demuxer, "CreateMediaDemuxer（真实 Apple 后端）打开成功");
     if (!demuxer) {
-        std::printf("\n真实解封装打开失败，用例终止。\n");
-        return 1;
+        std::printf("\n真实解封装打开失败，本节终止。\n");
+        return g_failures - failures_at_entry;
     }
     cq::StreamInfo info{};
     s = demuxer->GetStreamInfo(0, info);
-    Check(s.IsOk() && info.type == cq::MediaType::kVideo && info.codec == cq::CodecId::kH264,
-          "真实流：视频 / H.264");
+    Check(s.IsOk() && info.type == cq::MediaType::kVideo && info.codec == expect_codec,
+          "真实流：视频 / 期望编码");
     Check(info.width == 1920 && info.height == 1080, "真实尺寸 = 1920x1080");
     std::printf("  流 codec=%d  尺寸=%ux%u\n", static_cast<int>(info.codec), info.width,
                 info.height);
@@ -155,12 +155,19 @@ int main() {
     // ---- 解码器级：解码全部 150 帧，校验帧数 / pts / 像素 ----
     cq::VideoToolboxDecoder decoder(path.c_str());
     s = decoder.Open(info);
-    Check(s.IsOk(), "VideoToolboxDecoder.Open 成功（建立 H.264 硬解会话）");
+    Check(s.IsOk(), "VideoToolboxDecoder.Open 成功（建立硬解会话）");
     if (!s.IsOk()) {
-        std::printf("\n解码会话建立失败，用例终止（诚实报告：硬解不可用）。\n");
-        return 1;
+        std::printf("\n解码会话建立失败（status=%d %s），本节终止（诚实报告：硬解不可用）。\n",
+                    static_cast<int>(s.code), cq::StatusToString(s.code));
+        return g_failures - failures_at_entry;
     }
     std::printf("  硬解是否真走硬件: %s\n", decoder.IsHardwareAccelerated() ? "YES" : "NO(软解回退)");
+    std::printf("  输出尺寸: %ux%u（源 %ux%u，MEDIA-023 降采样上限 1080p）\n",
+                decoder.OutputWidth(), decoder.OutputHeight(), info.width, info.height);
+    Check(decoder.OutputWidth() <= 1920 && decoder.OutputHeight() <= 1920,
+          "输出长边 ≤ 1920（MEDIA-023 钳制）");
+    Check(decoder.OutputWidth() % 2 == 0 && decoder.OutputHeight() % 2 == 0,
+          "输出尺寸取偶");
 
     std::vector<cq::RationalTime> demux_pts;
     demux_pts.reserve(256);
@@ -173,7 +180,7 @@ int main() {
             std::printf("  ReadPacket error: %s\n", cq::StatusToString(rs.code));
             break;
         }
-        if (pkt.codec == cq::CodecId::kH264) demux_pts.push_back(pkt.pts);
+        if (pkt.codec == expect_codec) demux_pts.push_back(pkt.pts);
         cq::Status fs = decoder.Feed(pkt);
         if (!fs.IsOk()) {
             std::printf("  Feed error at pts=%s: %s\n", Rt(pkt.pts), cq::StatusToString(fs.code));
@@ -296,9 +303,64 @@ int main() {
     }
     Check(e2e_ok == 4, "端到端 AcquireFrame 对 4 个目标时间均返回真实帧（打通标志）");
 
-    std::printf("\n[结论] H.264 硬解后端 PALA-011 解码结果正确：帧数/pts/像素/端到端均验证通过；"
-                "硬解是否真硬件=%s。\n",
-                decoder.IsHardwareAccelerated() ? "YES" : "NO");
+    return g_failures - failures_at_entry;
+}
+
+int main() {
+    std::setvbuf(stdout, nullptr, _IONBF, 0);
+    std::printf("== ChuanqiCut PALA-011 Apple 硬解验收（VideoToolbox / H.264 + HEVC）==\n");
+
+    // MEDIA-023：输出尺寸钳制纯函数（4K/竖拍 4K → 长边 1920 等比 + 偶对齐；
+    // 1080p 及以下原样）。
+    {
+        auto c = cq::VideoToolboxDecoder::ClampOutputDimensions(3840, 2160);
+        Check(c.first == 1920 && c.second == 1080, "4K 横拍 → 1920x1080");
+        c = cq::VideoToolboxDecoder::ClampOutputDimensions(2160, 3840);
+        Check(c.first == 1080 && c.second == 1920, "4K 竖拍 → 1080x1920（等比不旋转）");
+        c = cq::VideoToolboxDecoder::ClampOutputDimensions(1920, 1080);
+        Check(c.first == 1920 && c.second == 1080, "1080p 原样不变");
+        c = cq::VideoToolboxDecoder::ClampOutputDimensions(1280, 720);
+        Check(c.first == 1280 && c.second == 720, "720p 原样不变");
+        c = cq::VideoToolboxDecoder::ClampOutputDimensions(3841, 2162);
+        Check(c.first % 2 == 0 && c.second % 2 == 0, "非整尺寸输出取偶");
+    }
+
+    // MEDIA-025：HDR 源判定纯函数（传递函数 HLG/PQ → 转；2020+非709 → 转；
+    // SDR 709/标签缺失 → 不转，行为同旧）。
+    {
+        const bool hlg = cq::VideoToolboxDecoder::IsHdrColorSource(
+            kCMFormatDescriptionColorPrimaries_ITU_R_2020,
+            kCMFormatDescriptionTransferFunction_ITU_R_2100_HLG);
+        Check(hlg, "BT.2020 + HLG → HDR（转换）");
+        const bool pq = cq::VideoToolboxDecoder::IsHdrColorSource(
+            kCMFormatDescriptionColorPrimaries_ITU_R_2020,
+            kCMFormatDescriptionTransferFunction_SMPTE_ST_2084_PQ);
+        Check(pq, "BT.2020 + PQ → HDR（转换）");
+        const bool sdr_wide = cq::VideoToolboxDecoder::IsHdrColorSource(
+            kCMFormatDescriptionColorPrimaries_ITU_R_2020,
+            kCMFormatDescriptionTransferFunction_ITU_R_709_2);
+        Check(!sdr_wide, "BT.2020 + 709（SDR 宽色域）→ 不转换");
+        const bool sdr = cq::VideoToolboxDecoder::IsHdrColorSource(
+            kCMFormatDescriptionColorPrimaries_ITU_R_709_2,
+            kCMFormatDescriptionTransferFunction_ITU_R_709_2);
+        Check(!sdr, "BT.709 SDR → 不转换");
+        const bool unknown = cq::VideoToolboxDecoder::IsHdrColorSource(nullptr, nullptr);
+        Check(!unknown, "标签缺失 → 不转换（诚实：未知按旧行为）");
+        const bool wide_unknown_tf = cq::VideoToolboxDecoder::IsHdrColorSource(
+            kCMFormatDescriptionColorPrimaries_ITU_R_2020, nullptr);
+        Check(!wide_unknown_tf, "2020 原色域 + 传递函数缺失 → 不转换（未知按旧行为）");
+    }
+
+    // H.264（既有基线）+ HEVC（MEDIA-022：iPhone 相册默认编码，此前 Open 一律
+    // 返回 kDecodeUnsupported，导入链路在探测步即挂）。
+    RunCodecAcceptance(
+        std::string(CQ_SOURCE_DIR) + "/tests/golden/frames/gf_1080p_h264.mp4",
+        cq::CodecId::kH264, "H.264 基线");
+    RunCodecAcceptance(
+        std::string(CQ_SOURCE_DIR) + "/tests/golden/frames/gf_1080p_hevc.mp4",
+        cq::CodecId::kHevc, "HEVC（MEDIA-022）");
+
+    std::printf("\n[结论] H.264 + HEVC 解码结果正确：帧数/pts/像素/端到端均验证通过。\n");
     std::printf("== 结果：%d 项检查，%d 项失败 ==\n", g_checks, g_failures);
     return g_failures == 0 ? 0 : 1;
 }

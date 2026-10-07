@@ -15,7 +15,10 @@
 // 在 PlayerScreenBody.surface 计算属性，未来 C++ 引擎自带自绘 sink 时只改这里。
 
 import SwiftUI
-import UniformTypeIdentified
+// ⚠️ 模块名是 UniformTypeIdentifiers（复数）。写成单数 UniformTypeIdentified 会让
+//    swift build 直接 `no such module` —— 2026-10-06 双线合并时门禁在此红掉
+//    （apple-sharedui FAIL）。Apple SDK 两侧框架目录名均为 UniformTypeIdentifiers.framework。
+import UniformTypeIdentifiers
 #if canImport(UIKit)
 import UIKit
 #elseif canImport(AppKit)
@@ -329,11 +332,12 @@ public struct PlayerLauncherScreen: View {
             }
         }
         // 拖视频文件进窗口直接播（macOS 惯例；iOS 16 / macOS 13 基线内）
-        .dropDestination(for: URL.self, isTargeted: nil) { dropped, _ in
+        // （`dropDestination(for:action:isTargeted:)` 的三参形态；isTargeted 不可省略）
+        .dropDestination(for: URL.self) { dropped, _ in
             guard dropped.first != nil else { return false }
             onOpen(dropped)
             return true
-        }
+        } isTargeted: { _ in }
     }
 
     /// 网址入口（UIA-024）：仅 http/https 点播；剪贴板一键粘贴。

@@ -31,6 +31,12 @@ settings:
     PRODUCT_NAME: "$(TARGET_NAME)"
     # Xcode 26 对传统 headermap 的弃用提示（否则每次构建一条 warning）。
     ALWAYS_SEARCH_USER_PATHS: NO
+  configs:
+    # App target 自己的 DEBUG 编译条件（UIA-015）：SharedUI pod 由 CocoaPods
+    # 默认注入 DEBUG，但 App target 原本没有 —— `#if DEBUG` 代码（启动冒烟
+    # 钩子等）会被静默剥掉。xcodegen 不默认写这条。
+    Debug:
+      SWIFT_ACTIVE_COMPILATION_CONDITIONS: DEBUG
 
 targets:
   ChuanqiCutApp:

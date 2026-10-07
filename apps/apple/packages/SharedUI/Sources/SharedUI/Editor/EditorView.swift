@@ -1,13 +1,19 @@
-// SharedUI — 编辑器主视图：三区布局入口（UIA-002）
+// SharedUI — 编辑器主视图（UIA-015 重构）
 //
 // 只做三件事（ARCH-005）：呈现状态 / 收集输入 / 发出命令。
-// 本视图只呈现 —— 输入与命令由后续任务（UIA-005 拖拽、UIA-006 参数）接入。
+//
+// 结构（SPEC-UIA-015 §4.2）：布局骨架与平台差异全在 EditorLayoutContainer；
+// 本视图负责装配 Zone 与**编辑器级 UI 状态**（媒体抽屉开关 —— UI 状态，
+// 不进模型；预览空态与底部工具栏共用同一个入口）。
 
 import SwiftUI
 import ChuanqiCut
 
 public struct EditorView: View {
     @EnvironmentObject private var viewModel: EditorViewModel
+
+    /// 媒体抽屉开关（编辑器级：预览空态引导与底部工具栏两个入口）。
+    @State private var showMediaSheet = false
 
     public init() {}
 
@@ -17,16 +23,29 @@ public struct EditorView: View {
                 PreviewZone(preview: viewModel.preview,
                             pump: viewModel.previewPump,
                             playhead: viewModel.playhead,
-                            continuous: viewModel.isPlaying)
+                            continuous: viewModel.isPlaying,
+                            renderEpoch: viewModel.renderEpoch,
+                            showsEmptyState: viewModel.timeline.clips.isEmpty,
+                            onTogglePlayback: { viewModel.togglePlayback() },
+                            onOpenMedia: { showMediaSheet = true })
+            },
+            transport: {
+                EditorTransportBar()
             },
             timeline: {
-                TimelineZone()
+                TimelineZone(showsHeader: EditorPlatform.showsTimelineHeader)
+            },
+            toolbar: {
+                EditorBottomToolbar(onOpenMedia: { showMediaSheet = true })
             },
             panel: {
-                // UIA-009 子步骤 3：面板即素材库（@EnvironmentObject 取状态）
-                PropertyPanelZone()
+                // macOS 右栏：与 iOS 抽屉同源（行为等价迁移自 PropertyPanelZone）
+                MediaLibraryPanel()
             }
         )
         .background(Theme.editorBackground)
+        .sheet(isPresented: $showMediaSheet) {
+            MediaSheet().environmentObject(viewModel)
+        }
     }
 }

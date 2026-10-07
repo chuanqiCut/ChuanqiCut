@@ -29,6 +29,10 @@ settings:
     # xcodegen 2.46 不再默认写 PRODUCT_NAME；缺了它 Xcode 会解析出空名，
     # 报 `Multiple commands produce '.../Build/Products/.../.app'`（同 iOS 端 P53）。
     PRODUCT_NAME: "$(TARGET_NAME)"
+  configs:
+    # 同 iOS 端（UIA-015）：App target 的 DEBUG 编译条件，xcodegen 不默认写。
+    Debug:
+      SWIFT_ACTIVE_COMPILATION_CONDITIONS: DEBUG
 
 targets:
   ChuanqiCutMacApp:

@@ -36,7 +36,19 @@ struct CameraView: View {
                 }
             }
         }
-        .onAppear { model.prepare() }
+        .onAppear {
+            // 先注入当前方向再启动会话：configure 在 sessionQueue 取用的就是它
+            // （避免「先竖屏启动、后补转」的首帧方向抖动）。
+            model.updateInterfaceOrientation(CameraViewModel.currentInterfaceOrientation())
+            model.prepare()
+        }
+        // 界面方向跟踪（CAM-016）：触发源 = UIDevice 设备方向变化；取值侧读
+        // active scene 的 interfaceOrientation（尊重 Info.plist/页面锁向的现实），
+        // 并在 ViewModel 内分段采样避开「通知早于 scene 提交转场」竞态。
+        .onReceive(NotificationCenter.default.publisher(
+            for: UIDevice.orientationDidChangeNotification)) { _ in
+            model.refreshInterfaceOrientation()
+        }
         // iOS 16 兼容的单参 onChange（两参重载 iOS 17 起，P48 抓出；项目部署目标 16.0）
         .onChange(of: scenePhase) { newPhase in
             if newPhase == .background || newPhase == .inactive {

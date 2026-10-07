@@ -10,12 +10,15 @@ import CoreImage
 import CoreMedia
 import Foundation
 import Metal
+import os
 import Photos
 import SharedUI
 import UIKit
 
 @MainActor
 final class CameraViewModel: ObservableObject {
+
+    private static let photoLogger = Logger(subsystem: "com.chuanqi.cut", category: "camera.photo")
 
     enum Phase {
         case preparing      // 初始化/请求权限中
@@ -157,6 +160,39 @@ final class CameraViewModel: ObservableObject {
         }
     }
 
+    /// 界面方向变化（CAM-016，SPEC-CAM-001 v1.2 目标5）。
+    /// 录制中锁定方向（与滤镜/美颜的开始锁定同语义）：AVAssetWriter 的像素缓冲
+    /// 尺寸中途变化会导致 append 失败，录制流方向以开始瞬间为准（Spec v1.2 非目标）。
+    func updateInterfaceOrientation(_ io: UIInterfaceOrientation) {
+        guard !isRecording else { return }
+        manager.setInterfaceOrientation(io)
+    }
+
+    /// 方向刷新入口（UIDevice.orientationDidChangeNotification 触发）。
+    /// ⚠️ 该通知可能**早于** scene 提交转场（加速度计先 settle，界面后转），立即读
+    /// `scene.interfaceOrientation` 可能拿到旧值 —— 故分 0 / 200 / 500ms 三次采样，
+    /// 终值以后到的为准；manager 侧同值去重，重复采样是无害空转。
+    func refreshInterfaceOrientation() {
+        for delayNs in [0, 200_000_000, 500_000_000] {
+            Task { @MainActor in
+                if delayNs > 0 {
+                    try? await Task.sleep(nanoseconds: UInt64(delayNs))
+                }
+                self.updateInterfaceOrientation(Self.currentInterfaceOrientation())
+            }
+        }
+    }
+
+    /// 当前前台 scene 的界面方向。读 scene 而非 UIDevice.orientation：后者有
+    /// faceUp/flat 脏值，且设备方向 ≠ 界面方向（如页面锁向时）。读不到保守取竖屏。
+    @MainActor
+    static func currentInterfaceOrientation() -> UIInterfaceOrientation {
+        UIApplication.shared.connectedScenes
+            .compactMap { $0 as? UIWindowScene }
+            .first { $0.activationState == .foregroundActive }?
+            .interfaceOrientation ?? .portrait
+    }
+
     func startRecording() {
         guard phase == .running, !isRecording, recorderBox.get() == nil else { return }
         let url = FileManager.default.temporaryDirectory
@@ -210,9 +246,11 @@ final class CameraViewModel: ObservableObject {
             } completionHandler: { ok, error in
                 Task { @MainActor in
                     if ok {
+                        Self.photoLogger.info("拍照已入相册")
                         self.errorMessage = nil
                         self.recordedURL = nil  // 已入库，收起面板
                     } else {
+                        Self.photoLogger.error("保存失败：\(error?.localizedDescription ?? "未知", privacy: .public)")
                         self.errorMessage = "保存失败：\(error?.localizedDescription ?? "未知")"
                     }
                 }
@@ -242,6 +280,7 @@ final class CameraViewModel: ObservableObject {
                     if let cgImage = ciContext.createCGImage(image, from: image.extent) {
                         processed = .success(cgImage)
                     } else {
+                        Self.photoLogger.error("拍照：createCGImage 返回 nil")
                         throw NSError(domain: "cq.camera", code: 2,
                                       userInfo: [NSLocalizedDescriptionKey: "照片处理失败"])
                     }
@@ -278,8 +317,10 @@ final class CameraViewModel: ObservableObject {
             } completionHandler: { ok, error in
                 Task { @MainActor in
                     if ok {
+                        Self.photoLogger.info("拍照已入相册")
                         self.errorMessage = nil
                     } else {
+                        Self.photoLogger.error("拍照保存失败：\(error?.localizedDescription ?? "未知", privacy: .public)")
                         self.errorMessage = "保存失败：\(error?.localizedDescription ?? "未知")"
                     }
                 }

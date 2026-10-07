@@ -113,8 +113,9 @@ private extension View {
     @ViewBuilder
     func positionIfNeeded(_ cue: SubtitleCue?, in size: CGSize) -> some View {
         if let cue = cue, let position = cue.position {
-            self.position(x: position.width * size.width,
-                          y: position.height * size.height)
+            // \pos 归一化为 (x, y) 点（CGPoint）—— 旧版误按 CGSize 取 width/height。
+            self.position(x: position.x * size.width,
+                          y: position.y * size.height)
         } else {
             self
         }

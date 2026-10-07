@@ -37,6 +37,21 @@ public:
 
     // 当前离屏目标（测试读回像素用；UI 侧不需要）。
     virtual IRenderTarget* Target() = 0;
+
+    // MEDIA-023 排障仪器：上一帧分段耗时（acquire/import/draw/total，纳秒）。
+    // 无仪器的实现返回 nullptr（泵据此跳过汇总）。
+    // CORE-010 变更：不再包在 NDEBUG 里 —— 下面两个阶段查询是看门狗的数据源，
+    // 砍掉它们等于把「卡在哪一段」这个问题的答案从 Release 包里删掉。
+    struct StageTimings {
+        int64_t acquire_ns = 0;
+        int64_t import_ns = 0;
+        int64_t draw_ns = 0;
+        int64_t total_ns = 0;
+    };
+    virtual const StageTimings* DebugLastTimings() const { return nullptr; }
+    // MEDIA-026 看门狗：当前渲染阶段名（空串 = 空闲）。无仪器的实现返回空。
+    virtual const char* DebugStage() const { return ""; }
+    virtual int64_t DebugStageSinceNanos() const { return 0; }
 };
 
 }  // namespace cq

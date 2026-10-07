@@ -467,3 +467,30 @@ RENDER-001/红线 #6 路线，勿把相机滤镜直接当 SDK 能力引用。
 
 **批次**：阶段 0（真机性能剖面，回填 baselines，UIA-021 前半天）→ 021 → 022 ∥ 023 → 024。
 **关键路径**：021 → 022。
+
+## 13. 素材库·草稿·混排·多轨（LIB 新前缀，2026-10-07 新增；[PLAN-素材库草稿混排多轨](PLAN-素材库草稿混排多轨.md)）
+
+> 传哲 2026-10-07 四需求：本地素材库 / 草稿管理 / 多类型混排+GIF·LivePhoto 产出 / 多轨叠加。
+> 号段已由集成机在本 PLAN §4 占号（EXPORT-004~007 被 AI-ENG-001 预留，新卡从 010 起；
+> UIA-028~031 在 UIA-015/016 撞号裁定落地前只预占不建卡）。RENDER-001/011/012、PROJ-001~004、
+> EXPORT-001/002、AUDIO-004 为既有号，见上文各节。
+
+| ID | 层 | 任务 | 依赖 | 写集要点 | 验收 |
+|---|---|---|---|---|---|
+| LIB-001 | 跨平台 | 素材库契约冻结（资产类型 video/still/animated/livephoto、存储布局、元数据 schema、与 Session AssetRegistry 关系） | 定稿 ADR-0024 | `core/include/cq/library/*.h` | 契约评审通过；零平台类型 |
+| LIB-002 | 跨平台 | 素材库存储与索引（入库/扫描/检索/失效标记） | LIB-001 | `core/src/library/*` | 往返一致；跨会话可重建索引 |
+| LIB-003 | 跨平台+PALA | 缩略图与元数据（probe 复用；缩略图生成/缓存） | LIB-002 | `core/src/library/thumbs*`、`pal/apple/media_thumb*` | 缩略图命中率；主线程不解码 |
+| LIB-004 | 跨平台+UI | 入库链路改造：拍摄/导出/相册/文件→落库，替换 importMedia tmp 链（UIA-009/011/012 欠账收口；C/A 拆两卡） | LIB-002 | core `library/ingest*` + SharedUI 导入链 | 全部产出有库内资产 ID；tmp 链退役 |
+| LIB-005 | 跨平台 | 素材管理：删除/重命名/去重/引用保护（被草稿引用→缺失标记） | LIB-002, PROJ-001 | `core/src/library/manage*` | 引用保护语义单测；无静默连删 |
+| PROJ-005 | 跨平台 | 草稿箱索引与生命周期（建/开/存/复制/删/封面） | PROJ-001 | `core/src/project/drafts*` | 崩溃后草稿可恢复（自动保存接线） |
+| MEDIA-028 | 跨平台+PALA | 静图/动图帧源：FrameProvider 扩展 still（单帧+声明时长）/ animated（帧序列，GIF 帧延迟→120000 网格） | MEDIA-020, 定稿 ADR-0025/0026 | `core/src/media/`、`pal/apple/media_gif*` | GIF 逐帧时间与解码器一致（golden） |
+| MEDIA-029 | 跨平台+PALA | LivePhoto 探测与解码（photo+video 配对识别；Apple-only，其他端降级普通素材） | MEDIA-028 | `pal/apple/media_livephoto*` + core 探测接缝 | 配对识别真机验证；缺失降级不崩溃 |
+| EXPORT-010 | 跨平台+PALA | GIF 导出（逐帧量化编码器；尺寸/帧率/循环参数） | EXPORT-002, RENDER-011, 定稿 ADR-0027 | `core/src/export/`、`pal/apple/media_enc*` | golden 对比；导出走同一 RenderGraph |
+| EXPORT-011 | 跨平台+PALA | LivePhoto 导出（视频+封面配对写入相册 / 文件对；入相册=显式授权） | EXPORT-002, 定稿 ADR-0027 | `pal/apple/media_livephoto*` | 相册成对写入真机验证；文件对可打开 |
+| UIA-028 | UI | 素材库页面（浏览/搜索/多选/管理；联动编辑与播放器复用 UIA-026 接缝） | LIB-002/005, UIA-026 | SharedUI（预占，裁定后建卡） | 管理操作走库 ABI；失效素材置灰 |
+| UIA-029 | UI | 草稿箱页面（列表/封面/时长/体积；开/编/删/复制） | PROJ-005 | SharedUI（预占，裁定后建卡） | 冷启动进草稿箱；崩溃恢复入口 |
+| UIA-030 | UI | 多轨时间线 UI（轨道增删/排序/静音锁定；Z 序=轨序） | UIA-022, RENDER-011 | SharedUI（预占，裁定后建卡） | 多轨真机走查 <16ms/帧 |
+| UIA-031 | UI | 导出面板 v1（格式含 GIF/LivePhoto；入相册/文件显式授权流；进度/取消） | EXPORT-001/010/011 | SharedUI（预占，裁定后建卡） | 取消可中断；授权文案过审口径 |
+
+**批次**：期 1 = RENDER-001 ∥ PROJ-001~003 ∥ EXPORT-001 ∥ LIB-001~003；期 2 = MEDIA-028/029 ∥ RENDER-011 ∥ EXPORT-010/011 ∥ LIB-004/005 + PROJ-004/005 ∥ AUDIO-004；期 3 = UIA-028~031。
+**关键路径**：RENDER-001 → RENDER-011 → EXPORT-010；PROJ-001 → PROJ-005 → UIA-029。

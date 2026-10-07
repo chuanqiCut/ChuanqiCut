@@ -40,7 +40,7 @@ def pods_post_install(installer)
         end
       end
     end
-    build_tree.call(File.join(repo_root, 'core/include'), root_group)
+    build_tree.call(File.join(repo_root, 'engine/core/include'), root_group)
   end
 
   Pod::UI.puts "[pods_post_install] docs 引用删除 #{removed} 条；引擎头文件条目 #{added} 条。"

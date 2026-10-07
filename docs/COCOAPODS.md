@@ -122,30 +122,27 @@ open ChuanqiCut.xcworkspace  # ⚠️ 开 workspace，不是 xcodeproj
 
 ---
 
-## 附：Pods 导航器（docs 混入 / 头文件不可见）—— 2026-10-07 定案
+## 附：Pods 导航器（docs 混入 / 头文件不可见）—— 2026-10-07 定案（目录重构后修订）
 
 **现象**：Pods 工程 ChuanqiCutEngine 组下，docs/** 全树被挂进来（182 条）而 core 头文件一条没有。
 
 **机制（源码实证，CocoaPods 1.17.0）**：
-1. docs 混入 = 本地 pod 的「开发辅助」特性（`file_references_installer` → `add_developer_files`
-   → `file_accessor.developer_files` = license/readme/podspec/**docs glob** `doc{s}{*,.*}/**/*`，
-   相对 **pod 根**）。设计假设 pod 根 = 独立库目录；Engine 的 pod 根 = 仓库根 → 整棵仓库
-   docs 被吞。`s.exclude_files` 只作用于源码/资源 glob，**对该特性无效，无开关**。
-2. 头文件不可见 = 1.17 对 `private_header_files` **只写编译阶段、不生成导航条目**
-   （实证：Headers phase 有全部头，PBXGroup 树里 0 条）。公开声明则 C++ 头被卷进
-   CocoaPods 生成的 umbrella Clang module → ObjC 模块上下文编 `<cstddef>` → 级联崩
-   （与 2026-10-02 headermap 案底同族的第二形态）。
+1. docs 混入 = 本地 pod 的「开发辅助」特性（`add_developer_files` → docs glob `doc{s}{*,.*}/**/*`，
+   相对 **pod 根**）。设计假设 pod 根 = 独立库目录。
+2. 头文件不可见 = 1.17 对 `private_header_files` 只写编译阶段、不生成导航条目；公开声明则
+   C++ 头被卷进自动生成的 umbrella Clang module → ObjC 上下文编 `<cstddef>` → 级联崩。
 
-**解决（唯一可行解 = post_install 钩子，`apps/apple/pods_post_install.rb`，双 Podfile 共享）**：
-- 删 docs/** 引用（182 条）；
-- 在 Engine 组下补 `core/include` 头文件树（42 条，镜像目录结构，只读浏览不参与编译——
-  编译走 HEADER_SEARCH_PATHS）。
-**前置**：7 个与系统头重名的头已改名（time.h→rational_time.h、base/log.h→logging.h、
-pal/log.h→pal_log.h、clock.h→pal_clock.h、common.h→pal_common.h、media/cache.h→
-media_cache.h、session/snapshot.h→session_snapshot.h），headermap 按基名映射（无视
-目录），重名会顶掉系统 `<time.h>` → "'cstdint' file not found" 级联崩（2026-10-02 案底）。
-**禁止再新增与系统头同名的头文件。**
+**解决（两层）**：
+1. **目录重构（INFRA-022，根治）**：core/pal/bindings 收拢 `engine/`，pod 根 = `engine/`——
+   docs/apps/tools 天然在 pod 根之外，docs 探测从此扫不到东西。
+2. **post_install 钩子**（`apps/apple/pods_post_install.rb`，双 Podfile 共享）：1.17 对
+   private 头不生成导航条目，钩子补 `core/include` 头文件树（42 条，只读浏览不参与编译）；
+   docs 删除段保留作兜底（重构后应为 0 条）。
 
-**曾试并否决的方案**：podspec 挪子目录脱离 docs/（CocoaPods 对 pod 根外源文件**静默
-丢弃**，空目标假成功）；符号链接（Ruby glob 不穿目录符号链接，0 匹配）；exclude_files
-（不作用于 developer_files）。
+**前置与禁令**：与系统头重名的 7 个头已改名（rational_time/logging/pal_log/pal_clock/
+pal_common/media_cache/session_snapshot；137 文件 include 同步）——headermap 按基名映射
+无视目录，重名会顶掉系统 `<time.h>` 级联崩（2026-10-02 案底）。**禁止新增与系统头同名
+的头文件。**
+
+**曾试并否决**：podspec 挪子目录（pod 根外源文件静默丢弃）；符号链接（Ruby glob 不穿）；
+`exclude_files`（不作用于 developer_files）。

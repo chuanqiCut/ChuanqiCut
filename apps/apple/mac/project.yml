@@ -41,7 +41,7 @@ targets:
     sources:
       # 内核头文件浏览引用（2026-10-07）：文件夹引用，不参与编译（buildPhase: none）
       - path: MacApp
-      - path: ../../../core/include
+      - path: ../../../engine/core/include
         type: folder
         buildPhase: none
     info:

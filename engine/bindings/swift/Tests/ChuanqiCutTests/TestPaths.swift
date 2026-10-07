@@ -6,13 +6,15 @@
 import Foundation
 
 enum TestPaths {
-    /// 仓库根（本文件位置：bindings/swift/Tests/ChuanqiCutTests/）。
+    /// 仓库根（本文件位置：engine/bindings/swift/Tests/ChuanqiCutTests/）。
+    /// 2026-10-07 引擎源收拢 engine/（INFRA-022）：上溯 5→6 层。
     static let root: String = URL(fileURLWithPath: #filePath)
         .deletingLastPathComponent()   // 1 → Tests/ChuanqiCutTests
         .deletingLastPathComponent()   // 2 → Tests
         .deletingLastPathComponent()   // 3 → bindings/swift
         .deletingLastPathComponent()   // 4 → bindings
-        .deletingLastPathComponent()   // 5 → 仓库根
+        .deletingLastPathComponent()   // 5 → engine
+        .deletingLastPathComponent()   // 6 → 仓库根
         .path
 
     static var goldenVideo: String { root + "/tests/golden/frames/gf_1080p_h264.mp4" }

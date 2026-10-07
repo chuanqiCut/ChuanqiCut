@@ -14,7 +14,7 @@ let package = Package(
     platforms: [ .iOS(.v16), .macOS(.v15) ],
     products: [ .library(name: "ChuanqiCutEditor", targets: ["ChuanqiCutEditor"]) ],
     dependencies: [
-        .package(path: "../../../../bindings/swift"),
+        .package(path: "../../../../engine/bindings/swift"),
         .package(path: "../SharedUI"),
     ],
     targets: [

@@ -130,7 +130,7 @@ Pod::Spec.new do |s|
   #    不受它影响，须在自家 podspec 声明同一路径（2026-10-02 实测）。
   #    路径锚定 SRCROOT（=apps/apple/ios|mac），向上三级到仓库根。
   s.user_target_xcconfig = {
-    'SWIFT_INCLUDE_PATHS' => '$(inherited) "$(SRCROOT)/../../../bindings/swift/Sources/CChuanqiCut/include"'
+    'SWIFT_INCLUDE_PATHS' => '$(inherited) "$(SRCROOT)/../../../engine/bindings/swift/Sources/CChuanqiCut/include"'
   }
 
   # 内核是 C++20，消费方必须链 C++ 运行时。

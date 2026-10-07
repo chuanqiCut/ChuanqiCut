@@ -108,8 +108,13 @@ usage，而 CI 的 CIRenderDestination 要求 ShaderWrite → destination nil �
 | INFRA-018 | ChuanqiCutCamera Pod 迁移（ADR-0031 阶段 4 提前，传哲指定） | ✅ 2026-10-07：契约 4 文件+实现 6 文件+Detection/Effects+4 测试文件入独立 iOS 专属 Pod；EditorScreen 经 EditorEntryInjector 解耦；metallib 管线留壳工程（SRC 指向 Pod 源）；坑案底 P85 |
 | CAM-001~005 | 契约（回退留档）/采集/预览/首页/录制 | ✅ |
 | CAM-015/016 | 预览 CI→drawable 渲染修复 + 方向（渲染线先入库） | ✅ |
-| CAM-018/019 | 美颜色彩空间 + 人脸区域化（曾号 015/016） | ✅ 代码落地；真机 = 池 [2] |
-| CAM-013/014/017/021 | 美型/贴纸/双摄 | 未开工 |
+| CAM-018/019 | 美颜色彩空间 + 人脸区域化（曾号 015/016） | ✅ 代码落地；真机 = 池 [2]；**修复轮 2026-10-07**：预览 FaceBoxStore 断线（P86 候选） |
+| CAM-013/014 | 美型 MeshWarp / 贴纸锚定 | ✅ 代码落地（2026-10-07 功能批：契约纯函数 + face_warp.metal + 引擎 + 三路接线 + 美型滑杆/贴纸条 UI）；单测统一轮；真机待验 |
+| 用户反馈批 | 录制报错修复（音频会话起点守卫）/录制计时/采集档位与帧率/高清拍照/曝光对焦 | ✅ 代码落地 2026-10-07，待构建机 |
+| CAM-021 | 双摄（MultiCamSession） | ✅ 代码落地 2026-10-07：双输入双输出 + 前/后独立检测桥（PiP 过完整链 WYSIWYG）+ PiP 右上白描边可互换 + 录制合成流（Renderer composer）+ 不支持机型置灰明示；真机 A8 验收待传哲 |
+| CAM-022~025 | C 期四卡（MetalFX/景深/宠物美化/美体），2026-10-07 立项（美体自原 022~024 拆出） | 024/025 本轮全链落地；022 MetalFX 本轮落地（SDK 命名待构建机对表）；023 待接续 |
+| CAM-026~029 | 算法定则批：美妆/人像分割底座/AR 网格跟踪/磨皮算法升级，2026-10-07 立项 | 卡就绪；029 唇齿保护依赖 027 语义蒙版 |
+| **算法定则（传哲 2026-10-07）** | 美颜/美型/美体/美妆/道具/人脸跟踪/AR 一切人像能力必须算法驱动，无算法即无效果，**不得退化为滤镜式全画面修改** | 已落实：CameraBeauty.apply nil 语义 全画面兜底→**直通**（旧契约用例同步改） |
 
 ### 测试与门禁记录（阶段批）
 
@@ -117,6 +122,7 @@ usage，而 CI 的 CIRenderDestination 要求 ShaderWrite → destination nil �
 |---|---|---|
 | 2026-10-07 | 壳工程双壳构建（首次 App target 真编 CAM-018 代码） | 抓出 P0：`kCVPixelBufferColorSpaceKey` 不存在于 SDK（P83）→ 已修 `kCVImageBufferCGColorSpaceKey`；iOS/mac BUILD SUCCEEDED。池 [2] 真机项不变 |
 | 2026-10-07 | 相机 Pod 迁移阶段批 | Camera 契约 swift test **36/36**；metallib **8431B** + kernelNames（cq_beauty_down_h/up_v_mix）齐全；iOS 模拟器 + macOS BUILD SUCCEEDED；全量门禁见当日日志。真机验收（磨皮/区域化/录制色）仍 = 池 [2] |
+| 2026-10-07 | 修复轮+功能批（本机，未提交） | 本机仅新契约文件 typecheck PASS（CameraReshape/StickerAnchor，工具链 5.5 限制无法编 Impl/iOS）；真机「还是滤镜效果」根因 = 预览 FaceBoxStore 断线（两线同病非合并回归）；录制报错根因 = 音频 append 无会话起点守卫。**iOS 构建/单测/真机全部待构建机与传哲** |
 
 ### 调研 · 决策 · 池指针
 

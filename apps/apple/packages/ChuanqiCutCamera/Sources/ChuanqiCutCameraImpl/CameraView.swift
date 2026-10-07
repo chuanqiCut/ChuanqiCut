@@ -12,6 +12,9 @@ public struct CameraView: View {
     @StateObject private var model: CameraViewModel
     @State private var showEditor = false
     @State private var showBeautyPanel = false
+    @State private var showSettings = false
+    /// 捏合变焦基值（onEnded 归一，连续捏合可叠加）。
+    @State private var pinchBaseZoom: CGFloat = 1.0
 
     public init() {
         // 先建值后包装（pitfalls P8 同款）：构造不再抛错，Metal 不可用由
@@ -84,11 +87,23 @@ public struct CameraView: View {
             if let renderer = model.renderer {
                 CameraVideoView(renderer: renderer)
                     .ignoresSafeArea()
+                    // 捏合变焦（2026-10-07 用户反馈轮）：请求值粗限 1...16，
+                    // 设备实际范围由 manager 按 activeFormat 夹取。
+                    .gesture(
+                        MagnificationGesture()
+                            .onChanged { value in
+                                model.zoomFactor = min(max(pinchBaseZoom * value, 1), 16)
+                            }
+                            .onEnded { _ in
+                                pinchBaseZoom = model.zoomFactor
+                            }
+                    )
             }
             VStack {
                 topBar
                 Spacer()
                 modePicker
+                stickerStrip
                 filterStrip
                 shutterBar
             }
@@ -100,6 +115,10 @@ public struct CameraView: View {
             beautyPanel
                 .presentationDetents([.medium])
         }
+        .sheet(isPresented: $showSettings) {
+            settingsPanel
+                .presentationDetents([.medium])
+        }
     }
 
     private var topBar: some View {
@@ -107,28 +126,94 @@ public struct CameraView: View {
             Button {
                 showBeautyPanel = true
             } label: {
-                Image(systemName: model.beauty.isOff ? "face.dashed" : "face.smiling")
+                let allOff = model.beauty.isOff && model.reshape.isOff && model.bodyReshape.isOff
+                Image(systemName: allOff ? "face.dashed" : "face.smiling")
                     .font(.title2)
-                    .foregroundStyle(model.beauty.isOff ? .white : .yellow)
+                    .foregroundStyle(allOff ? .white : .yellow)
                     .padding(12)
                     .background(.ultraThinMaterial, in: Circle())
             }
             .disabled(model.isRecording)
-            Spacer()
             Button {
-                guard !model.isRecording else { return }  // 录制中锁切换
-                model.switchPosition()
+                showSettings = true
             } label: {
-                Image(systemName: "arrow.triangle.2.circlepath.camera")
+                Image(systemName: "slider.horizontal.3")
                     .font(.title2)
                     .foregroundStyle(.white)
                     .padding(12)
                     .background(.ultraThinMaterial, in: Circle())
             }
-            .disabled(model.isRecording || model.isCapturing)
-            .padding(.trailing, 20)
+            .disabled(model.isRecording)
+            .padding(.leading, 8)
+            dualCamToggle
+            Spacer()
+            recordingTimer
+            Spacer()
+            if model.dualCamEnabled {
+                // 双摄：互换主画面/PiP（SPEC A8：PiP 可与主画面互换；录制中锁定）
+                Button {
+                    model.swapPiP()
+                } label: {
+                    Image(systemName: "arrow.left.arrow.right")
+                        .font(.title2)
+                        .foregroundStyle(.white)
+                        .padding(12)
+                        .background(.ultraThinMaterial, in: Circle())
+                }
+                .disabled(model.isRecording)
+                .padding(.trailing, 20)
+            } else {
+                Button {
+                    guard !model.isRecording else { return }  // 录制中锁切换
+                    model.switchPosition()
+                } label: {
+                    Image(systemName: "arrow.triangle.2.circlepath.camera")
+                        .font(.title2)
+                        .foregroundStyle(.white)
+                        .padding(12)
+                        .background(.ultraThinMaterial, in: Circle())
+                }
+                .disabled(model.isRecording || model.isCapturing)
+                .padding(.trailing, 20)
+            }
         }
         .padding(.top, 8)
+    }
+
+    /// 双摄开关（CAM-021；SPEC A8：不支持机型置灰，设置面板明示文案）。
+    /// 与翻转按钮**相互独立**——双摄开关不复用翻转按钮（SPEC v1.2 拍板）。
+    private var dualCamToggle: some View {
+        Button {
+            model.setDualCamEnabled(!model.dualCamEnabled)
+        } label: {
+            Image(systemName: model.dualCamEnabled ? "camera.on.rectangle.fill" : "camera.on.rectangle")
+                .font(.title2)
+                .foregroundStyle(model.isDualCamSupported ? .white : .white.opacity(0.35))
+                .padding(12)
+                .background(.ultraThinMaterial, in: Circle())
+        }
+        .disabled(model.isRecording || !model.isDualCamSupported)
+    }
+
+    /// 录制计时（红点 + mm:ss，TimelineView 每 0.5s 走针；起点由 ViewModel 记录）。
+    @ViewBuilder
+    private var recordingTimer: some View {
+        if model.isRecording, let startedAt = model.recordingStartedAt {
+            TimelineView(.periodic(from: .now, by: 0.5)) { context in
+                let elapsed = max(0, Int(context.date.timeIntervalSince(startedAt)))
+                HStack(spacing: 6) {
+                    Circle()
+                        .fill(Color.red)
+                        .frame(width: 10, height: 10)
+                    Text(String(format: "%02d:%02d", elapsed / 60, elapsed % 60))
+                        .font(.callout.monospacedDigit().weight(.semibold))
+                        .foregroundStyle(.white)
+                }
+                .padding(.horizontal, 14)
+                .padding(.vertical, 8)
+                .background(.ultraThinMaterial, in: Capsule())
+            }
+        }
     }
 
     /// 拍照 / 视频模式切换（录制与拍照过程中锁定）。
@@ -141,6 +226,49 @@ public struct CameraView: View {
         .frame(width: 140)
         .disabled(model.isRecording || model.isCapturing)
         .tint(.white)
+    }
+
+    /// 贴纸选择条（CAM-014，与滤镜条同款式）。目录为空（无清单/无资产）时
+    /// 整体隐藏——不出现假入口。录制中锁定（WYSIWYG 锁定语义）。
+    @ViewBuilder
+    private var stickerStrip: some View {
+        if !model.stickerCatalog.isEmpty {
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 10) {
+                    Button {
+                        model.selectedStickerID = nil
+                    } label: {
+                        Text("无贴纸")
+                            .font(.footnote.weight(model.selectedStickerID == nil ? .semibold : .regular))
+                            .foregroundStyle(model.selectedStickerID == nil ? .black : .white)
+                            .padding(.horizontal, 14)
+                            .padding(.vertical, 8)
+                            .background(
+                                model.selectedStickerID == nil ? Color.white : Color.white.opacity(0.25),
+                                in: Capsule()
+                            )
+                    }
+                    ForEach(model.stickerCatalog) { asset in
+                        Button {
+                            model.selectedStickerID = asset.id
+                        } label: {
+                            Text(asset.displayName)
+                                .font(.footnote.weight(model.selectedStickerID == asset.id ? .semibold : .regular))
+                                .foregroundStyle(model.selectedStickerID == asset.id ? .black : .white)
+                                .padding(.horizontal, 14)
+                                .padding(.vertical, 8)
+                                .background(
+                                    model.selectedStickerID == asset.id ? Color.white : Color.white.opacity(0.25),
+                                    in: Capsule()
+                                )
+                        }
+                    }
+                }
+                .padding(.horizontal, 16)
+            }
+            .padding(.bottom, 4)
+            .disabled(model.isRecording)
+        }
     }
 
     private var filterStrip: some View {
@@ -214,7 +342,7 @@ public struct CameraView: View {
         .padding(.bottom, 28)
     }
 
-    // MARK: 美颜面板（磨皮/美白即时生效；美型归 B 期 CAM-012/013，如实标注）
+    // MARK: 美颜面板（磨皮/美白/美型即时生效；美型 = CAM-013 三滑杆）
 
     private var beautyPanel: some View {
         VStack(alignment: .leading, spacing: 18) {
@@ -240,15 +368,60 @@ public struct CameraView: View {
                     .frame(width: 32)
             }
             HStack {
-                Text("美型").frame(width: 44, alignment: .leading)
-                    .foregroundStyle(.tertiary)
-                Text("瘦脸 / 大眼 · B 期上线（依赖人脸关键点网格形变）")
-                    .font(.footnote)
-                    .foregroundStyle(.tertiary)
+                Text("瘦脸").frame(width: 44, alignment: .leading)
+                Slider(value: Binding(
+                    get: { model.reshape.slimFace },
+                    set: { model.reshape.slimFace = $0 }
+                ), in: 0...1)
+                Text("\(Int(model.reshape.slimFace * 100))")
+                    .font(.caption.monospacedDigit())
+                    .frame(width: 32)
+            }
+            HStack {
+                Text("大眼").frame(width: 44, alignment: .leading)
+                Slider(value: Binding(
+                    get: { model.reshape.enlargeEye },
+                    set: { model.reshape.enlargeEye = $0 }
+                ), in: 0...1)
+                Text("\(Int(model.reshape.enlargeEye * 100))")
+                    .font(.caption.monospacedDigit())
+                    .frame(width: 32)
+            }
+            HStack {
+                Text("下巴").frame(width: 44, alignment: .leading)
+                Slider(value: Binding(
+                    get: { model.reshape.chinShrink },
+                    set: { model.reshape.chinShrink = $0 }
+                ), in: 0...1)
+                Text("\(Int(model.reshape.chinShrink * 100))")
+                    .font(.caption.monospacedDigit())
+                    .frame(width: 32)
+            }
+            HStack {
+                Text("瘦腰").frame(width: 44, alignment: .leading)
+                Slider(value: Binding(
+                    get: { model.bodyReshape.slimWaist },
+                    set: { model.bodyReshape.slimWaist = $0 }
+                ), in: 0...1)
+                Text("\(Int(model.bodyReshape.slimWaist * 100))")
+                    .font(.caption.monospacedDigit())
+                    .frame(width: 32)
+            }
+            HStack {
+                Text("长腿").frame(width: 44, alignment: .leading)
+                Slider(value: Binding(
+                    get: { model.bodyReshape.lengthenLegs },
+                    set: { model.bodyReshape.lengthenLegs = $0 }
+                ), in: 0...1)
+                Text("\(Int(model.bodyReshape.lengthenLegs * 100))")
+                    .font(.caption.monospacedDigit())
+                    .frame(width: 32)
             }
             HStack {
                 Button("重置") {
                     model.beauty = .off
+                    model.reshape = .off
+                    model.bodyReshape = .off
                 }
                 .buttonStyle(.bordered)
                 Spacer()
@@ -260,6 +433,86 @@ public struct CameraView: View {
         }
         .padding(24)
         .presentationDragIndicator(.visible)
+    }
+
+    // MARK: 拍摄设置面板（2026-10-07 用户反馈轮：档位/帧率/高清拍照/曝光/对焦）
+    //
+    // 录制中整个入口禁用：分辨率/帧率变更会重配会话，破坏 writer 的缓冲尺寸契约；
+    // 曝光/对焦虽可安全实时调，统一锁定保持「录制中锁设置」的简单语义。
+
+    private var settingsPanel: some View {
+        VStack(alignment: .leading, spacing: 18) {
+            Text("拍摄设置").font(.headline)
+            HStack {
+                Text("分辨率").frame(width: 64, alignment: .leading)
+                Picker("分辨率", selection: Binding(
+                    get: { model.captureQuality },
+                    set: { model.setCaptureQuality($0) }
+                )) {
+                    ForEach(CameraManager.CaptureQuality.allCases, id: \.self) { quality in
+                        Text(qualityLabel(quality)).tag(quality)
+                    }
+                }
+                .pickerStyle(.segmented)
+            }
+            HStack {
+                Text("帧率").frame(width: 64, alignment: .leading)
+                Picker("帧率", selection: Binding(
+                    get: { model.frameRate },
+                    set: { model.setFrameRate($0) }
+                )) {
+                    Text("30").tag(30)
+                    Text("60").tag(60)
+                }
+                .pickerStyle(.segmented)
+            }
+            Toggle("高清拍照（全分辨率）", isOn: $model.highResPhoto)
+            Toggle("MetalFX 预览增强（实验）", isOn: $model.fxUpscaleEnabled)
+            if !model.isDualCamSupported {
+                // SPEC-CAM-001 A8：不支持机型明示（顶栏开关已置灰）
+                Text("本机不支持双摄（需 A12 及以上机型）")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            }
+            HStack {
+                Text("曝光").frame(width: 64, alignment: .leading)
+                Slider(value: $model.exposureBias, in: -2...2)
+                Text(String(format: "%+.1f", model.exposureBias))
+                    .font(.caption.monospacedDigit())
+                    .frame(width: 44)
+            }
+            HStack {
+                Text("对焦").frame(width: 64, alignment: .leading)
+                Slider(value: Binding(
+                    get: { model.focusLensPosition ?? 0.5 },
+                    set: { model.focusLensPosition = $0 }
+                ), in: 0...1)
+                Text(model.focusLensPosition.map { String(format: "%.2f", $0) } ?? "自动")
+                    .font(.caption.monospacedDigit())
+                    .frame(width: 44)
+            }
+            HStack {
+                Button("重置对焦/曝光") {
+                    model.resetFocusAndExposure()
+                }
+                .buttonStyle(.bordered)
+                Spacer()
+                Button("完成") {
+                    showSettings = false
+                }
+                .buttonStyle(.borderedProminent)
+            }
+        }
+        .padding(24)
+        .presentationDragIndicator(.visible)
+    }
+
+    private func qualityLabel(_ quality: CameraManager.CaptureQuality) -> String {
+        switch quality {
+        case .hd720: return "720p"
+        case .hd1080: return "1080p"
+        case .uhd4K: return "4K"
+        }
     }
 
     // MARK: 录制产物面板

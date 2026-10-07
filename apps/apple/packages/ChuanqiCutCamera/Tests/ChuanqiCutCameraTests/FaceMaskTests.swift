@@ -120,11 +120,13 @@ final class FaceMaskTests: XCTestCase {
         XCTAssertTrue(output === source, "检测过但无脸 → 直通（对齐美型无脸直通口径）")
     }
 
-    func testFacesNilKeepsLegacyFullFrameBehavior() {
+    func testFacesNilIsPassthrough() {
         let source = makeSourceImage()
         let params = CameraBeautyParams(smoothing: 0, brightening: 0.8)
         let output = params.apply(to: source, faces: nil)
-        XCTAssertFalse(output === source, "faces = nil（未接检测）→ 全画面美白（旧行为）")
+        XCTAssertTrue(output === source,
+                      "nil（无检测数据）→ 直通：美颜必须算法驱动，无算法即无效果，"
+                      + "不做滤镜式全画面修改（传哲 2026-10-07 定则，废除旧行为）")
         XCTAssertEqual(output.extent, source.extent)
     }
 

@@ -29,7 +29,10 @@ final class VisionDetector: @unchecked Sendable {
     // MARK: 配置（主线程写 / 检测队列读，锁保护）
 
     private let configLock = NSLock()
-    private var _detectionHz: Double = 15.0   // [E] 默认 15Hz，真机实测定频
+    /// 检测降频上限（Hz）。2026-10-07 提频 15→30（传哲：贴纸/美型「慢半拍」）——
+    /// 检测与采集/渲染队列完全解耦（offer 非阻塞 + 忙丢弃），提频**不影响预览帧率**，
+    /// 代价是检测开销 ×2（30Hz ≈ 6-15% ANE/CPU 份额 [E]），功耗真机对账后定频。
+    private var _detectionHz: Double = 30.0
     /// 检测降频上限（Hz）。下限 1（防 0 除），上限 60（无意义高于帧率）。
     var detectionHz: Double {
         get { configLock.lock(); defer { configLock.unlock() }; return _detectionHz }

@@ -56,9 +56,124 @@ final class CameraViewModel: ObservableObject {
     @Published var filter: CameraFilterPreset = .none {
         didSet { renderer?.setFilter(filter) }  // 录制中由视图层禁用滤镜条（锁定语义）
     }
+    /// 美型参数（CAM-013：瘦脸/大眼/下巴）。语义与美颜一致：预览即时生效；
+    /// 拍照按拍摄瞬间值处理；录制在开始时锁定。
+    @Published var reshape = CameraReshapeParams() {
+        didSet { renderer?.setReshape(reshape) }
+    }
+    /// 贴纸目录（CAM-014）：bundle 清单加载；空目录 = 贴纸入口整体隐藏（无假功能）。
+    @Published private(set) var stickerCatalog: [StickerAsset] = []
+    /// 当前选中贴纸；nil = 无。实时预览即时生效；录制在开始时锁定。
+    @Published var selectedStickerID: String? {
+        didSet { renderer?.setSticker(stickerCatalog.first { $0.id == selectedStickerID }) }
+    }
     /// 最近一次录制产物（非 nil 时相机页展示「存相册/去编辑/放弃」面板）。
     @Published private(set) var recordedURL: URL?
+    /// 录制开始时刻（录制计时 UI 用；nil = 未在录制）。
+    @Published private(set) var recordingStartedAt: Date?
     @Published private(set) var errorMessage: String?
+
+    // MARK: 采集设置（2026-10-07 用户反馈轮）
+
+    /// 采集分辨率档位（预览/录制共用 sessionPreset）。录制中锁定——会话重配
+    /// 会改变缓冲尺寸，破坏 writer 的尺寸契约。失败时 errorMessage 明示。
+    @Published private(set) var captureQuality: CameraManager.CaptureQuality = .hd1080
+
+    func setCaptureQuality(_ quality: CameraManager.CaptureQuality) {
+        guard !isRecording, quality != captureQuality else { return }
+        manager.setCaptureQuality(quality) { [weak self] applied in
+            if applied {
+                self?.captureQuality = quality
+            } else {
+                self?.errorMessage = "当前设备不支持该分辨率档位"
+            }
+        }
+    }
+
+    /// 帧率（30/60）。录制中锁定；设备 activeFormat 不支持时 errorMessage 明示。
+    @Published private(set) var frameRate: Int = 30
+
+    func setFrameRate(_ fps: Int) {
+        guard !isRecording, fps != frameRate else { return }
+        manager.setFrameRate(fps) { [weak self] applied in
+            if applied {
+                self?.frameRate = fps
+            } else {
+                self?.errorMessage = "当前设备不支持 \(fps) fps"
+            }
+        }
+    }
+
+    /// 高清拍照（iOS 16 maxPhotoDimensions 全分辨率 + .quality 优先级）。
+    @Published var highResPhoto = false
+
+    /// 曝光补偿（EV，manager 夹取到设备区间；滑杆实时生效）。
+    @Published var exposureBias: Float = 0 {
+        didSet { manager.setExposureBias(exposureBias) }
+    }
+    /// 手动对焦 0（最近）...1（最远）；nil = 连续自动。
+    @Published var focusLensPosition: Float? {
+        didSet {
+            if let position = focusLensPosition {
+                manager.setFocusLensPosition(position)
+            }
+        }
+    }
+    /// 变焦（捏合手势驱动；1 = 广角）。UI 请求值粗限 1...16，manager 内按
+    /// 设备 activeFormat.videoMaxZoomFactor 精确夹取（机型差异不进 UI 层）。
+    @Published var zoomFactor: CGFloat = 1.0 {
+        didSet { manager.setZoomFactor(zoomFactor) }
+    }
+    /// MetalFX 预览升采样（CAM-022，实验项）。默认关 = 与原链路逐位等价；
+    /// 设备不支持时 manager/renderer 侧自动跳过（诚实降级）。
+    @Published var fxUpscaleEnabled = false {
+        didSet { renderer?.setFXUpscaleEnabled(fxUpscaleEnabled) }
+    }
+
+    // MARK: 双摄（CAM-021）
+
+    /// 设备级双摄支持（A12+；UI 依此置灰开关）。
+    let isDualCamSupported = CameraManager.isMultiCamSupported
+    /// 双摄开关状态（会话重配成功后置位；失败保持原状并 errorMessage 明示）。
+    @Published private(set) var dualCamEnabled = false
+    /// PiP 画面选择（true = PiP 显示前摄、主画面为后摄；swap 互换）。
+    @Published private(set) var pipShowsFront = true
+
+    func setDualCamEnabled(_ enabled: Bool) {
+        guard !isRecording, enabled != dualCamEnabled else { return }
+        guard isDualCamSupported || !enabled else { return }
+        manager.setDualCamEnabled(enabled) { [weak self] applied in
+            guard let self else { return }
+            if applied {
+                self.dualCamEnabled = enabled
+                self.renderer?.setDualMode(enabled)
+                if !enabled {
+                    self.pipShowsFront = true
+                    self.renderer?.setPiPShowsFront(true)
+                }
+            } else {
+                self.errorMessage = enabled ? "双摄开启失败" : "双摄关闭失败"
+            }
+        }
+    }
+
+    /// 主画面与 PiP 互换（录制中锁定——WYSIWYG 合成锁语义）。
+    func swapPiP() {
+        guard dualCamEnabled, !isRecording else { return }
+        pipShowsFront.toggle()
+        renderer?.setPiPShowsFront(pipShowsFront)
+    }
+    /// 美体参数（CAM-025：瘦腰/长腿）。语义与美颜一致：预览即时生效；录制锁定。
+    @Published var bodyReshape = BodyReshapeParams() {
+        didSet { renderer?.setBodyReshape(bodyReshape) }
+    }
+
+    /// 对焦/曝光复位到连续自动（UI「自动」按钮）。
+    func resetFocusAndExposure() {
+        focusLensPosition = nil
+        exposureBias = 0
+        manager.resetFocusAndExposure()
+    }
 
     // MARK: 引擎组件（渲染三件套共享同一 MTLDevice；Metal 不可用时为 nil，视图层兜底）
 
@@ -66,9 +181,15 @@ final class CameraViewModel: ObservableObject {
     private let ciContext: CIContext?
     private let manager = CameraManager()
     /// CAM-011 检测桥（CAM-019 接入美颜区域化）：offer 在采集队列非阻塞，
-    /// 检测降频 15Hz [E] + 忙丢弃；onResult 在检测队列 → FaceBoxStore（锁）。
+    /// 检测降频 30Hz [E] + 忙丢弃；onResult 在检测队列写入 renderer.faceBoxes（锁）。
+    /// ⚠️ 人脸框**单一真源 = renderer.faceBoxes**：预览 draw / 拍照 / 录制三路消费
+    /// 读同一个 store。此前 ViewModel 自建了第二个 store，检测结果只写进它，
+    /// 预览侧永远读不到 → 美颜整帧兜底（2026-10-07 真机「还是滤镜效果」反馈根因，
+    /// CAM-019 修复轮；契约单测照不住装配层，见 pitfalls P86 候选）。
     private let detector = VisionDetector()
-    private let faceBoxes = FaceBoxStore()
+    /// 前摄检测桥（CAM-021 双摄 PiP 美颜）：与主检测桥同构，互不共享平滑状态
+    ///（两路主体不同，交替喂同一检测器会破坏 One-Euro 帧间平滑）。
+    private let frontDetector = VisionDetector()
     /// 录制器引用盒：帧回调在采集队列，**不得**触碰 MainActor 属性 —— 录制器
     /// 的启停经此线程安全中转（append 自身有锁，见 CameraRecorder）。
     private let recorderBox = RecorderBox()
@@ -98,13 +219,32 @@ final class CameraViewModel: ObservableObject {
         //    赋值前访问 self.filter 会触发 phase-1 报错
         //    （'self' used in property access 'filter' before all stored properties are initialized）。
         renderer?.setFilter(filter)
-        // CAM-019：检测结果 → 平滑后的人脸框。onResult 在检测队列串行回调，
-        // FaceBoxStore 内加锁；weak detector 断开 detector → onResult → detector 环。
-        detector.onResult = { [faceBoxes, weak detector] snapshot in
-            faceBoxes.update(with: snapshot.face?.box)
-            if ProcessInfo.processInfo.environment["CQ_DEBUG_PROFILE"] == "1", let detector {
-                let ms = detector.lastDetectionDurationMs.map { String(format: "%.1f", $0) } ?? "nil"
-                print("cq.debug: face detect lastMs=\(ms) total=\(detector.totalDetections) failed=\(detector.totalFailed) dropped=\(detector.totalDroppedByRate)")
+        // 贴纸目录（CAM-014）：资产清单缺失/为空时 UI 隐藏入口。
+        stickerCatalog = StickerCatalog.load()
+        // CAM-019：检测结果 → 平滑后的人脸框（写入 renderer.faceBoxes 单一真源）。
+        // onResult 在检测队列串行回调，FaceBoxStore 内加锁；weak detector 断开
+        // detector → onResult → detector 环。renderer 为 nil（无 Metal）时不接检测：
+        // wireCallbacks 不会 offer 帧，三路消费方也全部有 renderer 守卫。
+        // CAM-013/014：同帧快照提取美型/贴纸锚点（关键点已在检测器侧平滑）。
+        // CAM-024：检出宠物（有姿态）时提取双眼锚点——有脸优先人脸，无脸贴纸锚宠物。
+        // CAM-025：人体四关节齐全时提取美体锚点。
+        if let faceBoxes = renderer?.faceBoxes {
+            detector.onResult = { [faceBoxes, weak detector] snapshot in
+                faceBoxes.update(with: snapshot.face?.box)
+                faceBoxes.updateAnchors(snapshot.face.flatMap(CameraReshapeAnchors.init(face:)))
+                faceBoxes.updateAnimalEyes(snapshot.animals.first.flatMap(StickerEyeAnchor.init(animal:)))
+                faceBoxes.updateBodyAnchors(snapshot.body.flatMap(BodyReshapeAnchors.init(body:)))
+                if ProcessInfo.processInfo.environment["CQ_DEBUG_PROFILE"] == "1", let detector {
+                    let ms = detector.lastDetectionDurationMs.map { String(format: "%.1f", $0) } ?? "nil"
+                    print("cq.debug: face detect lastMs=\(ms) total=\(detector.totalDetections) failed=\(detector.totalFailed) dropped=\(detector.totalDroppedByRate)")
+                }
+            }
+        }
+        // CAM-021：前摄检测桥 → renderer.frontFaceBoxes（PiP 路单一真源，同主路纪律）。
+        if let frontFaceBoxes = renderer?.frontFaceBoxes {
+            frontDetector.onResult = { [frontFaceBoxes] snapshot in
+                frontFaceBoxes.update(with: snapshot.face?.box)
+                frontFaceBoxes.updateAnchors(snapshot.face.flatMap(CameraReshapeAnchors.init(face:)))
             }
         }
     }
@@ -153,7 +293,8 @@ final class CameraViewModel: ObservableObject {
 
     func switchPosition() {
         let target: Position = (position == .back) ? .front : .back
-        faceBoxes.reset()   // 旧摄人脸框/平滑历史不污染新画面（CAM-019）
+        renderer?.faceBoxes.reset()   // 旧摄人脸框/平滑历史不污染新画面（CAM-019）
+        zoomFactor = 1.0    // 切摄变焦重置（manager 侧同步归一；与系统相机惯例一致）
         manager.switchPosition(to: target.managerPosition) { [weak self] newPos in
             self?.position = (newPos == .front) ? .front : .back
         }
@@ -193,23 +334,37 @@ final class CameraViewModel: ObservableObject {
     }
 
     func startRecording() {
-        guard phase == .running, !isRecording, recorderBox.get() == nil else { return }
+        // phase == .running 前置要求 prepare 成功（renderer 非 nil）；显式解包仅为
+        // 编译器——人脸框单一真源 = renderer.faceBoxes（CAM-019 修复轮）。
+        guard phase == .running, !isRecording, recorderBox.get() == nil,
+              let faceBoxes = renderer?.faceBoxes else { return }
         let url = FileManager.default.temporaryDirectory
             .appendingPathComponent("cq_rec_\(Int(Date().timeIntervalSince1970 * 1000)).mp4")
+        // 双摄（CAM-021）：录制源 = Renderer 合成器（主+PiP 两路完整链，与预览同序）；
+        // 单摄走 Recorder 内联链路（锁定参数语义不变）。
+        let dualComposer: ((CVImageBuffer, CMTime) -> CIImage)? = dualCamEnabled
+            ? { [renderer] buffer, time in renderer.composeRecordingFrame(back: buffer, at: time) }
+            : nil
         let recorder = CameraRecorder(
             outputURL: url,
             ciContext: ciContext!,
             preset: filter,       // 录制开始时锁定滤镜（WYSIWYG）
             beauty: beauty,       // 美颜同步锁定
-            faceBoxes: faceBoxes, // 人脸框实时读取（主体移动时蒙版跟随，WYSIWYG）
+            reshape: reshape,     // 美型同步锁定（CAM-013）
+            bodyReshape: bodyReshape,  // 美体同步锁定（CAM-025）
+            sticker: stickerCatalog.first { $0.id == selectedStickerID },  // 贴纸锁定（CAM-014）
+            dualComposer: dualComposer,
+            faceBoxes: faceBoxes, // 人脸框/锚点实时读取（蒙版跟随 + warp/贴纸跟随，WYSIWYG）
             withAudio: micAvailable)
         recorderBox.set(recorder)
         isRecording = true
+        recordingStartedAt = Date()   // 录制计时 UI（View 端 TimelineView 渲染）
     }
 
     func stopRecording() {
         guard isRecording, let recorder = recorderBox.get() else { return }
         isRecording = false
+        recordingStartedAt = nil
         recorderBox.set(nil)  // 先摘引用：后续帧不再写入（finish 中的余帧丢弃是诚实行为）
         recorder.finish { [weak self] result in
             guard let self else { return }
@@ -265,7 +420,7 @@ final class CameraViewModel: ObservableObject {
         isCapturing = true
         let failure = NSError(domain: "cq.camera", code: 1,
                               userInfo: [NSLocalizedDescriptionKey: "未取到照片数据"])
-        manager.capturePhoto { [weak self] buffer in
+        manager.capturePhoto(highResolution: highResPhoto) { [weak self] buffer in
             // 回调在采集队列；单张照片的一次性处理在这里做，不抢主线程。
             // ciContext 线程安全，与预览/录制复用同一实例。
             // let（确定初始化）而非 var：Task 闭包是 @Sendable，捕获 var 直接编译错（P49）。
@@ -274,7 +429,11 @@ final class CameraViewModel: ObservableObject {
                 do {
                     var image = CIImage(cvPixelBuffer: buffer)
                     if let renderer = self?.renderer {
-                        image = renderer.process(image, faces: self?.faceBoxes.current())
+                        image = renderer.process(image,
+                                                 faces: renderer.faceBoxes.current(),
+                                                 anchors: renderer.faceBoxes.currentAnchors(),
+                                                 animalEyes: renderer.faceBoxes.currentAnimalEyes(),
+                                                 bodyAnchors: renderer.faceBoxes.currentBodyAnchors())
                     }
                     if let cgImage = ciContext.createCGImage(image, from: image.extent) {
                         processed = .success(cgImage)
@@ -340,10 +499,17 @@ final class CameraViewModel: ObservableObject {
         // 不触碰 MainActor 状态。
         let recorderBox = self.recorderBox
         let detector = self.detector
+        let frontDetector = self.frontDetector
         manager.onVideoFrame = { buffer, pts in
             renderer.frameSlot.push(buffer)      // 预览（latest-wins）
             detector.offer(buffer, at: pts)      // 检测（内部降频+忙丢弃，永不阻塞采集）
             recorderBox.get()?.appendVideo(sourceBuffer: buffer, at: pts)  // 录制
+        }
+        // CAM-021：前摄帧（仅双摄有流）→ 前帧槽 + 前检测桥；录制由后摄回调驱动，
+        // 前摄画面经 Renderer 合成器取 latest（见 startRecording）。
+        manager.onFrontVideoFrame = { buffer, pts in
+            renderer.frontFrameSlot.push(buffer)
+            frontDetector.offer(buffer, at: pts)
         }
         manager.onAudioBuffer = { sampleBuffer in
             recorderBox.get()?.appendAudio(sampleBuffer: sampleBuffer)

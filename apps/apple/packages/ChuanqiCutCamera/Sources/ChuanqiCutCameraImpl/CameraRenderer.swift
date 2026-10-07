@@ -1,8 +1,8 @@
 // CameraRenderer — 相机帧槽 + Core Image 预览渲染（CAM-003，ADR-0014）
 //
-// 链路：CVPixelBuffer → CIImage → 美颜/滤镜 → CI 渲进**自建中间纹理** → 显式 UV
-// 渲染 pass（行序补偿 + aspect-fill）→ drawable → present。全程 GPU（CIContext
-// 默认 Metal 后端），无 CPU 读回（RESEARCH-002 §5 红线）。
+// 链路：CVPixelBuffer → CIImage → 美颜 → 美型 warp → 滤镜 → 贴纸 → CI 渲进
+// **自建中间纹理** → 显式 UV 渲染 pass（行序补偿 + aspect-fill）→ drawable → present。
+// 全程 GPU（CIContext 默认 Metal 后端），无 CPU 读回（RESEARCH-002 §5 红线）。
 //
 // ⚠️ 为什么需要「中间纹理」（P60，CAM-014/015）：CI 直写 drawable 时内部构造
 //    CIRenderDestination 要求 usage 含 ShaderWrite，而 framebufferOnly drawable 只有
@@ -66,21 +66,32 @@ final class CameraFrameSlot {
 // MARK: - 人脸框槽（CAM-019）
 
 /// 检测队列写 / 渲染与录制线程读，锁保护，latest-wins（同 CameraFrameSlot 纪律）。
-/// 语义对齐 CameraBeauty.apply 契约：nil = 尚无检测数据（美颜全画面兜底）；
+/// 语义对齐 CameraBeauty.apply 契约：nil = 尚无检测数据（直通，无算法即无效果）；
 /// [] = 检测过但无脸（直通）；非空 = 平滑后的图像归一化人脸框（origin 左上）。
 final class FaceBoxStore {
 
     private let lock = NSLock()
     private var latest: [CGRect]?
+    /// 美型/贴纸锚点（CAM-013/014）：与框同帧快照，检测队列写 / 渲染与录制读。
+    /// 关键点已在检测器侧平滑（CAM-011），此处不做二次平滑。
+    private var latestAnchors: CameraReshapeAnchors?
+    /// 宠物双眼锚点（CAM-024）：检出动物（有姿态）时写入；与人脸锚点互斥消费
+    /// （有脸优先人脸），优先级在消费侧（renderer/Recorder）而非存储层。
+    private var latestAnimalEyes: StickerEyeAnchor?
+    /// 美体锚点（CAM-025）：人体四关节（双肩/双髋）齐全时写入，缺任一 = nil
+    /// （该帧美体跳过；半身几何不可信，不做部分形变）。
+    private var latestBodyAnchors: BodyReshapeAnchors?
     /// 框帧间平滑状态：只在检测队列触碰（VisionDetector.onResult 串行回调），无锁。
     private var previousMain: CGRect?
 
-    /// 检测队列调用。box 为图像归一化坐标（CAM-011 契约）；nil = 本帧无脸。
+    /// 检测队列调用。box 为图像归一化坐标（CAM-011 契约）；nil = 本帧无脸
+    /// （同时清锚点：无脸帧美颜直通、美型/贴纸跳过，三路语义一致）。
     func update(with normalizedBox: CGRect?) {
         lock.lock()
         defer { lock.unlock() }
         guard let box = normalizedBox else {
             latest = []
+            latestAnchors = nil
             previousMain = nil   // 目标离开画面：复位，重现时不带旧历史
             return
         }
@@ -91,6 +102,27 @@ final class FaceBoxStore {
         latest = [smoothed]
     }
 
+    /// 检测队列调用：与 update(with:) 同帧成对写入（CAM-013/014 锚点）。
+    func updateAnchors(_ anchors: CameraReshapeAnchors?) {
+        lock.lock()
+        defer { lock.unlock() }
+        latestAnchors = anchors
+    }
+
+    /// 检测队列调用：宠物双眼锚点（CAM-024；姿态缺失传 nil = 该帧跳过宠物贴纸）。
+    func updateAnimalEyes(_ eyes: StickerEyeAnchor?) {
+        lock.lock()
+        defer { lock.unlock() }
+        latestAnimalEyes = eyes
+    }
+
+    /// 检测队列调用：美体锚点（CAM-025；四关节齐全才非 nil）。
+    func updateBodyAnchors(_ anchors: BodyReshapeAnchors?) {
+        lock.lock()
+        defer { lock.unlock() }
+        latestBodyAnchors = anchors
+    }
+
     /// 渲染/录制线程调用。
     func current() -> [CGRect]? {
         lock.lock()
@@ -98,10 +130,34 @@ final class FaceBoxStore {
         return latest
     }
 
-    /// 前后摄切换等场景清状态：旧摄人脸框不污染新画面（首帧前 nil=全画面兜底）。
+    /// 渲染/录制线程调用（CAM-013/014）。
+    func currentAnchors() -> CameraReshapeAnchors? {
+        lock.lock()
+        defer { lock.unlock() }
+        return latestAnchors
+    }
+
+    /// 渲染/录制线程调用（CAM-024）。
+    func currentAnimalEyes() -> StickerEyeAnchor? {
+        lock.lock()
+        defer { lock.unlock() }
+        return latestAnimalEyes
+    }
+
+    /// 渲染/录制线程调用（CAM-025）。
+    func currentBodyAnchors() -> BodyReshapeAnchors? {
+        lock.lock()
+        defer { lock.unlock() }
+        return latestBodyAnchors
+    }
+
+    /// 前后摄切换等场景清状态：旧摄人脸框不污染新画面（清后 nil=直通）。
     func reset() {
         lock.lock()
         latest = nil
+        latestAnchors = nil
+        latestAnimalEyes = nil
+        latestBodyAnchors = nil
         previousMain = nil
         lock.unlock()
     }
@@ -197,6 +253,9 @@ final class CameraPreviewRenderer: NSObject, MTKViewDelegate {
 
     let frameSlot = CameraFrameSlot()
     let faceBoxes = FaceBoxStore()
+    /// 前摄帧槽/锚点仓（CAM-021 双摄；单一真源纪律同 faceBoxes，VM 前检测桥写入）。
+    let frontFrameSlot = CameraFrameSlot()
+    let frontFaceBoxes = FaceBoxStore()
     let commandQueue: MTLCommandQueue
 
     private let ciContext: CIContext
@@ -204,6 +263,18 @@ final class CameraPreviewRenderer: NSObject, MTKViewDelegate {
     private var preset: CameraFilterPreset = .none
     private let beautyLock = NSLock()
     private var beauty: CameraBeautyParams = .off
+    private let reshapeLock = NSLock()
+    private var reshape: CameraReshapeParams = .off
+    private let bodyReshapeLock = NSLock()
+    private var bodyReshape: BodyReshapeParams = .off
+    private let stickerLock = NSLock()
+    private var sticker: StickerAsset?
+    private let fxLock = NSLock()
+    private var fxUpscaleEnabled = false
+    /// 双摄/PiP 状态（CAM-021；主线程写 / 渲染线程读，锁保护）。
+    private let pipLock = NSLock()
+    private var dualMode = false
+    private var pipShowsFront = true
     /// CAM-018：预览输出色彩空间，与录制侧显式对齐（sRGB，替代语义含糊的 DeviceRGB）。
     private static let outputColorSpace = CGColorSpace(name: CGColorSpace.sRGB)
         ?? CGColorSpaceCreateDeviceRGB()
@@ -224,6 +295,66 @@ final class CameraPreviewRenderer: NSObject, MTKViewDelegate {
 
     private let scratchLock = NSLock()
     private var scratch: (any MTLTexture)?
+
+    // MARK: MetalFX 空间升采样（CAM-022，C 期）
+
+    /// FX 输出纹理按（帧尺寸, 输出尺寸, 像素格式）缓存；转屏/换档位重建。
+    private struct FXEntry {
+        let scaler: MetalFXScaler
+        let texture: any MTLTexture
+    }
+
+    private var fxEntry: FXEntry?
+    private var fxKey: (Int, Int, Int, Int, UInt)?
+
+    /// 开启且屏分辨率大于帧分辨率时，把 CI 出图升采样到「drawable 分辨率、帧宽比」
+    /// 的纹理（aspect-fill 溢出边 Included），供呈现 pass 采样——与关闭态取景完全一致，
+    /// 只是采样自更高分辨率的纹理。返回 nil（不支持/尺寸不适用）= 跳过 FX 走原链路。
+    private func runFXUpscale(commandBuffer: any MTLCommandBuffer, input: any MTLTexture,
+                              frameWidth: Int, frameHeight: Int,
+                              drawableWidth: Int, drawableHeight: Int,
+                              pixelFormat: MTLPixelFormat) -> (any MTLTexture)? {
+        let cover = max(Float(drawableWidth) / Float(frameWidth),
+                        Float(drawableHeight) / Float(frameHeight))
+        guard cover > 1.15 else { return nil }   // 无升采样收益（阈值 [E] 防 1.0x 抖动）
+        // 输出 = 帧宽比 × drawable 级别尺寸（偶数对齐），呈现 pass 仍做中心裁切。
+        var outW = Int((Float(frameWidth) * cover).rounded() / 2) * 2
+        var outH = Int((Float(frameHeight) * cover).rounded() / 2) * 2
+        outW = max(outW, drawableWidth)
+        outH = max(outH, drawableHeight)
+
+        fxLock.lock()
+        defer { fxLock.unlock() }
+        let key = (frameWidth, frameHeight, outW, outH, pixelFormat.rawValue)
+        let entry: FXEntry
+        if fxKey == key, let existing = fxEntry {
+            entry = existing
+        } else {
+            guard MetalFX.isSupported(on: commandQueue.device),
+                  let scaler = MetalFXScaler(device: commandQueue.device,
+                                             inputWidth: frameWidth, inputHeight: frameHeight,
+                                             outputWidth: outW, outputHeight: outH,
+                                             pixelFormat: pixelFormat) else {
+                fxEntry = nil
+                fxKey = nil
+                return nil
+            }
+            let descriptor = MTLTextureDescriptor.texture2DDescriptor(
+                pixelFormat: pixelFormat, width: outW, height: outH, mipmapped: false)
+            descriptor.usage = [.shaderWrite, .shaderRead]
+            descriptor.storageMode = .private
+            guard let texture = commandQueue.device.makeTexture(descriptor: descriptor) else {
+                fxEntry = nil
+                fxKey = nil
+                return nil
+            }
+            entry = FXEntry(scaler: scaler, texture: texture)
+            fxEntry = entry
+            fxKey = key
+        }
+        entry.scaler.encode(commandBuffer: commandBuffer, input: input, output: entry.texture)
+        return entry.texture
+    }
 
     // MARK: 呈现管线（aspect-fill 渲染 pass，CAM-016）
 
@@ -275,8 +406,9 @@ final class CameraPreviewRenderer: NSObject, MTKViewDelegate {
         }
         let descriptor = MTLTextureDescriptor.texture2DDescriptor(
             pixelFormat: pixelFormat, width: width, height: height, mipmapped: false)
-        // ShaderWrite 是 CI 写入的硬要求；ShaderRead 是随后渲染 pass 采样所需。
-        descriptor.usage = [.shaderWrite, .shaderRead]
+        // ShaderWrite 是 CI 写入的硬要求；ShaderRead 是随后渲染 pass 采样所需；
+        // renderTarget 是 MetalFX 输入纹理要求（CAM-022，FX 关闭时无害）。
+        descriptor.usage = [.shaderWrite, .shaderRead, .renderTarget]
         descriptor.storageMode = .private  // GPU 专用，无 CPU 访问路径
         // MTLCommandQueue.device 在当前 SDK 为非可选（P48 同族存量修复，2026-10-05
         // 集成机构建门禁暴露：optional chaining 于非可选值是编译错误）。
@@ -310,6 +442,34 @@ final class CameraPreviewRenderer: NSObject, MTKViewDelegate {
         beautyLock.unlock()
     }
 
+    /// 主线程调用（美颜面板美型滑杆，CAM-013）。
+    func setReshape(_ newReshape: CameraReshapeParams) {
+        reshapeLock.lock()
+        reshape = newReshape
+        reshapeLock.unlock()
+    }
+
+    /// 主线程调用（美体滑杆，CAM-025）。
+    func setBodyReshape(_ newBodyReshape: BodyReshapeParams) {
+        bodyReshapeLock.lock()
+        bodyReshape = newBodyReshape
+        bodyReshapeLock.unlock()
+    }
+
+    /// 主线程调用（设置面板 FX 开关，CAM-022）。默认关 = 与原链路逐位等价。
+    func setFXUpscaleEnabled(_ enabled: Bool) {
+        fxLock.lock()
+        fxUpscaleEnabled = enabled
+        fxLock.unlock()
+    }
+
+    /// 主线程调用（贴纸选择条，CAM-014）；nil = 无贴纸。
+    func setSticker(_ newSticker: StickerAsset?) {
+        stickerLock.lock()
+        sticker = newSticker
+        stickerLock.unlock()
+    }
+
     private func currentFilter() -> CameraFilterPreset {
         presetLock.lock()
         defer { presetLock.unlock() }
@@ -322,12 +482,89 @@ final class CameraPreviewRenderer: NSObject, MTKViewDelegate {
         return beauty
     }
 
-    /// 统一处理链（预览/拍照共用语义）：美颜 → 滤镜。录制侧在 Recorder 内保持同序。
-    /// faces 语义见 CameraBeauty.apply（nil=全画面兜底 / []=无脸直通 / 非空=区域化）。
-    func process(_ image: CIImage, faces: [CGRect]? = nil) -> CIImage {
+    private func currentReshape() -> CameraReshapeParams {
+        reshapeLock.lock()
+        defer { reshapeLock.unlock() }
+        return reshape
+    }
+
+    private func currentBodyReshape() -> BodyReshapeParams {
+        bodyReshapeLock.lock()
+        defer { bodyReshapeLock.unlock() }
+        return bodyReshape
+    }
+
+    private func currentFXUpscaleEnabled() -> Bool {
+        fxLock.lock()
+        defer { fxLock.unlock() }
+        return fxUpscaleEnabled
+    }
+
+    /// 双摄模式开关（主线程调用，VM 在会话重配成功后同步）。
+    func setDualMode(_ enabled: Bool) {
+        pipLock.lock()
+        dualMode = enabled
+        if !enabled { pipShowsFront = true }   // 回单摄：主画面归位后摄（单摄不变量）
+        pipLock.unlock()
+    }
+
+    /// PiP 画面选择（主线程调用；true = PiP 显示前摄、主画面为后摄）。
+    func setPiPShowsFront(_ front: Bool) {
+        pipLock.lock()
+        pipShowsFront = front
+        pipLock.unlock()
+    }
+
+    private func currentDualMode() -> Bool {
+        pipLock.lock()
+        defer { pipLock.unlock() }
+        return dualMode
+    }
+
+    private func currentPiPShowsFront() -> Bool {
+        pipLock.lock()
+        defer { pipLock.unlock() }
+        return pipShowsFront
+    }
+
+    private func currentSticker() -> StickerAsset? {
+        stickerLock.lock()
+        defer { stickerLock.unlock() }
+        return sticker
+    }
+
+    /// 统一处理链（预览/拍照共用语义）：**美颜 → 美型 warp → 美体 warp → 滤镜 → 贴纸**。
+    /// 顺序锁定（TASK-CAM-013/014/025：贴纸必须贴在 warp 后画面上），变更须同步
+    /// CameraRecorder.appendVideo 的同名段。
+    /// faces 语义见 CameraBeauty.apply（nil=直通 / []=直通 / 非空=区域化；
+    /// 2026-10-07 定则：一切人像能力算法驱动，无算法即无效果，不退化为全画面滤镜）。
+    /// anchors 缺失 = 无脸或引擎降级 → 美型/人脸贴纸该帧跳过（诚实降级，不做假效果）。
+    /// animalEyes = 宠物双眼（CAM-024）：无人脸锚点且有宠物时贴纸锚宠物（有脸优先）。
+    /// bodyAnchors = 人体四关节（CAM-025）：齐全才做美体（半身几何不可信）。
+    func process(_ image: CIImage, faces: [CGRect]? = nil,
+                 anchors: CameraReshapeAnchors? = nil,
+                 animalEyes: StickerEyeAnchor? = nil,
+                 bodyAnchors: BodyReshapeAnchors? = nil) -> CIImage {
         var result = currentBeauty().apply(to: image, faces: faces)
+        if let warp = FaceWarp.shared {
+            if let anchors {
+                result = warp.apply(to: result, anchors: anchors, params: currentReshape())
+            }
+            if let bodyAnchors {
+                result = warp.apply(to: result,
+                                    controls: BodyWarpGeometry.controls(from: bodyAnchors,
+                                                                        params: currentBodyReshape()))
+            }
+        }
         if let filtered = currentFilter().apply(to: result) {
             result = filtered
+        }
+        if let sticker = currentSticker() {
+            if let anchors {
+                result = StickerOverlay.composite(sticker, over: result, anchors: anchors)
+            } else if let animalEyes {
+                result = StickerOverlay.composite(sticker, over: result, eyeAnchor: animalEyes)
+            }
         }
         return result
     }
@@ -339,15 +576,86 @@ final class CameraPreviewRenderer: NSObject, MTKViewDelegate {
         // 采样窗逐帧按帧/ drawable 实际尺寸重算（CAM-016，aspect-fill 旋转/转屏零成本）。
     }
 
+    /// 画中画合成（CAM-021，右上角白描边；系数 [E] 真机定案）。
+    static let pipSizeRatio: CGFloat = 0.28
+    static let pipMarginRatio: CGFloat = 0.035
+    static let pipBorderRatio: CGFloat = 0.004
+    static func compositePiP(_ pip: CIImage, over main: CIImage) -> CIImage {
+        let mainExtent = main.extent
+        let pipExtent = pip.extent
+        guard mainExtent.width > 0, mainExtent.height > 0,
+              pipExtent.width > 0, pipExtent.height > 0 else { return main }
+        let pipWidth = mainExtent.width * pipSizeRatio
+        let scale = pipWidth / pipExtent.width
+        let pipHeight = pipExtent.height * scale
+        let margin = mainExtent.width * pipMarginRatio
+        let border = mainExtent.width * pipBorderRatio
+        let origin = CGPoint(x: mainExtent.maxX - pipWidth - margin,
+                             y: mainExtent.maxY - pipHeight - margin)
+        // 先缩放、再平移到右上角（t = T ∘ S）
+        var transform = CGAffineTransform(scaleX: scale, y: scale)
+        transform = transform.translatedBy(x: origin.x, y: origin.y)
+        let borderRect = CGRect(x: origin.x - border, y: origin.y - border,
+                                width: pipWidth + border * 2, height: pipHeight + border * 2)
+        let borderImage = CIImage(color: CIColor(red: 1, green: 1, blue: 1))
+            .cropped(to: borderRect)
+        return pip.transformed(by: transform)
+            .composited(over: borderImage)
+            .composited(over: main)
+    }
+
+    /// 双摄录制合成（CAM-021）：与 draw 同链同序（WYSIWYG）。主画面按 pipShowsFront
+    /// 选择（swap 后主画面 = 前摄最新帧，录制时间轴仍由后摄回调 PTS 驱动）；PiP 帧
+    /// 缺失时该帧只出主画面（latest-wins 诚实语义，不重放旧帧）。
+    func composeRecordingFrame(back: CVImageBuffer, at time: CMTime) -> CIImage {
+        let mainIsBack = currentPiPShowsFront()
+        let mainBuffer = mainIsBack ? back : (frontFrameSlot.latest() ?? back)
+        let pipBuffer: CVImageBuffer? = mainIsBack ? frontFrameSlot.latest() : back
+        let mainStore = mainIsBack ? faceBoxes : frontFaceBoxes
+
+        var image = CIImage(cvPixelBuffer: mainBuffer)
+        image = process(image, faces: mainStore.current(),
+                        anchors: mainStore.currentAnchors(),
+                        animalEyes: mainIsBack ? faceBoxes.currentAnimalEyes() : nil,
+                        bodyAnchors: mainIsBack ? faceBoxes.currentBodyAnchors() : nil)
+        if currentDualMode(), let pipBuffer, pipBuffer !== mainBuffer {
+            let pipStore = mainIsBack ? frontFaceBoxes : faceBoxes
+            var pipImage = CIImage(cvPixelBuffer: pipBuffer)
+            pipImage = process(pipImage, faces: pipStore.current(),
+                               anchors: pipStore.currentAnchors())
+            image = Self.compositePiP(pipImage, over: image)
+        }
+        return image
+    }
+
     func draw(in view: MTKView) {
+        // 主/PiP 画面选择（CAM-021）：默认主=后、PiP=前；swap 互换。单摄模式下
+        // pipShowsFront 恒 true（setDualMode(false) 归位）→ 主画面恒 = 后摄帧槽。
+        let mainIsBack = currentPiPShowsFront()
+        let mainSlot = mainIsBack ? frameSlot : frontFrameSlot
+        let pipSlot = mainIsBack ? frontFrameSlot : frameSlot
+        let mainStore = mainIsBack ? faceBoxes : frontFaceBoxes
+        let pipStore = mainIsBack ? frontFaceBoxes : faceBoxes
+
         guard let drawable = view.currentDrawable,
               let commandBuffer = commandQueue.makeCommandBuffer(),
-              let buffer = frameSlot.latest() else {
+              let buffer = mainSlot.latest() else {
             return  // 尚无帧 / 无 drawable：跳过本拍，不报错（启动初期常态）
         }
 
         var image = CIImage(cvPixelBuffer: buffer)
-        image = process(image, faces: faceBoxes.current())
+        // 动物/美体锚点仅由后摄检测桥供给（前摄只做人脸链）——v1 口径。
+        image = process(image, faces: mainStore.current(),
+                        anchors: mainStore.currentAnchors(),
+                        animalEyes: mainIsBack ? faceBoxes.currentAnimalEyes() : nil,
+                        bodyAnchors: mainIsBack ? faceBoxes.currentBodyAnchors() : nil)
+        // PiP（双摄）：第二路同样过完整处理链（WYSIWYG，验收 A8）；帧缺失该拍只出主画面。
+        if currentDualMode(), let pipBuffer = pipSlot.latest() {
+            var pipImage = CIImage(cvPixelBuffer: pipBuffer)
+            pipImage = process(pipImage, faces: pipStore.current(),
+                               anchors: pipStore.currentAnchors())
+            image = Self.compositePiP(pipImage, over: image)
+        }
 
         let extent = image.extent
         let width = Int(extent.width)
@@ -365,26 +673,44 @@ final class CameraPreviewRenderer: NSObject, MTKViewDelegate {
         ciContext.render(image, to: scratch, commandBuffer: commandBuffer,
                          bounds: extent, colorSpace: Self.outputColorSpace)
 
+        // 1.5) MetalFX 空间升采样（CAM-022）：开关开启且屏 > 帧时把 CI 出图升到
+        //      屏幕级别（帧宽比，取景不变）。关闭或不适用 = presentTexture 仍为
+        //      scratch，与原链路逐位等价。
+        var presentTexture: any MTLTexture = scratch
+        var presentWidth = width
+        var presentHeight = height
+        if currentFXUpscaleEnabled() {
+            if let upscaled = runFXUpscale(commandBuffer: commandBuffer, input: scratch,
+                                           frameWidth: width, frameHeight: height,
+                                           drawableWidth: drawable.texture.width,
+                                           drawableHeight: drawable.texture.height,
+                                           pixelFormat: drawable.texture.pixelFormat) {
+                presentTexture = upscaled
+                presentWidth = upscaled.width
+                presentHeight = upscaled.height
+            }
+        }
+
         // 2) 采样中间纹理渲进 drawable（CAM-016 渲染 pass，取代被 P65 封死的 blit）：
         //    - colorAttachment 是 framebufferOnly 纹理唯一合法写法；
         //    - v 轴符号 = 行序补偿（真机颠倒修正），u/v 比例 = aspect-fill 铺满；
         //    - clamp_to_edge：采样窗浮点误差不露边。
-        let drawableWidth = drawable.texture.width
-        let drawableHeight = drawable.texture.height
-        guard drawableWidth > 0, drawableHeight > 0,
+        let drawableW = drawable.texture.width
+        let drawableH = drawable.texture.height
+        guard drawableW > 0, drawableH > 0,
               let renderPass = view.currentRenderPassDescriptor,
               let encoder = commandBuffer.makeRenderCommandEncoder(descriptor: renderPass),
               let pipeline = obtainPipeline(pixelFormat: drawable.texture.pixelFormat) else {
             return
         }
-        let coverScale = max(Float(drawableWidth) / Float(width),
-                             Float(drawableHeight) / Float(height))
+        let coverScale = max(Float(drawableW) / Float(presentWidth),
+                             Float(drawableH) / Float(presentHeight))
         var uniforms = FillUniforms(
-            uScale: Float(drawableWidth) / (coverScale * Float(width)),
+            uScale: Float(drawableW) / (coverScale * Float(presentWidth)),
             vScale: (FillShader.ciWritesBottomUp ? 1.0 : -1.0)
-                * Float(drawableHeight) / (coverScale * Float(height)))
+                * Float(drawableH) / (coverScale * Float(presentHeight)))
         encoder.setRenderPipelineState(pipeline)
-        encoder.setFragmentTexture(scratch, index: 0)
+        encoder.setFragmentTexture(presentTexture, index: 0)
         encoder.setVertexBytes(&uniforms, length: MemoryLayout<FillUniforms>.stride, index: 0)
         encoder.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: 3)
         encoder.endEncoding()

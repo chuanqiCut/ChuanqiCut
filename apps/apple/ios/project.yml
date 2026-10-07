@@ -104,6 +104,13 @@ targets:
           SYSROOT="$(xcrun --sdk "$PLATFORM_NAME" --show-sdk-path)"
           xcrun -sdk "$PLATFORM_NAME" metal -fcikernel -target "$TRIPLE" -isysroot "$SYSROOT" -c "$SRC" -o "$AIR"
           xcrun -sdk "$PLATFORM_NAME" metal -fcikernel -target "$TRIPLE" -isysroot "$SYSROOT" -o "$OUT" "$AIR"
+          # CAM-013 美型 warp kernel（同一编译纪律，独立 metallib 便于 FaceWarp
+          # 按自身 kernel 名扫描；加载失败 = 美型跳过，诚实降级）。
+          SRC_WARP="$PROJECT_DIR/../packages/ChuanqiCutCamera/Sources/ChuanqiCutCameraImpl/Effects/face_warp.metal"
+          AIR_WARP="$TARGET_TEMP_DIR/face_warp.air"
+          OUT_WARP="$TARGET_BUILD_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH/face_warp.metallib"
+          xcrun -sdk "$PLATFORM_NAME" metal -fcikernel -target "$TRIPLE" -isysroot "$SYSROOT" -c "$SRC_WARP" -o "$AIR_WARP"
+          xcrun -sdk "$PLATFORM_NAME" metal -fcikernel -target "$TRIPLE" -isysroot "$SYSROOT" -o "$OUT_WARP" "$AIR_WARP"
 
 # 显式声明 scheme（INFRA-018，2026-10-07）：此前 ChuanqiCutApp scheme 一直依赖
 # Xcode 在 xcuserdata 里自动创建，xcodegen 重新生成工程后即丢失 —— 曾导致用

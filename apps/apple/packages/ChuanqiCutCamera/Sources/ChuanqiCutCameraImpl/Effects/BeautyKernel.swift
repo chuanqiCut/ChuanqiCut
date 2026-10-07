@@ -86,11 +86,12 @@ final class BeautyKernel: @unchecked Sendable {
         self.upVMix = upVMix
     }
 
-    /// 从宿主各 bundle 扫出 metallib（INFRA-018 Pod 化后产物位置有两种布局：
-    /// ① static pod `s.resources` 直拷主 bundle（默认）；② resource_bundles 形态的
-    /// `ChuanqiCutCamera.bundle`。双路兜底，谁先扫到含本卡 kernel 的用谁。
-    /// 顺序：Pod 资源包（若存在）→ main（default.metallib 优先逻辑在单 bundle 内）。
-    static func libraryDataInHostBundles() -> Data? {
+    /// 从宿主各 bundle 扫出含**指定 kernel 名全集**的 metallib（INFRA-018 Pod 化后
+    /// 产物位置有两种布局：① static pod `s.resources` 直拷主 bundle（默认）；
+    /// ② resource_bundles 形态的 `ChuanqiCutCamera.bundle`。双路兜底，谁先扫到
+    /// 含全部指定 kernel 的用谁。顺序：Pod 资源包（若存在）→ main。
+    /// CAM-013 起泛化：磨皮与美型 warp 共用同一扫描纪律（缺 kernel = 引擎不装）。
+    static func libraryDataInHostBundles(requiring names: [String]) -> Data? {
         var bundles: [Bundle] = []
         if let podBundleURL = Bundle.main.url(forResource: "ChuanqiCutCamera", withExtension: "bundle"),
            let podBundle = Bundle(url: podBundleURL) {
@@ -98,21 +99,28 @@ final class BeautyKernel: @unchecked Sendable {
         }
         bundles.append(.main)
         for bundle in bundles {
-            if let data = libraryData(in: bundle) { return data }
+            if let data = libraryData(in: bundle, requiring: names) { return data }
         }
         return nil
     }
 
-    /// 从单个 bundle 扫出包含本卡 kernel 的 metallib。
+    /// 磨皮引擎专用扫描（保持既有调用点与 kernel 名检查不变）。
+    static func libraryDataInHostBundles() -> Data? {
+        libraryDataInHostBundles(requiring: [downHFunctionName, upVMixFunctionName])
+    }
+
+    /// 从单个 bundle 扫出包含指定 kernel 名全集的 metallib。
     /// 优先 default.metallib；找不到或 kernel 不齐时遍历其余 metallib。
-    static func libraryData(in bundle: Bundle) -> Data? {
+    static func libraryData(in bundle: Bundle,
+                            requiring names: [String] = [BeautyKernel.downHFunctionName,
+                                                         BeautyKernel.upVMixFunctionName]) -> Data? {
         let urls = bundle.urls(forResourcesWithExtension: "metallib", subdirectory: nil) ?? []
         let sorted = urls.sorted { ($0.lastPathComponent == "default.metallib" ? 0 : 1)
             < ($1.lastPathComponent == "default.metallib" ? 0 : 1) }
         for url in sorted {
             guard let data = try? Data(contentsOf: url) else { continue }
-            let names = CIKernel.kernelNames(fromMetalLibraryData: data)
-            if names.contains(downHFunctionName), names.contains(upVMixFunctionName) {
+            let present = CIKernel.kernelNames(fromMetalLibraryData: data)
+            if names.allSatisfy({ present.contains($0) }) {
                 return data
             }
         }

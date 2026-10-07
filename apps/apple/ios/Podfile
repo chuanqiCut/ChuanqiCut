@@ -23,6 +23,8 @@ target 'ChuanqiCutApp' do
   pod 'SharedUI', :path => '../packages/SharedUI'
   # 功能 Pod（ADR-0031 分治）：Player 阶段 1（2026-10-07）；后续 Import/Assets/Editor 逐阶段追加
   pod 'ChuanqiCutPlayer', :path => '../packages/ChuanqiCutPlayer'
+  # Camera 阶段 4 提前（2026-10-07，传哲指定）：iOS 专属，mac Podfile 不引
+  pod 'ChuanqiCutCamera', :path => '../packages/ChuanqiCutCamera'
 end
 
 post_install do |installer|

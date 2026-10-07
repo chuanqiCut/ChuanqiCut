@@ -80,12 +80,18 @@ targets:
     #      而 `xcrun metallib` 链接同一份 .air 成功（CoreImage 符号运行时解析）。
     # 故这里自己编，产物直接落进 .app（签名在所有 build phase 之后，安全）。
     # BeautyKernel 扫描 bundle 内任意 .metallib，不要求叫 default.metallib。
+    #
+    # ⚠️ 2026-10-07（ADR-0031 阶段 4 / INFRA-018）：相机源码已迁 ChuanqiCutCamera Pod，
+    # 但 metallib 构建管线**留在壳工程**（INFRA-018 实测定案）：静态库 Pod 的
+    # script_phase 产物到不了 App bundle（Copy Pods Resources 只拷 install 期声明
+    # 的资源；且未声明 inputs/outputs 的 script_phase 在增量构建被跳过）。
+    # SRC 指向 Pod 内的 .metal 源（唯一真源），产物直落 .app。
     postBuildScripts:
       - name: "Compile CoreImage metal kernel into bundle"
         basedOnDependencyAnalysis: false
         script: |
           set -euo pipefail
-          SRC="$PROJECT_DIR/iOSApp/Camera/Effects/beauty_bilateral.metal"
+          SRC="$PROJECT_DIR/../packages/ChuanqiCutCamera/Sources/ChuanqiCutCameraImpl/Effects/beauty_bilateral.metal"
           AIR="$TARGET_TEMP_DIR/beauty_bilateral.air"
           OUT="$TARGET_BUILD_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH/beauty_bilateral.metallib"
           mkdir -p "$TARGET_TEMP_DIR"
@@ -93,10 +99,20 @@ targets:
             *simulator) TRIPLE="air64-apple-ios${IPHONEOS_DEPLOYMENT_TARGET}-simulator" ;;
             *)          TRIPLE="air64-apple-ios${IPHONEOS_DEPLOYMENT_TARGET}" ;;
           esac
-          # 编译与链接**都要** -fcikernel：只给编译阶段时 `xcrun metallib`
-          # 会产出 96 字节的空壳（只有 MTLB/ENDT，无函数符号），链接不报错，
-          # 但运行时 CIKernel.kernelNames 查不到 → 静默回落默认实现。
-          # 必须用 `metal -fcikernel` 链接（不是 metallib），产物 8.4KB 且含
-          # cq_beauty_down_h / cq_beauty_up_v_mix。
-          xcrun -sdk "$PLATFORM_NAME" metal -fcikernel -target "$TRIPLE" -isysroot "$SDKROOT" -c "$SRC" -o "$AIR"
-          xcrun -sdk "$PLATFORM_NAME" metal -fcikernel -target "$TRIPLE" -isysroot "$SDKROOT" -o "$OUT" "$AIR"
+          # 编译与链接**都要** -fcikernel（96B 空壳案底见 ADR-0021）；
+          # 不依赖 $SDKROOT 环境变量，显式按 PLATFORM_NAME 解析 sysroot。
+          SYSROOT="$(xcrun --sdk "$PLATFORM_NAME" --show-sdk-path)"
+          xcrun -sdk "$PLATFORM_NAME" metal -fcikernel -target "$TRIPLE" -isysroot "$SYSROOT" -c "$SRC" -o "$AIR"
+          xcrun -sdk "$PLATFORM_NAME" metal -fcikernel -target "$TRIPLE" -isysroot "$SYSROOT" -o "$OUT" "$AIR"
+
+# 显式声明 scheme（INFRA-018，2026-10-07）：此前 ChuanqiCutApp scheme 一直依赖
+# Xcode 在 xcuserdata 里自动创建，xcodegen 重新生成工程后即丢失 —— 曾导致用
+# 自动补的 "ChuanqiCut" scheme 构建出现「BUILD SUCCEEDED 但 App target 零 phase」
+# 的假成功。显式声明后不再依赖本机 xcuserdata 状态。
+schemes:
+  ChuanqiCutApp:
+    build:
+      targets:
+        ChuanqiCutApp: all
+    run:
+      config: Debug

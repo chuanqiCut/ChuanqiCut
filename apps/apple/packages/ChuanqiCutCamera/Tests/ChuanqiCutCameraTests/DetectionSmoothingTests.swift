@@ -5,7 +5,7 @@
 
 import XCTest
 import CoreGraphics
-@testable import SharedUI
+@testable import ChuanqiCutCamera
 
 final class DetectionSmoothingTests: XCTestCase {
 

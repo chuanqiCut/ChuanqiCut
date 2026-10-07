@@ -5,7 +5,7 @@
 
 import XCTest
 import CoreImage
-@testable import SharedUI
+@testable import ChuanqiCutCamera
 
 final class CameraFilterTests: XCTestCase {
 

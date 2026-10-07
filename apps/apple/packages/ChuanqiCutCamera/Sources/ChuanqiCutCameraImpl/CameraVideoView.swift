@@ -6,7 +6,6 @@
 
 import MetalKit
 import SwiftUI
-import SharedUI
 
 struct CameraVideoView: UIViewRepresentable {
 

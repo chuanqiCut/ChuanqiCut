@@ -24,7 +24,6 @@
 import CoreImage
 import Foundation
 import os.log
-import SharedUI
 import os
 
 // MARK: - 强度 → kernel 参数映射（纯函数，可单测）
@@ -87,9 +86,26 @@ final class BeautyKernel: @unchecked Sendable {
         self.upVMix = upVMix
     }
 
-    /// 从 App bundle 扫出包含本卡 kernel 的 metallib。
+    /// 从宿主各 bundle 扫出 metallib（INFRA-018 Pod 化后产物位置有两种布局：
+    /// ① static pod `s.resources` 直拷主 bundle（默认）；② resource_bundles 形态的
+    /// `ChuanqiCutCamera.bundle`。双路兜底，谁先扫到含本卡 kernel 的用谁。
+    /// 顺序：Pod 资源包（若存在）→ main（default.metallib 优先逻辑在单 bundle 内）。
+    static func libraryDataInHostBundles() -> Data? {
+        var bundles: [Bundle] = []
+        if let podBundleURL = Bundle.main.url(forResource: "ChuanqiCutCamera", withExtension: "bundle"),
+           let podBundle = Bundle(url: podBundleURL) {
+            bundles.append(podBundle)
+        }
+        bundles.append(.main)
+        for bundle in bundles {
+            if let data = libraryData(in: bundle) { return data }
+        }
+        return nil
+    }
+
+    /// 从单个 bundle 扫出包含本卡 kernel 的 metallib。
     /// 优先 default.metallib；找不到或 kernel 不齐时遍历其余 metallib。
-    static func libraryData(in bundle: Bundle = .main) -> Data? {
+    static func libraryData(in bundle: Bundle) -> Data? {
         let urls = bundle.urls(forResourcesWithExtension: "metallib", subdirectory: nil) ?? []
         let sorted = urls.sorted { ($0.lastPathComponent == "default.metallib" ? 0 : 1)
             < ($1.lastPathComponent == "default.metallib" ? 0 : 1) }
@@ -157,7 +173,7 @@ final class BeautyKernel: @unchecked Sendable {
     /// 96B 空壳 metallib 曾静默回落默认实现且无从发现，见 ADR-0021）。
     static func installSharedSmoothingIfNeeded() {
         guard CameraBeautyEngine.smoothing == nil else { return }
-        guard let data = libraryData() else {
+        guard let data = libraryDataInHostBundles() else {
             statusLogger.error("beauty engine FALLBACK: bundle 无含 cq_beauty kernels 的 metallib → SharedUI 默认 CI 实现")
             return
         }

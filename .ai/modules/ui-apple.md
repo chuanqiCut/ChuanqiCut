@@ -680,7 +680,8 @@ RESEARCH-004/005 结论全部维持，本文补**操作层**，关键增量：
 
 - ✅ 阶段 0（INFRA-013）：双 Podfile + 门禁 apple-player 段 + 基座注入点；AppEntry 留 SharedUI（真壳化挂阶段 5）。
 - ✅ 阶段 1（INFRA-015）：ChuanqiCutPlayer 落地。实测 Player 零基座/SDK 符号（触感反馈内联，原引 MediaPicker 的 PickerFeedback）→ Pod 零依赖声明（拓扑微调记录在 podspec 注释）。
-- ⏳ 阶段 2~5：Import / Assets / Camera / Editor+Draft。
+- ✅ 阶段 4（INFRA-018，2026-10-07 提前）：ChuanqiCutCamera 落地（iOS 专属；metallib 管线留壳工程；EditorEntryInjector 解耦相机→编辑器；P85 案底）。
+- ⏳ 阶段 2/3/5：Import / Assets / Editor+Draft。
 
 ### 测试与门禁记录（阶段批）
 

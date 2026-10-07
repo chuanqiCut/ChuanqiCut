@@ -25,7 +25,6 @@ import CoreGraphics
 import CoreImage
 import CoreVideo
 import Foundation
-import SharedUI
 import os
 
 // @unchecked Sendable 的依据：状态迁移由 `lock` 保护，append 只在 videoQueue /

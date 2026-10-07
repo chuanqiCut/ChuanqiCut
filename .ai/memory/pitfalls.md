@@ -1446,3 +1446,24 @@ TASK-CAM-012 剩余风险栏其实预判了（"若真机上 CI 工作空间表�
   仓库内临时编译产物只落 `/build/` 一个地方，包目录保持干净。
 - 教训（一句话）：**新增可构建目录 = 必须同时确认 ignore 覆盖 + 门禁有兜底检查**；
   `git add -A` 提交前 `git status` 甄别产物是每次提交的固定动作（与「8 项自检」同等级）。
+
+### P85 · 相机 Pod 迁移的三个「BUILD SUCCEEDED/FAILED 假象」—— .metal 进内建 Metal 阶段 / script_phase 产物到不了 App / scheme 住 xcuserdata
+**日期**：2026-10-07　**来源**：INFRA-018 ChuanqiCutCamera Pod 迁移双壳验证　**验证状态**：已修复并有正向证据（metallib 8431B + kernelNames 齐全 + 双壳 BUILD SUCCEEDED）
+
+1. **`.metal` 写进 podspec `source_files` → CocoaPods 把它挂进 Xcode 内建 Metal 编译阶段**
+   （无 `-fcikernel`）→ air-lld 报 `symbol(s) not found: coreimage::Sampler::sample/coord/extent`
+   （正是 ADR-0021 明令禁止的路径）。修：`source_files` 只收 `.swift`，`.metal` 仅作为
+   构建脚本的输入。
+2. **静态库 Pod 的 `script_phase` 产物到不了 App bundle**：script 输出进 Pod 资源暂存
+   目录，而 Copy Pods Resources 只拷 **install 期声明**的资源 → 构建期生成的 metallib
+   永远不会出现在 .app；且 script_phase 未声明 inputs/outputs 时**增量构建被跳过**。
+   我一度拿 App 里残留的旧产物当成功（P65「实测无 error 不算证据」同款）。修：管线
+   **留在壳工程**（iOS project.yml postBuildScripts，`SRC` 指向 Pod 内 .metal 源；
+   xcodegen 管理）——源归 Pod、资源装配归壳（ADR-0031 哲学）。
+3. **scheme 住在 xcuserdata**：旧 `ChuanqiCutApp` scheme 是 Xcode 自动建的（用户态），
+   `xcodegen generate` 重新生成工程后即丢；xcodebuild 自动补的 "ChuanqiCut" scheme
+   不含 App target → 「BUILD SUCCEEDED 但 App target 零 phase」的假成功。修：
+   `project.yml` **显式声明 `schemes:`**（ios + mac），不再依赖本机 xcuserdata 状态。
+4. 附：pod-依赖-pod 时 `CChuanqiCut` module 可见性要在**依赖方 podspec** 自行注入
+   `SWIFT_INCLUDE_PATHS`（SharedUI.podspec 2026-10-02 案底的复现，ChuanqiCutCamera
+   已按同款配置）——凡依赖 SharedUI 的 Pod 一律照抄。

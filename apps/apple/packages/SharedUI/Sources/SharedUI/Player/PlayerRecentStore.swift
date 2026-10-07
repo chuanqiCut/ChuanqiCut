@@ -88,10 +88,11 @@ final class PlayerRecentStore: ObservableObject {
         }
         if let data = item.bookmarkData {
             // 解析失败 = 来源已失效（try? 语义化合理：失效条目剔除即可）
-            var stale = ObjCBool(false)
+            // Swift 侧该 init 的 `bookmarkDataIsStale` 是 `inout Bool`（不是 ObjCBool）。
+            var stale = false
             return try? URL(resolvingBookmarkData: data, bookmarkDataIsStale: &stale)
         }
-        let url = URL(fileURLWithPath: item.urlString)
+        guard let url = URL(string: item.urlString) else { return nil }
         return FileManager.default.fileExists(atPath: url.path) ? url : nil
     }
 
@@ -107,6 +108,15 @@ final class PlayerRecentStore: ObservableObject {
 
     // MARK: 内部
 
+    /// ⚠️ `urlString` 存的是 **`absoluteString`**（含 `file://` scheme），直接喂给
+    /// `FileManager.fileExists(atPath:)` 恒为 false —— 初版就是这么写的，
+    /// 于是「重新装载 = 全部条目判为失效并清空」，跨会话持久化名存实亡。
+    /// 存在性判定只有这一处入口，`playbackURL` 也复用它（口径不再漂移）。
+    private static func localPathExists(_ urlString: String) -> Bool {
+        guard let url = URL(string: urlString) else { return false }
+        return FileManager.default.fileExists(atPath: url.path)
+    }
+
     /// 装载时清理已不可达的无书签本地条目（macOS 路径失效场景；
     /// 书签项不在此解析（开销大），延迟到 playbackURL 播放时判定）。
     private func pruneUnreachable() {
@@ -114,7 +124,7 @@ final class PlayerRecentStore: ObservableObject {
         items.removeAll { item in
             if item.isRemote { return false }
             if item.bookmarkData != nil { return false }
-            return !FileManager.default.fileExists(atPath: item.urlString)
+            return !Self.localPathExists(item.urlString)
         }
         if items.count != before {
             persist()

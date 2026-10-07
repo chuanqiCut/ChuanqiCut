@@ -13,7 +13,9 @@ import Foundation
 import os
 
 @MainActor
-final class PlayerPipCoordinator {
+// NSObject 继承而非 Swift 侧手写 NSObjectProtocol 遵循 —— delegate 遵循在 Swift
+// 里要求类继承 NSObject（这也是 Swift 6 对本文件的第一条报错）。
+final class PlayerPipCoordinator: NSObject {
 
     /// PiP 是否可能启动（KVO isPictureInPicturePossible 驱动，控制层据此显隐按钮）。
     var onPossibleChange: ((Bool) -> Void)?
@@ -26,7 +28,8 @@ final class PlayerPipCoordinator {
 
     private let log = Logger(subsystem: "com.chuanqi.cut", category: "PlayerPipCoordinator")
 
-    init() {
+    // NSObject 子类：init 需要 override（本类继承 NSObject 只为遵循 delegate）。
+    override init() {
         isSupported = AVPictureInPictureController.isPictureInPictureSupported()
     }
 
@@ -39,7 +42,11 @@ final class PlayerPipCoordinator {
             return
         }
         // 退后台自动进 PiP（RESEARCH-006 §3.4 最小接线）。
+        // ⚠️ `canStartPictureInPictureAutomaticallyFromInline` 是 iOS 专属，
+        // macOS 上不存在（初版未加平台分支 → macOS 构建直接失败）。
+#if os(iOS)
         created.canStartPictureInPictureAutomaticallyFromInline = true
+#endif
         controller = created
         created.delegate = self
         possibleObservation = created.observe(\.isPictureInPicturePossible, options: [.new]) { [weak self] observed, _ in
@@ -65,7 +72,7 @@ final class PlayerPipCoordinator {
 // ObjC 协议按 @preconcurrency 处理（手法同 MetalPreviewView 的 MTKViewDelegate）；
 // AVKit 保证 delegate 回调在主线程，此处的 Task 跳跃是 Swift 6 隔离的形式合规。
 
-extension PlayerPipCoordinator: AVPictureInPictureControllerDelegate {
+extension PlayerPipCoordinator: @preconcurrency AVPictureInPictureControllerDelegate {
 
     func pictureInPictureControllerDidStartPictureInPicture(_ pictureInPictureController: AVPictureInPictureController) {
         Task { @MainActor [weak self] in self?.onActiveChange?(true) }

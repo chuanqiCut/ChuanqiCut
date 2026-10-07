@@ -10,7 +10,7 @@ write_set:   ChuanqiCutEngine.podspec、core/include（7 头改名）、137 文�
 read_set:    CocoaPods 1.17.0 file_accessor/file_references_installer 源码
 deps:        []
 acceptance:
-  - Pods 工程：docs 引用 0 条；引擎组下 core/include 头文件树 42 条
+  - Pods 工程：docs 引用 0 条；引擎组下 core/include 头文件树 42 条 + CChuanqiCut 组补录 cq_sdk.h/module.modulemap
   - headermap 零劫持（重名碰撞扫描 = 0）；core Debug 45/45 零回归
   - 双壳 BUILD SUCCEEDED
 verification:

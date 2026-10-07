@@ -73,6 +73,21 @@ final class CameraManager: NSObject, @unchecked Sendable {
     /// 设备级双摄支持（CAM-021：UI 依此置灰开关，SPEC A8 不支持机型诚实降级）。
     static var isMultiCamSupported: Bool { AVCaptureMultiCamSession.isMultiCamSupported }
 
+    /// 深度能力设备查询（CAM-023；广角单摄**无深度**——需双摄/TrueDepth/LiDAR 虚拟设备）。
+    /// UI 依此置灰人像虚化开关；无深度 = 如实降级，不伪造。
+    static func depthCapableDevice(for position: Position) -> AVCaptureDevice? {
+        let avPosition: AVCaptureDevice.Position = (position == .front) ? .front : .back
+        let types: [AVCaptureDevice.DeviceType] = position == .front
+            ? [.builtInTrueDepthCamera]
+            : [.builtInDualWideCamera, .builtInDualCamera, .builtInLiDARDepthCamera]
+        for type in types {
+            if let device = AVCaptureDevice.default(type, for: .video, position: avPosition) {
+                return device
+            }
+        }
+        return nil
+    }
+
     let session: AVCaptureSession = CameraManager.makeSession()
     private let sessionQueue = DispatchQueue(label: "cq.camera.session")
     private let videoQueue = DispatchQueue(label: "cq.camera.video")
@@ -86,6 +101,10 @@ final class CameraManager: NSObject, @unchecked Sendable {
     private let frontVideoOutput = AVCaptureVideoDataOutput()
     private let frontQueue = DispatchQueue(label: "cq.camera.video.front")
     private let frontRelay = FrameRelay()
+    /// 深度输出（CAM-023 人像虚化；仅人像虚化开启时挂会话）。
+    private let depthOutput = AVCaptureDepthDataOutput()
+    private let depthQueue = DispatchQueue(label: "cq.camera.depth")
+    private let depthRelay = DepthRelay()
 
     private var videoInput: AVCaptureDeviceInput?
     private var frontVideoInput: AVCaptureDeviceInput?
@@ -93,6 +112,8 @@ final class CameraManager: NSObject, @unchecked Sendable {
     private(set) var currentPosition: Position = .back
     /// 双摄模式（sessionQueue 独占；开关经 setDualCamEnabled）。
     private(set) var dualCamEnabled = false
+    /// 人像虚化（CAM-023；sessionQueue 独占。开启时视频输入切深度能力设备）。
+    private(set) var portraitBlurEnabled = false
     /// 前摄帧（仅双摄模式有流；回调在 frontQueue，消费契约同 onVideoFrame）。
     var onFrontVideoFrame: ((CVImageBuffer, CMTime) -> Void)?
     /// 采集档位/帧率（只在 sessionQueue 读写；configure/重配时取用并重放）。
@@ -229,6 +250,59 @@ final class CameraManager: NSObject, @unchecked Sendable {
             }
             let ok = applied && self.session.isRunning
             if !ok { self.dualCamEnabled = false }
+            Task { @MainActor in onDone(ok) }
+        }
+    }
+
+    // MARK: 景深人像（CAM-023；深度仅服务拍照路径）
+
+    /// 人像虚化开关（主线程调用）。开启 = 视频输入切**深度能力设备**（仍出普通视频帧）
+    /// + 挂深度输出（connection 方向随视频同步）；当前摄位无深度设备 → 如实回调 false。
+    /// 与双摄互斥（v1：双摄开启时拒绝并明示）。
+    func setPortraitBlurEnabled(_ enabled: Bool,
+                                onDone: @escaping @MainActor (_ applied: Bool) -> Void) {
+        sessionQueue.async { [weak self] in
+            guard let self, self.configured else {
+                Task { @MainActor in onDone(false) }
+                return
+            }
+            guard enabled != self.portraitBlurEnabled else {
+                Task { @MainActor in onDone(true) }
+                return
+            }
+            guard enabled == false || !self.dualCamEnabled else {
+                Self.logger.error("人像虚化与双摄互斥（v1）：请先关闭双摄")
+                Task { @MainActor in onDone(false) }
+                return
+            }
+            let depthDevice = enabled ? Self.depthCapableDevice(for: self.currentPosition) : nil
+            if enabled, depthDevice == nil {
+                Self.logger.error("当前摄位无深度能力设备，人像虚化不可用")
+                Task { @MainActor in onDone(false) }
+                return
+            }
+            let wasRunning = self.session.isRunning
+            if wasRunning { self.session.stopRunning() }
+            self.session.beginConfiguration()
+            self.portraitBlurEnabled = enabled
+            // 重配输入：开启 = 深度能力设备（普通视频帧照常）；关闭 = 回广角。
+            reconfigureInputsLocked(position: self.currentPosition, dual: self.dualCamEnabled)
+            if enabled {
+                if !session.outputs.contains(depthOutput), session.canAddOutput(depthOutput) {
+                    depthOutput.isFilteringEnabled = false   // 不做系统内插，保原始深度
+                    session.addOutput(depthOutput)
+                }
+            } else if session.outputs.contains(depthOutput) {
+                session.removeOutput(depthOutput)
+            }
+            self.session.commitConfiguration()
+            if (wasRunning || enabled) && !self.session.isRunning {
+                self.session.startRunning()
+            }
+            let ok = enabled ? (self.session.isRunning
+                                && self.depthOutput.connection(with: .depthData)?.isActive == true)
+                             : true
+            if !ok { self.portraitBlurEnabled = false }
             Task { @MainActor in onDone(ok) }
         }
     }
@@ -412,8 +486,10 @@ final class CameraManager: NSObject, @unchecked Sendable {
     /// - Parameter highResolution: 高清拍照（2026-10-07 用户反馈轮）——iOS 16+
     ///   `maxPhotoDimensions` 突破 sessionPreset 的分辨率上限取全分辨率，并以
     ///   .quality 优先级编码（configure 时已把 photoOutput 上限设为 .quality）。
-    func capturePhoto(highResolution: Bool = false,
-                      onDone: @escaping (_ pixelBuffer: CVImageBuffer?) -> Void) {
+    /// - Parameter depthDelivery: 人像虚化深度交付（CAM-023）——深度输出 active 时
+    ///   请求内嵌 AVDepthData；失败/缺失以 nil 伴随上抛，上层诚实跳过虚化。
+    func capturePhoto(highResolution: Bool = false, depthDelivery: Bool = false,
+                      onDone: @escaping (_ pixelBuffer: CVImageBuffer?, _ depthData: AVDepthData?) -> Void) {
         // onDone 的签名含 CVImageBuffer（CF 类型，不 Sendable），保持非 @Sendable，
         // 经 PhotoRelay（@unchecked Sendable）转交——@Sendable 的 async 闭包只捕获
         // relay，不捕获 onDone 本体（P49）。失败路径（设备缺失/未配置）同样回调 nil。
@@ -453,6 +529,13 @@ final class CameraManager: NSObject, @unchecked Sendable {
                 settings.maxPhotoDimensions = self.photoOutput.maxPhotoDimensions
             }
             settings.photoQualityPrioritization = highResolution ? .quality : .balanced
+            // 深度交付（CAM-023）：深度输出 active 才请求内嵌 AVDepthData。
+            // ⚠️ isDepthDataDeliveryEnabled 命名本机无 SDK 头可核（P48/P83 同族），
+            // 构建机首编译如有出入按头文件对表（一行级）。
+            if depthDelivery,
+               self.depthOutput.connection(with: .depthData)?.isActive == true {
+                settings.isDepthDataDeliveryEnabled = true
+            }
             // 方向/镜像沿用 connection 的呈现设置（拍照接后摄，CAM-016）。
             if let connection = self.photoOutput.connection(with: .video) {
                 self.applyOrientation(connection, self.interfaceOrientation, for: .back)
@@ -548,11 +631,14 @@ final class CameraManager: NSObject, @unchecked Sendable {
         reapplyOutputConnectionsLocked()
     }
 
-    /// 添加一路 video input 并接 output（帧率随路重放）。失败返回 nil（不伪造成功）。
+    /// 添加一路 video input 并接 output（帧率随路重放）。人像虚化开启时选**深度能力
+    /// 设备**（广角无深度）；否则广角。失败返回 nil（不伪造成功）。
     @discardableResult
     private func addVideoInputLocked(position: Position,
                                      output: AVCaptureVideoDataOutput) -> AVCaptureDeviceInput? {
-        let deviceType: AVCaptureDevice.DeviceType = .builtInWideAngleCamera
+        let deviceType: AVCaptureDevice.DeviceType = portraitBlurEnabled
+            ? (depthCapableDevice(for: position)?.deviceType ?? .builtInWideAngleCamera)
+            : .builtInWideAngleCamera
         let avPosition: AVCaptureDevice.Position = (position == .front) ? .front : .back
         guard let device = AVCaptureDevice.default(deviceType, for: .video, position: avPosition),
               let input = try? AVCaptureDeviceInput(device: device),
@@ -565,12 +651,16 @@ final class CameraManager: NSObject, @unchecked Sendable {
     }
 
     /// 全部 video connection 重放方向/镜像（各按其摄位：双摄时前摄输出镜像 + 270° 偏移）。
+    /// 深度 connection（CAM-023）同步同向——深度图与照片配准的前提。
     private func reapplyOutputConnectionsLocked() {
         for output in session.outputs {
             guard let connection = output.connection(with: .video) else { continue }
             let pos: Position = (output === frontVideoOutput) ? .front : .back
             applyOrientation(connection, interfaceOrientation, for: pos)
             applyMirrorIfFront(connection, for: pos)
+        }
+        if portraitBlurEnabled, let depthConnection = depthOutput.connection(with: .depthData) {
+            applyOrientation(depthConnection, interfaceOrientation, for: currentPosition)
         }
     }
 
@@ -682,13 +772,14 @@ private final class PhotoRelay: NSObject, AVCapturePhotoCaptureDelegate, @unchec
 
     private static let logger = Logger(subsystem: "com.chuanqi.cut", category: "camera.photo")
 
-    var onPhoto: ((_ pixelBuffer: CVImageBuffer?) -> Void)?
+    /// 深度数据（CAM-023）：depthDelivery 开启时随照片内嵌交付；nil = 无深度（诚实降级）。
+    var onPhoto: ((_ pixelBuffer: CVImageBuffer?, _ depthData: AVDepthData?) -> Void)?
 
     /// 派发一次性拍照回调并清空（拍照单发，不重复触发）。
-    func deliver(_ buffer: CVImageBuffer?) {
+    func deliver(_ buffer: CVImageBuffer?, _ depth: AVDepthData? = nil) {
         let callback = onPhoto
         onPhoto = nil
-        callback?(buffer)
+        callback?(buffer, depth)
     }
 
     func photoOutput(_ output: AVCapturePhotoOutput,
@@ -700,6 +791,23 @@ private final class PhotoRelay: NSObject, AVCapturePhotoCaptureDelegate, @unchec
             deliver(nil)
             return
         }
-        deliver(buffer)
+        // ⚠️ AVCapturePhoto.depthData 命名本机无 SDK 头可核（P48/P83 同族），
+        // 构建机首编译如有出入按头文件对表（一行级）。
+        deliver(buffer, photo.depthData)
+    }
+}
+
+// MARK: - 深度中继（CAM-023；AVCaptureDepthDataOutputDelegate 回调在 depthQueue）
+
+/// v1 仅持有回调口（拍照深度走 photo 内嵌交付，不走流）；流式深度供后续预览虚化轮。
+private final class DepthRelay: NSObject, AVCaptureDepthDataOutputDelegate {
+
+    var onDepth: ((AVDepthData, CMTime) -> Void)?
+
+    func depthDataOutput(_ output: AVCaptureDepthDataOutput,
+                         didOutput depthData: AVDepthData,
+                         timestamp: CMTime,
+                         connection: AVCaptureConnection) {
+        onDepth?(depthData, timestamp)
     }
 }

@@ -123,6 +123,11 @@
   SwiftUI 状态模型重复）；引任何 UI 三方必须走 manifest.toml + cq-dependency-governance。
   双摄（CAM-021）开关必须独立于前后翻转按钮。
 
+## 相机 CI 色彩域与蒙版契约（CAM-015/016，2026-10-06 定）
+- **CIContext 一律显式 `workingColorSpace`（gamma sRGB）**，禁止依赖默认线性域（P62）：凡 harness 定标的 CI 参数，真机运行域必须与定标域一致；新增 CI 消费方先核域再调参。
+- **美颜区域化三态契约**：`apply(to:faces:)` —— nil=全画面兜底、[]=**直通**（与美型"无脸直通"同口径）、非空=归一化框（左上）→ FaceMask 蒙版。引擎注入签名 `(CIImage, Double) -> CIImage?` 不加 mask 参数，蒙版在 SharedUI apply 内 `CIBlendWithMask` 施加。
+- **CIImage DAG 宿主脚本先行**（P63）：自定义几何/渐变/合成先跑宿主实渲染采样再落正式测试；`CIRadialGradient` extent 有限、`cropped` 只做交集、`CGPoint+CGVector` 不存在——三个已实锤的 API 语义陷阱。
+
 ## 数字纪律
 - 估算标 `[E]`，推测标 `hypothesis`，实测才能做验收阈值。引用 baselines 必须带机器环境。
 - **计数类埋点必须绑定「真的出了效果」，不能绑定「代码走到了这一步」**（P60）：
@@ -212,6 +217,10 @@ App 侧在 `EditorViewModel.init()` 最早处调 `ChuanqiCut.configureLogFromEnv
 4. **UIA-015 / UIA-016 撞号**：本地侧分别是「编辑页重构」「Theme 令牌扩展」，远端侧分别是
    「独立播放器 MVP」「播放器系统级播控补完」—— 同名不同物。两卡头部已加告警，是否改名待拍板。
    **撞号裁定落地前，不再从 UIA 序列取号**（新增待办一律走 `docs/tasks/TODO-*.md`）。
+   **同源新增（2026-10-07 合并轮）**：**CAM-015 / CAM-016 撞号** —— 本机线（美颜色彩空间
+   修正 / 人脸区域化）vs 远端线（预览渲染修复 / 预览方向修复），双卡并存于
+   `TASK-CAM-015.md` / `TASK-CAM-016.md`（告警头），BACKLOG 双行注记；
+   **裁定前同样不从 CAM 序列取号**。
 5. 上述三项 + `tools/perf/` 处置已立为待办，交另一个 agent 接手：
    [`docs/tasks/TODO-2026-10-07-播放器域收尾待他人接手.md`](../../docs/tasks/TODO-2026-10-07-播放器域收尾待他人接手.md)
    （已在 `docs/tasks/README.md` 登记）。

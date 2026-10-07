@@ -21,6 +21,7 @@
 // CameraManager 回调保证）；start/finish 主线程调用；锁保护状态迁移。
 
 import AVFoundation
+import CoreGraphics
 import CoreImage
 import CoreVideo
 import Foundation
@@ -64,6 +65,9 @@ final class CameraRecorder: @unchecked Sendable {
 
     private let preset: CameraFilterPreset
     private let beauty: CameraBeautyParams
+    /// 人脸框槽（CAM-016）：逐帧读最新值 —— 主体移动时蒙版跟随（WYSIWYG），
+    /// 与预览同源（同一 FaceBoxStore，检测队列写 / 本队列读，锁保护）。
+    private let faceBoxes: FaceBoxStore?
     private let ciContext: CIContext
     private let withAudio: Bool
     private let lock = NSLock()
@@ -73,13 +77,16 @@ final class CameraRecorder: @unchecked Sendable {
     /// - Parameters:
     ///   - ciContext: 与预览共享的上下文（线程安全）。
     ///   - preset / beauty: 录制开始时锁定的滤镜与美颜（WYSIWYG；录制中面板已锁）。
+    ///   - faceBoxes: 人脸框槽（CAM-016 区域化）；nil = 不区域化（美颜全画面，兼容测试）。
     ///   - withAudio: 麦克风权限被拒时传 false（录制降级为无声视频，不伪造有声音）。
     init(outputURL: URL, ciContext: CIContext,
-         preset: CameraFilterPreset, beauty: CameraBeautyParams, withAudio: Bool) {
+         preset: CameraFilterPreset, beauty: CameraBeautyParams,
+         faceBoxes: FaceBoxStore? = nil, withAudio: Bool) {
         self.outputURL = outputURL
         self.ciContext = ciContext
         self.preset = preset
         self.beauty = beauty
+        self.faceBoxes = faceBoxes
         self.withAudio = withAudio
     }
 
@@ -116,6 +123,12 @@ final class CameraRecorder: @unchecked Sendable {
                 kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA,
                 kCVPixelBufferWidthKey as String: width,
                 kCVPixelBufferHeightKey as String: height,
+                // CAM-015：池缓冲显式标 sRGB —— 不标则 CI 线性→gamma 转换结果
+                // 按未标记写出，播放器按 sRGB 解读 → 产物与预览颜色不一致
+                // （SPEC-CAM-015-016 §1.2；池若实际不接受该键，真机冒烟后
+                //  按任务卡备选方案自建带色彩空间的 CVPixelBufferPool）。
+                kCVPixelBufferColorSpaceKey as String:
+                    CGColorSpace(name: CGColorSpace.sRGB) ?? CGColorSpaceCreateDeviceRGB(),
             ])
 
         var audioInput: AVAssetWriterInput?
@@ -168,9 +181,10 @@ final class CameraRecorder: @unchecked Sendable {
         // startWriting 前是 nil；旧实现池守卫在前 = 每帧必丢死锁）。
         startSessionIfNeeded(at: time)
 
-        // 美颜 → 滤镜（与预览 process 同序）。
+        // 美颜（人脸区域化，faces 实时读取）→ 滤镜（与预览 process 同序）。
+        // 失败丢帧不崩溃（实时优先）。
         var image = CIImage(cvPixelBuffer: sourceBuffer)
-        image = beauty.apply(to: image)
+        image = beauty.apply(to: image, faces: faceBoxes?.current())
         if let filtered = preset.apply(to: image) {
             image = filtered
         }

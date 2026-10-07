@@ -769,3 +769,13 @@ UI 重建（ADR-0022）解决不了它 → 立即立 MEDIA-023（VT 输出降采
 | 音频线程零分配（pool/ring/graph.Process 全路径） | operator new 增量 = 0 | Intel Iris Plus 640 / macOS 13.7（宿主） | 2026-10-05 | core_audio_graph 单测实测，kAudio 标记线程，热身后测 256 块 |
 | SPSC 环往返 20 万序号 | 通过（序号连续无丢失） | 同上 | 2026-10-05 | core_audio_pcm 压测；吞吐/延迟未做 microbench，**未实测** |
 | AudioBlockPool 并发 4 线程 × 2 万次 | 无污染、InUse 记账闭合 | 同上 | 2026-10-05 | 末态整池可取空再全还 |
+
+### 美颜色彩空间与人脸区域化（CAM-015/016，2026-10-06）
+| 项 | 实测 | 环境 | 日期 | 备注 |
+|---|---|---|---|---|
+| 蒙版 DAG 宿主渲染采样（中心白/角落黑/退化全黑） | 14/14 PASS（逻辑级） | Intel Iris Plus 640 / macOS 12 宿主脚本 | 2026-10-06 | 区域化端到端：脸内亮度 76→115、背景 76→76（0.3 灰源 + EV0.45） |
+| Vision 人脸检测耗时（1080p BGRA，landmarks+body+animals 全请求） | **未实测** | 真机 | — | `CQ_DEBUG_PROFILE=1` 打印 `lastDetectionDurationMs`，15Hz 降频 [E] 待定频 |
+| 磨皮闪烁消除 + 保边恢复（workingColorSpace=sRGB） | **未实测** | 真机 | — | 归传哲人工验收（TASK-CAM-015 验收项） |
+| 蒙版区域化真机观感（美白只在脸/背景不糊/跳帧不抖） | **未实测** | 真机 | — | 归传哲；检测降频 N 与框平滑参数 [E] 随之定案 |
+| 录制产物与预览颜色一致性（池缓冲色彩空间标记） | **未实测** | 真机 | — | 池对 kCVPixelBufferColorSpaceKey 接受度未验证（hypothesis） |
+| SharedUITests 全量（含 FaceMaskTests 13 用例） | **未跑**（本机 Swift 5.5，P45/P46） | 构建机 | — | — |

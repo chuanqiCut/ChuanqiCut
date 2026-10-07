@@ -1001,7 +1001,7 @@ ADR-0020 文件头带着完整冲突块（`<<<<<<<< HEAD ... ======== ... >>>>>>
 
 
 ### P62 · App target 没有 DEBUG 编译条件 —— `#if DEBUG` 代码被静默剥掉
-> 日期 / 来源 / 验证状态：2026-10-05 / TASK-UIA-015 走查踩到 / **verified**
+> 日期 / 来源 / 验证状态：2026-10-05 / TASK-UIA-032（原 UIA-015，2026-10-07 让位改号）走查踩到 / **verified**
 >（`CQ_AUTO_ROUTE` 钩子在模拟器上不生效；补 SWIFT_ACTIVE_COMPILATION_CONDITIONS 后生效）
 
 - 现象：App 源码里 `#if DEBUG` 的启动钩子编译后**不存在**（行为上直进编辑器失败），

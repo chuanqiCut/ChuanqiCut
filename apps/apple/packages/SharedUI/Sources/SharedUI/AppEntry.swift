@@ -106,7 +106,7 @@ public final class EditorViewModel: ObservableObject {
     private var tickCount = 0
 
     #if DEBUG
-    // MARK: 播放性能剖面（阶段 0，RESEARCH-006；DEBUG only，不进 Release）
+    // MARK: 播放性能剖面（阶段 0，RESEARCH-008；DEBUG only，不进 Release）
     private var debugTickCosts: [UInt64] = []
     private var debugTickSamples = 0
     private var debugTickCostP95Nanos: UInt64 = 0
@@ -277,7 +277,7 @@ public final class EditorViewModel: ObservableObject {
         playbackTimer?.invalidate()
         tickCount = 0
         #if DEBUG
-        // 阶段 0 性能剖面（RESEARCH-006 §1）：每 2s 汇总一行 —— Timer tick 耗时
+        // 阶段 0 性能剖面（RESEARCH-008 §1）：每 2s 汇总一行 —— Timer tick 耗时
         // p95（主线程占用）、泵 rendered/s（解码吞吐）、MTKView draw/s（呈现帧率，
         // 由 PreviewMTKView 经 `PlaybackDrawCounter` 回填）。真机数据回填 baselines。
         debugTickCostP95Nanos = 0
@@ -328,7 +328,7 @@ public final class EditorViewModel: ObservableObject {
         }
     }
 
-    // MARK: 时间码（UIA-015）
+    // MARK: 时间码（UIA-032）
 
     /// 播放条时间码「当前」。有理数 → 字符串换算的唯一位置（红线 #4：UI 其余
     /// 位置只读本值，不自己除 timescale）。

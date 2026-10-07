@@ -675,10 +675,10 @@ fit 为每帧一次整数几何计算（4 次乘除）+ 一次视口状态设置
 | pump_req/s | 178–180 | 60Hz Timer × 合并语义正常 |
 | **pump_rendered/s** | **32 → 17**（第 2、4 秒窗口） | **播放卡顿主因：解码管线吞吐不足** |
 | mtk_draw/s | 228（起步）/ 120（稳态） | ProMotion 满帧，UI 呈现层健康 |
-| tick_p95 | <1ms（打印 0ms） | **SwiftUI 30Hz 重算在 A19 上非主因**（修正 RESEARCH-006 §1 假设） |
+| tick_p95 | <1ms（打印 0ms） | **SwiftUI 30Hz 重算在 A19 上非主因**（修正 RESEARCH-008 §1 假设） |
 
 **结论**：卡顿 = 解码管线（VT→BGRA 转换写带宽 hypothesis 主嫌，4K 帧 33MB/帧），
-UI 重建（ADR-0022）解决不了它 → 立即立 MEDIA-023（VT 输出降采样 ≤1080p）。
+UI 重建（ADR-0024）解决不了它 → 立即立 MEDIA-023（VT 输出降采样 ≤1080p）。
 
 ## 泵内分段耗时（MEDIA-023 仪器，真机 iPhone 17 Pro，2026-10-06）
 

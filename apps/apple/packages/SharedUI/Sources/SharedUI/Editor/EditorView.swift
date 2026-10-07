@@ -1,8 +1,8 @@
-// SharedUI — 编辑器主视图（UIA-015 重构）
+// SharedUI — 编辑器主视图（UIA-032 重构）
 //
 // 只做三件事（ARCH-005）：呈现状态 / 收集输入 / 发出命令。
 //
-// 结构（SPEC-UIA-015 §4.2）：布局骨架与平台差异全在 EditorLayoutContainer；
+// 结构（SPEC-UIA-032 §4.2）：布局骨架与平台差异全在 EditorLayoutContainer；
 // 本视图负责装配 Zone 与**编辑器级 UI 状态**（媒体抽屉开关 —— UI 状态，
 // 不进模型；预览空态与底部工具栏共用同一个入口）。
 

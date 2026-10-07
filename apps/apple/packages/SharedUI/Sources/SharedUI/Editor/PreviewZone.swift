@@ -1,9 +1,9 @@
-// SharedUI — 预览区（UIA-003；UIA-015 增强交互）
+// SharedUI — 预览区（UIA-003；UIA-032 增强交互）
 //
 // MTKView 直绘（ARCH-005 §4.3）：画面不经 UI 合成路径，内核渲染的离屏纹理
 // 经一次 GPU 拷贝进 drawable。见 MetalPreviewView.swift。
 //
-// UIA-015：
+// UIA-032：
 //   * 点按预览 = 播放/暂停（行业惯例，RESEARCH-004 §6.2 点 4）——走既有
 //     togglePlayback（红线 #5：不改模型）；
 //   * 空时间线显示引导态（标题 + 主操作），不再是无装饰黑屏。

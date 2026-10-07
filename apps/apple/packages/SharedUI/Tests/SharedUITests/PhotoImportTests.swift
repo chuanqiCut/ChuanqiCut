@@ -118,11 +118,12 @@ final class PhotoImportTests: XCTestCase {
     func testBatchImportFailureIsCountedNotFatal() async {
         let importer = PhotoLibraryImporter()
         let ok = URL(fileURLWithPath: "/tmp/cq_batch_ok.mov")
-        // 2000 = kDecodeError（importMedia 对"打不开/解析不了"的返回）
+        // 2000 = kDecodeError（importMedia 对"打不开/解析不了"的返回）。
+        // MEDIA-022：错误文案经 Status.userText 分级 → "文件解析失败"（原为裸 text）。
         await importer.runBatch(count: 2,
                                 resolveURL: { $0 == 0 ? ok : URL(fileURLWithPath: "/tmp/cq_batch_bad.mov") },
                                 importURL: { $0 == ok ? .ok : Status(rawValue: 2000) })
-        XCTAssertEqual(importer.errorMessage, "成功 1 条，失败 1 条（导入失败：DecodeError）")
+        XCTAssertEqual(importer.errorMessage, "成功 1 条，失败 1 条（导入失败：文件解析失败）")
         XCTAssertFalse(importer.isLoading)
     }
 

@@ -14,6 +14,8 @@
 #include <chrono>
 #include <utility>  // std::move
 
+#include "cq/base/log.h"  // CQ_LOG_*_WF：带 workflow 的分级日志（CORE-010）
+
 namespace cq {
 namespace {
 
@@ -194,6 +196,8 @@ Status PreviewRenderer::RenderFrame(const RationalTime& pts, TextureHandle& out_
     // ---- 0. 加载模型快照（UIA-009 子步骤 2）----
     // 一次加载、本帧全程使用：渲染期间 session 线程再变更也不影响本帧
     // （不可变数据，无竞争）；下帧自然看到新快照（最终一致）。
+    // CORE-010：Release 也记账（看门狗数据源），开销仅一次 atomic store。
+    DebugStageGuard g0(debug_stage_, debug_stage_since_, "snapshot");
     std::shared_ptr<const ModelSnapshot> snapshot = snapshots_->CurrentSnapshot();
     if (!snapshot || !snapshot->timeline || !snapshot->assets) {
         return Status(StatusCode::kInternal);
@@ -206,6 +210,8 @@ Status PreviewRenderer::RenderFrame(const RationalTime& pts, TextureHandle& out_
     // RT 背后的纹理句柄在 RT 重建前一直有效，故可先给出，便于失败时 UI 仍有可显示目标。
     out_texture = target_->GetColorTexture();
 
+    // CORE-010：Release 也记账（看门狗数据源），开销仅一次 atomic store。
+    DebugStageGuard g1(debug_stage_, debug_stage_since_, "clip-find");
     // ---- 1. 定位片段：只取**第一条命中的视频轨**（本期不支持多轨合成）----
     const Clip* clip = nullptr;
     for (const Track& track : timeline.Tracks()) {
@@ -218,6 +224,8 @@ Status PreviewRenderer::RenderFrame(const RationalTime& pts, TextureHandle& out_
     }
     if (clip == nullptr) {
         // 空隙：清屏为黑，并如实返回「此处无内容」，不伪造成功。
+        // CORE-010：Release 也记账（看门狗数据源），开销仅一次 atomic store。
+        DebugStageGuard gc(debug_stage_, debug_stage_since_, "clear-gap");
         Status cs = ClearTarget(token);
         if (!cs.IsOk()) return cs;
         return Status(StatusCode::kIoNotFound);
@@ -234,54 +242,123 @@ Status PreviewRenderer::RenderFrame(const RationalTime& pts, TextureHandle& out_
     }
     last_source_time_ = src_time;
 
-    // ---- 3. 取帧（AcquireFrame 内部按需 seek，未 seek 或目标变化时幂等对齐）----
-    FrameProvider* provider = nullptr;
-    s = GetProvider(clip->source.asset_id, assets, provider);
-    if (!s.IsOk()) return s;
-
-    FrameRequest req;
-    req.at = src_time;
-    req.policy = SeekPolicy::kExact;  // 预览也要精确：编辑正确性优先于速度
-    MediaFrame frame;
-    const Clock::time_point t_acquire = Clock::now();
-    s = provider->AcquireFrame(req, frame, token);
-    // ⚠️ 段耗时只记**成功**路径。失败路径的耗时是另一回事（含重试/恢复），
-    //    混进均值会把"解码多快"这个量算歪。失败次数由调用方的状态码统计。
-    if (s.IsOk()) timings_.acquire_ns = ElapsedNs(t_acquire);
-    if (!s.IsOk()) return s;
-    if (frame.type != MediaType::kVideo || frame.video.image == nullptr) {
-        provider->ReleaseFrame(frame);
-        return Status(StatusCode::kDecodeError);
+    // ---- 2.5 展示区间内复用（MEDIA-024）：src_time 落在上一导入帧的展示区间
+    // 且同一素材 → 直接重画已导入纹理，**跳过 acquire+import**。
+    //
+    // 为什么：落在区间内的重复/微进请求走 provider 慢路径 = seek + 重解整个 GOP
+    // （ADR-0017「已知限制」第 1 条，实测 p95 253ms 尖刺）。60fps 素材 + 60Hz
+    // 请求时高频触发（请求节奏与帧率同阶，catch-up 后必落区间内）—— golden
+    // 30fps + 10fps 场景永远测不出来。lease 语义零违反：复用的是**我们自己
+    // 持有的导入纹理**（imported_ 本就存活到下一次导入），不经手 provider 帧。
+    bool reused = false;
+    {
+        RationalTime last_end{0, 1};
+        if (last_import_valid_ && last_import_asset_ == clip->source.asset_id &&
+            imported_ != nullptr &&
+            CompareRational(src_time, last_import_pts_) >= 0 &&
+            AddRational(last_import_pts_, last_import_dur_, last_end).IsOk() &&
+            CompareRational(src_time, last_end) < 0) {
+            reused = true;
+            timings_.acquire_ns = 0;
+            timings_.import_ns = 0;
+            last_frame_pts_ = last_import_pts_;  // 展示的仍是上一导入帧
+            if (debug_reuse_logs_ < 3) {
+                ++debug_reuse_logs_;
+                CQ_LOG_TRACE_WF(Workflow::kFrameCache, "reuse 命中 pts=%lld/%d",
+                                static_cast<long long>(last_import_pts_.value),
+                                static_cast<int>(last_import_pts_.timescale));
+            }
+        }
     }
-    // 记录实际帧 pts：素材内容静态时像素无法区分「取对了帧」与「复用旧帧」，
-    // 这个量是可验证的差异点（单测据此断言渲染帧随时间推进）。
-    last_frame_pts_ = frame.video.pts;
-    // ⚠️ 源尺寸必须在 ReleaseFrame 前捕获：lease 归约会把整个 frame 重置为空
-    //    （MediaFrame{}），此后读到的任何字段都是 0。
-    const uint32_t src_w = frame.video.width;
-    const uint32_t src_h = frame.video.height;
 
-    // ---- 4. 零拷贝导入：CVPixelBuffer → 纹理 ----
-    s = EnsureImporter();
-    if (!s.IsOk()) {
-        provider->ReleaseFrame(frame);
-        return s;
-    }
     TextureHandle tex = nullptr;
-    bool cpu_fallback = false;
-    const Clock::time_point t_import = Clock::now();
-    s = importer_->Import(frame.video.image, TextureUsage::kSampled, tex, cpu_fallback);
-    if (s.IsOk()) timings_.import_ns = ElapsedNs(t_import);
-    // 导入完成即可归还帧：零拷贝路径的纹理持 CVMetalTextureRef（锁住源 IOSurface），
-    // CPU 退化路径已把像素拷进纹理——两条路径都不再依赖源 buffer 存活。
-    provider->ReleaseFrame(frame);
-    if (!s.IsOk()) return s;
-    if (tex == nullptr) return Status(StatusCode::kInternal);
-    last_cpu_fallback_ = cpu_fallback;
+    uint32_t src_w = 0;
+    uint32_t src_h = 0;
 
-    // 释放上一帧的导入纹理，否则每帧泄漏一张（含其 IOSurface 引用）。
-    if (imported_ != nullptr) importer_->ReleaseTexture(imported_);
-    imported_ = tex;
+    if (reused) {
+        // 直接绘制（视口用记录的源尺寸）。
+        src_w = last_import_w_;
+        src_h = last_import_h_;
+        tex = imported_;
+    } else {
+        // ---- 3. 取帧（AcquireFrame 内部按需 seek，未 seek 或目标变化时幂等对齐）----
+        // CORE-010：Release 也记账（看门狗数据源），开销仅一次 atomic store。
+        DebugStageGuard g3(debug_stage_, debug_stage_since_, "provider+acquire");
+        FrameProvider* provider = nullptr;
+        s = GetProvider(clip->source.asset_id, assets, provider);
+        if (!s.IsOk()) return s;
+
+        FrameRequest req;
+        req.at = src_time;
+        req.policy = SeekPolicy::kExact;  // 预览也要精确：编辑正确性优先于速度
+        MediaFrame frame;
+        const Clock::time_point t_acquire = Clock::now();
+        s = provider->AcquireFrame(req, frame, token);
+        // ⚠️ 段耗时只记**成功**路径。失败路径的耗时是另一回事（含重试/恢复），
+        //    混进均值会把"解码多快"这个量算歪。失败次数由调用方的状态码统计。
+        if (s.IsOk()) timings_.acquire_ns = ElapsedNs(t_acquire);
+        if (!s.IsOk()) return s;
+        if (frame.type != MediaType::kVideo || frame.video.image == nullptr) {
+            provider->ReleaseFrame(frame);
+            return Status(StatusCode::kDecodeError);
+        }
+        // 记录实际帧 pts：素材内容静态时像素无法区分「取对了帧」与「复用旧帧」，
+        // 这个量是可验证的差异点（单测据此断言渲染帧随时间推进）。
+        last_frame_pts_ = frame.video.pts;
+        // ⚠️ 以下字段必须在 ReleaseFrame 前捕获：lease 归约会把整个 frame 重置
+        //    为空（MediaFrame{}），此后读到的任何字段都是默认值 {0,1}/0
+        //    （MEDIA-024 首版即在 pts/duration 上踩此坑，复用永不命中）。
+        src_w = frame.video.width;
+        src_h = frame.video.height;
+        const RationalTime frame_pts = frame.video.pts;
+        const RationalTime frame_dur = frame.video.duration;
+
+        // ---- 4. 零拷贝导入：CVPixelBuffer → 纹理 ----
+        s = EnsureImporter();
+        if (!s.IsOk()) {
+            provider->ReleaseFrame(frame);
+            return s;
+        }
+        // CORE-010：Release 也记账（看门狗数据源），开销仅一次 atomic store。
+        DebugStageGuard g4(debug_stage_, debug_stage_since_, "import");
+        bool cpu_fallback = false;
+        const Clock::time_point t_import = Clock::now();
+        s = importer_->Import(frame.video.image, TextureUsage::kSampled, tex, cpu_fallback);
+        if (s.IsOk()) timings_.import_ns = ElapsedNs(t_import);
+        // 导入完成即可归还帧：零拷贝路径的纹理持 CVMetalTextureRef（锁住源 IOSurface），
+        // CPU 退化路径已把像素拷进纹理——两条路径都不再依赖源 buffer 存活。
+        provider->ReleaseFrame(frame);
+        if (!s.IsOk()) return s;
+        if (tex == nullptr) return Status(StatusCode::kInternal);
+        last_cpu_fallback_ = cpu_fallback;
+
+        // 释放上一帧的导入纹理，否则每帧泄漏一张（含其 IOSurface 引用）。
+        if (imported_ != nullptr) importer_->ReleaseTexture(imported_);
+        imported_ = tex;
+
+        // 记录展示区间（MEDIA-024 复用判据）：素材内时间 = frame pts（同为素材
+        // 时间轴），区间 = [pts, pts + duration)；素材 id 与尺寸一并记录。
+        // ⚠️ 用 ReleaseFrame **前**捕获的副本（frame 已被 lease 归约重置）。
+        last_import_asset_ = clip->source.asset_id;
+        last_import_pts_ = frame_pts;
+        last_import_dur_ = frame_dur;
+        last_import_w_ = src_w;
+        last_import_h_ = src_h;
+        last_import_valid_ = frame_dur.value > 0;
+        if (debug_import_logs_ < 3) {
+            ++debug_import_logs_;
+            // ⚠️ 这里打的是**已 Record 的 last_import_* 字段**：MEDIA-027 期间这行打的是
+            //    frame.video.* —— 而那时 frame 已被 ReleaseFrame 清零，输出恒为
+            //    pts=0/1 dur=0/1，是条看着正常、实为废纸的诊断（该陷阱在本仓库第 4 次）。
+            //    **别改回 frame.video.***。
+            CQ_LOG_TRACE_WF(Workflow::kRender,
+                            "import 已记录 pts=%lld/%d dur=%lld/%d %ux%u",
+                            static_cast<long long>(last_import_pts_.value),
+                            static_cast<int>(last_import_pts_.timescale),
+                            static_cast<long long>(last_import_dur_.value),
+                            static_cast<int>(last_import_dur_.timescale), src_w, src_h);
+        }
+    }
 
     // ---- 5. 绘制到离屏 RT ----
     // ⚠️ 这里的耗时不只是"编码"：gfx_device.cpp 的 RenderFrame 结尾是
@@ -298,6 +375,8 @@ Status PreviewRenderer::RenderFrame(const RationalTime& pts, TextureHandle& out_
     const bool has_viewport = !(viewport[0] == 0.0f && viewport[1] == 0.0f &&
                                 viewport[2] == static_cast<float>(cfg_.width) &&
                                 viewport[3] == static_cast<float>(cfg_.height));
+    // CORE-010：Release 也记账（看门狗数据源），开销仅一次 atomic store。
+    DebugStageGuard g5(debug_stage_, debug_stage_since_, "draw");
     BlitClient client(blit_, tex, has_viewport ? viewport : nullptr);
     const Clock::time_point t_draw = Clock::now();
     s = gfx_->RenderFrame(ctx, target_.get(), client, token);

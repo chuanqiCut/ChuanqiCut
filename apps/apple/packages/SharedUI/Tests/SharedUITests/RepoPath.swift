@@ -18,4 +18,7 @@ enum RepoPath {
         .path
 
     static var goldenVideo: String { root + "/tests/golden/frames/gf_1080p_h264.mp4" }
+
+    /// HEVC golden（MEDIA-022）：iPhone 相册默认编码的回归基线。
+    static var goldenVideoHevc: String { root + "/tests/golden/frames/gf_1080p_hevc.mp4" }
 }

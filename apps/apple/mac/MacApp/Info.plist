@@ -20,5 +20,7 @@
 	<string>1.0</string>
 	<key>CFBundleVersion</key>
 	<string>1</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>从照片图库选择视频导入编辑器需要读取照片图库</string>
 </dict>
 </plist>

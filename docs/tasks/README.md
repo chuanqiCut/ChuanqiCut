@@ -26,9 +26,11 @@
 | [CORE-007](TASK-CORE-007.md) | 能力查询 `ICapabilities` 与枚举（实现） |
 | [CORE-008](TASK-CORE-008.md) | 线程模型与队列骨架 |
 | [CORE-009](TASK-CORE-009.md) | EditorSession 门面与快照机制 |
+| [CORE-010](TASK-CORE-010.md) | 日志按「链路（workflow）」筛选 + 排障日志沉淀进受控设施（MEDIA-027 后续） |
 | [MODEL-001](TASK-MODEL-001.md) | 时间线数据模型（Timeline / Track / Clip / Transition） |
 | [MODEL-002](TASK-MODEL-002.md) | Command 模式与 CommandHistory（Undo/Redo） |
 | [MEDIA-021](TASK-MEDIA-021.md) | 顺序取帧不必每帧 seek（预览帧率的真瓶颈） |
+| [MEDIA-027](TASK-MEDIA-027.md) | 播放 5 秒后永久冻结 + 内存 3.4GB 被 jetsam（真因与修复） |
 
 ### 音频 AUDIO（跨平台层，BACKLOG §4.2）
 | 卡 | 标题 |
@@ -97,3 +99,14 @@
 | [AIEDIT-009](TASK-AIEDIT-009.md) | 对话式调整（文字 + 语音输入） |
 | [AIEDIT-010](TASK-AIEDIT-010.md) | AI 脚本成片（脚本→分镜→素材匹配→成片）【P1 伞占位】 |
 | [AIEDIT-011](TASK-AIEDIT-011.md) | 本地规则引擎降级（离线成片） |
+
+---
+
+## 待他人接手（非任务卡，2026-10-07）
+
+| 文件 | 内容 | 状态 |
+|---|---|---|
+| [TODO-2026-10-07-播放器域收尾待他人接手.md](TODO-2026-10-07-播放器域收尾待他人接手.md) | UIA-015/016 撞号裁定与清理 / 真机（iPhone 17 Pro）验证 / `tools/perf/` 是否入库 | 待接手 |
+
+> 备注：这三件**故意不取 UIA-xxx 编号** —— 本轮刚撞过两次号，撞号裁定落地前
+> 不再从 UIA 序列取号（ADR-0019 §4）。

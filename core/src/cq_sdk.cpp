@@ -17,6 +17,7 @@
 #include <utility>
 #include <vector>
 
+#include "cq/base/log.h"  // CORE-010：workflow 日志（cq_log_configure_from_env）
 #include "cq/base/status.h"
 #include "cq/pal/capabilities.h"
 #include "cq_session_impl.h"
@@ -412,4 +413,25 @@ int32_t cq_player_current_time(const CQPlayer* player, int64_t* out_value,
 int32_t cq_player_tick(CQPlayer* player) {
     if (player == nullptr) return CodeOfEnum(cq::StatusCode::kInvalidArgument);
     return CodeOf(player->impl.Tick());
+}
+
+/* ==========================================================================
+ * 日志：workflow 筛选（CORE-010）
+ * ========================================================================== */
+
+void cq_log_configure_from_env(void) { cq::ConfigureLogFromEnv(); }
+
+void cq_log_set_level(int32_t level) {
+    // 越界一律忽略。理由：静默地把 7 夹到 4 会让调用方以为自己设成功了。
+    switch (level) {
+        case static_cast<int32_t>(cq::LogLevel::kTrace):
+        case static_cast<int32_t>(cq::LogLevel::kDebug):
+        case static_cast<int32_t>(cq::LogLevel::kInfo):
+        case static_cast<int32_t>(cq::LogLevel::kWarn):
+        case static_cast<int32_t>(cq::LogLevel::kError):
+            cq::SetLogLevel(static_cast<cq::LogLevel>(level));
+            return;
+        default:
+            return;
+    }
 }

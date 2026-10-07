@@ -19,10 +19,14 @@
 #import <AVFoundation/AVFoundation.h>
 #import <dispatch/dispatch.h>
 
+#include <chrono>
 #include <cstdint>
+#include <cstdio>
 #include <sys/stat.h>
 #include <vector>
 
+#include "cq/base/perf.h"       // CQ_SLOW_CALL_WF（CORE-010）
+#include "cq/base/log.h"        // 带 workflow 的分级日志
 #include "cq/base/time.h"        // RationalTime / Rescale / RoundMode / kProjectTimeScale
 #include "cq/base/status.h"      // Status / StatusCode
 #include "cq/base/concurrency.h" // CancelToken
@@ -30,6 +34,9 @@
 #include "cq/pal/common.h"       // CodecId / MediaType / PixelFormat 等枚举
 
 namespace cq {
+
+// 慢调用告警统一走 core/base 的 CQ_SLOW_CALL_WF（CORE-010）：Release 可见 +
+// 按链路可筛，不再在每个文件里各抄一份 Debug-only 的结构体。
 namespace {
 
 // CMTime -> RationalTime（项目网格 120000），显式舍入方向（非整除也不默认）。
@@ -49,12 +56,17 @@ RationalTime ToRational(CMTime t, RoundMode mode) {
 }
 
 // 视频/音频 FourCharCode -> 本项目 CodecId（与 FFmpeg 解耦，映射在 PAL 内）。
+// MEDIA-022：'hev1'（ffmpeg 默认 HEVC tag）与 'dvh1'/'dvhe'（杜比视界，HEVC 基底）
+// 与 'hvc1' 同属 HEVC —— 缺了它们，iPhone 相册/常见 HEVC 素材会被报成 kUnknown。
 CodecId VideoCodecToCq(FourCharCode c) {
     switch (c) {
         case kCMVideoCodecType_H264:
             return CodecId::kH264;
         case kCMVideoCodecType_HEVC:
         case kCMVideoCodecType_HEVCWithAlpha:
+        case 'hev1':
+        case 'dvh1':
+        case 'dvhe':
             return CodecId::kHevc;
         case kCMVideoCodecType_AppleProRes422:
         case kCMVideoCodecType_AppleProRes4444:
@@ -130,7 +142,9 @@ static size_t GetNalLengthSize(CMFormatDescriptionRef fmt, FourCharCode codec) {
             // AVCConfigurationRecord：byte4 低 2 位 = lengthSizeMinusOne。
             if (a != nullptr && n > 4) return static_cast<size_t>((a[4] & 0x03) + 1);
         }
-    } else if (codec == kCMVideoCodecType_HEVC || codec == kCMVideoCodecType_HEVCWithAlpha) {
+    } else if (codec == kCMVideoCodecType_HEVC || codec == kCMVideoCodecType_HEVCWithAlpha ||
+               codec == 'hev1' || codec == 'dvh1' || codec == 'dvhe') {
+        // MEDIA-022：'hev1'/杜比视界同样携带 hvcC。
         CFDataRef hvcc = static_cast<CFDataRef>(CFDictionaryGetValue(atoms, CFSTR("hvcC")));
         if (hvcc != nullptr) {
             const uint8_t* h = CFDataGetBytePtr(hvcc);
@@ -312,6 +326,8 @@ public:
     void Destroy() override { delete this; }
 
     Status Open(const MediaSource& src) override {
+        // CORE-010：Release 可见（慢调用不是调试细节，是「系统正在变得不可用」）。
+        CQ_SLOW_CALL_WF(Workflow::kDemux, "demuxer Open(含 ScanKeyframes)");
         if (src.path == nullptr) return Status{StatusCode::kInvalidArgument};
 
         NSString* ns_path = [[NSString alloc] initWithUTF8String:src.path];
@@ -390,9 +406,10 @@ public:
         CancelToken no_cancel;
         Status s = RebuildReader(kCMTimeZero, no_cancel);
         if (!s.IsOk()) return s;
-        // 一次性扫描视频轨关键帧 pts 集合（供 Seek 吸附到 <=target 关键帧）。
+        // 关键帧扫描在 Open 同步完成（供 Seek 吸附）。⚠️ 后台线程方案已否决：
+        // 与播放路径在同一 AVAsset 上并发建 AVAssetReader 会触发
+        // NSInternalInconsistencyException（output already added，P71）。
         ScanKeyframes();
-        // 扫描已消费 reader，重置回干净起始态。
         s = RebuildReader(kCMTimeZero, no_cancel);
         if (!s.IsOk()) return s;
         return Status::Ok();
@@ -400,6 +417,48 @@ public:
 
     Status GetDuration(RationalTime& out_duration) const override {
         out_duration = duration_;
+        return Status::Ok();
+    }
+
+    // MEDIA-026：轻量打开——只加载 duration，不建 reader / 不扫关键帧。
+    // 导入探测（cq_media_probe_duration）专用：大文件从秒级降到毫秒级。
+    Status OpenLight(const MediaSource& src) override {
+        if (src.path == nullptr) return Status{StatusCode::kInvalidArgument};
+        NSString* ns_path = [[NSString alloc] initWithUTF8String:src.path];
+        if (ns_path == nil) return Status{StatusCode::kInvalidArgument};
+        NSURL* url = [NSURL fileURLWithPath:ns_path];
+        if (url == nil) return Status{StatusCode::kInvalidArgument};
+
+        AVURLAsset* asset = [AVURLAsset URLAssetWithURL:url options:nil];
+        if (asset == nil) return Status{StatusCode::kIoError};
+
+        // 有限超时 + 单次重试：与全量 Open 的加载纪律一致（P33：加载失败后
+        // completion 可能永不触发，无限等 = 挂死）。
+        constexpr int64_t kLoadTimeoutNs = 5LL * 1000 * 1000 * 1000;
+        for (int attempt = 0;; ++attempt) {
+            dispatch_semaphore_t sem = dispatch_semaphore_create(0);
+            [asset loadValuesAsynchronouslyForKeys:@[ @"duration" ]
+                                 completionHandler:^{
+                                     dispatch_semaphore_signal(sem);
+                                 }];
+            const bool completed = dispatch_semaphore_wait(
+                sem, dispatch_time(DISPATCH_TIME_NOW, kLoadTimeoutNs)) == 0;
+            if (completed) {
+                NSError* err = nil;
+                if ([asset statusOfValueForKey:@"duration" error:&err] ==
+                    AVKeyValueStatusLoaded) {
+                    break;
+                }
+                std::printf("[AppleDemuxer] OpenLight duration load failed (attempt %d)\n",
+                            attempt);
+            } else {
+                std::printf("[AppleDemuxer] OpenLight load timeout (attempt %d)\n", attempt);
+            }
+            if (attempt >= 1) return Status{StatusCode::kIoError};
+            asset = [AVURLAsset URLAssetWithURL:url options:nil];  // 重建重试
+            if (asset == nil) return Status{StatusCode::kIoError};
+        }
+        duration_ = ToRational([asset duration], RoundMode::kRound);
         return Status::Ok();
     }
 
@@ -452,7 +511,23 @@ public:
     // pts=0 首帧）。这类样本在 demux 层直接跳过，只向外吐出带有效编码数据的包。
     Status ReadPacket(MediaPacket& out_packet) override {
         out_packet = MediaPacket{};
-
+        // CORE-010：Release 可见。逐包路径（每帧一次）的额外开销是两次单调时钟
+        // 读取，相对毫秒级的解封装耗时可忽略。
+        CQ_SLOW_CALL_WF(Workflow::kDemux, "demux ReadPacket");
+#ifndef NDEBUG
+        // 成对日志（进入/返回都打——析构式警报对「永不返回」的调用失明，
+        // 「最后一个无配对进入」即卡点）。逐包高频，只在 Debug 保留。
+        static std::atomic<int> seq{0};
+        const int my_seq = seq.fetch_add(1);
+        CQ_LOG_TRACE_WF(Workflow::kDemux, "ReadPacket enter #%d", my_seq);
+        struct ExitLog {
+            int seq;
+            ~ExitLog() { CQ_LOG_TRACE_WF(Workflow::kDemux, "ReadPacket exit #%d", seq); }
+        } exit_log{my_seq};
+#endif
+        // MEDIA-027：同 RebuildReader —— 泵线程无 autorelease pool，逐包调用必须
+        // 自带池，否则 AVFoundation 的自动释放对象整段播放期内只增不减。
+        @autoreleasepool {
         for (;;) {
             // 找 pts 最小的可用轨。
             int best = -1;
@@ -518,6 +593,7 @@ public:
             CFRelease(sbuf);
             return Status::Ok();
         }
+        }  // @autoreleasepool（MEDIA-027）
     }
 
 private:
@@ -538,6 +614,11 @@ private:
     // 以 [start, asset.duration) 为时间范围重建 reader 与每条轨的 passthrough 输出，
     // 并预取每条轨首个样本。start = kCMTimeZero 即从头/重置。
     Status RebuildReader(CMTime start, const CancelToken& token) {
+        // MEDIA-027：本函数被**泵线程**按帧调用（每次 Seek 一次），而泵线程是纯
+        // C++ std::thread，**没有 autorelease pool**。AVFoundation 在这里产出的
+        // 自动释放对象（AVAssetReader / NSError / tracks 数组等）会一直挂到线程
+        // 退出才回收 —— 播放越久攒越多。显式池把生命周期压到单次调用。
+        @autoreleasepool {
         TearDownReader();
         tracks_.clear();  // 幂等：Open 可能重复调用（如 CreateMediaDemuxer + SystemFrameProvider::Open），
                           // 不清空会累积失效（output=nil）的旧轨，导致 ScanKeyframes 读到 0 样本。
@@ -612,11 +693,14 @@ private:
             ts.next = [ts.output copyNextSampleBuffer];  // +1 retained（可能为 nil）
         }
         return Status::Ok();
+        }  // @autoreleasepool（MEDIA-027）
     }
 
     // 一次性扫描视频轨关键帧 pts 集合（Seek 吸附到 <=target 关键帧用）。
     // 注意：扫描会消费当前 reader；调用方需在之后 RebuildReader(kCMTimeZero) 重置。
     void ScanKeyframes() {
+        // CORE-010：Release 可见。全文件扫描是最容易在大素材上爆时间的调用之一。
+        CQ_SLOW_CALL_WF(Workflow::kDemux, "ScanKeyframes(全文件)");
         keyframe_times_.clear();
         for (auto& ts : tracks_) {
             if (ts.media_type != MediaType::kVideo) continue;

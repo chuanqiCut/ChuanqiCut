@@ -925,6 +925,365 @@ ADR-0020 文件头带着完整冲突块（`<<<<<<<< HEAD ... ======== ... >>>>>>
 - 日期 / 来源 / 验证状态：2026-10-05 / 双机第四轮合并本机巡检 / **verified**
   （ADR-0020 文件头已修复；全库 `<<<<<<<` 扫描 0 残留）
 
+### P60 · CI 渲进 MTKView drawable 静默失败 —— `framebufferOnly` 与 `ShaderWrite` 的坑
+> 日期 / 来源 / 验证状态：2026-10-05 / 相机预览每帧报错（运行时日志实证）/ **verified**
+> （usage 位图本机实测；blit 进 usage=0x04 drawable 无 error；根因机制闭环）
+
+- 现象：控制台每帧刷这两行，画面不动（黑），但帧计数一路涨：
+  ```
+  -[CIRenderDestination initWithMTLTexture:commandBuffer:] texture usage must include MTLTextureUsageShaderWrite.
+  -[CIContext(CIRenderDestination) _startTaskToRender:toDestination:...] The destination is nil.
+  ```
+- 根因：`MTKView.framebufferOnly = true`（**默认**）时 drawable 纹理**只有 `renderTarget` usage**
+  （Apple 文档原话："you may not sample, read from, or write to those textures"）；
+  而 `CIContext.render(_:to:commandBuffer:bounds:colorSpace:)` 内部要构造
+  `CIRenderDestination(mtlTexture:commandBuffer:)`，**要求 usage 含 `ShaderWrite`**
+  → init 返回 nil → 这一帧什么都没画。
+- 本机实测 usage 位图（`CAMetalLayer.nextDrawable()`，AMD Radeon Pro 5300M / macOS 26.5 SDK）：
+  `framebufferOnly=true` → `0x04 (RenderTarget)`、`texture.isFramebufferOnly=true`；
+  `false` → `0x17 (ShaderRead|ShaderWrite|RenderTarget|PixelFormatView)`。
+- 两个必须记住的子事实：
+  1. **`renderTarget ≠ shaderWrite`**（Apple `MTLTextureUsage.shaderWrite` 文档明确二者不等价）。
+     CI 写纹理走的是 shader write，不是 render pass attachment。
+  2. **`framebufferOnly` 禁的是 shader read/write，不禁 blit / render pass 写入** ——
+     实测 `MTLBlitCommandEncoder.copy` 进 usage=0x04 的 drawable，commit 后 `error=nil`。
+     这就是「渲到中间纹理再 blit」这条路成立的前提。
+- 伪绿陷阱：`render(_:to:commandBuffer:...)` **非 throws**，且 destination nil
+  **不会落到 `commandBuffer.error`**。旧代码依赖「看命令缓冲错误」+「draw 末尾无条件计数」
+  → 黑屏也能报满帧率。**计数类埋点必须绑定「真的出了效果」**，不能绑定「代码走到了这一步」。
+- 修复（TASK-CAM-015）：CI 渲进自建中间纹理（usage 含 ShaderWrite，storage=private）
+  → blit 进 drawable；计数改由 command buffer 完成回调按成功/失败分流，并加 os_log 摘要。
+- 防复发规则：**任何把 CI 渲到 drawable 的代码，先核对 drawable 的 usage；新加帧率/耗时计数器时，
+  先问「这个计数在彻底失败时会不会照样涨」**。
+
+### P61 · 编译验证选错 scheme —— `-scheme ChuanqiCut` 其实只编 Pods 静态库 target
+> 日期 / 来源 / 验证状态：2026-10-05 / TASK-CAM-015 验证踩到 / **verified**
+> （canary 语法错误 seeded 后该 scheme 仍 BUILD SUCCEEDED；换 `-scheme ChuanqiCutApp` 才编译）
+
+- 现象：`xcodebuild -workspace ChuanqiCut.xcworkspace -scheme ChuanqiCut ... build`
+  **BUILD SUCCEEDED、退出码 0、零警告**，但改动过的 App 源文件压根没被编译
+  （中间产物 `.o` 时间戳停在几小时前）。
+- 根因：workspace 里有四个 scheme（`xcodebuild -list` 可见）——
+  `ChuanqiCut` 是 **Pods 生成的静态库 target**（编 `bindings/swift` 的封装），
+  `ChuanqiCutApp` 才是 iOS App 目标。依赖图日志里 `Target dependency graph (1 target)`
+  就是线索：**只有 1 个 target 时，编的一定不是 App**。
+- 假绿等级：这是「编译通过也不作数」的极端形式 —— 连 `-Werror` 警告都没有，因为根本没编译。
+- 防复发规则（两条一起用）：
+  1. iOS App 验证固定命令：
+     `xcodebuild -workspace ChuanqiCut.xcworkspace -scheme ChuanqiCutApp -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' -derivedDataPath <隔离路径> build`
+  2. **改完 Swift 不确定有没有被编译 → 先塞一个必然报错的 canary（`1 + "x"`）跑一次，
+     确认它真炸了再拿掉**。呼应 P46/P48：`-parse`/挑错 scheme 这类"轻检查"多次放过真问题。
+
+### P63 · 用任务体里的 flag 做同步点 —— TaskRunner 计数在任务返回后才自增
+> 日期 / 来源 / 验证状态：2026-10-05 / 门禁 core-dbg `core_thread_model` 失败 / **verified**
+> （根因代码定位 + 复现率实测：空载 1/20、CPU 负载 1/30、单跑 5/5 绿）
+
+- 现象：`tools/ci/run_gate.sh` core-dbg 42 条里只有 `core_thread_model` 红，
+  失败断言「执行计数为 1」；Release 配置同msgid 100% 绿，单跑 5/5 绿。
+- 根因（`core/src/session/task_runner.cpp` WorkerLoop）：
+  ```cpp
+  task();                                    // 任务体末尾执行 finished.store(true)
+  executed_.fetch_add(1, std::memory_order_release);   // ← 任务**返回之后**才自增
+  ```
+  测试却在轮询到 `finished == true` 之后**立刻**读 `ExecutedCount()`。
+  「任务体结束」和「执行计数自增」中间有一个窗口，负载抢占时被放大 → 计数仍为 0 → FAIL。
+- 这不是 TaskRunner 的语义错误（"已执行完"自增在任务体之后是对的），**是测试选错了同步点**。
+- 修复口径（**core 不在本次 CAM-015 写集内，未改，等拍板**）：把等待条件改成等
+  `ExecutedCount()` 本身
+  （上限轮询），再断言 == 1；不要拿任务体自己的 flag 当作「runner 已记账」的证据。
+- 防复发规则：**跨线程测试的等待条件必须等「被断言的那个量」本身**，
+  等一个相邻信号 = 埋了一颗负载相关的 flaky（同族：P31 哨兵法要盯目标效果本身）。
+- 附带发现（门禁脚本）：`run_gate.sh` 的摘要会把**上一轮**的日志尾部一并打印
+  （core-rel / swift / sharedui 的日志时间戳停在上一跑），一票否决后可能被人误读成"本次也过了"。
+  看摘要必须同时看 `PASS/FAIL/SKIP` 计数与 `build/gate-logs/*.log` 的时间戳。
+
+
+
+
+### P62 · App target 没有 DEBUG 编译条件 —— `#if DEBUG` 代码被静默剥掉
+> 日期 / 来源 / 验证状态：2026-10-05 / TASK-UIA-015 走查踩到 / **verified**
+>（`CQ_AUTO_ROUTE` 钩子在模拟器上不生效；补 SWIFT_ACTIVE_COMPILATION_CONDITIONS 后生效）
+
+- 现象：App 源码里 `#if DEBUG` 的启动钩子编译后**不存在**（行为上直进编辑器失败），
+  构建零警告零错误。
+- 根因：CocoaPods 会给 **Pods 目标**默认注入 `SWIFT_ACTIVE_COMPILATION_CONDITIONS
+  = DEBUG`，但 **App target** 的 xcodegen 生成的工程里原本没有这条 —— App 代码的
+  `#if DEBUG` 全部被剥掉。之前 App target 没有 `#if DEBUG` 代码，所以从没暴露。
+- 防复发规则：
+  1. 双端 project.yml 已补 `settings.configs.Debug.SWIFT_ACTIVE_COMPILATION_CONDITIONS: DEBUG`
+     （生成产物 pbxproj 中可 grep 验证）。
+  2. App 侧新增 `#if DEBUG` 功能后，验证必须**跑行为**（模拟器启动实测），
+     不能只看 BUILD SUCCEEDED —— 与 P61（scheme 假绿）、P48（-parse 假绿）同族：
+     「编译通过」对**被预处理剥掉**的代码毫无约束力。
+
+
+### P64 · 真机 UI 测试 runner「exit 74 before establishing connection」—— 锁屏即挂，手动拉起正常
+> 日期 / 来源 / 验证状态：2026-10-05 / 启动基线测量会话（tools/perf/launch_bench 首次上真机）/ 
+> 现象 **verified**（两轮复现）；根因=锁屏为 **hypothesis**（未解锁复测前不下结论）
+
+- 现象：`xcodebuild test` 对真机（iPhone 17 Pro / iOS 26.6.1）跑 UI 测试，runner 安装成功但
+  `Early unexpected exit ... exited with code 74 before establishing connection`，连续两轮；
+  同一工程同时刻对模拟器全绿。
+- 对照证据：`xcrun devicectl device process launch --terminate-existing` **手动拉起 runner 成功**
+  （安装、签名、profile、Developer Mode 都没问题）——只有 XCTest 引导握死。
+- 已耗掉时间的弯路，防复发：
+  1. 真机 UI 测试挂 exit 74，先怀疑**锁屏**，解锁后重跑；别先去折腾签名/entitlements
+     （手动 launch 成功 = 签名链路是好的）。
+  2. `xctrace record --template 'App Launch'` 对真机**能录**，但 CLI 导出的只有裸 kdebug 表
+     （0x31,0xca / thread-narrative 全进程 60MB），**导不出 GUI 里的 Process Lifecycle 里程碑**
+     ——别试图用 xctrace XML 替代 `XCTApplicationLaunchMetric`，直接用 LaunchBench 那套 UI 测试。
+  3. 同 bundle id 覆盖安装 Debug/Release 时注意 Xcode 26 的 sim Debug 是
+     **ENABLE_DEBUG_DYLIB** 形态（代码在 `*.debug.dylib`，主二进制只有 25KB），
+     与 Release（代码全在主二进制）包结构不同，比对包大小/符号时别拿错对象。
+
+
+### P65 · blit 写 framebufferOnly drawable —— 无校验层的「实测无 error」不算证据
+> 日期 / 来源 / 验证状态：2026-10-05 / TASK-CAM-015 真机 DEBUG 调试 SIGABRT /
+> 现象 **verified**（校验层下第一帧必炸、100% 复现）；修后 SDK typecheck 通过，
+> 真机复验归传哲（未实测帧率）
+
+- 现象：`CameraRenderer.draw` 的 `encoder.copy(from: scratch, to: drawable.texture)` 在
+  DEBUG（Metal API Validation 开启 / GPU 抓帧）下：
+  `MTLDebugBlitCommandEncoder ... failed assertion 'Copy From Texture Validation
+  destinationTexture must not be a framebufferOnly texture.'` → SIGABRT。
+- 根因：Metal 规范**禁止对 framebufferOnly 纹理做 blit**（源/目标都禁；该纹理只允许当
+  render pass 的 colorAttachment）。P60/CAM-014 记录的「blit 写入合法（本机实测无 error）」
+  是**无校验层运行**下的未定义行为放行，不算证据。
+- 与 P61 同族升级：不止「scheme 开关改变编译对象」，**校验层开关改变运行时合法性**。
+- 修复（CAM-015 翻案）：`CameraVideoView` 改 `framebufferOnly = false`（blit 合法化，
+  中间纹理保留作 CI 落脚点），CameraRenderer 两处错误注释勘误。真机帧率不达标时的
+  出路是 blit 换 render pass，**不是改回 true**。
+- 防复发规则：Metal/图形 API 的行为结论必须在**校验层开启**（DEBUG scheme 的 Metal
+  API Validation、GPU 抓帧）状态下实测；引用「实测无 error」必须注明校验层开关状态。
+
+### P66 · VT 解码器只认 'hvc1' —— 'hev1' 格式描述建会话必 -12906
+> 日期 / 来源 / 验证状态：2026-10-05 / TASK-MEDIA-022 / **verified**
+>（golden 'hev1' 文件复现 -12906；重建 'hvc1' 后 150 帧全解）
+> ⚠️ 编号更正：原编 P63 与并行会话（CAM-015 TaskRunner 条目）撞号，按
+> 「改动面小的让位」（PLAN-三线并行 §2-3）改为 P66。
+
+- 现象：`VTDecompressionSessionCreate` 对 ffmpeg 产出的 HEVC MP4 返回
+  **-12906 kVTUnsupportedDecompressionErr**，即使文件是普通 8-bit 4:2:0。
+- 根因：VT 的 HEVC 解码器按 **'hvc1'** subtype 注册；'hev1'（ffmpeg 默认 tag）
+  与 'dvh1'/'dvhe'（杜比视界）的格式描述匹配不到解码器。文件本身没问题
+  （AVFoundation 能解析、AVAssetReader 能 passthrough）。
+- 修法：用**同一份 hvcC**（参数集字节完全相同）`CMVideoFormatDescriptionCreate`
+  重建 subtype='hvc1' 的格式描述再建会话。iPhone 实拍本来就是 'hvc1'，不受影响。
+- 防复发规则：
+  1. 媒体测试断言不要只覆盖 Apple 工具链产物 —— golden 里必须有 ffmpeg tag 的
+     'hev1'（现有 `gf_1080p_hevc.mp4` 即是，别删）。
+  2. VT 相关排障先打印 **OSStatus + codec fourcc + hvcC chroma/bitDepth**
+     （`VideoToolboxDecoder` 失败分支已内置该诊断打印）。
+  3. 运维注意：**两轮 run_gate.sh 并发会互踩**（prepare 替换 XCFramework 的瞬间
+     另一轮的测试在读）→ 门禁一律串行独占跑。
+
+### P67 · 三个「方向」枚举的 landscape 命名互换 + 没有 scene 级方向通知
+> 日期 / 来源 / 验证状态：2026-10-06 / TASK-CAM-016 / **verified**
+>（SDK 头文件原文引用，见 UIOrientation.h / AVCaptureSession.h）
+
+1. `UIInterfaceOrientationLandscapeLeft = UIDeviceOrientationLandscapeRight`
+   （UIOrientation.h 原文注释），且 AVCaptureVideoOrientation 头文件注释：
+   LandscapeRight =「home button on the right」⇒ **UI ↔ AVCapture 的 landscape
+   名字互换**：UI.landscapeLeft（home 在右）→ AVCaptureVideoOrientation.landscapeRight。
+   **同名直映会在真机上横屏 180° 反接** —— CAM-016 首版即犯了同名直映，头文件核源后纠正。
+2. iOS SDK **不存在** scene 级方向变更通知（`UIWindowScene.interfaceOrientationDidChange*`
+   不存在，swiftinterface/头文件双确认）；触发源只有 `UIDevice.orientationDidChangeNotification`，
+   且它**早于** scene 提交转场 —— 立即读 `scene.interfaceOrientation` 可能拿旧值。
+   CAM-016 取值侧分 0/200/500ms 三次采样取终值（消费方同值去重，重复采样无害）。
+3. `AVCaptureVideoOrientation` 自 iOS 17 整体弃用（指向
+   AVCaptureDeviceRotationCoordinator）；新代码用 `connection.videoRotationAngle`
+   {portrait:90, landscapeLeft:0, landscapeRight:180}，iOS 16 才走旧 API。
+- 防复发规则：**涉方向/方位映射先 grep SDK 头文件注释，不凭记忆**（三套枚举命名
+  各说各话）；映射表必须收敛在一处（CameraManager.rotationAngle / videoOrientation），
+  注释里带头文件证据。
+
+### P68 · macOS CLI 上 CIContext.render(to MTLTexture) 静默写零 —— 本机探针判不了 iOS 行序
+> 日期 / 来源 / 验证状态：2026-10-06 / TASK-CAM-016 行序探针 / **verified**（本机矩阵实验）
+
+写「CI 行序探针」（CVPixelBuffer 红顶蓝底 → render → 纹理读回）在 macOS 26 CLI 下：
+private/shared/managed × 各 usage **全组合输出全零**、`commandBuffer.error = nil` ——
+`render(_:to:commandBuffer:bounds:colorSpace:)` 在 macOS 脚本环境整体静默 no-op
+（同输入走 createCGImage 正常出图）。⇒ **该 API 的 iOS 行为不能用 macOS 探针判定**
+（P60 同族：非 throws API 的失败无处落）。另：CIRenderDestination 版 render 在
+Swift 下经 `toDestination:` 标签也找不到（ObjC selector `renderImage:toDestination:` 未按预期导入）。
+- 防复发规则：Metal/CI 行为探针先跑「自检基准」（如 CGImage 路径）确认环境有效再信
+  结果；宿主 OS ≠ 目标 OS 的探针结论只算 hypothesis，iOS 行为必须模拟器/真机实证。
+
+### P70 · 真机自动测量基建的三个坑（stdout 全缓冲 / xcodebuild 段错误 / Debug XCFramework）
+> 日期 / 来源 / 验证状态：2026-10-06 / TASK-MEDIA-023 阶段 0 剖面 / **verified**
+> ⚠️ 编号更正：原编 P67 与并行会话（CAM-016 方向枚举条目）撞号，按「改动面小的
+> 让位」（PLAN-三线并行 §2-3）改为 P70（当日已有 P69）。
+
+1. **`std::printf`/Swift `print` 走 stdout = 全缓冲**：`devicectl device process
+   launch --console` 管道下诊断行永远憋在缓冲区（本轮连坑三次）。诊断输出一律
+   `std::fprintf(stderr, …) + fflush(stderr)`（stderr 无缓冲）；Swift 侧同理。
+2. **xcodebuild 对 'platform=iOS' 目的地偶发 SIGSEGV（exit 139，Xcode 26.6 自身
+   bug，objc respondsToSelector 空指针）**：清 derivedData 无效；换
+   `-sdk iphoneos -destination 'generic/platform=iOS'`（门禁同款）绕开。
+3. **App 的 core 代码来自预构建 XCFramework（podspec vendored）**：改 core/*.cpp
+   后必须 `build_core_apple.sh --config=Debug && bindings/swift/prepare.sh` 再
+   xcodebuild，否则设备跑旧 core；门禁建的是 **Release（NDEBUG）**——`#ifndef
+   NDEBUG` 的仪器/日志在设备上全部静默消失，真机剖面必须 Debug 配置重建。
+   另：Xcode 26 的 Debug 产物是 **ChuanqiCutApp.debug.dylib**（非主二进制），
+   strings/nm 验证要查对文件。
+
+### P69 · AVAssetWriterInputPixelBufferAdaptor.pixelBufferPool 在 startWriting 前是 nil
+> 日期 / 来源 / 验证状态：2026-10-06 / TASK-CAM-017（真机「录制无效」根因）/ **verified**
+>（macOS 探针：startWriting 前 pool=nil、startWriting+startSession 后=有、取缓冲成功）
+
+- 现象：真机录制「无效」—— `CameraRecorder.setupIfNeeded` 在 `startWriting` **之前**
+  抓 `adaptor.pixelBufferPool`（nil），`appendVideo` 的池守卫又排在
+  `startSessionIfNeeded` 之前 ⇒ 每帧在守卫处丢弃 ⇒ writer 永不 startWriting ⇒
+  死锁 + 空产物。
+- 修法（CAM-017）：序改「setup → startSession（首帧）→ 懒取池+缓存（取不到
+  CVPixelBufferCreate 直配兜底）→ 渲染 → append」；`markAsFinished` 仅 `.writing`
+  态可调（未知态调它 = NSInternalInconsistencyException）；收尾 0 帧 → 显式
+  `.nothingWritten` 失败，不产空文件假成功（P60 族：计数必须绑定真出了效果）。
+- 防复发规则：**依赖「系统在某状态后才有”的资源（池/连接/格式），取用点必须
+  排在该状态达成之后，且有「未达成」路径的行为定义**；跨状态资源禁止在 setup
+  阶段预取缓存。
+
+### P71 · iOS 26 SDK 起 UIDevice 整体 @MainActor 隔离 —— 后台队列读 orientation 直接告警
+> 日期 / 来源 / 验证状态：2026-10-06 / TASK-CAM-017 / **verified**（编译告警实证）
+> ⚠️ 编号更正：原编 P70，与先取号的「真机测量基建」（P67 撞号让位而来）重号，
+> 按「先入库保留」让位为 P71。
+
+- `UIDevice.current` / `.orientation` 在 iOS 26 SDK 被标 @MainActor；sessionQueue 等
+  非主线程上下文直接读 = "main actor-isolated class property 'current' can not be
+  referenced from a nonisolated context"（本仓 Swift 6.1 下是 warning，更严配置即 error）。
+- 修法（CAM-017）：**主线程入口显式传位姿** —— `configureAndStart(devicePose:)` /
+  `switchPosition(devicePose:)`，ViewModel（@MainActor）读 `UIDevice.current.orientation`
+  传入，manager 存 `devicePose` 供 sessionQueue 侧的方向标定用。
+- 防复发规则：UIKit 高频对象（UIDevice/UIApplication/UIWindowScene）按 iOS 26 口径
+  全部视作 MainActor 专属；后台线程需要的信息由主线程入口作为**值参数**带下去，
+  不要在后台闭包里现读。
+
+### P72 · RotationCoordinator 新建即读 = 拿到未初始化的 0 —— 把对的改成错的
+> 日期 / 来源 / 验证状态：2026-10-06 / TASK-CAM-017 二修（后摄方向回归）/ **verified**
+>（真机双现象反推定案：CAM-017 版本前摄 0° 正确 + 后摄 0° 横躺）
+
+- 现象：CAM-017 用 `AVCaptureDevice.RotationCoordinator` 在 addInput 时同步读
+  `videoRotationAngleForHorizonLevelPreview` 折算安装偏移，结果**后摄竖屏从正确
+  （90°）变成横躺**——新建的 coordinator 该值依赖传感器数据、KVO 异步生效，
+  同步初读拿到 0，偏移被算成 270° 叠给了后摄。
+- 事故的正面价值：**恰好实证了前摄正确角度 = 0°**（前摄 90+270=0 显示正确、
+  后摄 90+270=0 横躺 ⇒ 前后摄安装差 = 270° 常量，iPhone 族）。
+- 终态：砍掉 coordinator，`videoRotationAngle = 静态表(P67) + (front ? 270 : 0)`，
+  snap 90° 栅格。iOS 16 旧 API 是语义方向（系统内处理安装差），**不加**偏移。
+- 防复发规则：**依赖传感器/motion 的 API（RotationCoordinator 角度、位姿）新建后
+  同步初读不可信**——要么 KVO 等首个有效值，要么用无时序依赖的常量/查表。
+  用它之前先问：这个值此刻真的已经算出来了吗？
+
+### P73 · AVCapturePhotoSettings 默认走 HEIF 文件管线 —— photo.pixelBuffer 恒 nil
+> 日期 / 来源 / 验证状态：2026-10-06 / TASK-CAM-017 二修（拍照无效根因）/ verified
+>（API 契约：非 pixel-buffer 格式的 photo 不带 pixelBuffer；真机复验归传哲）
+
+- `AVCapturePhotoSettings()` 默认 HEIF/JPEG 编码管线，回调里 `photo.pixelBuffer`
+  为 nil —— PhotoRelay deliver(nil) →「拍照失败：未取到照片数据」= 真机「拍照无效」。
+- 修法：`AVCapturePhotoSettings(format: [kCVPixelBufferPixelFormatTypeKey:
+  kCVPixelFormatType_32BGRA])` 显式要 pixel buffer（与预览/录制链同口径，WYSIWYG）。
+- 防复发规则：用 `photo.pixelBuffer` 前必须确认 settings format 是 pixel-buffer 类；
+  「回调成功但数据字段 nil」是静默失败一族（P60/P69 同族），遥测要打数据字段本身。
+
+### P74 · 收尾回调在主线程直读跨队列计数 —— 脏读 0 把成功录制判成失败删文件
+> 日期 / 来源 / 验证状态：2026-10-06 / TASK-CAM-017 二修（池修复后录制仍无效的残余）/ verified（代码审查 + 锁修复）
+
+- `finish()` 在主线程直读 `appendedFrames`（videoQueue 在 +=），脏读到 0 时
+  `writtenFrames > 0` 不成立 → `.nothingWritten` → **删除已成功落盘的文件**。
+  P69 修复后录制链路已通，这层把成功结果又吞了。
+- 修法：自增与读全部收进锁；帧数改在 `finishWriting` 回调内经锁取（此刻
+  isFinished 已挡新帧）。
+- 防复发规则：跨队列状态判定成败时，**判定依据的读取必须与写入同一同步原语**；
+  「成功条件里的计数」读到 0 与「真的没做」必须区分（0 也可能是读早了）。
+
+### P71 · 同一 AVAsset 并发建 AVAssetReader → NSInternalInconsistencyException 崩溃
+> 日期 / 来源 / 验证状态：2026-10-06 / TASK-MEDIA-026 后台扫描方案 / **verified**（真机崩溃复现 + 回退后消失）
+
+后台线程给 `asset_`（与播放路径共享的 AVURLAsset）另建 AVAssetReader + TrackOutput，
+与播放路径的 reader 操作并发 → `*** -[AVAssetReader addOutput:] cannot add an output
+that has already been added to another AVAssetReader`（signal 6）。AVAsset 同 URL 的
+并发 reader 操作不可靠。防复发：**同一文件的 demux 生命周期内只允许一个 AVAssetReader
+实例**；需要并行读（索引/预览缩略图）时用独立的 AVURLAsset 实例。
+
+### P72 · VT 静默丢帧 + `VTDecompressionSessionWaitForAsynchronousFrames` 永久阻塞 —— 播放 ~5s 冻结真因
+> 日期 / 来源 / 验证状态：2026-10-06 / TASK-MEDIA-026 / **根因 verified**（成对日志：
+> PopFrame enter 后无 exit，且无任何单次慢调用警报——卡在 VTWait 内部）；修复本机全绿，
+> 真机复测待重签
+
+- 现象：播放 ~5s 后 rendered/s=0（泵停转），请求照流（180/s）、t 正常推进、无单次
+  慢调用警报。成对日志（enter/exit）定位：`PopFrame` 进入后**永不返回**。
+- 根因：PopFrame 空队列分支的 `VTDecompressionSessionWaitForAsynchronousFrames`
+  在 VT **静默丢弃**某帧（既不完成也不回调错误）时**永久阻塞**；解析式警报
+  （析构时打印）对"永不返回"的调用天然失明，此前多轮警报未响即此故。
+- 修复：PopFrame 内以 **2ms 轮询**替代 VTWait（回调异步入队），配最老 pending
+  （含提交时刻表）>1s 的丢帧超时——超时清 pending + has_prev_ 失效 + kIoNotFound，
+  上层重新 seek，播放自恢复。⚠️ Flush 内的 VTWait 同风险暂保留（Seek 路径触发，
+  provider Seek 警报可见）。
+- 防复发规则：**凡是"等异步回调"的等待一律禁止无上界阻塞**——要么轮询+超时，
+  要么事件句柄；析构式（RAII）警报必须配合成对 enter/exit 日志才能抓"永不返回"。
+
+### P75 · 解码输出队列「只进不出」→ 3.4GB → jetsam signal 9（播放 5 秒后永久冻结的真身）
+> 日期 / 来源 / 验证状态：2026-10-06 / TASK-MEDIA-027 / **根因 verified**（真机两次
+> 逐字节级复现：footprint=3375.0MB + `App terminated due to signal 9`；修复后本机
+> ctest 42/42）。**修复后真机复验未做**（设备锁定，见 TASK-MEDIA-027 §5）
+
+- 现象：真机（iPhone 17 Pro，相册 4K60 HDR MOV，解码输出 1080x1920 BGRA）播放前 4 秒
+  正常（rendered/s=131→116），第 5 秒起 `rendered/s=0` 且**再不恢复**；Watchdog
+  「卡在 provider+acquire」1174ms→8226ms 单调增长；DEBUG 剖面行 `footprint=3375.0MB`；
+  进程被 signal 9 杀掉（jetsam，不是崩溃）。
+- 根因：`VideoToolboxDecoder::PopFrame` 显示序连续性判据的第三条分支 ——「无在途帧且
+  队列最小 pts ≠ 期望」时**原样返回 kIoNotFound 且不弹出**。期望值与队列最小帧都不变，
+  下次 PopFrame 判定完全相同 → 无限重复；调用方 `AcquireExact` 收到 kIoNotFound 继续
+  Feed → VT 继续解码入队 → 队列单调增长。8.3MB/帧 × 约 400~500 帧 = 3.4GB，与实测吻合。
+  触发源：①**VFR**（iPhone 实拍常见）—— 「期望」由上一帧 duration 外推，帧长一变就
+  永远对不上；②VT 静默丢帧。
+- 排查手法（有效，可复用）：**把内存足迹并进周期性剖面行**（`task_vm_info.phys_footprint`），
+  否则「卡死 + signal 9」无法区分 jetsam 与纯解码追赶失败。真机 `devicectl --console`
+  抓 stderr 即可。
+- 修复：①连续 8 次（`kMaxMismatchStreak`）等不到期望即判定缺口 → 交付队列最小帧并重锚
+  `has_prev_=false`；②队列超 12 帧（`kMaxQueuedFrames`）跳过重排判据强制交付（不依赖
+  判据正确性的内存闸门）；③`Flush()` 的 VTWait 换为轮询 + 1s 超时（P72 的债，每次 Seek
+  都走，等于慢路径的永久阻塞入口）；④`OutputCallback` 改为**先入队后登记**
+  （原顺序让「pending 空」不蕴含「帧已入队」，旧 GOP 帧会漏进新序列）。
+- 排障踩到的反例（务必记住）：**首版修复「一见到不匹配就按缺口放行」把
+  `media_sequential_real` 打挂**（fast=128000 / slow=116000，提前 3 帧）—— B 帧重排下
+  「无在途帧且不匹配」是**常态**（参考 P 先到，其 B 帧在其后才喂入），必须按**连续次数**
+  而非单次判定区分「重排窗口」与「缺口」。
+- 防复发规则：**①任何"等某个条件成立"的重排/同步判据，都必须有一条不依赖该判据的
+  内存上界闸门**；②判据失败分支必须区分「还没来」与「永远不会来」，且后者的放行阈值
+  要按 B 帧重排窗口给余量，不能取 1；③回调内「登记完成」必须在「交付数据」**之后**，
+  否则等待方的完成判据不蕴含数据可见。
+
+### 编号纪律提醒（2026-10-06）
+> P72 被两个来源各占一次：CAM-017 二修（RotationCoordinator 未初始化）与 MEDIA-026
+> （VTWait 永久阻塞）。取号前必须 `grep -n "^### P" .ai/memory/pitfalls.md` 核水位，
+> 不能只看当日日志里的号。
+
+### P76 · Debug-only 的诊断设施在 Release 包里等于不存在 —— 本次排障赖以取胜的两个工具都是
+  **日期**：2026-10-06　**来源**：MEDIA-027 → CORE-010　**验证状态**：已定位并修复（本机门禁 PASS=9/FAIL=0；core-dbg 43/43、core-rel 43/43）
+
+- 现象：MEDIA-027 定位成功之后回头看，当时起到决定性作用的两处设施在**真机 Release 包里
+  一条日志都不会留**：①`SlowCallAlarm`（>500ms 告警）在 **4 个文件里各抄一份**且全部是
+  `#ifndef NDEBUG`（media_decode.mm / media_demux.mm / preview_pump.cpp /
+  system_frame_provider.h，其中 pump 那份阈值还是 1000ms —— 同一工程两套阈值）；
+  ②`WatchdogLoop`（报出「RenderFrame 卡在 'provider+acquire' 8226ms」的那个）连同它依赖的
+  `DebugStage()`/`DebugStageSinceNanos()` 与 6 个 `DebugStageGuard` 全在 NDEBUG 块里。
+- 为什么这是坑而不是取舍：**Release 才是真机使用的常态**，而冻结/内存类故障恰恰不会在
+  Debug 包上发生。辛苦攒出来的诊断，只在「已经能复现的人」手里有用 —— 而排障现场
+  往往正是那个还没复现出来的人。
+- 同类衍生（本次踩到 3 次）：把一处的 `#ifndef NDEBUG` 解开后，**它依赖的成员变量/计数器
+  仍留在 NDEBUG 块里** → Debug 通过、Release 编译失败。发生在
+  `preview_renderer.h` 的 `debug_import_logs_`/`debug_reuse_logs_`、
+  `system_frame_provider.h` 的 `debug_finalize_logs_`/`debug_chase_iters_`、
+  `media_decode.h` 的 `debug_order_stall_*`/`debug_queue_cap_*`。
+  **本机 Debug 全绿发现不了，只有 Release 构建才会炸。**
+- 修复（CORE-010）：①`SlowCallAlarm` 收到 `core/base/perf.h` 成统一设施，带 workflow、
+  默认阈值 500ms、Release 可用；②看门狗与阶段跟踪提到 Release（其余开销仅一次 relaxed
+  atomic store + 一次 steady_clock）；③所有本来收进 NDEBUG 的**成员/计数器**同步解开。
+- 防复发规则（见 [TASK-CORE-010](../../docs/tasks/TASK-CORE-010.md)）：
+  **改完任何依赖 NDEBUG 的代码，必须 Debug + Release 双向编译验证**，不能只跑 Debug；
+  判断某诊断「该不该进 Release」的标准是 —— **它报的是「系统在偏离正轨」还是「我想看细节」**，
+  前者（降级发生、上界命中、慢调用、看门狗）一律 Warn 且 Release 可见，后者才留 Debug/Trace。
 ### P60 · 无锁 freelist 边写边定并发模型 —— 初版 Acquire 逻辑不自洽，靠自审在提交前抓住
 AUDIO-001 的 AudioBlockPool 初版把「Treiber 栈」写成了一半：没有 per-slot next 数组，
 CAS 弹栈后无处取后继，且注释里临时反悔换方案，逻辑闭合不上（自审发现，未进 commit）。
@@ -974,3 +1333,76 @@ TASK-CAM-012 剩余风险栏其实预判了（"若真机上 CI 工作空间表�
   宿主脚本须改写显式绑定，产物代码按构建机 5.9+ 口径不受影响。
 - 日期 / 来源 / 验证状态：2026-10-06 / CAM-016 实现 / **verified**（脚本 14/14 后
   才落盘 FaceMaskTests；两处修复均回写进生产代码）。
+
+### P77 · 「回调可能在另一线程完成」的注释只让我补了顺序，没让我补互斥 —— Feed() 无锁写 pending map 写坏红黑树，SIGSEGV @0x0
+**日期**：2026-10-06　**来源**：MEDIA-027 验证期门禁 core-dbg 失败　**验证状态**：已定位并修复（A/B 对照 未修复 5/14 崩 vs 修复 0/14）
+
+- 现象：`media_sequential_real` 在门禁 core-dbg 里 SIGSEGV（EXC_BAD_ACCESS @0x0）。本机单独重跑
+  连绿 4 次，一度被当成 flaky。真堆栈（DiagnosticReports .ips）：
+  `Feed()` → `std::map<int64_t,RationalTime>::operator[]` → `__tree_balance_after_insert` →
+  `__tree_is_left_child` 解引用空节点。
+- 根因：`pending_dts_pts_` / `pending_submit_nanos_` 的**全部 17 个访问点里，只有 `Feed()` 的
+  两处插入是无锁的**；另一侧写入方是 VT 输出回调（`OutputCallback` → `Enqueue`/`MarkDecoded`，
+  CoreMedia 线程，持 `queue_mutex_`）。异步硬解下「喂第 N+1 包」与「第 N 包回调」天然并发 ——
+  两头并发写同一棵 `std::map`，红黑树被写坏。
+- **引入点不是本次改动**：`pending_dts_pts_` 的无锁插入来自 `437bc16e`（2026-10-04，MEDIA-021
+  重排登记）。当时的注释已经写明「回调可能在另一线程**立即完成并 erase**」——作者为了解决
+  **顺序**（必须先登记后提交）而把它前移，却没意识到这句话本身就在告诉你**有第二个线程**，
+  于是漏了互斥。MEDIA-027（`63c5100a`）在同一处加了第二笔无锁插入 `pending_submit_nanos_`，
+  把竞态窗口扩大一倍，才在今天炸出来。
+- **教训（一句话）**：**顺序对了 ≠ 互斥对了。** 只要注释里出现「回调/另一线程/异步」字样，
+  顺手必须问一句「那把锁是谁？」并处理=无锁=的默认假设。
+- 修复（`pal/apple/media_decode.mm`）：两处插入收进 `queue_mutex_`，且**必须在
+  `VTDecompressionSessionDecodeFrame` 之前释放** —— 回调要抢同一把锁，持锁提交会自锁死。
+  同时在 `media_decode.h` 成员处写明「受 `queue_mutex_` 保护」的不变量。
+- **验证方法（关键，别只报连绿）**：并发故障不能用「跑几次没崩」结案。本次做法是
+  **A/B 同源代码单变量对照** —— 只差这一把锁编两个二进制，12 核各挂 2 个 `yes` 制造负载，
+  交错各跑 8 轮：未修复 3/8 崩（合并前一轮 2/6），修复 0/8；合计 5/14 vs 0/14。
+  按 p≈0.36 计，「修复后 14 次全过是巧合」的概率 ≈ 0.2%。
+- 防复发规则：**给共享容器加字段时，先 `grep` 该字段的每一个访问点并逐个指认守卫互斥量**；
+  跨线程容器的不变量要写在**头文件成员旁**（代码会留下来，对话不会）。
+
+### P78 · 另一会话用 `swiftc -parse` 当 SharedUI 验收标准 —— 38 处类型错误 + 一个从未提交的类型进了主干
+**日期**：2026-10-06　**来源**：合并 `origin/main`（17 个远端提交）跑门禁发现　**验证状态**：**已修复**（2026-10-07：SharedUI 128 用例全绿 + iOS App BUILD SUCCEEDED 且项目代码 0 告警；详见 P79）
+
+- 现象：门禁 `apple-sharedui` FAIL，`apps/apple/packages/SharedUI/Sources/SharedUI/Player/`
+  下 10 个文件、38 个唯一编译错误站点。核 dgb/rel（45/45）与 Swift 绑定不受影响。
+- 两类硬错误：①`PlayerViewModel.swift` 引用 **`PlayerZoomMath`，而这个类型在整个仓库历史里
+  从未存在** —— 提交 `cc7267a`（UIA-024/017 进阶版 Batch B）的 message 里写明了它的规格
+  （1x–3x 钳制 / 回弹阈值 1.15 / 拖移边界半幅×(scale-1)），但实现文件**压根没进 commit**；
+  ②`SubtitleParser.swift` 缺 `import SwiftUI`（`Alignment`/`HorizontalAlignment` 全部 not in scope）、
+  `guard let x = <Double>`、`text` 是 `let` 却被赋值、`current` 未定义 —— 全是**类型检查级**错误。
+- 根因：该会话的验证命令是 `for f in Player/*.swift; do swiftc -parse "$f"; done`（写在其任务卡
+  `verification` 里），而 **`-parse` 只做语法，不做类型检查** —— P46/P48/P49 已经踩过三次同一个坑，
+  这次是它第一次把主干打红。**构建机 / 门禁从未在那一侧跑过。**
+- 归属判定方法（可复用）：`git diff --cached origin/main -- <dir>` 显示该目录只有我这侧
+  `AppEntry.swift` 的改动 → 13 个 Player 文件与 origin/main 逐字一致 → **不是我合并错了**；
+  `git log --all -S <缺失符号>` 能找到「提到它但没实现它」的那个提交。
+- 防复发规则：①**`-parse` 绿不是绿**，Swift 必须 `-typecheck`（SharedUI 侧还要带
+  `-swift-version 6`）；②外部会话的产物进主干前，**必须在合并侧跑一次完整门禁**，
+  不能因为「对方自称验证过」放行（远端的"已验证"按未验证处理，见 CLAUDE.md 委托小节）；
+  ③任务卡 `verification` 里出现 `-parse` 应直接驳回。
+
+### P79 · 「从未编译过」的代码不是「没 bug」，是「bug 全没被发现」—— 修完 38 处编译错误后，行为 bug 成批浮出
+**日期**：2026-10-07　**来源**：P78 的修复过程　**验证状态**：已修复（SharedUI 128 用例全绿；iOS App BUILD SUCCEEDED + 项目代码 0 告警）
+
+- 事实：`SharedUI/Player/` 那一批代码**从未被编译过**，所以第一次真编译（P78）暴露 38 处错误；
+  修到能编后第一次真跑测试（128 例），又暴露 **5 处行为 bug**。每一处都不是我能猜到的，
+  全是测试 ⇄ 实现的口径差：
+  1. `Dialogue` 行 `split(separator:",", maxSplits: 8)` 只切出 9 段，而守卫是 `fields.count >= 10`
+     → **所有字幕行被静默丢弃**（`guard ... else { continue }` 吞得毫无声息）。
+  2. `PlayerRecentStore` 里 `urlString` 存的是 `absoluteString`（`file:///...`），却拿去喂
+     `FileManager.fileExists(atPath:)` → 恒 false → **每次装载把全部本地条目清空**，
+     「跨会话最近播放」名存实亡。
+  3. `didSet` **在 init 里不会触发** —— 从 UserDefaults 恢复的倍速没有推给引擎，
+     「记忆读出来了但速率还是 1x」。
+  4. 循环/Double-tap 分支调了 `engine.play()` 却没同步 `isPlaying`，UI 停在暂停态。
+  5. `String(data: encoding: .utf16)` 对「只有 BOM / 长度不足」会**成功返回空串**，
+     导致坏文件被判成 `.empty` 而不是 `.unsupportedFormat`。
+- 教训：**「编译过了」只代表语法与类型自洽，不代表行为成立。** 一个模块若能编却从未跑过测试，
+  它的 bug 密度等于「没写过测试」的模块。补的时候唯一有效的抓手是**先让既有测试跑通顺** ——
+  这五处全部是被测试直接指出的，没有一处靠肉眼审查发现。
+- 方法沉淀（可复用）：**修复别人的半成品时，按「编译 → 单测 → 平台编译」三级推进，每级只修本级暴露的问题**，
+  不要试图一次性读懂全部意图；测试是唯一权威的规格说明书。
+- 顺带清掉的假注释：源码里写着「本机 SDK 验证无弃用标记」—— 实际 iOS 编译报两条弃用告警
+  （`chapterMetadataGroups` / `AVMetadataItem.stringValue`，iOS 16 起）。**没编译过的验证结论一律作废。**

@@ -87,7 +87,8 @@ final class PlayerLayerHostNSView: NSView {
 struct AirPlayRoutePicker: UIViewRepresentable {
     func makeUIView(context: Context) -> AVRoutePickerView {
         let view = AVRoutePickerView()
-        view.prioritizesVideoDevices = true
+        // ⚠️ `prioritizesVideoDevices` 是 iOS 专属 —— macOS 分支写上会直接编译失败
+        // （上一次只用 `swiftc -parse` 验收，语法检查放过了平台可用性）。
         view.tintColor = .white
         return view
     }
@@ -98,7 +99,7 @@ struct AirPlayRoutePicker: UIViewRepresentable {
 struct AirPlayRoutePicker: NSViewRepresentable {
     func makeNSView(context: Context) -> AVRoutePickerView {
         let view = AVRoutePickerView()
-        view.prioritizesVideoDevices = true
+        // macOS 无 `prioritizesVideoDevices`（iOS 专属），也无 tintColor。
         return view
     }
 

@@ -470,6 +470,46 @@ int32_t cq_player_tick(CQPlayer* player);
 int32_t cq_session_timeline_duration(const CQSession* session, int64_t* out_value,
                                      int32_t* out_timescale);
 
+/* ==========================================================================
+ * 日志：按「端到端链路（workflow）」筛选（CORE-010）
+ * ==========================================================================
+ *
+ * 日志有三维，彼此正交：
+ *   级别   Level    多详细（trace / debug / info / warn / error）
+ *   环节   Stage    帧走到了哪一步（用于带 pts 的帧级 trace）
+ *   链路   Workflow 我在排查哪条链路（core / model / import / demux / decode /
+ *                   framecache / preview / render / export / camera / gfx /
+ *                   perf / mem / ai）
+ *
+ * 为什么要这一层：前两维都答不出「把 preview 链路单独打开，其余闭嘴」。
+ * 真机上的日志洪水会淹掉唯一有用的那几行，而这时候通常没机会重编译。
+ *
+ * 输出格式（每条都带，可直接 grep）：
+ *     WARN [wf:decode] [media_decode.mm:123] 显示序缺口 #1：...
+ *   筛一条链路：adb logcat | grep '\[wf:decode\]'
+ *   只看某链路告警：grep '\[wf:decode\]' | grep WARN
+ *
+ * 环境变量（三选任意组合；由 cq_log_configure_from_env 一次性读取）：
+ *   CQ_LOG_LEVEL    = trace|debug|info|warn|error   全局兜底级别，默认 info
+ *   CQ_LOG_WORKFLOW = preview,decode,mem            白名单，不设 = 全开
+ *   CQ_LOG_WF_LEVEL = decode=trace,preview=debug    单链路提级（覆盖全局）
+ *
+ * 用法建议：App 启动时调一次 cq_log_configure_from_env()（Xcode Scheme 的
+ * Arguments → Environment Variables 里加上述变量即可，无需改代码、无需重编）。
+ *
+ * 注意：这是一个**显式调用**而非隐式全局初始化 —— 隐式初始化会让「日志何时
+ * 开始生效」变得不可预测，也会给静态库消费者带来副作用。
+ */
+
+/* 一次性读取上述三个环境变量并生效。幂等，可重复调用。
+ * 变量不存在或非法时保持现状（不退化到某个"看起来合理"的默认值——那会悄悄
+ * 改掉使用者的排查意图）。 */
+void cq_log_configure_from_env(void);
+
+/* 全局兜底最低级别。level：0=trace 1=debug 2=info 3=warn 4=error。
+ * 越界值忽略（不修改任何状态）。 */
+void cq_log_set_level(int32_t level);
+
 #ifdef __cplusplus
 } /* extern "C" */
 #endif

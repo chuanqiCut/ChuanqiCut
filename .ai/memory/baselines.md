@@ -635,6 +635,109 @@ fit 为每帧一次整数几何计算（4 次乘除）+ 一次视口状态设置
 | 平坦区方差压降（s=1.0 / 基线） | 0.000082 / 0.006115（75×） | 同上（GPU 实证） | 2026-10-04 | tools/qa/beauty_harness |
 | 边缘过渡宽度（10-90%，s=0.5 / s=1.0） | 2.0px / 4.0px | 同上 | 2026-10-04 | 平台对比度保持 101.6%/103.3% |
 
+## 启动基线（LaunchBench，2026-10-05）：「点图标 → 首页」冷启动
+
+> 来源：用户报「App 启动感觉慢」的诊断会话。测的是**正式启动路径**
+> （`ChuanqiCutApp.init()` 只调 `markMainThread()`；HomeView 纯导航壳；
+> Session/Previewer/相机全部惰性，进编辑器/拍摄页才创建）。
+> 工具：`tools/perf/launch_bench/`（独立 XcodeGen 工程，零主工程改动，
+> `XCTApplicationLaunchMetric` ×7，预热 1 轮，每轮 terminate 后 launch）。
+
+**环境**：宿主 Intel i7-9750H / macOS 26.7.1 / Xcode 26.6；模拟器 iPhone 16 Pro（iOS 18.4）。
+电量/温度未记录。⚠️ 模拟器绝对值受 Intel 宿主拖累，**只看相对差值，不要引用绝对秒数当体验**。
+
+| 项 | P50 | P95 | min–max | RSD | 备注 |
+|---|---|---|---|---|---|
+| ChuanqiCut Debug（sim） | 2.08s | 2.15s | 1.83–2.15 | 4.9% | 第一会话 |
+| ChuanqiCut Debug（sim，复测） | 1.84s | 1.93s | 1.70–1.93 | 4.3% | 同会话跟在参照 App 后跑，会话间方差 ~10% |
+| ChuanqiCut Release（sim） | 2.16s | 2.41s | 1.98–2.41 | 6.1% | build/release_sim 产物 |
+| 空壳 SwiftUI 参照 App（sim） | 2.21s | 2.63s | 1.99–2.63 | 8.4% | com.chuanqi.perf.reference |
+
+**结论**：
+1. **App 净启动成本 ≈ 0**：与空壳参照无统计差异（Debug、Release 都是），代码路径上没有可优化点。
+2. **Debug 构建不是慢因**（sim 上 Debug≈Release）。
+3. 模拟器 ~2s 是 launch 机制/渲染栈开销（Intel 宿主放大），**不代表真机体感**。
+4. **真机（iPhone 17 Pro / iOS 26.6.1）未实测**：UI test runner 在真机两次 exit 74
+   （见 pitfalls P64），待解锁后由传哲跑：
+   `xcodebuild test -project tools/perf/launch_bench/LaunchBench.xcodeproj -scheme LaunchBench -destination 'id=00008150-00016C381ED8401C'`
+5. 静态证据（主二进制无 `__mod_init_func`、无 ObjC `+load`、无内嵌 dylib、App 包仅系统框架依赖）
+   见当日工作日志。
+
+## 预览播放吞吐（阶段 0 真机剖面，2026-10-06）
+
+> 工具：DEBUG 播放诊断（AppEntry 每 2s 汇总，`CQ_AUTO_PLAY=1` 自动开播，
+> `devicectl device process launch --console` 采集）。
+> 素材：用户真机相册导入的 iPhone 实拍 422MB .MOV（tmp/cq_album_2CEBC5E4…，疑 4K60 HDR HEVC [hypothesis]）。
+> 构建：Debug（arm64 真机）。
+
+| 项 | 数值 | 备注 |
+|---|---|---|
+| pump_req/s | 178–180 | 60Hz Timer × 合并语义正常 |
+| **pump_rendered/s** | **32 → 17**（第 2、4 秒窗口） | **播放卡顿主因：解码管线吞吐不足** |
+| mtk_draw/s | 228（起步）/ 120（稳态） | ProMotion 满帧，UI 呈现层健康 |
+| tick_p95 | <1ms（打印 0ms） | **SwiftUI 30Hz 重算在 A19 上非主因**（修正 RESEARCH-006 §1 假设） |
+
+**结论**：卡顿 = 解码管线（VT→BGRA 转换写带宽 hypothesis 主嫌，4K 帧 33MB/帧），
+UI 重建（ADR-0022）解决不了它 → 立即立 MEDIA-023（VT 输出降采样 ≤1080p）。
+
+## 泵内分段耗时（MEDIA-023 仪器，真机 iPhone 17 Pro，2026-10-06）
+
+> 素材同上节（422MB 4K60 实拍 HEVC，输出已降采样 1080x1920，hw=YES）。
+> 仪器：PreviewPump 分段直方图（每 20 帧）。
+
+| 段 | p50 | p95 | max | 结论 |
+|---|---|---|---|---|
+| acquire（取帧+解码） | 17.6→32.5ms | **237–253ms** | 253.7 | **大头1**：远超 VT 裸解码（8-10ms）→ kExact 编排/GOP 重解码爆发，顺序快路径（ADR-0017）对该真实素材未生效 |
+| import（Metal 导入） | 0.0ms | 0.2ms | 0.2 | 零拷贝健康 |
+| draw（离屏渲染） | 1.5ms | 2.0ms | 2.2 | 健康 |
+| **total** | 19.4–33.7ms | **1068ms** | 1068 | **大头2**：秒级尖刺不在 acquire/import/draw 三段内（RenderFrame 其余路径：快照加载/provider 查找/EnsureTarget 等），待定点位 |
+
+同期 [perf]：pump_rendered/s = 19~37（请求 180/s）。**卡顿归因定案：acquire 段 GOP
+重解码 + 渲染帧外秒级尖刺**；VT 解码、Metal 导入、离屏渲染、SwiftUI 全部健康。
+
+### 修复后复测（MEDIA-024 修复①②，同素材同机，2026-10-06）
+
+| 项 | 修复前 | 修复后 |
+|---|---|---|
+| pump_rendered/s | 19~37 | **74（追帧）→ 120（ProMotion 满帧）** |
+| acquire p50 | 17.6→32.5ms | **0.0ms（区间内复用命中，跳过 acquire+import）** |
+| acquire p95 | 237–253ms | **53.1ms 且逐窗口收敛**（233.6 为首个含 seek 的样本） |
+| total p50 | 19.4–33.7ms | **1.2–1.8ms** |
+| 遗留 | — | 偶发多秒渲染停顿（rendered/s=0 窗口，stuck render 不进样本）→ watchdog 定位 |
+
+修复内容：①渲染器区间内复用导入纹理（跳过 acquire+import）；②解码器输出尺寸
+元数据改实际 CVPixelBuffer 尺寸。另 MEDIA-025 色彩转换已应用（2020/HLG→709）。
+
+### 播放冻结 / 内存（MEDIA-027，真机 iPhone 17 Pro，2026-10-06）
+
+> 环境：iPhone 17 Pro（iPhone18,1）/ iOS 26.x / DEBUG 包（core 走 Source pod）。
+> 素材：相册导入 4K60 HDR MOV（2160x3840，BT.2020 + HLG），解码输出 1080x1920 BGRA。
+> 仪器：DEBUG 剖面行（每 2s：`pump_rendered/s` / `pump_nonok/s` / `footprint`）+
+> 渲染阶段 watchdog + 解码器队列日志。
+
+| 指标 | 修复前（MEDIA-026 之后） | 修复后（MEDIA-027） |
+|---|---|---|
+| 播放可持续时间 | ~5s 后 `rendered/s` 归零且**永不恢复**；t=11.98s 被 signal 9 | **跑满 t=121.99s**（素材播完） |
+| pump_rendered/s | 131 → 116 → **0** | **151~168 全程稳定** |
+| `footprint`（phys_footprint） | **3375.0MB**（单调增长到死） | **134~184MB** 平稳波动 |
+| pump_nonok/s | — | **0** |
+| 结局 | `App terminated due to signal 9`（jetsam） | 正常播完 |
+
+**素材是 VFR**（缺口日志实证）：期望 pts=420000 与实际 420200 差 200/120000 ≈ 1.67ms
+—— 帧长不恒定，「上一帧 duration 外推」的显示序期望永远对不上 → 队列只进不出。
+两分钟内共 5 次「显示序缺口」+ 2 次「队列超上界」，全部自恢复。
+
+**桌面参照（macOS 26.7.1 / Intel + AMD，720p30 CFR 自造素材，60Hz 请求，3600 次）**：
+
+| 项 | 修复前 | 修复后 |
+|---|---|---|
+| rss 增量（60s 内容） | +13.8MB（单调增长） | **+7.4MB，其中 60s 内仅 +0.5MB（持平）** |
+| footprint | 5.4 → 11.5MB | 4.6 → 4.9MB |
+| acquire p50 / p95 | 10 / 158ms | 14 / 401ms ⚠️ |
+| wall（3600 请求） | 178s | 306s ⚠️ |
+
+⚠️ 桌面吞吐退化未定位（可能是 autorelease pool 开销 / 机器负载差异 / 修复引入的
+额外解码），**不得当作"没变"**，需单独量一次。真机侧吞吐是**提升**的（0 → 155/s）。
 ## 播放器（UIA-015，2026-10-05）：**全部未实测**
 
 > 独立文件播放器 MVP（AVPlayer 过渡，ADR-0022）。本节逐项登记"未实测"，

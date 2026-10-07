@@ -258,3 +258,56 @@ int64 上限 @120000 ≈ 243 万年（原 487 万年），仍远超需求。
 - ~~CORE-005~~：并发原语 / 有界队列 / `CancelToken`（已完成，2026-09-25）
 - **CORE-006**：PAL 接口冻结（GFX/Media/Audio/Inference/FS/Clock/Log/Capabilities），依赖 CORE-001~005
   —— **base 层前置已全部就绪，现在可以冻结全部平台接口**
+
+## CORE-010 · 日志 Workflow 维度（2026-10-06，已完成）
+
+任务卡：`docs/tasks/TASK-CORE-010.md`；触发原因：MEDIA-027 排障暴露「日志没有链路这一维」。
+
+### 装配形状（记住这三份文件的关系）
+
+```
+core/include/cq/base/log.h       ← Workflow 枚举 + 筛选/提级 API + CQ_LOG_*_WF 宏族
+core/src/base/log.cpp            ← Logger 单例：min_level_ + wf_mask_ + wf_level_[]（-1=回落全局）
+core/include/cq/base/perf.h      ← SlowCallAlarm（带 workflow，Release 可用）
+core/include/cq/cq_sdk.h         ← C ABI：cq_log_configure_from_env() / cq_log_set_level()
+bindings/swift/.../ChuanqiCut.swift ← Swift 投影：LogWorkflow / LogLevel / configureLogFromEnvironment()
+```
+
+### 三维正交（别把 Workflow 和 PipelineStage 混为一谈）
+
+| 维度 | 答什么 | 面向 |
+|---|---|---|
+| Level | 多详细 | Trace/Debug/Info/Warn/Error，Release 下 Trace 由宏层编译期剔除 |
+| Stage | 帧走到哪一步 | 只用于带 pts 的帧级 trace；`WorkflowForStage()` 让它自动继承链路标签 |
+| **Workflow** | **我在排查哪条链路** | core/model/import/demux/decode/framecache/preview/render/export/camera/gfx/perf/mem/ai |
+
+`WorkflowForStage()` 的意义：帧级 trace 不用改签名就能带上链路前缀
+（`[wf:decode][decode][pts=...]`）。
+
+### 关键决策与理由
+
+1. **不用结构化 `Emit(Workflow, ...)` 接口**：那会 break 所有已有 sink。改为把 `[wf:xxx]`
+   拼进 message —— 向后兼容且 grep 友好。将来要结构化再叠 `EmitEx`。
+2. **过滤在格式化之前**：`logger.ShouldEmit(wf, level)` 先判，通过才 `vsnprintf`。
+   逐帧日志走几十万次，一次格式化是真金白银。
+3. **per-workflow 覆盖优先，全局兜底**，不是「两者取更严」。这样能把一条链路单独
+   提到 Trace 而不引爆其它链路。
+4. **环境变量解析非法时忽略，绝不猜默认值**；特别有一条 —— `CQ_LOG_WORKFLOW` 全段
+   非法时回落到**全开**而不是全关（全关等于一声不响地关掉所有日志，最容易误伤）。
+5. `ConfigureLogFromEnv()` 是**显式调用**而非隐式全局初始化：隐式初始化让「日志何时
+   生效」不可预测，也给静态库消费者带来副作用。App 在 `init()` 里最早处调。
+
+### 单测
+
+`tests/unit/test_log_workflow.cpp`，ctest `core_log_workflow`，10 组用例：
+名字/位唯一性、环节→链路归属、掩码白名单、独立提级、Warn 在 Release 可见、
+Trace 在 Release 编译期剔除、帧 trace 继承链路前缀、env 正常/非法值、慢调用阈值。
+Debug 43/43、Release 43/43（本机门禁 PASS=9 / FAIL=0）。
+
+### 约束遵守
+
+- `log.h` 只用 C/C++ 基础类型、`std::atomic`、`const char*` —— 零平台类型（红线 #2）
+- **禁止 `strcasecmp`**：它是 POSIX 不是标准 C++，会把平台约束带进 base 层。
+  自己在 `log.cpp` 写了 `EqualsIgnoreCase()`（先转 `unsigned char` 再喂 `tolower`，负 char 直接传 int 是 UB）
+- 补了 `#include <cstdio>`：之前 `log.h` 用了 `FILE`/`stderr` 却指望调用方替它 include，
+  `perf.h` 一 include `log.h` 就炸 —— 头文件必须自洽

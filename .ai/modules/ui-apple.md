@@ -446,6 +446,56 @@ Spec AIEDIT-001 / ADR-0020 / TASK-AIEDIT-000。首页 `HomeView.swift` 新增第
 
 ---
 
+# UIA-015/016/020 落地（2026-10-05）：编辑页剪映式重构 + 预览活性
+
+Spec UIA-015（`docs/specs/UIA-015-编辑页重构.md`，RESEARCH-004 §3.4/§6.2 落地）。
+用户命题「编辑页丑 + 导入后预览无画面 + 播放按钮不工作」。
+
+## 预览活性（UIA-020，关键机制）
+
+- **触发面从一条变两条**：旧行为只有「播放头变化」触发取帧请求 —— 导入/撤销/
+  移动/裁剪落地（同 pts）时预览永远停在旧帧（典型：导入前对空时间线渲染的
+  空隙黑帧被永远 blit，即"导入后预览黑屏"）。演示钩子把播放头设 0.5s 掩盖了它。
+- `EditorViewModel.renderEpoch`（@Published）：applySnapshot / refreshTimeline /
+  refreshFromKernel 末尾 `previewPump.request(pts: playhead)` + epoch+1。
+- `MetalPreviewView.sync` 增加 renderEpoch 入参；装载追帧（armRerender）统一
+  处理 pts 变化与 epoch 变化；**追帧收敛判定 = PreviewSettleRule（seq 比较）**
+  —— 旧 `frame.pts != pts` 比较在同 pts 重渲染下永不收敛。seq 语义：泵每次
+  发布（成功/空隙黑/失败 nil 纹理）都推 seq，`currentSeq > seqAtArm` 即收敛。
+- 守卫：SharedUITests `PreviewLivenessTests`（3 用例：导入推进 epoch+泵 requested、
+  refreshFromKernel 推进、SettleRule 纯函数）。
+
+## 编辑页结构（UIA-015，iOS 竖屏剪映式）
+
+```
+EditorView（sheet 状态在编辑器层）
+└ EditorLayoutContainer（五槽：preview/transport/timeline/toolbar/panel）
+   iOS compact：Preview(弹性,点按=播放暂停,空态引导) → EditorTransportBar
+                → Timeline(140pt) → EditorBottomToolbar
+   iOS regular / macOS：Preview → TransportBar → Timeline(220) + 右栏面板
+```
+
+- `MediaSheet.swift` = MediaLibraryPanel（素材库自 PropertyPanelZone 等价迁移，
+  该文件已删）+ iOS detents 壳；macOS 右栏直嵌 MediaLibraryPanel。
+- `EditorTransportBar`：播放/暂停 + `mm:ss / mm:ss` 时间码（换算唯一位置 =
+  AppEntry.timecodeCurrent/Duration，红线 #4）。导出按钮未做（EXPORT-001 未领）。
+- `EditorBottomToolbar`：撤销/重做（iOS）+ 一级工具位「媒体(可)/音频/文字/特效
+  (置灰占位)」；macOS 不挂（撤销/重做仍在 TimelineZone 头部吃 Cmd 快捷键）。
+- `TimelineZone(showsHeader:)`：平台差异经 `EditorPlatform.showsTimelineHeader`
+  判定（业务视图零条件编译）；`v\(version)` 调试指示移入 `#if DEBUG`。
+- DEBUG 直进钩子：`CQ_AUTO_ROUTE=editor`（ChuanqiCutApp，App 直挂 EditorScreen）
+  —— 与 CQ_DEMO_VIDEO 同模式，模拟器截图/未来冒烟用。
+
+## 工程事实（本次新增的两条硬知识）
+
+1. **App target 曾无 `SWIFT_ACTIVE_COMPILATION_CONDITIONS=DEBUG`**：App 里的
+   `#if DEBUG` 被静默剥掉（Pods 目标由 CocoaPods 默认注入，App 端没有）。
+   已在双端 project.yml `settings.configs.Debug` 补上（pitfalls P62）。
+2. 新文件后 pod install 的同时，**改 project.yml 必须 xcodegen → pod install
+   顺序不可倒**（P54/P56），且 App 验证 scheme 固定 `ChuanqiCutApp`（P61）。
+
+Theme 增量（UIA-016）：`transportBackground/toolbarBackground/accent/accentText`
++ `Space`/`Radius` 阶梯；全量令牌清扫仍归后续批次（BACKLOG §11 登记）。
 # UIA-015 落地（2026-10-05）：独立视频播放器 MVP（Player/ 域）
 
 Spec UIA-020 / ADR-0022 / RESEARCH-006。**内核 = AVPlayer 过渡实现 +
@@ -582,3 +632,24 @@ RESEARCH-004/005 结论全部维持，本文补**操作层**，关键增量：
   UIA-019 PanelRoute 状态机需增加"工具栏槽位状态"。明确不采纳：Resolve Pages、
   Premiere 浮动面板、BMD 芯片条。未核实项已标 [hypothesis]，精确控件排布
   待真机走查截图核对（§6.2）。
+
+## 播放器域修复（P78 / P79，2026-10-07）
+
+`SharedUI/Player/` 那一批远端代码**从未真编译过**（当时以 `swiftc -parse` 验收），
+合入后门禁 `apple-sharedui` FAIL。本机三级修复：
+
+1. **编译（38 处）**：缺 `import SwiftUI`、iOS 专属 API 未加平台分支（`prioritizesVideoDevices` /
+   `canStartPictureInPictureAutomaticallyFromInline`）、AVFoundation API 名按记忆写
+   （实际是 `select(_:in:)` / `selectedMediaOption(in:)` / `AVMetadataIdentifier.commonIdentifierTitle` /
+   `URL.resolvingBookmarkData` 的 `bookmarkDataIsStale` 是 `inout Bool`）、
+   `PlayerEngine.currentTime` 整个缺失、Swift 6 并发（`@preconcurrency` 遵循、NSObject 继承、
+   `nonisolated(unsafe)` 让 deinit 能拆 observer、`async let` 捕获非 Sendable 的 AVAssetTrack）。
+2. **行为（5 处，全由既有测试指出）**：ASS `maxSplits: 8`→9（否则 Dialogue 整行被丢弃）、
+   RecentStore 的 `absoluteString` 误当 path（装载即清空全部本地条目）、
+   `didSet` 在 init 不触发（倍速记忆不生效）、循环续播未同步 `isPlaying`、
+   UTF-16 解码成功但为空串被误判成「文件是空的」。补了从未入库的 `PlayerZoomMath`。
+3. **平台**：iOS App `-scheme ChuanqiCutApp` BUILD SUCCEEDED + 项目代码 0 告警（顺带消掉两条
+   iOS 16 弃用：`chapterMetadataGroups` / `AVMetadataItem.stringValue` → async 版本）。
+
+**后续改动本域的硬要求**：改完必须同时跑 `swift test --disable-sandbox`（SharedUI 根目录）
+与 iOS App 编译；iOS 专属分支在 macOS 侧编译**看不到**（P49）。

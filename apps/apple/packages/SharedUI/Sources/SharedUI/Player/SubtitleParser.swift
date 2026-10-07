@@ -16,6 +16,7 @@
 
 import CoreGraphics
 import Foundation
+import SwiftUI  // Alignment / HorizontalAlignment / VerticalAlignment（numPad → SwiftUI 对齐映射）
 
 // MARK: - 值类型
 
@@ -28,7 +29,9 @@ struct SubtitleColor: Equatable {
 
 /// 带最小样式的文本段。SRT/VTT 场景为单段默认样式。
 struct SubtitleSpan: Equatable {
-    let text: String
+    /// var 而非 let：ASS 解析是「先攒样式、最后回填文本」（`flushSpan` 复制样式再
+    /// 写 text），逐字符 visit 过程中不存在「先有文本后定样式」的路径。
+    var text: String
     var bold = false
     var italic = false
     var underline = false
@@ -72,10 +75,16 @@ enum SubtitleParser {
     /// 统一入口：按内容嗅探分发（不信任文件扩展名）。
     static func parse(data: Data) throws -> [SubtitleCue] {
         guard data.count <= maxDataSize else { throw SubtitleParserError.tooLarge }
-        guard
-            let text = String(data: data, encoding: .utf8)
-                ?? String(data: data, encoding: .utf16)
-        else {
+        // ⚠️ `String(data: encoding: .utf16)` 对「只有 BOM / 长度不足」会**成功返回空串**
+        // —— 照单全收的话，一份坏文件会被判成 `.empty` 而非 `.unsupportedFormat`，
+        // 「文件坏了」和「文件是空的」就分不开了（实测 Data([0xFF,0xFE,0x00])
+        // 的 utf16 结果就是 ""）。故 utf16 解出空串一律按不可解码处理。
+        let text: String
+        if let utf8 = String(data: data, encoding: .utf8) {
+            text = utf8
+        } else if let utf16 = String(data: data, encoding: .utf16), !utf16.isEmpty {
+            text = utf16
+        } else {
             throw SubtitleParserError.unsupportedFormat
         }
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -138,7 +147,10 @@ enum SubtitleParser {
                 }
             case "[Events]":
                 if key == "Dialogue" {
-                    let fields = value.split(separator: ",", maxSplits: 8,
+                    // maxSplits = 9 → 恰好 10 段（最后一个字段 Text 允许含逗号）。
+                    // 旧值 8 只能切出 9 段，`fields.count >= 10` 恒假 → 所有 Dialogue
+                    // 行被静默丢弃（从未跑过测试，故一直没暴露）。
+                    let fields = value.split(separator: ",", maxSplits: 9,
                                              omittingEmptySubsequences: false)
                         .map { String($0).trimmingCharacters(in: .whitespaces) }
                     // 固定序：Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
@@ -323,9 +335,9 @@ enum SubtitleParser {
             let rr = hex.suffix(2)
             let gg = hex.dropLast(2).suffix(2)
             let bb = hex.dropLast(4).suffix(2)
-            guard let r = Double(UInt8(rr, radix: 16) ?? 0) / 255.0,
-                  let g = Double(UInt8(gg, radix: 16) ?? 0) / 255.0,
-                  let b = Double(UInt8(bb, radix: 16) ?? 0) / 255.0 else { return nil }
+            let r = Double(UInt8(rr, radix: 16) ?? 0) / 255.0
+            let g = Double(UInt8(gg, radix: 16) ?? 0) / 255.0
+            let b = Double(UInt8(bb, radix: 16) ?? 0) / 255.0
             return SubtitleColor(red: r, green: g, blue: b)
         }
     }
@@ -395,17 +407,17 @@ enum SubtitleParser {
                     continue
                 }
                 if tag.hasPrefix("fn") {
-                    current.fontName = String(tag.dropFirst(2))
+                    currentStyle.fontName = String(tag.dropFirst(2))
                     continue
                 }
                 if tag.hasPrefix("fs"), let fs = Double(tag.dropFirst(2)) {
-                    current.fontSize = fs
+                    currentStyle.fontSize = fs
                     continue
                 }
                 if tag.hasPrefix("1c") || tag.hasPrefix("c") {
                     let hexPart = tag.dropFirst(tag.hasPrefix("1c") ? 2 : 1)
                     if let color = ASSStyle.parseColor(String(hexPart)) {
-                        current.color = color
+                        currentStyle.color = color
                     }
                     continue
                 }

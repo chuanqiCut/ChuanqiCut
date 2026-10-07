@@ -9,10 +9,20 @@
 
 #include "cq/preview/preview_pump.h"
 
+#include <algorithm>
+#include <chrono>
 #include <new>
 #include <utility>
+#include <vector>
+
+#include "cq/base/log.h"   // CQ_LOG_*_WF：带 workflow 的分级日志（CORE-010）
+#include "cq/base/perf.h"  // CQ_SLOW_CALL_WF
 
 namespace cq {
+
+// 慢调用告警统一走 core/base 的 CQ_SLOW_CALL_WF（CORE-010）。旧版是本文件自抄的
+// Debug-only 结构体，阈值还与其它文件不一致（这里 1000ms、别处 500ms）——
+// 同一个工程里两套阈值本身就是排障噪音源，现已统一到 perf.h 的 500ms。
 
 PreviewPump::PreviewPump(IPreviewFrameSource* source) : source_(source) {}
 
@@ -28,6 +38,9 @@ Status PreviewPump::Start() {
     worker_ = std::thread([this] { Loop(); });
     if (!worker_.joinable()) return Status(StatusCode::kResourceExhausted);
     running_ = true;
+#ifndef NDEBUG
+    watchdog_ = std::thread([this] { WatchdogLoop(); });
+#endif
     return Status::Ok();
 }
 
@@ -41,6 +54,10 @@ void PreviewPump::Stop() {
     cv_.notify_one();
     if (worker_.joinable()) worker_.join();
     worker_ = std::thread();
+#ifndef NDEBUG
+    if (watchdog_.joinable()) watchdog_.join();
+    watchdog_ = std::thread();
+#endif
 }
 
 bool PreviewPump::IsRunning() const {
@@ -89,6 +106,7 @@ PreviewPump::Stats PreviewPump::GetStats() const {
 }
 
 void PreviewPump::Loop() {
+    CQ_LOG_DEBUG_WF(Workflow::kPreview, "loop start");
     for (;;) {
         bool do_render = false;
         bool do_resize = false;
@@ -127,8 +145,37 @@ void PreviewPump::Loop() {
         // ---- 唯一触碰解码会话 / 纹理缓存的地方（其余线程不得再调 RenderFrame）----
         TextureHandle tex = nullptr;
         CancelToken token;
+        // CORE-010：Release 可见。总警报覆盖无分段警报的静默阻塞
+        // （draw 的 GPU 等待 / gap 清屏 / 快照加载等）。阈值统一为 500ms，
+        // 与旧版本文件自抄的 1000ms 不同——同一个工程两套阈值本身就是排障噪音。
+        CQ_SLOW_CALL_WF(Workflow::kPreview, "pump RenderFrame(total)");
         const Status s = source_->RenderFrame(pts, tex, token);
         if (!s.IsOk()) non_ok_.fetch_add(1, std::memory_order_relaxed);
+#ifndef NDEBUG
+        // MEDIA-023 排障仪器（Debug only）：每完成 60 帧打印一次分段耗时直方图
+        // （acquire=取帧+解码 / import=Metal 导入 / draw=离屏渲染），每 20 帧一报。
+        if (const auto* t = source_->DebugLastTimings()) {
+            stage_samples_.push_back(*t);
+            if (stage_samples_.size() % 20 == 0) {
+                auto report = [&](const char* name, auto get) {
+                    std::vector<double> v;
+                    v.reserve(stage_samples_.size());
+                    for (const auto& st : stage_samples_) {
+                        v.push_back(static_cast<double>(get(st)) / 1e6);
+                    }
+                    std::sort(v.begin(), v.end());
+                    CQ_LOG_DEBUG_WF(Workflow::kPerf,
+                                    "%s (n=%zu) min=%.1fms p50=%.1fms p95=%.1fms max=%.1fms",
+                                    name, v.size(), v.front(), v[v.size() / 2],
+                                    v[v.size() * 95 / 100], v.back());
+                };
+                report("acquire", [](const auto& t) { return t.acquire_ns; });
+                report("import ", [](const auto& t) { return t.import_ns; });
+                report("draw   ", [](const auto& t) { return t.draw_ns; });
+                report("total  ", [](const auto& t) { return t.total_ns; });
+            }
+        }
+#endif
 
         {
             std::lock_guard<std::mutex> lk(mtx_);
@@ -138,6 +185,37 @@ void PreviewPump::Loop() {
             published_.seq = ++seq_;
         }
         rendered_.fetch_add(1, std::memory_order_relaxed);
+    }
+}
+
+void PreviewPump::WatchdogLoop() {
+    // 每 500ms 检查渲染器的当前阶段；同一阶段 >1s = 渲染卡死，打印段名与耗时
+    // （析构式警报对"永不返回"的调用失明——本线程就是为它存在的）。
+    const char* last_stage = "";
+    int repeats = 0;
+    while (!stop_) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(500));
+        if (stop_) return;
+        const char* stage = source_->DebugStage();
+        const int64_t since = source_->DebugStageSinceNanos();
+        if (stage == nullptr || stage[0] == '\0') {
+            last_stage = "";
+            repeats = 0;
+            continue;
+        }
+        const auto elapsed_ms =
+            (std::chrono::steady_clock::now().time_since_epoch().count() - since) /
+            1'000'000;
+        if (elapsed_ms >= 1000) {
+            // Warn **且 Release 可见**：这是「确定了系统在变慢/变卡」的告警，不是
+            // 调试细节。MEDIA-026/027 两次冻结都是靠这一行指认卡点在哪一段
+            // （'provider+acquire'），而旧版它被 #ifndef NDEBUG 挡着——
+            // 真机 Release 包里一条不留。
+            CQ_LOG_WARN_WF(Workflow::kPerf, "RenderFrame 卡在 '%s' 已 %lldms", stage,
+                           static_cast<long long>(elapsed_ms));
+        }
+        (void)last_stage;
+        (void)repeats;
     }
 }
 

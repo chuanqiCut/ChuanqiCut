@@ -6,8 +6,12 @@
 //   - 帧回调在 videoQueue / audioQueue 专用串行队列，latest-wins
 //     （alwaysDiscardsLateVideoFrames + 丢帧不排队），不做任何主线程跳转 ——
 //     消费方（帧槽 / 录制器）自己决定如何跨线程。
-//   - 可变状态（currentPosition 等）只在 sessionQueue 触碰；UI 经
-//     CameraViewModel 的 @Published 镜像，不直接读本类状态。
+//   - 可变状态（currentPosition / interfaceOrientation 等）只在 sessionQueue 触碰；
+//     UI 经 CameraViewModel 的 @Published 镜像，不直接读本类状态。
+//
+// 方向（SPEC-CAM-001 v1.2 目标5）：采集方向跟随界面方向（竖 + 左右横屏），
+// 由 CameraView 监听 UIWindowScene.interfaceOrientationDidChangeNotification 后
+// 经 setInterfaceOrientation 注入；渲染端 aspect-fill 见 CameraRenderer。
 //
 // 双摄（AVCaptureMultiCamSession）按 SPEC-CAM-001 v1.1 归 CAM-021，本类留接口不实现：
 // isMultiCamSupported 运行时查询（pitfalls P38：该类仅 iOS）。
@@ -18,12 +22,16 @@
 
 import AVFoundation
 import CoreMedia
+import UIKit
+import os
 
 // @unchecked Sendable 的依据（不是静音警告，是已建立的线程模型）：
 //   可变状态（configured / currentPosition）**只在 sessionQueue** 触碰，
 //   session / photoOutput 是 let 且创建后不再改；跨队列只传不可变的 Bool /
 //   Position / 帧缓冲。故本类实例跨队列传递是安全的。
 final class CameraManager: NSObject, @unchecked Sendable {
+
+    private static let logger = Logger(subsystem: "com.chuanqi.cut", category: "camera.session")
 
     enum Position {
         case back
@@ -51,7 +59,20 @@ final class CameraManager: NSObject, @unchecked Sendable {
     private var videoInput: AVCaptureDeviceInput?
     private var audioInput: AVCaptureDeviceInput?
     private(set) var currentPosition: Position = .back
+    /// 界面方向镜像（只在 sessionQueue 读写）。初始竖屏；configure 前收到设置也先存，
+    /// configureLocked 会取用（避免「先旋转后启动」丢方向）。
+    private(set) var interfaceOrientation: UIInterfaceOrientation = .portrait
     private var configured = false
+
+    // MARK: 前摄安装朝向补偿（CAM-017 二修，pitfalls P72）
+    //
+    // videoRotationAngle 的 0° = **传感器 native 方向**（iPhone 横装，前后摄安装
+    // 轴向相反）⇒ 后摄竖屏 90° 正确时前摄需 0°（真机两代现象反推：CAM-016 静态表
+    // 后摄三方向正确 / 前摄竖屏横躺 = 恰差 270°）。
+    // 曾试 RotationCoordinator 采样安装偏移 —— 新建即读 `videoRotationAngle-
+    // ForHorizonLevelPreview` 拿到的是**未初始化的 0**（该值依赖传感器数据、KVO
+    // 异步生效），后摄 90° 被偏到 0° 反向横躺（真机回归）。常量方案无时序依赖；
+    // 例外机型出现时（无证据）再上 KVO 方案。
 
     override init() {
         super.init()
@@ -112,13 +133,30 @@ final class CameraManager: NSObject, @unchecked Sendable {
     }
 
     /// 前后切换。配置变更在 sessionQueue 串行执行；切换结果主线程回调。
-    func switchPosition(to position: Position, onDone: @escaping @MainActor (_ position: Position) -> Void) {
+    func switchPosition(to position: Position,
+                        onDone: @escaping @MainActor (_ position: Position) -> Void) {
         sessionQueue.async { [weak self] in
             guard let self, self.configured else { return }
             self.currentPosition = position
             self.reconfigureVideoInputLocked(position: position)
             Task { @MainActor in
                 onDone(position)
+            }
+        }
+    }
+
+    /// 界面方向变化入口（主线程调用；SPEC-CAM-001 v1.2 目标5）。
+    /// 会话未配置时只存值（configureLocked 会取用），已配置则即时重设所有
+    /// video connection 的旋转/镜像。录制中由调用方（ViewModel）门控。
+    func setInterfaceOrientation(_ io: UIInterfaceOrientation) {
+        sessionQueue.async { [weak self] in
+            guard let self, self.interfaceOrientation != io else { return }
+            self.interfaceOrientation = io
+            guard self.configured else { return }
+            for output in self.session.outputs {
+                guard let connection = output.connection(with: .video) else { continue }
+                self.applyOrientation(connection, io)
+                self.applyMirrorIfFront(connection)
             }
         }
     }
@@ -147,16 +185,34 @@ final class CameraManager: NSObject, @unchecked Sendable {
         relay.onPhoto = onDone
         sessionQueue.async { [weak self] in
             guard let self, self.configured, self.session.outputs.contains(self.photoOutput) else {
+                // 遥测（CAM-017）：「拍照无效」定位口 —— 输出没挂上/会话未配置在此现形。
+                Self.logger.error("拍照中止 configured=\(self?.configured ?? false, privacy: .public) photoOutputInSession=\(self.map { $0.session.outputs.contains($0.photoOutput) } ?? false, privacy: .public)")
                 relay.deliver(nil)
                 return
             }
-            let settings = AVCapturePhotoSettings()
-            // 竖屏/镜像沿用 connection 的呈现设置（photoOutput 的 connection 一并设置）。
+            // ⚠️ 必须显式要 pixel buffer 格式（CAM-017 二修，P73）：默认 settings 走
+            // HEIF/JPEG 文件编码管线，`photo.pixelBuffer` 为 nil —— PhotoRelay 只能
+            // 回 nil，表现为「拍照无效」。BGRA 与预览/录制链同口径，WYSIWYG 直通；
+            // 机型不含 BGRA 时取支持的第一个（CIImage 可直接吃 420f/420v），不赌。
+            // available 列表 Swift 导入为 [OSType]，直接与 fourcc 枚举比较。
+            let supportedTypes = self.photoOutput.availablePhotoPixelFormatTypes
+            let pixelFormat: OSType
+            if supportedTypes.contains(kCVPixelFormatType_32BGRA) {
+                pixelFormat = kCVPixelFormatType_32BGRA
+            } else if let first = supportedTypes.first {
+                pixelFormat = first
+            } else {
+                Self.logger.error("拍照中止：photoOutput 无可用 pixel-buffer 格式")
+                relay.deliver(nil)
+                return
+            }
+            let settings = AVCapturePhotoSettings(format: [
+                kCVPixelBufferPixelFormatTypeKey as String: pixelFormat,
+            ])
+            // 方向/镜像沿用 connection 的呈现设置（按当前界面方向，CAM-016）。
             if let connection = self.photoOutput.connection(with: .video) {
-                self.applyPortraitOrientation(connection)
-                if self.currentPosition == .front && connection.isVideoMirroringSupported {
-                    connection.isVideoMirrored = true
-                }
+                self.applyOrientation(connection, self.interfaceOrientation)
+                self.applyMirrorIfFront(connection)
             }
             self.photoOutput.capturePhoto(with: settings, delegate: self.photoRelay)
         }
@@ -179,12 +235,10 @@ final class CameraManager: NSObject, @unchecked Sendable {
         if session.canAddOutput(videoOutput) {
             session.addOutput(videoOutput)
         }
-        // 竖屏 + 前摄镜像约定由 connection 如实设置（UI 不再猜方向）。
+        // 方向 + 前摄镜像约定由 connection 如实设置（跟随界面方向，CAM-016）。
         if let connection = videoOutput.connection(with: .video) {
-            applyPortraitOrientation(connection)
-            if position == .front && connection.isVideoMirroringSupported {
-                connection.isVideoMirrored = true
-            }
+            applyOrientation(connection, interfaceOrientation)
+            applyMirrorIfFront(connection)
         }
 
         // 音频输出（可选：麦克风被拒时跳过，录制降级为无声视频）。
@@ -225,23 +279,86 @@ final class CameraManager: NSObject, @unchecked Sendable {
         // 新 input 生效后 connection 需重设方向/镜像（addInput 会重建 connection）。
         for output in session.outputs {
             guard let connection = output.connection(with: .video) else { continue }
-            applyPortraitOrientation(connection)
-            if position == .front && connection.isVideoMirroringSupported {
-                connection.isVideoMirrored = true
-            }
+            applyOrientation(connection, interfaceOrientation)
+            applyMirrorIfFront(connection)
         }
     }
 
-    /// 竖屏旋转：iOS 17+ 用 videoRotationAngle（旧 API 已弃用），16 走旧 API。
+    /// 方向旋转：iOS 17+ 用 videoRotationAngle（旧 API 已弃用），16 走旧 API。
     /// 支持性检查必须各走各的分支：isVideoRotationAngleSupported 本身是 iOS 17+ API，
     /// 不能放在门控之前统一判断（编译错 + iOS 16 真机 unrecognized selector 崩溃）。
-    private func applyPortraitOrientation(_ connection: AVCaptureConnection) {
+    ///
+    /// 角度映射依据（CAM-016）：传感器原生位 = 机身横置 home 在右 =
+    /// UIInterfaceOrientationLandscapeLeft（Apple 对该枚举的定义即「home 在右」），
+    /// 故 landscapeLeft=0、landscapeRight=180、portrait=90。
+    /// ⚠️ 横屏两项是文档推导，真机若出现横屏 180° 反接，交换 0/180（一行）。
+    private func applyOrientation(_ connection: AVCaptureConnection, _ io: UIInterfaceOrientation) {
         if #available(iOS 17.0, *) {
-            if connection.isVideoRotationAngleSupported(90) {
-                connection.videoRotationAngle = 90
+            // 静态表 + 前摄安装差常量（CAM-017 二修，P72）。旧 API（else 分支）是
+            // 语义方向（portrait=竖直），系统内处理安装差异，**不**加偏移。
+            let offset: CGFloat = (currentPosition == .front) ? 270 : 0
+            let angle = Self.snappedToQuarter(Self.rotationAngle(for: io) + offset)
+            if connection.isVideoRotationAngleSupported(angle) {
+                connection.videoRotationAngle = angle
             }
-        } else if connection.isVideoOrientationSupported {
-            connection.videoOrientation = .portrait
+        } else if connection.isVideoOrientationSupported, let vo = Self.videoOrientation(for: io) {
+            connection.videoOrientation = vo
+        }
+    }
+
+    /// 前摄镜像（旋转之后应用，Apple 语义；各界面方向保持自拍镜像惯例）。
+    private func applyMirrorIfFront(_ connection: AVCaptureConnection) {
+        if currentPosition == .front && connection.isVideoMirroringSupported {
+            connection.isVideoMirrored = true
+        }
+    }
+
+    /// 界面方向 → videoRotationAngle（iOS 17+）。
+    /// 依据（SDK 头文件 UIOrientation.h 原文）：
+    /// `UIInterfaceOrientationLandscapeLeft = UIDeviceOrientationLandscapeRight`，
+    /// 且 AVCaptureVideoOrientationLandscapeRight 注释 =「home button on the right」
+    /// —— 即 UI 的 landscapeLeft 位姿 = home 在右 = **传感器原生位**，故 0°；
+    /// UI 的 landscapeRight = home 在左 = 180°。
+    /// ⚠️ 横屏两项仍是文档推导链，真机若 180° 反接：交换 0/180（一行）。
+    static func rotationAngle(for io: UIInterfaceOrientation) -> CGFloat {
+        switch io {
+        case .landscapeLeft: return 0
+        case .landscapeRight: return 180
+        case .portraitUpsideDown: return 270
+        default: return 90
+        }
+    }
+
+    /// 设备位姿 → 界面方向。**landscape 名互换**（UIOrientation.h：UI.L = Device.R，
+    /// P67）；faceUp/faceDown/unknown 无对应界面方向。
+    static func interfaceOrientation(fromDevicePose pose: UIDeviceOrientation) -> UIInterfaceOrientation? {
+        switch pose {
+        case .portrait: return .portrait
+        case .portraitUpsideDown: return .portraitUpsideDown
+        case .landscapeLeft: return .landscapeRight
+        case .landscapeRight: return .landscapeLeft
+        default: return nil
+        }
+    }
+
+    /// 角度 snap 到 0/90/180/270 栅格（coordinator 角度理论上为 90 的倍数，防御取整）。
+    static func snappedToQuarter(_ angle: CGFloat) -> CGFloat {
+        let snapped = (angle / 90).rounded() * 90
+        let normalized = snapped.truncatingRemainder(dividingBy: 360)
+        return normalized < 0 ? normalized + 360 : normalized
+    }
+
+    /// 界面方向 → 旧版 videoOrientation（iOS 16 fallback）。
+    /// ⚠️ **UI 与 AVCapture 的 landscape 命名互换**（不是同名直映！）：
+    /// AVCaptureVideoOrientationLandscapeRight = home 在右 = UIInterfaceOrientationLandscapeLeft。
+    /// 未知方向返回 nil = 保持现状。
+    static func videoOrientation(for io: UIInterfaceOrientation) -> AVCaptureVideoOrientation? {
+        switch io {
+        case .portrait: return .portrait
+        case .portraitUpsideDown: return .portraitUpsideDown
+        case .landscapeLeft: return .landscapeRight
+        case .landscapeRight: return .landscapeLeft
+        default: return nil
         }
     }
 }
@@ -270,6 +387,8 @@ private final class FrameRelay: NSObject, AVCaptureVideoDataOutputSampleBufferDe
 
 private final class PhotoRelay: NSObject, AVCapturePhotoCaptureDelegate, @unchecked Sendable {
 
+    private static let logger = Logger(subsystem: "com.chuanqi.cut", category: "camera.photo")
+
     var onPhoto: ((_ pixelBuffer: CVImageBuffer?) -> Void)?
 
     /// 派发一次性拍照回调并清空（拍照单发，不重复触发）。
@@ -283,6 +402,8 @@ private final class PhotoRelay: NSObject, AVCapturePhotoCaptureDelegate, @unchec
                      didFinishProcessingPhoto photo: AVCapturePhoto,
                      error: Error?) {
         guard error == nil, let buffer = photo.pixelBuffer else {
+            // 遥测（CAM-017）：失败原因直接可见，不靠 UI 层猜。
+            Self.logger.error("拍照回调失败：\(error?.localizedDescription ?? "pixelBuffer 缺失", privacy: .public)")
             deliver(nil)
             return
         }

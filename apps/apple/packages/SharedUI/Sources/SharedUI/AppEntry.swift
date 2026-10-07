@@ -12,6 +12,7 @@
 
 import SwiftUI
 import Foundation
+import Darwin
 import os
 import ChuanqiCut
 
@@ -66,6 +67,12 @@ public final class EditorViewModel: ObservableObject {
     /// 是否正在播放（UIA-010）。
     @Published public private(set) var isPlaying = false
 
+    /// 渲染代数（UIA-020）。模型每次推进（快照回流 / 初始装载 / 提交后回查真值）
+    /// 自增并伴随一次对当前播放头的取帧请求 —— 同一 pts 的画面会因时间线变化而
+    /// 失效，「模型变了」必须和「播放头变了」一样触发重渲染。预览视图据此装载
+    /// 追帧（seq 判定，见 MetalPreviewView）。
+    @Published public private(set) var renderEpoch: UInt64 = 0
+
     /// 素材库显示状态（UIA-009 子步骤 3）：内核素材表 + 本地存活标记。
     /// `exists == false` = 文件已不在原路径（D3：MVP 引用原路径，不拷贝入库）。
     public struct LibraryAsset: Identifiable, Equatable {
@@ -98,7 +105,87 @@ public final class EditorViewModel: ObservableObject {
     /// 定时器节拍计数（用于把「取帧请求」与「UI 发布」分成两个频率）。
     private var tickCount = 0
 
+    #if DEBUG
+    // MARK: 播放性能剖面（阶段 0，RESEARCH-006；DEBUG only，不进 Release）
+    private var debugTickCosts: [UInt64] = []
+    private var debugTickSamples = 0
+    private var debugTickCostP95Nanos: UInt64 = 0
+    /// 泵统计基线（startPlaybackLoop 时快照，报告时取差值）。
+    private var debugPumpBaseline: (rendered: UInt64, requested: UInt64, nonOk: UInt64) = (0, 0, 0)
+
+    /// 进程物理内存足迹（MB）。失败返回 -1 —— 宁可显示 -1 也不伪造 0。
+    ///
+    /// `phys_footprint` 是 iOS jetsam 判定实际使用的量（比 resident_size 更能反映
+    /// 被杀风险），故剖面用它而不是 RSS。
+    static func memoryFootprintMB() -> Double {
+        var info = task_vm_info_data_t()
+        var count = mach_msg_type_number_t(
+            MemoryLayout<task_vm_info_data_t>.size / MemoryLayout<integer_t>.size)
+        let kr = withUnsafeMutablePointer(to: &info) { ptr -> kern_return_t in
+            ptr.withMemoryRebound(to: integer_t.self, capacity: Int(count)) {
+                task_info(mach_task_self_, task_flavor_t(TASK_VM_INFO), $0, &count)
+            }
+        }
+        guard kr == KERN_SUCCESS else { return -1 }
+        return Double(info.phys_footprint) / 1048576.0
+    }
+
+    private func debugRecordTickCost(start: DispatchTime) {
+        let nanos = DispatchTime.now().uptimeNanoseconds &- start.uptimeNanoseconds
+        debugTickCosts.append(nanos)
+        debugTickSamples += 1
+        // 每 120 tick（2s）出一份汇总：tick 耗时 p95 + 泵吞吐 + 呈现帧率。
+        if debugTickSamples % 120 == 0 {
+            debugTickCosts.sort()
+            let p95 = debugTickCosts[min(debugTickCosts.count - 1, debugTickCosts.count * 95 / 100)]
+            debugTickCostP95Nanos = p95
+            let st = previewPump?.stats
+            let renderedPerSec = st.map { $0.rendered &- debugPumpBaseline.rendered } ?? 0
+            let requestedPerSec = st.map { $0.requested &- debugPumpBaseline.requested } ?? 0
+            if let st {
+                debugPumpBaseline = (st.rendered, st.requested, st.nonOk)
+            }
+            let drawsPerSec = PlaybackDrawCounter.shared.count
+            PlaybackDrawCounter.shared.reset()
+            // DEBUG 剖面输出走双通道：os.Logger（常规）+ print（`devicectl device
+            // process launch --console` 可见；Release 不编译，不违反 CODESTYLE §3）。
+            // ⚠️ stdout 接管道是全缓冲，必须 fflush 否则两行汇总永远憋在缓冲区。
+            let nowSec = self.player.map {
+                Double($0.currentTime.value) / Double($0.currentTime.timescale)
+            } ?? 0
+            // MEDIA-027 排障：把进程物理内存足迹并进剖面行 ——「播放几十秒后卡死 +
+            // signal 9」必须能区分是 jetsam（内存）还是纯解码追赶失败。
+            let nonOk = st.map { $0.nonOk &- debugPumpBaseline.nonOk } ?? 0
+            if let st {
+                debugPumpBaseline = (st.rendered, st.requested, st.nonOk)
+            }
+            // `wf:` 前缀与内核日志同一套：grep '\[wf:perf\]' 就能把这一份剖面
+            // 和解码/取帧链路的 C++ 日志捞在一起按时间看。
+            let line = "playback-perf: t=\(String(format: "%.2f", nowSec))s tick_p95=\(self.ms(p95))ms pump_req/s=\(requestedPerSec) pump_rendered/s=\(renderedPerSec) pump_nonok/s=\(nonOk) mtk_draw/s=\(drawsPerSec) footprint=\(String(format: "%.1f", Self.memoryFootprintMB()))MB"
+            let tagged = "[wf:perf] \(line)"
+            log.info("\(tagged, privacy: .public)")
+            // stderr 无缓冲：`devicectl device process launch --console` 必现。
+            fputs((tagged + "\n"), stderr)
+            fflush(stderr)
+        }
+    }
+
+    private func ms(_ nanos: UInt64) -> Int64 {
+        Int64(nanos / 1_000_000)
+    }
+    #endif
+
     public init() throws {
+        // CORE-010：日志按链路可筛选。必须在**任何内核调用之前** ——
+        // 否则启动阶段（解封装 Open / ScanKeyframes）的日志赶不上配置。
+        //
+        // 三个环境变量（Xcode Scheme → Run → Arguments → Environment Variables）：
+        //   CQ_LOG_LEVEL    = trace|debug|info|warn|error
+        //   CQ_LOG_WORKFLOW = preview,decode,mem          （白名单，不设 = 全开）
+        //   CQ_LOG_WF_LEVEL = decode=trace,preview=debug  （单链路提级）
+        // 真机排障时改 Scheme 即可生效，**无需重编译**（重编译 + 重签名的时间成本
+        // 在排查现场往往付不起）。
+        ChuanqiCut.configureLogFromEnvironment()
         guard let session = Session() else {
             throw EditorError.sessionCreationFailed
         }
@@ -189,8 +276,17 @@ public final class EditorViewModel: ObservableObject {
     private func startPlaybackLoop() {
         playbackTimer?.invalidate()
         tickCount = 0
-        // 60Hz 驱动取帧请求；UI 发布（playhead）降频到 30Hz —— 见 tickPlayback 注释。
-        // 泵跟不上就丢帧，时刻由墙钟算，丢帧不影响播放节奏的正确性。
+        #if DEBUG
+        // 阶段 0 性能剖面（RESEARCH-006 §1）：每 2s 汇总一行 —— Timer tick 耗时
+        // p95（主线程占用）、泵 rendered/s（解码吞吐）、MTKView draw/s（呈现帧率，
+        // 由 PreviewMTKView 经 `PlaybackDrawCounter` 回填）。真机数据回填 baselines。
+        debugTickCostP95Nanos = 0
+        debugTickSamples = 0
+        debugTickCosts = []
+        if let st = previewPump?.stats {
+            debugPumpBaseline = (st.rendered, st.requested, st.nonOk)
+        }
+        #endif
         let timer = Timer.scheduledTimer(withTimeInterval: 1.0 / 60.0, repeats: true) {
             [weak self] _ in
             // Timer 在主 run loop 回调，但 Swift 6 并发模型不认识
@@ -214,6 +310,10 @@ public final class EditorViewModel: ObservableObject {
     ///     而画面呈现由 MTKView 的连续绘制负责，不依赖 playhead 的发布频率。
     private func tickPlayback() {
         guard let player, isPlaying else { return }
+        #if DEBUG
+        let tickStart = DispatchTime.now()
+        defer { debugRecordTickCost(start: tickStart) }
+        #endif
         _ = player.tick()
         if player.isPlaying {
             let now = player.currentTime
@@ -226,6 +326,29 @@ public final class EditorViewModel: ObservableObject {
             isPlaying = false
             setPlayhead(RationalTime(value: 0, timescale: RationalTime.projectTimescale))
         }
+    }
+
+    // MARK: 时间码（UIA-015）
+
+    /// 播放条时间码「当前」。有理数 → 字符串换算的唯一位置（红线 #4：UI 其余
+    /// 位置只读本值，不自己除 timescale）。
+    public var timecodeCurrent: String {
+        Self.formatTimecode(playhead)
+    }
+
+    /// 播放条时间码「总时长」。边界由内核时间线算（UI 不自己累加片段，UIA-010 语义）。
+    public var timecodeDuration: String {
+        if let duration = session.timelineDuration(), duration.value > 0 {
+            return Self.formatTimecode(duration)
+        }
+        return Self.formatTimecode(RationalTime(value: 0,
+                                                timescale: RationalTime.projectTimescale))
+    }
+
+    private static func formatTimecode(_ t: RationalTime) -> String {
+        let seconds = Double(t.value) / Double(t.timescale)
+        let total = Int(seconds.rounded())
+        return String(format: "%d:%02d", total / 60, total % 60)
     }
 
     // MARK: 片段编辑与撤销（UIA-005）
@@ -261,6 +384,19 @@ public final class EditorViewModel: ObservableObject {
             clips: session.queryClips(),
             version: session.currentSnapshot.version)
         refreshHistoryFlags()
+        // 提交被拒（重叠 / duration ≤ 0）不触发 observer 回流，这里就是回到真值的
+        // 唯一途径 —— 时间线可能变了，当前播放头的画面同样可能失效（UIA-020）。
+        requestPreviewRerender()
+    }
+
+    /// 对当前播放头补一次取帧请求并推进渲染代数（UIA-020）。
+    ///
+    /// 预览视图（MetalPreviewView）以 renderEpoch 为触发装载追帧：请求发出后泵
+    /// 异步渲染，视图侧按 seq 判定收敛，见 MetalPreviewView 的自驱重绘说明。
+    private func requestPreviewRerender() {
+        guard let previewPump else { return }
+        previewPump.request(pts: playhead)
+        renderEpoch += 1
     }
 
     private func refreshHistoryFlags() {
@@ -292,13 +428,27 @@ public final class EditorViewModel: ObservableObject {
     ///    RunLoop 泵主队列等待，正式 UI 走 observer 回流，不这样等）。
     @discardableResult
     public func installDemoClipFromEnvironment() -> Bool {
-        guard let path = ProcessInfo.processInfo.environment["CQ_DEMO_VIDEO"],
-              FileManager.default.fileExists(atPath: path) else {
+        guard var path = ProcessInfo.processInfo.environment["CQ_DEMO_VIDEO"] else {
+            return false
+        }
+        // 真机剖面（阶段 0）：设备沙盒里没有 Mac 侧绝对路径 —— 支持传**文件名**，
+        // 依次相对 Documents、tmp 解析（相册导入落盘在 tmp/，devicectl 推的文件
+        // 可落任一处）。绝对路径（Mac 模拟器冒烟）语义不变。
+        if !path.hasPrefix("/") {
+            let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+            let candidates = [docs.appendingPathComponent(path).path,
+                              FileManager.default.temporaryDirectory.appendingPathComponent(path).path]
+            path = candidates.first { FileManager.default.fileExists(atPath: $0) }
+                ?? candidates[0]
+        }
+        guard FileManager.default.fileExists(atPath: path) else {
             return false
         }
         let ts = RationalTime.projectTimescale
         let start = RationalTime(value: 0, timescale: ts)
-        let duration = RationalTime(value: 5 * Int64(ts), timescale: ts)
+        // CQ_DEMO_SECONDS：演示片段时长（阶段 0 剖面用长窗口；默认 5s）。
+        let demoSeconds = Int(ProcessInfo.processInfo.environment["CQ_DEMO_SECONDS"] ?? "") ?? 5
+        let duration = RationalTime(value: Int64(demoSeconds) * Int64(ts), timescale: ts)
         let sourceIn = RationalTime(value: 0, timescale: ts)
 
         let versionAtStart = session.currentSnapshot.version
@@ -331,6 +481,7 @@ public final class EditorViewModel: ObservableObject {
             version: snap.version)
         refreshMediaLibrary()
         refreshHistoryFlags()
+        requestPreviewRerender()
     }
 
     /// 主动刷新一次时间线与素材库状态（初始加载用：版本 0 不触发 observer 回流）。
@@ -341,6 +492,9 @@ public final class EditorViewModel: ObservableObject {
             version: session.currentSnapshot.version)
         refreshMediaLibrary()
         refreshHistoryFlags()
+        // 初始装载也要把播放头 0 的画面请求出来（UIA-020）：否则首帧要等
+        // 视图布局期的 resize 请求，时机与内容都不可控。
+        requestPreviewRerender()
     }
 
     private func refreshMediaLibrary() {
@@ -372,15 +526,30 @@ public final class EditorViewModel: ObservableObject {
         defer { if scoped { url.stopAccessingSecurityScopedResource() } }
         let path = url.path
 
-        // 1) 探测时长（同步；失败 = 无法解析的文件）
-        guard let duration = session.probeMediaDuration(path: path) else {
-            return .decodeError  // 打不开/解析不了（2000，语义码见绑定层 Status）
+        // 1) 探测时长（同步）。失败 = 内核原始状态码**原样透传**（MEDIA-022）：
+        //    2001 = 编码格式不支持（HEVC 曾全落这里）、1000 = 文件无法读取、
+        //    2000 = 解析失败 —— UI 据此给差异化文案，不再一律「解码失败」。
+        let probed: Result<RationalTime, Status>
+#if DEBUG
+        let probeStart = DispatchTime.now()
+        probed = session.probeMediaDurationDetailed(path: path)
+        // MEDIA-026：导入耗时定位（stderr 无缓冲通道，devicectl --console 可见）。
+        let probeMs = Int64(DispatchTime.now().uptimeNanoseconds &- probeStart.uptimeNanoseconds) / 1_000_000
+        fputs("[import] probe \(probeMs)ms path=\(path)\n", stderr)
+        fflush(stderr)
+#else
+        probed = session.probeMediaDurationDetailed(path: path)
+#endif
+        let duration: RationalTime
+        switch probed {
+        case .success(let d):
+            duration = d
+        case .failure(let status):
+            log.error("importMedia: probe 失败 raw=\(status.rawValue)")
+            return status
         }
-        // 文件能打开却读不到时长 = 解析问题（不是参数非法）—— 用 decodeError 而非
-        // invalidArgument，调用方与日志能区分这两类失败。
-        // ⚠️ 实测偶发（SharedUI 全量跑约 50% 命中，pitfalls P33）：probe 成功但
-        //    时长为 0，根因未定位在内核侧。这里是症状的最早可观测点。
-        guard duration.value > 0 else { return .decodeError }
+        // 防御分支（P33 症状最早可观测点）：ABI 已把 0 时长报为 2000，理论上
+        // 到不了这里；保底用 decodeError，调用方与日志能区分这类失败。
 
         // 2) 注册素材（素材 id 本地分配，单调递增）
         let assetId = nextAssetId
@@ -441,6 +610,24 @@ public final class EditorViewModel: ObservableObject {
             return .invalidArgument
         }
         return .ok
+    }
+}
+
+// MARK: - 用户可读的错误文案（MEDIA-022）
+
+public extension Status {
+    /// 用户可读的失败原因（中文）。未知码回退 `text`（内核诊断标识，不丢信息）。
+    ///
+    /// 背景：导入失败曾一律显示「解码失败」，实际最常见的是 2001 编码不支持
+    /// （HEVC）—— 根因修复（TASK-MEDIA-022）后仍需对 ProRes 等给出准确文案。
+    var userText: String {
+        switch rawValue {
+        case 1000: return "文件无法读取"
+        case 1001: return "文件不存在"
+        case 2000: return "文件解析失败"
+        case 2001: return "视频编码格式暂不支持"
+        default:   return text
+        }
     }
 }
 

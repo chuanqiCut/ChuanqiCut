@@ -386,7 +386,7 @@ INFRA-001/002 → CORE-001~005 → CORE-006(PAL冻结) → PALA-001/010
 > 用户需求：首页两入口 + 相机采集 + 实时特效（美颜/美型/美体/宠物/贴纸/滤镜/头部道具）+ 前后同开。
 > **ADR-0014**：相机域为 iOS 原生功能域（AVFoundation + Vision/ARKit + Core Image/Metal），
 > 不经 PAL/C ABI；编辑器内核维持 C++ 跨端。CAM-001 曾冻结的 PAL 契约当日回退。
-> 分 A/B/C 三期（SPEC-CAM-001 v1.1 §3）。
+> 分 A/B/C 三期（SPEC-CAM-001 **v1.2** §3；v1.2 拍板：双摄提前至 B 期 + 横竖屏全支持 + UI 栈 SwiftUI+MTKView 混合）。
 
 | ID | 层 | 任务 | 依赖 | 写集 | 验收 |
 |---|---|---|---|---|---|
@@ -399,9 +399,17 @@ INFRA-001/002 → CORE-001~005 → CORE-006(PAL冻结) → PALA-001/010
 | CAM-012 | B 期 | 磨皮升级 Metal kernel(替换 A 期高斯近似) | CAM-003 | `Camera/Effects/`、CameraBeauty 封装层 | 单调/off 恒等口径不变;≤8ms [E] |
 | CAM-013 | B 期 | 美型 MeshWarp(瘦脸/大眼/下巴,关键点驱动) | CAM-011 | `Camera/Effects/`、CameraReshapeParams | 无脸直通;真机无接缝/抖动 |
 | CAM-014 | B 期 | 贴纸 + 头部道具锚定(处理链最后一段) | CAM-011 | `Camera/Effects/`、StickerAnchor、资产 | 锚定纯函数锁定;资产许可干净 |
-| CAM-015 | B 期 | 美颜色彩空间修正(workingColorSpace 对齐 harness gamma 域)+录制色彩对齐+引擎状态日志 | CAM-012 | `CameraViewModel/Recorder/Renderer/BeautyKernel.swift` | 代码 grep+typecheck;真机不闪(人工);SPEC-CAM-015-016 |
-| CAM-016 | B 期 | 美白/磨皮人脸区域化(接 CAM-011 检测桥,羽化蒙版混合,nil/[]/非空三态) | CAM-015 | SharedUI `Camera/{FaceMask,CameraBeauty}.swift`、三消费方、SharedUITests | 坐标/三态纯函数单测;无脸直通;真机人工;SPEC-CAM-015-016 |
-| CAM-021~024 | C 期 | 双摄 MultiCam / MetalFX / 景深人像 / 宠物 / 美体 | CAM-011~ | 待 C 期任务卡 | 待细化 |
+| CAM-015 | B 期 | ⚠️ **撞号（见下方注）** 本机线：美颜色彩空间修正(workingColorSpace 对齐 harness gamma 域)+录制色彩对齐+引擎状态日志 | CAM-012 | `CameraViewModel/Recorder/Renderer/BeautyKernel.swift` | 代码 grep+typecheck;真机不闪(人工);SPEC-CAM-015-016 |
+| CAM-015 | B 期 | ⚠️ **撞号** 远端线：~~预览 CI→drawable 渲染修复 + 帧计数去伪绿~~（中间纹理+渲染 pass 落地，门禁过） | CAM-003 | `Camera/CameraRenderer/VideoView.swift` | BUILD SUCCEEDED 0W；失败计数口径 |
+| CAM-016 | B 期 | ⚠️ **撞号** 本机线：美白/磨皮人脸区域化(接 CAM-011 检测桥,羽化蒙版混合,nil/[]/非空三态) | CAM-015 | SharedUI `Camera/{FaceMask,CameraBeauty}.swift`、三消费方、SharedUITests | 坐标/三态纯函数单测;无脸直通;真机人工;SPEC-CAM-015-016 |
+| CAM-016 | B 期 | ⚠️ **撞号** 远端线：**预览方向修复（颠倒 + 横竖屏跟踪 + aspect-fill，SPEC v1.2 A7）** | CAM-015 | `Camera/{Manager,Renderer,ViewModel,View}.swift` | 三方向预览正立铺满；拍照/录像方向一致 |
+| CAM-021 | B 期 | **双摄提前（MultiCamSession 画中画 + 独立开关 + 录合成流，SPEC v1.2 A8）** | CAM-016 | `Camera/{Manager,Renderer,ViewModel,View}.swift` | 双摄同画可录；不支持机型降级明示；实测入库 |
+| CAM-022~024 | C 期 | MetalFX / 景深人像 / 宠物 / 美体（双摄已提前） | CAM-011~ | 待 C 期任务卡 | 待细化 |
+
+> ⚠️ **CAM-015/016 编号撞号**（2026-10-07 双线合并发现）：本机线（美颜修复）与远端线
+> （预览渲染/方向修复）各自独立取了同一批号，两张卡已按 UIA-015/016 先例并存于
+> `TASK-CAM-015.md` / `TASK-CAM-016.md`，是否重命名待传哲拍板；**裁定前不再从 CAM
+> 序列取新号**（同 UIA 撞号处置）。
 
 **关键路径**：`CAM-002 → CAM-003 → CAM-004 → CAM-005`。
 **注意**：相机特效与编辑器特效是两套实现（ADR-0014 代价）——时间线滤镜仍等
@@ -432,3 +440,37 @@ RENDER-001/红线 #6 路线，勿把相机滤镜直接当 SDK 能力引用。
 **批次**：1=001（串行先行）→ 2=002/003/004/006/011（五路并行）→ 3=005 → 4=007 → 5=008 → 6=009。
 **关键路径**：`001 → 005 → 007 → 008 → 009`（002/003/006/011 赶在 007 前完成即可）。
 **P0 出口**：闭环可用（导出按钮置灰待 EXPORT-001）；**P0.5**：BGM 卡点命令 + 导出对接；**P1**：010 + 转写剪辑 + Android 端。
+
+---
+
+## 11. 编辑页重构（UIA-015/016/020，2026-10-05 新增；SPEC-UIA-015）
+
+> 用户命题：编辑页丑（与剪映范式错位）+ 导入后预览无画面 + 播放入口不可用。调研：RESEARCH-004（§3.4/§6.2）。
+> 号段：线 A 预占 UIA-015~018 内取用（本机 = 集成机，登记即占号）；UIA-020 为新领号（相邻线 A 域）。
+
+| ID | 层 | 任务 | 依赖 | 写集要点 | 验收 |
+|---|---|---|---|---|---|
+| UIA-020 | UI | 预览活性修复（模型推进 → 同 pts 重渲染，seq 追帧） | — | `AppEntry.swift`、`MetalPreviewView.swift`、SharedUITests | 泵 requested 单测；全量零回归 |
+| UIA-016 | UI | Theme 令牌扩展（增量，全量清扫待批） | — | `Common/Theme.swift` | Editor 新文件无裸 RGB；编译绿 |
+| UIA-015 | UI | iOS 编辑页剪映式重构（预览最大化/播放条/底部工具栏/媒体抽屉） | 020、016 | `Editor/*`（七文件）+ `ChuanqiCutApp.swift` DEBUG 钩子 | 走查截图 + 全量测试 + 双平台编译 |
+| MEDIA-022 | SDK | HEVC 解码支持 + 探测失败诚实透传 ✅ 2026-10-05 | — | `pal/apple/media_decode.mm`、绑定 probe 透传、AppEntry 文案 | HEVC golden probe=0 + 像素断言；门禁全绿（诊断见任务卡 §背景） |
+
+**批次**：020 ∥ 016 → 015。**关键路径**：020 → 015。
+| MEDIA-024 | SDK | 顺序快路径对真实 4K60 失效修复 + 泵帧外秒级尖刺定位（播放卡顿定案修复） | — | `system_frame_provider.cpp`、`preview_renderer.cpp`、单测 | 真机 rendered/s ≥ 55 且无秒级尖刺（数据见 baselines） |
+
+**登记未开工**：UIA-017（macOS 惯例化）、UIA-018（时间线视觉——被 RESEARCH-006/UIA-024 吸收时标注让位）、Theme 2.0 全量清扫（RESEARCH-004 §6.0，待批）、UIA-019 面板框架立项、MEDIA-024（2026-10-06 立项，数据已定案）。
+
+## 12. 编辑页 UIKit 重建（UIA-021~024，2026-10-05 新增；RESEARCH-006 + ADR-0022）
+
+> 用户命题：播放卡顿 + 界面丑 → 复刻剪映移动端范式；SwiftUI 难实现就改 UIKit。
+> 决策：ADR-0022（编辑页核心三件套 UIKit，外层 SwiftUI 壳，Command 链路零改动）。
+
+| ID | 层 | 任务 | 依赖 | 写集要点 | 验收 |
+|---|---|---|---|---|---|
+| UIA-021 | UI | EditorViewController 骨架（三区 UIKit 容器 + SwiftUI 装配） | — | SharedUI `Editor/UIKit/**`(新)、EditorScreen 装配 | 双平台编译；既有测试零回归 |
+| UIA-022 | UI | 时间线 UIKit 自绘 + 手势 + CADisplayLink 播放头（卡顿修复主体） | 021 | SharedUI `Editor/UIKit/Timeline*` | 播放头移动仅重绘播放头层；主线程单帧 <16ms（真机走查） |
+| UIA-023 | UI | 预览浮层/传输条 + 底部工具栏/二级条 | 021 | SharedUI `Editor/UIKit/{Preview,Toolbar}*` | 剪映形状走查清单（RESEARCH-006 §2） |
+| UIA-024 | UI | 时间线缩略图（异步抽帧，吸收原 UIA-018） | 022 | 同上 + 抽帧缓存 | 主线程不解码；缩略图随片段可见 |
+
+**批次**：阶段 0（真机性能剖面，回填 baselines，UIA-021 前半天）→ 021 → 022 ∥ 023 → 024。
+**关键路径**：021 → 022。

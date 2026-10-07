@@ -67,6 +67,32 @@ final class MediaImportTests: XCTestCase {
         XCTAssertTrue(viewModel.timeline.clips.isEmpty, "失败的导入不建片段")
     }
 
+    /// MEDIA-022 回归：HEVC（iPhone 相册默认编码）导入成功。
+    /// 修复前 probe 在解码器 Open 即返回 2001，importMedia 折叠成 .decodeError。
+    func testImportHevcGoldenSucceeds() throws {
+        let viewModel = try EditorViewModel()
+        let url = URL(fileURLWithPath: RepoPath.goldenVideoHevc)
+        guard FileManager.default.fileExists(atPath: url.path) else {
+            return XCTFail("golden 夹具缺失：\(url.path)")
+        }
+
+        let status = viewModel.importMedia(url: url)
+        XCTAssertEqual(status, .ok, "HEVC 导入应成功（真实原因见 status.userText）")
+
+        XCTAssertTrue(waitForTimelineVersion(viewModel, 3))
+        XCTAssertEqual(viewModel.timeline.clips.count, 1, "HEVC 片段应进时间线")
+        XCTAssertGreaterThan(viewModel.timeline.clips[0].duration.value, 0)
+    }
+
+    /// MEDIA-022：探测失败透传内核原始状态码 —— 缺失文件在 demuxer 侧
+    /// （AVAsset 加载失败 + stat 兜底）报 1000 kIoError，不再折叠成 .decodeError，
+    /// UI 据此显示「文件无法读取」而非「解码失败」。
+    func testImportMissingFileSurfacesRawStatus() throws {
+        let viewModel = try EditorViewModel()
+        let missing = URL(fileURLWithPath: "/tmp/definitely_missing_cq_media.mp4")
+        XCTAssertEqual(viewModel.importMedia(url: missing).rawValue, 1000)
+    }
+
     func testLibraryMarksMissingFileAsInvalid() throws {
         // 拷贝 golden 到临时位置导入（不污染仓库夹具），删文件后验证失效标记（D3）
         let viewModel = try EditorViewModel()

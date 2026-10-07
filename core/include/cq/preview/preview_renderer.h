@@ -21,6 +21,7 @@
 #define CQ_PREVIEW_PREVIEW_RENDERER_H_
 
 #include <atomic>
+#include <chrono>
 #include <cstdint>
 #include <memory>
 #include <unordered_map>
@@ -122,6 +123,25 @@ public:
 
     IRenderTarget* Target() override { return target_.get(); }
 
+    // MEDIA-023 排障仪器：把内部分段计时暴露给泵（经缓存避免跨线程读 LiveTimings
+    // —— timings_ 本身只有泵线程写，此处消费也在泵线程，无竞争）。
+    //
+    // CORE-010 变更：这两个接口**不再是 Debug-only**。它们是被看门狗消费的
+    // 「当前卡在哪一段」，属于可观测性基础设施，Release 没有就等于现场没有。
+    const IPreviewFrameSource::StageTimings* DebugLastTimings() const override {
+        stage_cache_.acquire_ns = timings_.acquire_ns;
+        stage_cache_.import_ns = timings_.import_ns;
+        stage_cache_.draw_ns = timings_.draw_ns;
+        stage_cache_.total_ns = timings_.total_ns;
+        return &stage_cache_;
+    }
+    const char* DebugStage() const override {
+        return debug_stage_.load(std::memory_order_relaxed);
+    }
+    int64_t DebugStageSinceNanos() const override {
+        return debug_stage_since_.load(std::memory_order_relaxed);
+    }
+
     // 上一帧的各阶段耗时（见 Timings 注释）。首帧之前全 0。
     const Timings& LastTimings() const { return timings_; }
 
@@ -166,11 +186,47 @@ private:
     // 必须由本类显式释放，否则每帧泄漏一张（含其 IOSurface 引用）。
     TextureHandle imported_ = nullptr;
 
+    // MEDIA-024：上一导入帧的展示区间复用判据。src_time 落在
+    // [last_import_pts_, +duration) 且素材相同 → 直接重画 imported_（跳过
+    // acquire+import），消除「区间内重复请求走慢路径重解 GOP」的尖刺。
+    // 纹理独立于 provider 生命周期（IOSurface 锁在纹理上），provider 重建无需失效。
+    bool last_import_valid_ = false;
+    uint64_t last_import_asset_ = 0;
+    // CORE-010：这两个限流计数器提到 Release —— 它们被 Trace 级的诊断使用，
+    // 而 Release 下 CQ_LOG_TRACE_WF 展开为空，if 体会被优化掉；留着成员开销为零。
+    int debug_import_logs_ = 0;
+    int debug_reuse_logs_ = 0;
+    RationalTime last_import_pts_{0, 1};
+    RationalTime last_import_dur_{0, 1};
+    uint32_t last_import_w_ = 0;
+    uint32_t last_import_h_ = 0;
+
     bool last_hit_clip_ = false;
     bool last_cpu_fallback_ = false;
     RationalTime last_source_time_{0, 1};
     RationalTime last_frame_pts_{0, 1};
     Timings timings_{};
+    mutable IPreviewFrameSource::StageTimings stage_cache_{};
+    // MEDIA-026 看门狗：当前渲染阶段与进入时刻（泵的看门狗线程轮询，超 1s 报告）。
+    //
+    // CORE-010 变更：提到 Release。开销是每段一次 relaxed atomic store +
+    // 一次 steady_clock 读取，相对各段本身的毫秒级耗时可忽略；换来的是 Release
+    // 包也能回答「卡在哪一段」——这是本仓库连续两次冻结踩坑的唯一指认手段。
+    std::atomic<const char*> debug_stage_{""};
+    std::atomic<int64_t> debug_stage_since_{0};
+    struct DebugStageGuard {
+        std::atomic<const char*>& stage;
+        std::atomic<int64_t>& since;
+        explicit DebugStageGuard(std::atomic<const char*>& st,
+                                 std::atomic<int64_t>& since, const char* name)
+            : stage(st), since(since) {
+            stage.store(name, std::memory_order_relaxed);
+            since.store(static_cast<int64_t>(
+                            std::chrono::steady_clock::now().time_since_epoch().count()),
+                        std::memory_order_relaxed);
+        }
+        ~DebugStageGuard() { stage.store("", std::memory_order_relaxed); }
+    };
     std::atomic<int> fit_mode_{static_cast<int>(FitMode::kStretch)};  // 见 SetFitMode
 };
 

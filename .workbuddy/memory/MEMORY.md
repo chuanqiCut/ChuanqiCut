@@ -33,6 +33,7 @@
   - 发号水位（2026-10-07 深夜后）：ADR 下一号 **0032**（0025~0028 预占素材库多轨）；pitfalls 下一号 **P84**（本轮已用 P83：SDK 常量凭记忆书写 + App target 未真编译）；INFRA-013/015 ✅，016~020 已登记未建卡。
 - **收工逐项勾清单**（真源「任务结束必须同步上下文」）：`.ai/modules/` → ADR（改了既有惯例必须新增）→ TASK 卡 → HANDOFF → pitfalls → baselines → 当日日志 → MEMORY.md。模糊的"要回写"等于没写（连漏两轮的教训）。
 - 门类补充：门禁状态写**具体数字**（如 `Debug 44/44、Release 44/44`），不写"全绿"；HANDOFF 里的任务状态要**对着 commit 历史核**，不能照抄上一版。
+- **构建产物零入库（P84 硬规则，2026-10-07）**：①`.gitignore` 已通配 `apps/apple/packages/*/.build/` + `/.build/`，新建可构建目录必须确认覆盖；②`run_gate.sh` 有 **artifacts 步**（`.build/`、根 `build/`、`DerivedData`、`.xcuserstate`、`.DS_Store` 被 git 跟踪 = 一票否决）；③**临时编译统一目录 = `/build/`**：SPM 跑测试一律 `swift test --disable-sandbox --scratch-path "$ROOT/build/spm/<包名>"`，包目录内不落 .build；④`git add -A` 前必看 `git status` 甄别产物。
 - 「本期明确不支持」要写进头文件/文档，不要只在对话里说。
 
 ## 产物打包与链接

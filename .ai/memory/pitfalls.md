@@ -1430,3 +1430,19 @@ TASK-CAM-012 剩余风险栏其实预判了（"若真机上 CI 工作空间表�
 - 根因：**SDK 里没有这个常量**。实锤方法：`grep -rn ColorSpaceKey $(xcrun --show-sdk-path --sdk iphonesimulator)/System/Library/Frameworks/CoreVideo.framework/Headers/` —— 全部 CoreVideo 头文件只有 `kCVImageBufferCGColorSpaceKey`。美颜合并轮（9da6270，远端）凭记忆写了"看起来合理"的常量；该轮自述验证 = `swiftc -parse` 对照（只查语法不查类型），且该文件此前从未被 App target 真编译过 —— P46/P48/P49/P78 同一坑第 5 次。
 - 修复：改用 `kCVImageBufferCGColorSpaceKey`（iOS 4.0+，值 = CGColorSpaceRef；CVPixelBuffer 继承 CVImageBuffer 的附件键语义）。CAM-018「预览 vs 录制颜色一致性」真机验收点依赖这个 sRGB 标记，修复后按池 [2] 执行真机项。
 - 防复发规则：①**合并快检必须含 App target 真编译**（`xcodebuild -sdk iphonesimulator build` + mac Debug build，增量约 2~5 分钟）——`-parse` 对照不构成证据，已写进 ADR-0030 快检清单；②写 AVFoundation/CoreVideo 常量前先 grep 本机 SDK 头文件定名，不凭记忆、不上网猜。
+
+### P84 · 新建包的 `.build/` 被 `git add -A` 收进提交 —— 产物入库零容忍，逐包登记 ignore 的模式失效
+**日期**：2026-10-07　**来源**：ChuanqiCutPlayer Pod 迁移提交（7e626d7 原始版带 45 个 .build 产物文件，推送前抓回修正）　**验证状态**：已修复并固化为门禁步骤（artifacts 检查，PASS 基线 10→11）
+
+- 现象：`git add -A && git commit` 把 `apps/apple/packages/ChuanqiCutPlayer/.build/`（SPM
+  编译产物：build.db、debug.yaml、描述文件等 45 个文件）收进提交。根因 = `.gitignore` 的
+  SPM 忽略规则是**逐包登记**的（`apps/apple/packages/SharedUI/.build/`、`bindings/swift/.build/`），
+  新建包没有条目，而传哲规则本就要求「构建产物禁止提交」（AGENTS 红线级），漏网纯属工具性疏忽。
+- 修复（三件套，2026-10-07）：①`.gitignore` 改**通配规则** `apps/apple/packages/*/.build/`
+  + 顶层 `/.build/`，新建包不再逐包登记；②`run_gate.sh` 新增 **artifacts 检查**（2b 步）：
+  `git ls-files` 命中 `.build/`、根 `build/`、`DerivedData/`、`.xcuserstate`、`.DS_Store`
+  即一票否决——规则不再靠自觉，靠门禁兜底；③**临时编译统一目录**：SPM 全部
+  `swift test --disable-sandbox --scratch-path "$ROOT/build/spm/<包名>"`（门禁已改），
+  仓库内临时编译产物只落 `/build/` 一个地方，包目录保持干净。
+- 教训（一句话）：**新增可构建目录 = 必须同时确认 ignore 覆盖 + 门禁有兜底检查**；
+  `git add -A` 提交前 `git status` 甄别产物是每次提交的固定动作（与「8 项自检」同等级）。

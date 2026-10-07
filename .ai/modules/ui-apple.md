@@ -328,7 +328,7 @@ loading 覆盖 → 落 tmp → async 交付 → importMedia → loading 解除 +
   - `visionPointToImageNormalized` / `visionRectToImageNormalized` — 坐标映射。
 - **坐标契约（B 期全链，013/014 消费方照此）**：图像归一化坐标、**origin 左上**、
   两轴 0...1，与像素尺寸/方向无关；Vision 的左下原点在检测器内翻转，消费方不再翻。
-- **接线状态**：`offer()` 已挂进 `CameraViewModel.wireCallbacks`（CAM-016，2026-10-06，
+- **接线状态**：`offer()` 已挂进 `CameraViewModel.wireCallbacks`（CAM-019，曾号 016；2026-10-06，
   美颜区域化为首个消费方；`smoothingStrength` 接面板仍留 CAM-013）。
 - 诊断埋点：`lastDetectionDurationMs` / `totalDetections` / `totalDroppedByRate` /
   `totalFailed`（真机耗时入 baselines 的数据源）。
@@ -367,9 +367,9 @@ loading 覆盖 → 落 tmp → async 交付 → importMedia → loading 解除 +
 
 ---
 
-# CAM-015/016 落地（2026-10-06）：美颜色彩空间修正 + 人脸区域化
+# CAM-018/019 落地（2026-10-06）：美颜色彩空间修正 + 人脸区域化（曾号 CAM-015/016，撞号让位）
 
-真机验收反馈（磨皮闪烁、美白不基于人脸）触发，SPEC-CAM-015-016。**接口/装配形状**：
+真机验收反馈（磨皮闪烁、美白不基于人脸）触发，SPEC-CAM-018-019（曾 SPEC-CAM-015-016）。**接口/装配形状**：
 
 - **`CameraBeautyParams.apply(to:faces:)`（SharedUI 契约变更，默认参向后兼容）**：
   `nil`=无检测数据全画面（macOS/未接检测方旧行为）、`[]`=**直通**（对齐美型无脸
@@ -379,11 +379,11 @@ loading 覆盖 → 落 tmp → async 交付 → importMedia → loading 解除 +
 - **`SharedUI/Camera/FaceMask.swift`（新，纯函数宿主可测）**：`ciRect`（归一化→CI
   y 翻转+外扩 15% 夹取）/ `smoothedBox`（两角点复用 smoothKeypoints）/
   `mask`（黑底全画面 + 每脸径向渐变椭圆）。**黑底是刻意的**：cropped 只做交集，
-  不叠底则蒙版 extent = 椭圆矩形，语义靠采样巧合（P63）。
-- **`CIContext` 显式 gamma sRGB working space（CAM-015 根因修复）**：
+  不叠底则蒙版 extent = 椭圆矩形，语义靠采样巧合（P81，曾 63）。
+- **`CIContext` 显式 gamma sRGB working space（CAM-018 根因修复）**：
   harness 用未标记 BGRA（gamma 域）定标 σr，真机默认线性域下双边权重塌陷 →
   皮肤逐帧沸腾。**新铁律：凡 harness 定标的 CI 参数，真机运行域必须与定标域
-  一致**（P62）。预览/录制输出色彩空间同步显式 sRGB；录制池缓冲加
+  一致**（P80，曾 62）。预览/录制输出色彩空间同步显式 sRGB；录制池缓冲加
   `kCVPixelBufferColorSpaceKey`（池若不接受按 SPEC §6-3 备选自建池，真机冒烟定）。
 - **检测接线**：`wireCallbacks` 挂 `detector.offer(buffer, at: pts)`（采集队列
   非阻塞，内部 15Hz 降频+忙丢弃）；`onResult`（检测队列）→ `FaceBoxStore`

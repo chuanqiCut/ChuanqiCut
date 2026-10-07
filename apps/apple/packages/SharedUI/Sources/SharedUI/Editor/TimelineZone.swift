@@ -5,7 +5,7 @@
 // UIA-032 变更：
 //   * 播放/暂停与撤销/重做入口迁出 —— 播放进 EditorTransportBar（预览正下方），
 //     撤销/重做 iOS 进 EditorBottomToolbar、macOS 保留在本区头部（Cmd+Z 快捷键
-//     挂在按钮上，进菜单栏归 UIA-017）。
+//     挂在按钮上，进菜单栏归 macOS 惯例化批次——原 UIA-017 建议位已让位）。
 //   * `showsHeader` 参数：平台差异经 EditorLayout 的 EditorPlatform 常量决定，
 //     业务视图不写条件编译（ui-apple.md 硬约束 #6）。
 //   * 快照版本指示（UIA-002 调试残留，RESEARCH-004 §2 点名）移入 #if DEBUG。

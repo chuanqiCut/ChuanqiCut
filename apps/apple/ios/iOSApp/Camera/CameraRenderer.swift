@@ -64,7 +64,7 @@ final class CameraFrameSlot {
     }
 }
 
-// MARK: - 人脸框槽（CAM-016）
+// MARK: - 人脸框槽（CAM-019）
 
 /// 检测队列写 / 渲染与录制线程读，锁保护，latest-wins（同 CameraFrameSlot 纪律）。
 /// 语义对齐 CameraBeauty.apply 契约：nil = 尚无检测数据（美颜全画面兜底）；
@@ -205,7 +205,7 @@ final class CameraPreviewRenderer: NSObject, MTKViewDelegate {
     private var preset: CameraFilterPreset = .none
     private let beautyLock = NSLock()
     private var beauty: CameraBeautyParams = .off
-    /// CAM-015：预览输出色彩空间，与录制侧显式对齐（sRGB，替代语义含糊的 DeviceRGB）。
+    /// CAM-018：预览输出色彩空间，与录制侧显式对齐（sRGB，替代语义含糊的 DeviceRGB）。
     private static let outputColorSpace = CGColorSpace(name: CGColorSpace.sRGB)
         ?? CGColorSpaceCreateDeviceRGB()
 
@@ -362,7 +362,7 @@ final class CameraPreviewRenderer: NSObject, MTKViewDelegate {
         // 1) CI 渲进中间纹理（这里 requirement 是 usage 含 ShaderWrite，配 bgra 目标）。
         //    render(toMTLTexture:) 非 throws（iOS 17.2 SDK 无同步 render(toDestination:)，
         //    P48）：CI 内部的失败不抛到此层，成败只能看下面渲染完成后的完成状态。
-        //    CAM-015：显式 sRGB 输出（与录制侧同一色彩空间，替代语义含糊的 DeviceRGB）。
+        //    CAM-018：显式 sRGB 输出（与录制侧同一色彩空间，替代语义含糊的 DeviceRGB）。
         ciContext.render(image, to: scratch, commandBuffer: commandBuffer,
                          bounds: extent, colorSpace: Self.outputColorSpace)
 

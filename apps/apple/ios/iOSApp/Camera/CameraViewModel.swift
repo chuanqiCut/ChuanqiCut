@@ -66,7 +66,7 @@ final class CameraViewModel: ObservableObject {
     let renderer: CameraPreviewRenderer?
     private let ciContext: CIContext?
     private let manager = CameraManager()
-    /// CAM-011 检测桥（CAM-016 接入美颜区域化）：offer 在采集队列非阻塞，
+    /// CAM-011 检测桥（CAM-019 接入美颜区域化）：offer 在采集队列非阻塞，
     /// 检测降频 15Hz [E] + 忙丢弃；onResult 在检测队列 → FaceBoxStore（锁）。
     private let detector = VisionDetector()
     private let faceBoxes = FaceBoxStore()
@@ -78,11 +78,11 @@ final class CameraViewModel: ObservableObject {
     init() {
         if let device = MTLCreateSystemDefaultDevice(),
            let queue = device.makeCommandQueue() {
-            // CAM-015：显式 gamma sRGB 工作空间 —— 真机 kernel 输入域对齐
+            // CAM-018：显式 gamma sRGB 工作空间 —— 真机 kernel 输入域对齐
             // beauty_harness 的 σr 定标域（未标记 BGRA 实测 gamma 域）。
             // 默认线性域下皮肤边缘亮度差被放大约 1.5~2 倍 [E]，双边权重塌陷
-            // → 磨皮逐帧沸腾/闪烁、保边失效（SPEC-CAM-015-016 §1.1）。
-            // 滤镜观感基线可能随之变化，真机人工定案（TASK-CAM-015 风险栏）。
+            // → 磨皮逐帧沸腾/闪烁、保边失效（SPEC-CAM-018-019 §1.1）。
+            // 滤镜观感基线可能随之变化，真机人工定案（TASK-CAM-018 风险栏）。
             let options: [CIContextOption: Any] = CGColorSpace(name: CGColorSpace.sRGB)
                 .map { [.workingColorSpace: $0] } ?? [:]
             let context = CIContext(mtlDevice: device, options: options)
@@ -99,7 +99,7 @@ final class CameraViewModel: ObservableObject {
         //    赋值前访问 self.filter 会触发 phase-1 报错
         //    （'self' used in property access 'filter' before all stored properties are initialized）。
         renderer?.setFilter(filter)
-        // CAM-016：检测结果 → 平滑后的人脸框。onResult 在检测队列串行回调，
+        // CAM-019：检测结果 → 平滑后的人脸框。onResult 在检测队列串行回调，
         // FaceBoxStore 内加锁；weak detector 断开 detector → onResult → detector 环。
         detector.onResult = { [faceBoxes, weak detector] snapshot in
             faceBoxes.update(with: snapshot.face?.box)
@@ -154,7 +154,7 @@ final class CameraViewModel: ObservableObject {
 
     func switchPosition() {
         let target: Position = (position == .back) ? .front : .back
-        faceBoxes.reset()   // 旧摄人脸框/平滑历史不污染新画面（CAM-016）
+        faceBoxes.reset()   // 旧摄人脸框/平滑历史不污染新画面（CAM-019）
         manager.switchPosition(to: target.managerPosition) { [weak self] newPos in
             self?.position = (newPos == .front) ? .front : .back
         }

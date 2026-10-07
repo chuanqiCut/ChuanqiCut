@@ -123,10 +123,10 @@
   SwiftUI 状态模型重复）；引任何 UI 三方必须走 manifest.toml + cq-dependency-governance。
   双摄（CAM-021）开关必须独立于前后翻转按钮。
 
-## 相机 CI 色彩域与蒙版契约（CAM-015/016，2026-10-06 定）
-- **CIContext 一律显式 `workingColorSpace`（gamma sRGB）**，禁止依赖默认线性域（P62）：凡 harness 定标的 CI 参数，真机运行域必须与定标域一致；新增 CI 消费方先核域再调参。
+## 相机 CI 色彩域与蒙版契约（CAM-018/019，2026-10-06 定；曾号 CAM-015/016，2026-10-07 撞号让位）
+- **CIContext 一律显式 `workingColorSpace`（gamma sRGB）**，禁止依赖默认线性域（P80，曾号 P62）：凡 harness 定标的 CI 参数，真机运行域必须与定标域一致；新增 CI 消费方先核域再调参。
 - **美颜区域化三态契约**：`apply(to:faces:)` —— nil=全画面兜底、[]=**直通**（与美型"无脸直通"同口径）、非空=归一化框（左上）→ FaceMask 蒙版。引擎注入签名 `(CIImage, Double) -> CIImage?` 不加 mask 参数，蒙版在 SharedUI apply 内 `CIBlendWithMask` 施加。
-- **CIImage DAG 宿主脚本先行**（P63）：自定义几何/渐变/合成先跑宿主实渲染采样再落正式测试；`CIRadialGradient` extent 有限、`cropped` 只做交集、`CGPoint+CGVector` 不存在——三个已实锤的 API 语义陷阱。
+- **CIImage DAG 宿主脚本先行**（P81，曾号 P63）：自定义几何/渐变/合成先跑宿主实渲染采样再落正式测试；`CIRadialGradient` extent 有限、`cropped` 只做交集、`CGPoint+CGVector` 不存在——三个已实锤的 API 语义陷阱。
 
 ## 数字纪律
 - 估算标 `[E]`，推测标 `hypothesis`，实测才能做验收阈值。引用 baselines 必须带机器环境。
@@ -220,10 +220,10 @@ App 侧在 `EditorViewModel.init()` 最早处调 `ChuanqiCut.configureLogFromEnv
    BACKLOG §12 的 UIA-021~024 改 UIA-034~037、ADR-0022（编辑页）改 0024、RESEARCH-006（剪映）改 008；
    播放器线保留 UIA-015~027 全链。清扫轮已过全量门禁 + linkcheck（当日日志「撞号清扫轮」节）。
    UIA 序列恢复取号，但取号前 `git fetch` 核对远端水位不变（ADR-0019 §4）。
-   **同源新增（2026-10-07 合并轮）**：**CAM-015 / CAM-016 撞号** —— 本机线（美颜色彩空间
-   修正 / 人脸区域化）vs 远端线（预览渲染修复 / 预览方向修复），双卡并存于
-   `TASK-CAM-015.md` / `TASK-CAM-016.md`（告警头），BACKLOG 双行注记；
-   **裁定前同样不从 CAM 序列取号**。
+   **同源 CAM-015 / CAM-016 撞号 ✅ 同日裁定（本机轮，沿同先例）**：远端渲染线（先入库一天 +
+   CAM-017/021 挂原号）保留 015/016；本机美颜线（已完结）让位 → **CAM-018/019**
+   （卡 `TASK-CAM-018/019.md`，SPEC 改名 `SPEC-CAM-018-019`）；同批 pitfalls 本机条目
+   P62/P63 → **P80/P81**。CAM 序列恢复取号，fetch 核水位照旧。
 5. 上述三项 + `tools/perf/` 处置已立为待办，交另一个 agent 接手：
    [`docs/tasks/TODO-2026-10-07-播放器域收尾待他人接手.md`](../../docs/tasks/TODO-2026-10-07-播放器域收尾待他人接手.md)
    （已在 `docs/tasks/README.md` 登记）。

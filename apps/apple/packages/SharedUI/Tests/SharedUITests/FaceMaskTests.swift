@@ -1,4 +1,4 @@
-// SharedUITests — 人脸区域蒙版纯函数 + CameraBeauty faces 三态契约（CAM-016）
+// SharedUITests — 人脸区域蒙版纯函数 + CameraBeauty faces 三态契约（CAM-019）
 //
 // 坐标翻转 / 外扩夹取 / 框平滑 / 蒙版几何为纯函数断言；蒙版与区域化效果经
 // macOS 宿主 CIContext 实渲染采样（与 beauty_harness 同思路，宽容差）。
@@ -106,7 +106,7 @@ final class FaceMaskTests: XCTestCase {
                                  "退化框 → 全黑 = 效果直通（比 nil 全画面兜底更保守）")
     }
 
-    // MARK: - CameraBeauty faces 三态契约（SPEC-CAM-015-016 §4）
+    // MARK: - CameraBeauty faces 三态契约（SPEC-CAM-018-019 §4）
 
     private func makeSourceImage() -> CIImage {
         CIImage(color: CIColor(red: 0.3, green: 0.3, blue: 0.3))

@@ -3,7 +3,7 @@
 // 剪映式一级工具位：撤销/重做（左，原 TimelineZone 头部入口迁移）+ 工具组。
 // 「媒体」打开媒体抽屉；音频/文字/特效为**置灰占位**——入口形状先立住，
 // 能力未就绪不伪装可用（对应各自后续任务，见 TASK-BACKLOG §11）。
-// macOS 不挂本条（撤销/重做仍在 TimelineZone 头部吃 Cmd 快捷键，UIA-017 再进菜单栏）。
+// macOS 不挂本条（撤销/重做仍在 TimelineZone 头部吃 Cmd 快捷键，macOS 惯例化批次再进菜单栏——原 UIA-017 建议位已让位，重开时取新号）。
 
 import SwiftUI
 import ChuanqiCut

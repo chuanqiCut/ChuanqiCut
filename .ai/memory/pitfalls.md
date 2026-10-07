@@ -1305,7 +1305,8 @@ run_gate.sh 负载下实测抖出（Debug 43/44，"执行计数为 1" FAIL）。
 - 日期 / 来源 / 验证状态：2026-10-05 / run_gate.sh 首跑（AUDIO-001 轮）/
   **verified**（修复后连跑 5 次 50/50，重跑门禁见当日日志）
 
-### P62 · harness 定标域 ≠ 真机运行域 —— CI 工作空间色彩管理让参数语义漂移
+### P80 · harness 定标域 ≠ 真机运行域 —— CI 工作空间色彩管理让参数语义漂移
+> ⚠️ 曾号 P62（2026-10-07 撞号让位：与并行会话「App target DEBUG」条目撞号，本条目后入库让位）。
 CAM-012 磨皮 σr 在宿主 harness 用**未标记 BGRA**定标（默认 CIContext 下未标记输入
 不做色彩匹配，kernel 看到的是 gamma 域亮度）；真机 `CIContext(mtlDevice:)` 默认
 workingColorSpace=线性，带色彩标记的相机帧先被匹配到线性域 → 同一 σr 下皮肤边缘
@@ -1316,10 +1317,11 @@ TASK-CAM-012 剩余风险栏其实预判了（"若真机上 CI 工作空间表�
   运行域**（`CIContext(options: [.workingColorSpace: sRGB])`），并保证两者一致；
   新 CI 消费方禁止依赖默认工作空间的隐式域。harness 与真机行为差异列任务卡
   剩余风险时，必须配一条真机验收项，否则等于没防。
-- 日期 / 来源 / 验证状态：2026-10-06 / 真机验收反馈（CAM-015）/ 根因链
+- 日期 / 来源 / 验证状态：2026-10-06 / 真机验收反馈（CAM-018，曾号 CAM-015）/ 根因链
   **verified**（代码+注释+任务卡证据闭环）；修复有效性**待真机**（不闪/保边归传哲）。
 
-### P63 · 宿主脚本先行可抓 CIImage DAG 假设错（两个实锤：坐标运算符与蒙版 extent）
+### P81 · 宿主脚本先行可抓 CIImage DAG 假设错（两个实锤：坐标运算符与蒙版 extent）
+> ⚠️ 曾号 P63（2026-10-07 撞号让位：与并行会话「TaskRunner 同步点」条目撞号，本条目后入库让位）。
 写 FaceMask.swift 时先跑了宿主临时脚本（Swift 5.5 + macOS CoreImage 实渲染采样），
 两个 API 假设错在进 commit 前被抓：① `CGPoint + CGVector` 在 CG Swift overlay 里
 **不存在**（Foundation 的 AttributedString 重载还会来搅局报误导性错误）——写
@@ -1331,7 +1333,7 @@ TASK-CAM-012 剩余风险栏其实预判了（"若真机上 CI 工作空间表�
   采样先行**（宽容差断言白/黑/翻转方向），再落正式单测——DAG 构造 API 的 extent
   与坐标语义靠猜必踩。`guard let x` 简写（SE-0345）本机 Swift 5.5 **parse 不过**，
   宿主脚本须改写显式绑定，产物代码按构建机 5.9+ 口径不受影响。
-- 日期 / 来源 / 验证状态：2026-10-06 / CAM-016 实现 / **verified**（脚本 14/14 后
+- 日期 / 来源 / 验证状态：2026-10-06 / CAM-019（曾号 CAM-016）实现 / **verified**（脚本 14/14 后
   才落盘 FaceMaskTests；两处修复均回写进生产代码）。
 
 ### P77 · 「回调可能在另一线程完成」的注释只让我补了顺序，没让我补互斥 —— Feed() 无锁写 pending map 写坏红黑树，SIGSEGV @0x0

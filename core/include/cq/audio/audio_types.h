@@ -14,8 +14,8 @@
 
 #include <cstdint>
 
-#include "cq/base/time.h"      // RationalTime（已含 status.h）
-#include "cq/pal/common.h"     // SampleFormat
+#include "cq/base/rational_time.h"      // RationalTime（已含 status.h）
+#include "cq/pal/pal_common.h"     // SampleFormat
 
 namespace cq {
 

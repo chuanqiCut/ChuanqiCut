@@ -29,7 +29,7 @@
 #include "cq/media/asset_registry.h"
 #include "cq/model/model_snapshot.h"
 #include "cq/model/timeline.h"
-#include "cq/session/snapshot.h"
+#include "cq/session/session_snapshot.h"
 
 namespace cq {
 

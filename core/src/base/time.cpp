@@ -3,7 +3,7 @@
 // 全程整数运算，无任何浮点中间值。溢出通过 Status 返回（内核禁用异常）。
 // 详见同名头文件的设计约束与红线。
 
-#include "cq/base/time.h"
+#include "cq/base/rational_time.h"
 
 #include <cstdint>
 

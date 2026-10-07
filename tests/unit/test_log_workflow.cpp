@@ -15,9 +15,9 @@
 #include <string>
 #include <vector>
 
-#include "cq/base/log.h"
+#include "cq/base/logging.h"
 #include "cq/base/perf.h"
-#include "cq/base/time.h"
+#include "cq/base/rational_time.h"
 
 namespace {
 

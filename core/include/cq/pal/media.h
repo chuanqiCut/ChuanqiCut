@@ -21,9 +21,9 @@
 #include <cstdint>
 
 #include "cq/base/concurrency.h"  // CancelToken
-#include "cq/base/time.h"          // RationalTime
+#include "cq/base/rational_time.h"          // RationalTime
 #include "cq/pal/audio.h"          // PcmBuffer（音频帧复用）
-#include "cq/pal/common.h"
+#include "cq/pal/pal_common.h"
 
 namespace cq {
 

@@ -19,7 +19,7 @@ platform :ios, '16.0'
 use_modular_headers!
 
 target 'ChuanqiCutApp' do
-  pod 'ChuanqiCutEngine/Source', :path => '../../..'
+  pod 'ChuanqiCutEngine', :path => '../../..'
   pod 'SharedUI', :path => '../packages/SharedUI'
   # 功能 Pod（ADR-0031 分治，2026-10-07 全域完成）：Player/Camera(仅iOS)/Import/Editor
   pod 'ChuanqiCutPlayer', :path => '../packages/ChuanqiCutPlayer'
@@ -29,7 +29,10 @@ target 'ChuanqiCutApp' do
   pod 'ChuanqiCutEditor', :path => '../packages/ChuanqiCutEditor'
 end
 
+require_relative '../pods_post_install'
+
 post_install do |installer|
+  pods_post_install(installer)
   installer.pods_project.targets.each do |target|
     target.build_configurations.each do |config|
       # 与项目门禁一致：SDK 层的编译设置以 cmake/CompileOptions.cmake 为准，

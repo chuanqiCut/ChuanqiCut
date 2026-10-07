@@ -25,7 +25,7 @@
 
 #include "cq/base/concurrency.h"
 #include "cq/base/status.h"
-#include "cq/base/time.h"
+#include "cq/base/rational_time.h"
 #include "cq/media/frame_provider.h"
 #include "cq/media/frame_provider_factory.h"
 #include "cq/pal/media.h"

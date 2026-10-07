@@ -30,7 +30,7 @@
 // CORE-009 当初用 ISessionState 解耦是为了不被 MODEL-001 阻塞，不是永久边界。
 #include "cq/model/model_snapshot.h"
 #include "cq/model/timeline.h"
-#include "cq/session/snapshot.h"
+#include "cq/session/session_snapshot.h"
 #include "cq/session/task_runner.h"
 
 namespace cq {

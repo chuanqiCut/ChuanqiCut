@@ -14,9 +14,9 @@
 #ifndef CQ_PAL_LOG_H_
 #define CQ_PAL_LOG_H_
 
-#include "cq/base/log.h"    // ILogSink（平台后端需实现此接口）
+#include "cq/base/logging.h"    // ILogSink（平台后端需实现此接口）
 #include "cq/base/status.h"
-#include "cq/pal/common.h"
+#include "cq/pal/pal_common.h"
 
 namespace cq {
 

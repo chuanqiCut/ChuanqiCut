@@ -51,8 +51,8 @@
 
 #include "cq/base/concurrency.h"  // CancelToken
 #include "cq/base/status.h"       // Status / StatusCode
-#include "cq/base/time.h"         // RationalTime
-#include "cq/pal/common.h"        // opaque 句柄、IPalResource、PalPtr、平台无关枚举
+#include "cq/base/rational_time.h"         // RationalTime
+#include "cq/pal/pal_common.h"        // opaque 句柄、IPalResource、PalPtr、平台无关枚举
 #include "cq/pal/gfx.h"           // PAL IGraphicsDevice 及其 12 概念（本层之下）
 
 namespace cq {

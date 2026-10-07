@@ -122,18 +122,30 @@ open ChuanqiCut.xcworkspace  # ⚠️ 开 workspace，不是 xcodeproj
 
 ---
 
-## 附：Pods 工程导航器噪音与头文件可见性（2026-10-07 排查定案）
+## 附：Pods 导航器（docs 混入 / 头文件不可见）—— 2026-10-07 定案
 
-三个实证结论（当天四方案试错后收口）：
+**现象**：Pods 工程 ChuanqiCutEngine 组下，docs/** 全树被挂进来（182 条）而 core 头文件一条没有。
 
-1. **docs/ 出现在 Pods 工程**：CocoaPods 1.11.3 自动文档探测（`file_accessor` docs glob
-   `doc{s}{*,.*}/**/*`，相对 **pod 根**）。Engine Pod 根 = 仓库根 → 整棵 docs/ 被登记
-   为文件引用（仅导航器，不编译不进产物）。**无开关**。曾试把 podspec 挪到
-   `apps/apple/engine/` 让 pod 根脱离 docs/——结果 CocoaPods 对 **pod 根外的源文件
-   静默丢弃**（bindings 引用 0 条、空目标零产物"成功"，比噪音危险得多，已回退）。
-   结论：接受导航器噪音；根治需物理搬仓（放弃 Source 现场编译模式），不值。
-2. **core 头文件在导航器不可见**：`preserve_paths` **不产生** Pods 工程文件引用
-   （实测 0 条，它只影响打包不剥离）；头文件也**永不进 source_files**（headermap
-   按基名劫持 `<time.h>` 的 2026-10-02 案底，编译走 HEADER_SEARCH_PATHS）。
-3. **头文件浏览的正解**：App 工程（xcodegen）加 `core/include` **文件夹引用**
-   （`type: folder` + `buildPhase: none`，蓝色可浏览、零编译参与）——双 project.yml 已配。
+**机制（源码实证，CocoaPods 1.17.0）**：
+1. docs 混入 = 本地 pod 的「开发辅助」特性（`file_references_installer` → `add_developer_files`
+   → `file_accessor.developer_files` = license/readme/podspec/**docs glob** `doc{s}{*,.*}/**/*`，
+   相对 **pod 根**）。设计假设 pod 根 = 独立库目录；Engine 的 pod 根 = 仓库根 → 整棵仓库
+   docs 被吞。`s.exclude_files` 只作用于源码/资源 glob，**对该特性无效，无开关**。
+2. 头文件不可见 = 1.17 对 `private_header_files` **只写编译阶段、不生成导航条目**
+   （实证：Headers phase 有全部头，PBXGroup 树里 0 条）。公开声明则 C++ 头被卷进
+   CocoaPods 生成的 umbrella Clang module → ObjC 模块上下文编 `<cstddef>` → 级联崩
+   （与 2026-10-02 headermap 案底同族的第二形态）。
+
+**解决（唯一可行解 = post_install 钩子，`apps/apple/pods_post_install.rb`，双 Podfile 共享）**：
+- 删 docs/** 引用（182 条）；
+- 在 Engine 组下补 `core/include` 头文件树（42 条，镜像目录结构，只读浏览不参与编译——
+  编译走 HEADER_SEARCH_PATHS）。
+**前置**：7 个与系统头重名的头已改名（time.h→rational_time.h、base/log.h→logging.h、
+pal/log.h→pal_log.h、clock.h→pal_clock.h、common.h→pal_common.h、media/cache.h→
+media_cache.h、session/snapshot.h→session_snapshot.h），headermap 按基名映射（无视
+目录），重名会顶掉系统 `<time.h>` → "'cstdint' file not found" 级联崩（2026-10-02 案底）。
+**禁止再新增与系统头同名的头文件。**
+
+**曾试并否决的方案**：podspec 挪子目录脱离 docs/（CocoaPods 对 pod 根外源文件**静默
+丢弃**，空目标假成功）；符号链接（Ruby glob 不穿目录符号链接，0 匹配）；exclude_files
+（不作用于 developer_files）。

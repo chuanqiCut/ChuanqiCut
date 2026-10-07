@@ -14,7 +14,7 @@
 #include <chrono>
 #include <utility>  // std::move
 
-#include "cq/base/log.h"  // CQ_LOG_*_WF：带 workflow 的分级日志（CORE-010）
+#include "cq/base/logging.h"  // CQ_LOG_*_WF：带 workflow 的分级日志（CORE-010）
 
 namespace cq {
 namespace {

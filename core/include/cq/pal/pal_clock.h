@@ -13,8 +13,8 @@
 #define CQ_PAL_CLOCK_H_
 
 #include "cq/base/status.h"
-#include "cq/base/time.h"  // RationalTime
-#include "cq/pal/common.h"
+#include "cq/base/rational_time.h"  // RationalTime
+#include "cq/pal/pal_common.h"
 
 namespace cq {
 

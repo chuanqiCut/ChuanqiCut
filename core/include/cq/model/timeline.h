@@ -20,7 +20,7 @@
 #include <vector>
 
 #include "cq/base/status.h"
-#include "cq/base/time.h"
+#include "cq/base/rational_time.h"
 
 namespace cq {
 

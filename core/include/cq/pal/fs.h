@@ -19,7 +19,7 @@
 #include <cstdint>
 
 #include "cq/base/status.h"
-#include "cq/pal/common.h"
+#include "cq/pal/pal_common.h"
 
 namespace cq {
 

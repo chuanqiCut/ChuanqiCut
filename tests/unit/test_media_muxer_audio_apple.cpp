@@ -24,9 +24,9 @@
 #include <vector>
 
 #include "cq/base/status.h"
-#include "cq/base/time.h"
+#include "cq/base/rational_time.h"
 #include "cq/pal/media.h"   // IMediaMuxer / CreateMediaMuxer / AudioTrackConfig / PcmBuffer
-#include "cq/pal/common.h"
+#include "cq/pal/pal_common.h"
 #include "media_decode.h"   // CqNativeImage（仅帧源包装，Apple TU）
 
 #ifndef CQ_SOURCE_DIR

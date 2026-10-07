@@ -26,12 +26,12 @@
 #include <vector>
 
 #include "cq/base/perf.h"       // CQ_SLOW_CALL_WF（CORE-010）
-#include "cq/base/log.h"        // 带 workflow 的分级日志
-#include "cq/base/time.h"        // RationalTime / Rescale / RoundMode / kProjectTimeScale
+#include "cq/base/logging.h"        // 带 workflow 的分级日志
+#include "cq/base/rational_time.h"        // RationalTime / Rescale / RoundMode / kProjectTimeScale
 #include "cq/base/status.h"      // Status / StatusCode
 #include "cq/base/concurrency.h" // CancelToken
 #include "cq/pal/media.h"        // IMediaDemuxer / MediaPacket / StreamInfo / CreateMediaDemuxer
-#include "cq/pal/common.h"       // CodecId / MediaType / PixelFormat 等枚举
+#include "cq/pal/pal_common.h"       // CodecId / MediaType / PixelFormat 等枚举
 
 namespace cq {
 

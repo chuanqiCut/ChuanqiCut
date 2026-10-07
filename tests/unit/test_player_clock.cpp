@@ -9,7 +9,7 @@
 #include <cstdio>
 #include <thread>
 
-#include "cq/base/time.h"
+#include "cq/base/rational_time.h"
 #include "cq/preview/player_clock.h"
 
 namespace {

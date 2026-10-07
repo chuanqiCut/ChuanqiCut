@@ -15,7 +15,7 @@
 #include <memory>
 
 #include "cq/base/status.h"
-#include "cq/base/time.h"
+#include "cq/base/rational_time.h"
 #include "cq/pal/media.h"
 
 int32_t cq_media_probe_duration(const char* path, int64_t* out_value,

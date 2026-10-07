@@ -2,7 +2,7 @@
 //
 // 头文件零平台类型 / 零 FFmpeg 类型 / 无异常。细节见 cache.h 注释（所有权与 lease 模型）。
 
-#include "cq/media/cache.h"
+#include "cq/media/media_cache.h"
 
 namespace cq {
 

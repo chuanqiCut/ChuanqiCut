@@ -1,0 +1,72 @@
+# LaunchBench — App 冷启动基线测量工程（cq-perf-baseline）
+#
+# 独立小工程，不依赖、不改动主工程（apps/apple/ios）：被测对象是
+# 已安装到真机/模拟器上的 com.chuanqi.cut（正式启动路径，无 CQ_AUTO_ROUTE）。
+# 这样测的是用户实际运行的那份包，且两个 dev 机互不冲突。
+#
+# 生成与运行（设备上要已装 ChuanqiCut）：
+#   xcodegen generate
+#   xcodebuild test -project LaunchBench.xcodeproj -scheme LaunchBench \
+#     -destination 'id=<设备UDID>' -resultBundlePath /tmp/launch_bench.xcresult
+#
+# LaunchBench.xcodeproj 与 .xcresult 是生成产物，不入库（见本目录 .gitignore）。
+
+name: LaunchBench
+options:
+  bundleIdPrefix: com.chuanqi.perf
+  deploymentTarget:
+    iOS: "17.0"
+  createIntermediateGroups: true
+
+settings:
+  base:
+    SWIFT_VERSION: "6.1"
+    PRODUCT_NAME: "$(TARGET_NAME)"
+    ALWAYS_SEARCH_USER_PATHS: NO
+    GENERATE_INFOPLIST_FILE: YES
+    CODE_SIGN_STYLE: Automatic
+    # 本机 Xcode 账号的个人免费团队（与主工程真机安装一致）
+    DEVELOPMENT_TEAM: JGFAHCM926
+
+targets:
+  # UI 测试 bundle 必须有宿主 app（Test Runner）。这个 Runner 是空壳，
+  # 不承载任何逻辑；真正被测的 app 由测试代码按 bundle id 指定。
+  Runner:
+    type: application
+    platform: iOS
+    sources: [Runner]
+
+  # 参照 app：与 Runner 同样的极简 SwiftUI 壳、不同 bundle id —— 用于
+  # 测出「同环境同方法的背景成本」（模拟器 launch 机制本身的开销），
+  # ChuanqiCut 的净成本 = 实测值 − 参照值。不能直接测 Runner 自己：
+  # 它是 UI 测试的宿主进程，被 terminate 会杀掉测试会话。
+  ReferenceApp:
+    type: application
+    platform: iOS
+    sources: [Runner]
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.chuanqi.perf.reference
+
+  LaunchBenchUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    sources: [Tests]
+    dependencies:
+      - target: Runner
+    settings:
+      base:
+        TEST_TARGET_NAME: Runner
+        PRODUCT_BUNDLE_IDENTIFIER: com.chuanqi.perf.launchbench.uitests
+
+schemes:
+  LaunchBench:
+    build:
+      targets:
+        Runner: [test]
+        ReferenceApp: [test]
+        LaunchBenchUITests: [test]
+    test:
+      gatherCoverageData: false
+      targets:
+        - LaunchBenchUITests

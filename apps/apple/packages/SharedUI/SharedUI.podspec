@@ -6,14 +6,15 @@
 #     **不在 App 依赖链上**。两份构建定义描述同一份 Sources/SharedUI 源码，
 #     改动源码接口时两边都要顾到；App 侧行为以 pod 路径为准。
 #
-# 迁出注记（ADR-0031 壳工程与功能 Pod 分治，2026-10-07）：本 Pod 正在瘦身为
-# **UI 基座**（终态仅 Common/Theme/通用组件），功能域逐阶段迁出为独立 Pod：
-#   Player   → ChuanqiCutPlayer（阶段 1 已迁，2026-10-07，INFRA-015）；
-#   MediaPicker/导入 → ChuanqiCutImport（阶段 2）；素材库 → ChuanqiCutAssets（阶段 3）；
-#   Camera   → ChuanqiCutCamera（阶段 4，iOS 专属 + metallib 构建链随迁）；
-#   Editor+Timeline → ChuanqiCutEditor（阶段 5）。迁出即删源（source_files
-#   通配自动生效）；功能 Pod 横向零依赖，跨域交接走 PlayerPreviewInjector 等
-#   基座注入点（Common/）。
+# 迁出注记（ADR-0031 壳工程与功能 Pod 分治；2026-10-07 全域迁出完成）：
+# 本 Pod 已是**终态 UI 基座**——仅 Common/（Theme 配色 + 三个注入器
+# PlayerPreviewInjector / EditorEntryInjector / MediaLibraryInjector）。
+# 功能域去向：Player → ChuanqiCutPlayer（阶段 1）· Camera → ChuanqiCutCamera
+# （阶段 4，iOS 专属）· MediaPicker → ChuanqiCutImport（阶段 2）·
+# Editor+Timeline+EditorViewModel → ChuanqiCutEditor（阶段 5）· 测试随域迁出
+# （SharedUI 无独立测试，由门禁 swift build + 双壳构建兜底）。
+# ChuanqiCutAssets 不从本 Pod 拆——素材逻辑与 EditorViewModel 不可分，
+# 待 LIB-001~005 素材库契约落地后建域（INFRA-017 已改挂 LIB 依赖）。
 #
 # 为什么 SharedUI 必须跟 ChuanqiCut 一起走 pod：
 #   SPM 依赖图与 CocoaPods 互不相通（podspec 引不了 SPM 包，反之亦然）。

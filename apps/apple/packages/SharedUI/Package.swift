@@ -30,10 +30,5 @@ let package = Package(
             ],
             path: "Sources/SharedUI"
         ),
-        .testTarget(
-            name: "SharedUITests",
-            dependencies: ["SharedUI"],
-            path: "Tests/SharedUITests"
-        ),
     ]
 )

@@ -520,11 +520,11 @@ RENDER-001/红线 #6 路线，勿把相机滤镜直接当 SDK 能力引用。
 | INFRA-013 | 基建 | 壳工程改造：`apps/apple/packages/` 骨架 + 双 Podfile/project.yml 适配 + `run_gate.sh` 逐 Pod 测试段 ✅ 2026-10-07（双 Podfile+门禁段+基座注入点；project.yml 零改动） | ADR-0031 | 双 Podfile、双 project.yml、`tools/ci/run_gate.sh` | 双壳 xcodegen+pod install+构建冒烟过；门禁绿 |
 | INFRA-014 | 基建 | SharedUI 瘦身为 UI 基座（功能子域迁出即删源，仅留 Common/Theme） | INFRA-013 | `SharedUI.podspec`、`Sources/SharedUI/Common/**` | 测试套仍绿；全仓 grep 零悬空 import |
 | INFRA-015 | 基建 | `ChuanqiCutPlayer` Pod 迁移（Player 全域 + 测试）✅ 2026-10-07（52 用例随迁零丢失；SharedUI 88+Player 52=140 对齐 HEAD；MediaSheet 经 PlayerPreviewInjector 解耦） | INFRA-014 | `packages/ChuanqiCutPlayer/**` | Player 测试数字对齐迁移前不掉用例 |
-| INFRA-016 | 基建 | `ChuanqiCutImport` Pod 迁移（MediaPicker + UIA-009/011/012 导入链；落库接缝对 Assets） | INFRA-014 | `packages/ChuanqiCutImport/**` | 导入链单测过；双壳构建过 |
-| INFRA-017 | 基建 | `ChuanqiCutAssets` Pod 建域（素材表/素材库收敛；LIB-* UI 配套） | INFRA-014 | `packages/ChuanqiCutAssets/**` | 素材表回归测试过 |
+| INFRA-016 | 基建 | `ChuanqiCutImport` Pod 迁移（MediaPicker 7 文件 + AlbumPickerTests）✅ 2026-10-07（16 用例；AlbumPickerScreen 公开化经 MediaLibraryInjector 注入） | INFRA-014 | `packages/ChuanqiCutImport/**` | 导入链单测过；双壳构建过 |
+| INFRA-017 | 基建 | `ChuanqiCutAssets` Pod 建域（素材表/素材库收敛；LIB-* UI 配套）**改挂 LIB 依赖（2026-10-07 实测定案）**：素材逻辑与 EditorViewModel 不可分，硬拆即假工程——随 LIB-001 契约冻结建域，先随 Editor Pod | LIB-001 | `packages/ChuanqiCutAssets/**` | 素材表回归测试过 |
 | INFRA-018 | 基建 | `ChuanqiCutCamera` Pod 迁移（iOSApp/Camera + 契约层；iOS 专属）✅ 2026-10-07 提前（传哲指定；metallib 管线留壳工程 SRC 指向 Pod 源——script_phase 产物到不了 App bundle 实测假绿，见 P85；EditorEntryInjector 解耦） | INFRA-013 | `packages/ChuanqiCutCamera/**` | metallib 非空壳 ✅ 8431B+kernelNames；真机一趟（池攒单）相机检查点全过 ⏳ |
-| INFRA-019 | 基建 | `ChuanqiCutEditor` Pod 迁移（Editor+Timeline；UIA-032 在新 Pod 内重构） | INFRA-017 | `packages/ChuanqiCutEditor/**` | 编辑器测试过；双壳构建过 |
-| INFRA-020 | 基建 | `ChuanqiCutDraft` Pod 骨架（PROJ-001 落地后填肉） | INFRA-017 | `packages/ChuanqiCutDraft/**` | 骨架编译过；随 PROJ-005/UIA-029 填功能 |
+| INFRA-019 | 基建 | `ChuanqiCutEditor` Pod 迁移（Editor+Timeline+AppEntry/EditorViewModel；UIA-032 在新 Pod 内重构）✅ 2026-10-07（36 用例；Theme 公开化入基座；MediaSheet 随 Editor 待 LIB 拆 Assets） | INFRA-013 | `packages/ChuanqiCutEditor/**` | 编辑器测试过；双壳构建过 |
+| INFRA-020 | 基建 | `ChuanqiCutDraft` Pod 骨架（PROJ-001 落地后填肉）✅ 2026-10-07（占位域符号；暂不进 Podfile，首功能落地时接线） | INFRA-013 | `packages/ChuanqiCutDraft/**` | 骨架编译过；随 PROJ-005/UIA-029 填功能 |
 
 **批次（= ADR-0031 六阶段）**：阶段 0 = 013+014；阶段 1 = 015；阶段 2 = 016；阶段 3 = 017；
 阶段 4 = 018；阶段 5 = 019+020。同域业务任务与该域迁移**不并行**（串行让路）。

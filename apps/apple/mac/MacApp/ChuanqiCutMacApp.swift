@@ -7,6 +7,8 @@ import SwiftUI
 import SharedUI
 import ChuanqiCut
 import ChuanqiCutPlayer  // 播放器域 Pod（ADR-0031 阶段 1）：Launcher/MiniBar/注入装配
+import ChuanqiCutImport  // 导入域 Pod：装配 MediaLibraryInjector（相册浏览器）
+import ChuanqiCutEditor  // 编辑器域 Pod（ADR-0031 阶段 5）：EditorView/EditorViewModel
 
 @main
 struct ChuanqiCutMacApp: App {
@@ -21,6 +23,10 @@ struct ChuanqiCutMacApp: App {
         PlayerPreviewInjector.makePlayerPreview = { urls in
             urls.count == 1 ? AnyView(PlayerScreen(url: urls[0]))
                             : AnyView(PlayerScreen(urls: urls))
+        }
+        // ADR-0031：编辑器 → 相册浏览器装配（MediaSheet 弹导入面板，UIA-013）。
+        MediaLibraryInjector.makeAlbumPicker = { onDeliver in
+            AnyView(AlbumPickerScreen(onDeliver: onDeliver))
         }
         do {
             // 先创建再包进 StateObject：wrappedValue 是非 throwing 自动闭包，

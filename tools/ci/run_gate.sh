@@ -50,7 +50,7 @@ print_summary() {
             grep -hE '[0-9]+% tests passed' "${LOG_DIR}/${step}.log" | sed "s/^/ ${step}: /"
         fi
     done
-    for step in apple-swift-bindings apple-sharedui apple-player apple-camera; do
+    for step in apple-swift-bindings apple-sharedui apple-player apple-camera apple-import apple-editor; do
         if [ -f "${LOG_DIR}/${step}.log" ]; then
             grep -hE "Test Suite '.*' (passed|failed)" "${LOG_DIR}/${step}.log" | tail -2 | sed "s/^/ ${step}: /"
         fi
@@ -149,7 +149,7 @@ else
         tail -30 "${LOG_DIR}/apple-swift-bindings.log" | sed 's/^/    /'
         FAIL=$((FAIL+1)); print_summary; exit 1
     fi
-    if (cd apps/apple/packages/SharedUI && swift test --disable-sandbox --scratch-path "${ROOT_DIR}/build/spm/SharedUI") >"${LOG_DIR}/apple-sharedui.log" 2>&1; then
+    if (cd apps/apple/packages/SharedUI && swift build --disable-sandbox --scratch-path "${ROOT_DIR}/build/spm/SharedUI") >"${LOG_DIR}/apple-sharedui.log" 2>&1; then
         echo "    PASS [apple-sharedui]（日志：${LOG_DIR}/apple-sharedui.log）"
         PASS=$((PASS+1))
     else
@@ -173,6 +173,24 @@ else
     else
         echo "    FAIL [apple-camera] —— 最后 30 行："
         tail -30 "${LOG_DIR}/apple-camera.log" | sed 's/^/    /'
+        FAIL=$((FAIL+1)); print_summary; exit 1
+    fi
+    # 导入域测试
+    if (cd apps/apple/packages/ChuanqiCutImport && swift test --disable-sandbox --scratch-path "${ROOT_DIR}/build/spm/ChuanqiCutImport") >"${LOG_DIR}/apple-import.log" 2>&1; then
+        echo "    PASS [apple-import]（日志：${LOG_DIR}/apple-import.log）"
+        PASS=$((PASS+1))
+    else
+        echo "    FAIL [apple-import] —— 最后 30 行："
+        tail -30 "${LOG_DIR}/apple-import.log" | sed 's/^/    /'
+        FAIL=$((FAIL+1)); print_summary; exit 1
+    fi
+    # 编辑器域测试
+    if (cd apps/apple/packages/ChuanqiCutEditor && swift test --disable-sandbox --scratch-path "${ROOT_DIR}/build/spm/ChuanqiCutEditor") >"${LOG_DIR}/apple-editor.log" 2>&1; then
+        echo "    PASS [apple-editor]（日志：${LOG_DIR}/apple-editor.log）"
+        PASS=$((PASS+1))
+    else
+        echo "    FAIL [apple-editor] —— 最后 30 行："
+        tail -30 "${LOG_DIR}/apple-editor.log" | sed 's/^/    /'
         FAIL=$((FAIL+1)); print_summary; exit 1
     fi
 fi

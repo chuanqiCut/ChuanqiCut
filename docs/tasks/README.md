@@ -11,7 +11,7 @@
 2. 按 [`../../.ai/templates/task.md`](../../.ai/templates/task.md) 建卡，写集不得与其他在飞任务相交；
 3. 在 BACKLOG 对应行标注 ✅（完成后）；在本表登记一行。
 
-## 已建卡登记表（67 张，2026-10-07）
+## 已建卡登记表（70 张，2026-10-07）
 ### 基建 INFRA / DOC
 | 卡 | 标题 |
 |---|---|
@@ -21,6 +21,9 @@
 | [INFRA-013](TASK-INFRA-013.md) | 壳工程改造：Pods 骨架 + 双 Podfile + 门禁逐 Pod 测试段（ADR-0031 阶段 0）✅ |
 | [INFRA-015](TASK-INFRA-015.md) | ChuanqiCutPlayer Pod 迁移（ADR-0031 阶段 1 样板）✅ |
 | [INFRA-018](TASK-INFRA-018.md) | ChuanqiCutCamera Pod 迁移（阶段 4 提前，传哲指定；metallib 管线案底 P85）✅ |
+| [INFRA-016](TASK-INFRA-016.md) | ChuanqiCutImport Pod 迁移（阶段 2；MediaLibraryInjector 解耦）✅ |
+| [INFRA-019](TASK-INFRA-019.md) | ChuanqiCutEditor Pod 迁移（阶段 5；EditorViewModel/Timeline/AppEntry；UIA-032 主战场）✅ |
+| [INFRA-020](TASK-INFRA-020.md) | ChuanqiCutDraft Pod 骨架（PROJ-001 落地后填肉）✅ |
 | [DOC-001](TASK-DOC-001.md) | 文档体系统一分层与归档（ADR-0019 落地） |
 
 ### 内核 CORE / MODEL / MEDIA

@@ -9,6 +9,7 @@ import SharedUI
 import ChuanqiCut  // 页脚展示 SDK 版本号（ChuanqiCut.version）
 import ChuanqiCutPlayer  // 首页播放入口（PlayerLauncherScreen；ADR-0031 Pod 迁移）
 import ChuanqiCutCamera  // 首页拍摄入口（CameraView；ADR-0031 阶段 4 Pod 迁移）
+import ChuanqiCutEditor  // 编辑器入口（EditorScreen；ADR-0031 阶段 5 Pod 迁移）
 
 struct HomeView: View {
 

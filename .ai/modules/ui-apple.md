@@ -676,12 +676,15 @@ RESEARCH-004/005 结论全部维持，本文补**操作层**，关键增量：
 | UIA-034~037 | 编辑页 UIKit 批（曾 §12 021~024） | 预占未建卡 |
 | UIA-028~031 | 素材库/草稿箱/多轨/导出面板 UI | 预占（落 Assets/Draft/Editor Pod，ADR-0031） |
 
-### Pod 拆分进度（ADR-0031 / PLAN-壳工程与功能Pod）
+### Pod 拆分进度（ADR-0031 / PLAN-壳工程与功能Pod）—— **全域完成（2026-10-07）**
 
-- ✅ 阶段 0（INFRA-013）：双 Podfile + 门禁 apple-player 段 + 基座注入点；AppEntry 留 SharedUI（真壳化挂阶段 5）。
-- ✅ 阶段 1（INFRA-015）：ChuanqiCutPlayer 落地。实测 Player 零基座/SDK 符号（触感反馈内联，原引 MediaPicker 的 PickerFeedback）→ Pod 零依赖声明（拓扑微调记录在 podspec 注释）。
-- ✅ 阶段 4（INFRA-018，2026-10-07 提前）：ChuanqiCutCamera 落地（iOS 专属；metallib 管线留壳工程；EditorEntryInjector 解耦相机→编辑器；P85 案底）。
-- ⏳ 阶段 2/3/5：Import / Assets / Editor+Draft。
+- ✅ 阶段 0（INFRA-013）：双 Podfile + 门禁逐 Pod 测试段 + 基座注入点。
+- ✅ 阶段 1（INFRA-015）：ChuanqiCutPlayer（52 用例；零依赖 Pod；PlayerPreviewInjector 解耦）。
+- ✅ 阶段 2（INFRA-016）：ChuanqiCutImport（16 用例；MediaLibraryInjector 解耦相册浏览器；AlbumPickerScreen 公开化）。
+- ✅ 阶段 4（INFRA-018 提前）：ChuanqiCutCamera（iOS 专属；metallib 管线留壳工程；EditorEntryInjector；P85 案底）。
+- ✅ 阶段 5（INFRA-019/020）：ChuanqiCutEditor（36 用例；EditorViewModel/Timeline/AppEntry 随迁；UIA-032 重构主战场）+ ChuanqiCutDraft 骨架（占位，PROJ-001 落地后填肉）。
+- **终态拓扑**：SharedUI 基座 = 仅 Common/（Theme[已 public] + PlayerPreviewInjector/EditorEntryInjector/MediaLibraryInjector）；**测试守恒 140 = Player 52 + Camera 36 + Import 16 + Editor 36**；基座无独立测试（门禁 swift build + 双壳构建兜底）。
+- **INFRA-017 Assets 改挂 LIB**：素材逻辑与 EditorViewModel 不可分（MediaSheet/importMedia），硬拆即假工程——随 LIB-001 契约冻结建域，当前随 Editor Pod。
 
 ### 测试与门禁记录（阶段批）
 

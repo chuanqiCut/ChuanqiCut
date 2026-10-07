@@ -9,7 +9,7 @@
 1. **开发机：只追加（append-only）**。收工时按 §格式 在「开放条目」末尾加条目；
    **不改、不关、不重排、不改号** —— 池的清扫 / 关闭 / 编号改动只归集成机
    （双机同改管理文档必分叉，P82 案底：CAM 撞号归一轮本机 4f0aa67 弃用重做）。
-2. **集成机：阶段批**：`git fetch` → **合并快检**（窄检：core 编译 + SharedUI 测试 +
+2. **集成机：阶段批（⚠️ 触发后先询问传哲再跑，2026-10-07 拍板）**：`git fetch` → **合并快检**（窄检：core 编译 + SharedUI 测试 +
    冲突/旧号扫描，每次拉远端必做）→ **阶段触发时**（PLAN 阶段收尾 / 一批任务卡闭环 /
    真机单攒齐 / 周度兜底）全量 `run_gate.sh` → 消化池条目 → **真机一趟多单**
    （iPhone 17 Pro，传哲操作，攒齐即跑，不定期空跑）→ 数字回填 → 关条目。
@@ -48,7 +48,51 @@
   `beauty engine INSTALLED`——清单全文见原 TODO 文件 TODO-2
 - 验收回填：baselines「美颜色彩空间与人脸区域化」段；关 TASK-CAM-018/019 与 HANDOFF-007 待验标记
 
-> 条目 [1] [2] 可**同一趟真机执行**（两个原 TODO 文件均已注记）。
+> 条目 [1] [2] [3] 可**同一趟真机执行**（合并执行减少解锁/装机来回）。
+
+### [4] 阶段批全量门禁（⏳ 待门禁——⚠️ 按新规则待传哲确认后再跑）
+
+- 来源：集成机 + 2026-10-07 深夜（本池规则更新后首批挂起项）
+- 改动面：本批全部（UIKit 编辑页 + ChuanqiCutEngine 改名 + podspec 归位）
+- 待办：[ ] `run_gate.sh` 全量 14 步（新基线）——**执行前询问传哲**
+- 已自查（模块级）：bindings 26 + Player 52 + Camera 36 + Import 16 + Editor 36 全绿；
+  iOS/mac 双壳 BUILD SUCCEEDED
+- 验收回填：当日日志 + 门禁摘要
+
+### [3] UIKit 编辑页真机走查（⏳ 待真机，UIA-034~036 验收）
+
+- 来源：集成机 / 编辑器线 + 2026-10-07 深夜（UIKit 重建轮）
+- 改动面：A 线 · ChuanqiCutEditor Pod（Editor/UIKit/** 新域）
+- 待办：[ ] 真机 iPhone 17 Pro：①播放中播放头流畅度（CADisplayLink 直驱 vs 旧 30Hz
+  整树重算，目标主线程单帧 <16ms——数字回填 baselines）；②片段拖拽/右缘裁剪手感
+  （ADR-0012 语义：松手一条命令）；③时间码随播刷新；④空态引导「打开素材库」→
+  MediaSheet 抽屉；⑤「媒体」工具位 → 抽屉；⑥预览点按播放/暂停
+- 验收回填：baselines「编辑页主线程单帧」段（新段）；关 TASK-UIA-035 待验标记
+
+### [5] 相册浏览器 MediaPicker 真机走查（⏳ 待真机，UIA-011/012/013 验收补登记）
+
+- 来源：集成机 / 编辑器线 + 2026-10-07（历史漏登记：UIA-011~013 落地时真机项一直没进池，本轮巡检补挂）
+- 改动面：A 线 · ChuanqiCutImport Pod（MediaPicker/**）+ ChuanqiCutEditor Pod（媒体抽屉挂载）
+- 待办：[ ] 真机 iPhone 17 Pro：①权限弹窗 / 拒绝后引导（去设置）；②受限模式 .limited
+  横幅（「管理可选照片」系统面板 UIKit 接线 = Spec UIA-013 §7 已知留白）；③iCloud
+  云端项云徽标 + 确认导出联网拉取进度；④满选置灰 + 抖动提示；⑤单击即插入 loading
+  闭环 + 多选批量「添加（N）」顺序衔接（sequencedImport 等片段可见）；⑥面板滚动帧率
+  （PHFetchResult 增量刷新未做，MVP 整段 reload）
+- 验收回填：baselines「相册浏览器」段（新段）；关 Spec UIA-013 §6.4 行为清单
+
+### [6] UIA-037/038 缩略图 + 居中播放头/捏合缩放——自查与真机（⏳ 待自查 + 待真机）
+
+- 来源：集成机 / 编辑器线 + 2026-10-07（UIA-037/038 编码轮）
+- 改动面：A 线 · ChuanqiCutEditor Pod（TimelineThumbnails.swift 新域 + TimelineLayout /
+  EditorTimelineView / UIKit/EditorTimelineUIView / UIKit/EditorViewController）
+- 待办：[ ] **swift test（Editor 包，新增 22 用例）——编码后未执行（用户指示跳过验证），
+  本条为第一优先**；[ ] iOS 模拟器构建（UIKit 路径 macOS 侧不可见，P49）；
+  [ ] 真机 iPhone 17 Pro：①红条居中 + 拖动时间线 scrub 跟手（帧栅格取整，30fps [E]）；
+  ②播放中跟滚不回弹、暂停/seek 后居中恢复；③捏合缩放界限（缩到全时长入视口 /
+  放到一帧一槽）且缩放中时间不跳变；④标尺帧级刻度；⑤片段缩略图出现（≥3 帧）
+  与拖拽/撤销后不闪不重请求风暴；⑥缩放中主线程不卡（500 片段布局 0.663ms [E] 待真机复核）
+- 验收回填：baselines「编辑页主线程单帧」段 + 新「时间线缩略图」段；关 TASK-UIA-037/038 待验标记
+- 备注：可并入 [1][2][3] 同一趟真机；[6] 未自查通过前不得视为完成
 
 ## 已消化
 

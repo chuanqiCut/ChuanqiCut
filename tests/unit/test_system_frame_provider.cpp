@@ -18,9 +18,9 @@
 #include <vector>
 
 #include "cq/base/status.h"
-#include "cq/base/time.h"
+#include "cq/base/rational_time.h"
 #include "cq/media/system_frame_provider.h"
-#include "cq/pal/common.h"
+#include "cq/pal/pal_common.h"
 #include "cq/pal/media.h"
 
 namespace {

@@ -91,7 +91,7 @@ add_test(NAME core_concurrency COMMAND cq_tests_core_concurrency)
 add_executable(cq_tests_core_capabilities
     unit/test_capabilities.cpp)
 target_include_directories(cq_tests_core_capabilities PRIVATE
-    ${CMAKE_SOURCE_DIR}/core/include)
+    ${CMAKE_SOURCE_DIR}/engine/core/include)
 target_link_libraries(cq_tests_core_capabilities PRIVATE cq_core)
 cq_require_cxx20(cq_tests_core_capabilities)
 apply_cq_warnings(cq_tests_core_capabilities)
@@ -104,7 +104,7 @@ add_test(NAME core_capabilities COMMAND cq_tests_core_capabilities)
 add_executable(cq_tests_core_thread_model
     unit/test_thread_model.cpp)
 target_include_directories(cq_tests_core_thread_model PRIVATE
-    ${CMAKE_SOURCE_DIR}/core/include)
+    ${CMAKE_SOURCE_DIR}/engine/core/include)
 target_link_libraries(cq_tests_core_thread_model PRIVATE cq_core)
 cq_require_cxx20(cq_tests_core_thread_model)
 apply_cq_warnings(cq_tests_core_thread_model)
@@ -118,7 +118,7 @@ add_test(NAME core_thread_model COMMAND cq_tests_core_thread_model)
 add_executable(cq_tests_core_editor_session
     unit/test_editor_session.cpp)
 target_include_directories(cq_tests_core_editor_session PRIVATE
-    ${CMAKE_SOURCE_DIR}/core/include)
+    ${CMAKE_SOURCE_DIR}/engine/core/include)
 target_link_libraries(cq_tests_core_editor_session PRIVATE cq_core)
 cq_require_cxx20(cq_tests_core_editor_session)
 apply_cq_warnings(cq_tests_core_editor_session)
@@ -131,7 +131,7 @@ add_executable(cq_tests_c_abi
     unit/test_c_abi.c)
 set_target_properties(cq_tests_c_abi PROPERTIES LINKER_LANGUAGE CXX)
 target_include_directories(cq_tests_c_abi PRIVATE
-    ${CMAKE_SOURCE_DIR}/core/include)
+    ${CMAKE_SOURCE_DIR}/engine/core/include)
 target_link_libraries(cq_tests_c_abi PRIVATE cq_core)
 add_test(NAME c_abi COMMAND cq_tests_c_abi)
 
@@ -143,7 +143,7 @@ add_executable(cq_tests_c_abi_session
     unit/test_c_abi_session.c)
 set_target_properties(cq_tests_c_abi_session PROPERTIES LINKER_LANGUAGE CXX)
 target_include_directories(cq_tests_c_abi_session PRIVATE
-    ${CMAKE_SOURCE_DIR}/core/include)
+    ${CMAKE_SOURCE_DIR}/engine/core/include)
 target_link_libraries(cq_tests_c_abi_session PRIVATE cq_core)
 add_test(NAME c_abi_session COMMAND cq_tests_c_abi_session)
 
@@ -154,7 +154,7 @@ add_executable(cq_tests_c_abi_edit
     unit/test_c_abi_edit.c)
 set_target_properties(cq_tests_c_abi_edit PROPERTIES LINKER_LANGUAGE CXX)
 target_include_directories(cq_tests_c_abi_edit PRIVATE
-    ${CMAKE_SOURCE_DIR}/core/include)
+    ${CMAKE_SOURCE_DIR}/engine/core/include)
 target_link_libraries(cq_tests_c_abi_edit PRIVATE cq_core)
 add_test(NAME c_abi_edit COMMAND cq_tests_c_abi_edit)
 
@@ -163,7 +163,7 @@ add_test(NAME c_abi_edit COMMAND cq_tests_c_abi_edit)
 add_executable(cq_tests_core_player_clock
     unit/test_player_clock.cpp)
 target_include_directories(cq_tests_core_player_clock PRIVATE
-    ${CMAKE_SOURCE_DIR}/core/include)
+    ${CMAKE_SOURCE_DIR}/engine/core/include)
 target_link_libraries(cq_tests_core_player_clock PRIVATE cq_core)
 cq_require_cxx20(cq_tests_core_player_clock)
 apply_cq_warnings(cq_tests_core_player_clock)
@@ -175,7 +175,7 @@ add_test(NAME core_player_clock COMMAND cq_tests_core_player_clock)
 add_executable(cq_tests_core_preview_pump
     unit/test_preview_pump.cpp)
 target_include_directories(cq_tests_core_preview_pump PRIVATE
-    ${CMAKE_SOURCE_DIR}/core/include)
+    ${CMAKE_SOURCE_DIR}/engine/core/include)
 target_link_libraries(cq_tests_core_preview_pump PRIVATE cq_core)
 cq_require_cxx20(cq_tests_core_preview_pump)
 apply_cq_warnings(cq_tests_core_preview_pump)
@@ -186,7 +186,7 @@ add_executable(cq_tests_c_abi_player
     unit/test_c_abi_player.c)
 set_target_properties(cq_tests_c_abi_player PROPERTIES LINKER_LANGUAGE CXX)
 target_include_directories(cq_tests_c_abi_player PRIVATE
-    ${CMAKE_SOURCE_DIR}/core/include)
+    ${CMAKE_SOURCE_DIR}/engine/core/include)
 target_link_libraries(cq_tests_c_abi_player PRIVATE cq_core)
 add_test(NAME c_abi_player COMMAND cq_tests_c_abi_player)
 
@@ -199,7 +199,7 @@ add_executable(cq_tests_pal_headers_compile
 # 不链接 cq_core：本 TU 只验证 core/include 下的接口头自洽，无需内核实现。
 # 但需指向内核头目录，使 "cq/pal/*.h" 可被找到。
 target_include_directories(cq_tests_pal_headers_compile PRIVATE
-    ${CMAKE_SOURCE_DIR}/core/include)
+    ${CMAKE_SOURCE_DIR}/engine/core/include)
 cq_require_cxx20(cq_tests_pal_headers_compile)
 apply_cq_warnings(cq_tests_pal_headers_compile)
 add_test(NAME pal_headers_compile COMMAND cq_tests_pal_headers_compile)
@@ -209,7 +209,7 @@ add_test(NAME pal_headers_compile COMMAND cq_tests_pal_headers_compile)
 add_executable(cq_tests_gfx_headers_compile
     unit/gfx_headers_compile.cpp)
 target_include_directories(cq_tests_gfx_headers_compile PRIVATE
-    ${CMAKE_SOURCE_DIR}/core/include)
+    ${CMAKE_SOURCE_DIR}/engine/core/include)
 cq_require_cxx20(cq_tests_gfx_headers_compile)
 apply_cq_warnings(cq_tests_gfx_headers_compile)
 add_test(NAME gfx_headers_compile COMMAND cq_tests_gfx_headers_compile)
@@ -219,7 +219,7 @@ add_test(NAME gfx_headers_compile COMMAND cq_tests_gfx_headers_compile)
 add_executable(cq_tests_media_frame_provider_compile
     unit/media_frame_provider_compile.cpp)
 target_include_directories(cq_tests_media_frame_provider_compile PRIVATE
-    ${CMAKE_SOURCE_DIR}/core/include)
+    ${CMAKE_SOURCE_DIR}/engine/core/include)
 cq_require_cxx20(cq_tests_media_frame_provider_compile)
 apply_cq_warnings(cq_tests_media_frame_provider_compile)
 add_test(NAME media_frame_provider_compile COMMAND cq_tests_media_frame_provider_compile)
@@ -231,7 +231,7 @@ add_test(NAME media_frame_provider_compile COMMAND cq_tests_media_frame_provider
 add_executable(cq_tests_media_system_frame_provider
     unit/test_system_frame_provider.cpp)
 target_include_directories(cq_tests_media_system_frame_provider PRIVATE
-    ${CMAKE_SOURCE_DIR}/core/include)
+    ${CMAKE_SOURCE_DIR}/engine/core/include)
 target_link_libraries(cq_tests_media_system_frame_provider PRIVATE cq_core)
 cq_require_cxx20(cq_tests_media_system_frame_provider)
 apply_cq_warnings(cq_tests_media_system_frame_provider)
@@ -245,7 +245,7 @@ add_test(NAME media_system_frame_provider COMMAND cq_tests_media_system_frame_pr
 add_executable(cq_tests_media_sequential_acquire
     unit/test_media_sequential_acquire.cpp)
 target_include_directories(cq_tests_media_sequential_acquire PRIVATE
-    ${CMAKE_SOURCE_DIR}/core/include)
+    ${CMAKE_SOURCE_DIR}/engine/core/include)
 target_link_libraries(cq_tests_media_sequential_acquire PRIVATE cq_core)
 cq_require_cxx20(cq_tests_media_sequential_acquire)
 apply_cq_warnings(cq_tests_media_sequential_acquire)
@@ -257,7 +257,7 @@ add_test(NAME media_sequential_acquire COMMAND cq_tests_media_sequential_acquire
 add_executable(cq_tests_media_cache
     unit/test_cache.cpp)
 target_include_directories(cq_tests_media_cache PRIVATE
-    ${CMAKE_SOURCE_DIR}/core/include)
+    ${CMAKE_SOURCE_DIR}/engine/core/include)
 target_link_libraries(cq_tests_media_cache PRIVATE cq_core)
 cq_require_cxx20(cq_tests_media_cache)
 apply_cq_warnings(cq_tests_media_cache)
@@ -269,7 +269,7 @@ add_test(NAME media_cache COMMAND cq_tests_media_cache)
 add_executable(cq_tests_media_decoder_pool
     unit/test_decoder_pool.cpp)
 target_include_directories(cq_tests_media_decoder_pool PRIVATE
-    ${CMAKE_SOURCE_DIR}/core/include)
+    ${CMAKE_SOURCE_DIR}/engine/core/include)
 target_link_libraries(cq_tests_media_decoder_pool PRIVATE cq_core)
 cq_require_cxx20(cq_tests_media_decoder_pool)
 apply_cq_warnings(cq_tests_media_decoder_pool)
@@ -297,7 +297,7 @@ if(APPLE)
     add_executable(cq_tests_pala_metal
         unit/test_gfx_metal.cpp)
     target_include_directories(cq_tests_pala_metal PRIVATE
-        ${CMAKE_SOURCE_DIR}/core/include
+        ${CMAKE_SOURCE_DIR}/engine/core/include
         ${CMAKE_SOURCE_DIR}/pal/apple)
     target_link_libraries(cq_tests_pala_metal PRIVATE cq_core cq_pal_apple)
     cq_require_cxx20(cq_tests_pala_metal)
@@ -308,7 +308,7 @@ if(APPLE)
     add_executable(cq_tests_gfx_device
         unit/test_gfx_device.cpp)
     target_include_directories(cq_tests_gfx_device PRIVATE
-        ${CMAKE_SOURCE_DIR}/core/include
+        ${CMAKE_SOURCE_DIR}/engine/core/include
         ${CMAKE_SOURCE_DIR}/pal/apple)
     target_link_libraries(cq_tests_gfx_device PRIVATE cq_core cq_pal_apple)
     cq_require_cxx20(cq_tests_gfx_device)
@@ -319,7 +319,7 @@ if(APPLE)
     add_executable(cq_tests_pala_demux
         unit/test_media_demux_apple.cpp)
     target_include_directories(cq_tests_pala_demux PRIVATE
-        ${CMAKE_SOURCE_DIR}/core/include)
+        ${CMAKE_SOURCE_DIR}/engine/core/include)
     target_compile_definitions(cq_tests_pala_demux PRIVATE
         CQ_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
     target_link_libraries(cq_tests_pala_demux PRIVATE cq_core cq_pal_apple)
@@ -339,7 +339,7 @@ if(APPLE)
     add_executable(cq_tests_media_smoke_apple
         unit/test_media_smoke_apple.cpp)
     target_include_directories(cq_tests_media_smoke_apple PRIVATE
-        ${CMAKE_SOURCE_DIR}/core/include)
+        ${CMAKE_SOURCE_DIR}/engine/core/include)
     target_compile_definitions(cq_tests_media_smoke_apple PRIVATE
         CQ_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
     target_link_libraries(cq_tests_media_smoke_apple PRIVATE
@@ -355,7 +355,7 @@ if(APPLE)
     add_executable(cq_tests_media_bframe_real
         unit/test_media_bframe_real_apple.cpp)
     target_include_directories(cq_tests_media_bframe_real PRIVATE
-        ${CMAKE_SOURCE_DIR}/core/include)
+        ${CMAKE_SOURCE_DIR}/engine/core/include)
     target_compile_definitions(cq_tests_media_bframe_real PRIVATE
         CQ_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
     target_link_libraries(cq_tests_media_bframe_real PRIVATE
@@ -373,7 +373,7 @@ if(APPLE)
     add_executable(cq_tests_pala_native_image
         unit/test_native_image_importer_apple.cpp)
     target_include_directories(cq_tests_pala_native_image PRIVATE
-        ${CMAKE_SOURCE_DIR}/core/include
+        ${CMAKE_SOURCE_DIR}/engine/core/include
         ${CMAKE_SOURCE_DIR}/pal/apple)
     target_compile_definitions(cq_tests_pala_native_image PRIVATE
         CQ_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
@@ -393,7 +393,7 @@ if(APPLE)
     add_executable(cq_tests_preview_renderer
         unit/test_preview_renderer.cpp)
     target_include_directories(cq_tests_preview_renderer PRIVATE
-        ${CMAKE_SOURCE_DIR}/core/include
+        ${CMAKE_SOURCE_DIR}/engine/core/include
         ${CMAKE_SOURCE_DIR}/pal/apple)
     target_compile_definitions(cq_tests_preview_renderer PRIVATE
         CQ_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
@@ -412,7 +412,7 @@ if(APPLE)
         unit/test_c_abi_preview.c)
     set_target_properties(cq_tests_c_abi_preview PROPERTIES LINKER_LANGUAGE CXX)
     target_include_directories(cq_tests_c_abi_preview PRIVATE
-        ${CMAKE_SOURCE_DIR}/core/include)
+        ${CMAKE_SOURCE_DIR}/engine/core/include)
     target_compile_definitions(cq_tests_c_abi_preview PRIVATE
         CQ_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
     # 链 cq_pal_apple：预览 ABI 的创建路径要经 PAL 的图形设备 / blit pass / 帧提供器。
@@ -429,7 +429,7 @@ if(APPLE)
     add_executable(cq_tests_pala_encode
         unit/test_media_encode_apple.cpp)
     target_include_directories(cq_tests_pala_encode PRIVATE
-        ${CMAKE_SOURCE_DIR}/core/include
+        ${CMAKE_SOURCE_DIR}/engine/core/include
         ${CMAKE_SOURCE_DIR}/pal/apple)
     target_compile_definitions(cq_tests_pala_encode PRIVATE
         CQ_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
@@ -447,7 +447,7 @@ if(APPLE)
     add_executable(cq_tests_pala_muxer
         unit/test_media_muxer_apple.cpp)
     target_include_directories(cq_tests_pala_muxer PRIVATE
-        ${CMAKE_SOURCE_DIR}/core/include
+        ${CMAKE_SOURCE_DIR}/engine/core/include
         ${CMAKE_SOURCE_DIR}/pal/apple)
     target_compile_definitions(cq_tests_pala_muxer PRIVATE
         CQ_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
@@ -465,7 +465,7 @@ if(APPLE)
     add_executable(cq_tests_pala_muxer_audio
         unit/test_media_muxer_audio_apple.cpp)
     target_include_directories(cq_tests_pala_muxer_audio PRIVATE
-        ${CMAKE_SOURCE_DIR}/core/include
+        ${CMAKE_SOURCE_DIR}/engine/core/include
         ${CMAKE_SOURCE_DIR}/pal/apple)
     target_compile_definitions(cq_tests_pala_muxer_audio PRIVATE
         CQ_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
@@ -482,7 +482,7 @@ if(APPLE)
     add_executable(cq_tests_pala_capabilities
         unit/test_capabilities_apple.cpp)
     target_include_directories(cq_tests_pala_capabilities PRIVATE
-        ${CMAKE_SOURCE_DIR}/core/include
+        ${CMAKE_SOURCE_DIR}/engine/core/include
         ${CMAKE_SOURCE_DIR}/pal/apple)
     target_link_libraries(cq_tests_pala_capabilities PRIVATE cq_core cq_pal_apple)
     cq_require_cxx20(cq_tests_pala_capabilities)
@@ -495,7 +495,7 @@ endif()
 add_executable(cq_tests_model_timeline
     unit/test_model_timeline.cpp)
 target_include_directories(cq_tests_model_timeline PRIVATE
-    ${CMAKE_SOURCE_DIR}/core/include)
+    ${CMAKE_SOURCE_DIR}/engine/core/include)
 target_link_libraries(cq_tests_model_timeline PRIVATE cq_core)
 cq_require_cxx20(cq_tests_model_timeline)
 apply_cq_warnings(cq_tests_model_timeline)
@@ -507,7 +507,7 @@ add_test(NAME model_timeline COMMAND cq_tests_model_timeline)
 add_executable(cq_tests_model_command
     unit/test_model_command.cpp)
 target_include_directories(cq_tests_model_command PRIVATE
-    ${CMAKE_SOURCE_DIR}/core/include)
+    ${CMAKE_SOURCE_DIR}/engine/core/include)
 target_link_libraries(cq_tests_model_command PRIVATE cq_core)
 cq_require_cxx20(cq_tests_model_command)
 apply_cq_warnings(cq_tests_model_command)
@@ -518,7 +518,7 @@ add_test(NAME model_command COMMAND cq_tests_model_command)
 add_executable(cq_tests_asset_registry
     unit/test_asset_registry.cpp)
 target_include_directories(cq_tests_asset_registry PRIVATE
-    ${CMAKE_SOURCE_DIR}/core/include)
+    ${CMAKE_SOURCE_DIR}/engine/core/include)
 target_link_libraries(cq_tests_asset_registry PRIVATE cq_core)
 cq_require_cxx20(cq_tests_asset_registry)
 apply_cq_warnings(cq_tests_asset_registry)
@@ -531,7 +531,7 @@ if(APPLE)
     add_executable(cq_tests_frame_provider_apple
         unit/test_frame_provider_apple.cpp)
     target_include_directories(cq_tests_frame_provider_apple PRIVATE
-        ${CMAKE_SOURCE_DIR}/core/include
+        ${CMAKE_SOURCE_DIR}/engine/core/include
         ${CMAKE_SOURCE_DIR}/pal/apple)
     target_compile_definitions(cq_tests_frame_provider_apple PRIVATE
         CQ_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
@@ -547,7 +547,7 @@ if(APPLE)
     add_executable(cq_tests_media_sequential_real
         unit/test_media_sequential_real_apple.cpp)
     target_include_directories(cq_tests_media_sequential_real PRIVATE
-        ${CMAKE_SOURCE_DIR}/core/include
+        ${CMAKE_SOURCE_DIR}/engine/core/include
         ${CMAKE_SOURCE_DIR}/pal/apple)
     target_compile_definitions(cq_tests_media_sequential_real PRIVATE
         CQ_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
@@ -565,7 +565,7 @@ if(APPLE)
     add_executable(cq_tests_pala_decode
         unit/test_media_decode_apple.cpp)
     target_include_directories(cq_tests_pala_decode PRIVATE
-        ${CMAKE_SOURCE_DIR}/core/include
+        ${CMAKE_SOURCE_DIR}/engine/core/include
         ${CMAKE_SOURCE_DIR}/pal/apple)
     target_compile_definitions(cq_tests_pala_decode PRIVATE
         CQ_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
@@ -582,7 +582,7 @@ endif()
 add_executable(cq_tests_core_audio_pcm
     unit/test_audio_pcm.cpp)
 target_include_directories(cq_tests_core_audio_pcm PRIVATE
-    ${CMAKE_SOURCE_DIR}/core/include)
+    ${CMAKE_SOURCE_DIR}/engine/core/include)
 target_link_libraries(cq_tests_core_audio_pcm PRIVATE cq_core)
 cq_require_cxx20(cq_tests_core_audio_pcm)
 apply_cq_warnings(cq_tests_core_audio_pcm)
@@ -591,7 +591,7 @@ add_test(NAME core_audio_pcm COMMAND cq_tests_core_audio_pcm)
 add_executable(cq_tests_core_audio_graph
     unit/test_audio_graph.cpp)
 target_include_directories(cq_tests_core_audio_graph PRIVATE
-    ${CMAKE_SOURCE_DIR}/core/include)
+    ${CMAKE_SOURCE_DIR}/engine/core/include)
 target_link_libraries(cq_tests_core_audio_graph PRIVATE cq_core)
 cq_require_cxx20(cq_tests_core_audio_graph)
 apply_cq_warnings(cq_tests_core_audio_graph)

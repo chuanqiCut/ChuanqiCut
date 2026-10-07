@@ -28,12 +28,12 @@ Pod::Spec.new do |s|
   s.frameworks   = 'Metal', 'MetalKit', 'AVFoundation', 'CoreImage', 'CoreVideo'
 
   # SDK（内核 Session）+ 基座（Theme/注入点）
-  s.dependency 'ChuanqiCut'
+  s.dependency 'ChuanqiCutEngine'
   s.dependency 'SharedUI'
 
   # ⚠️ CChuanqiCut clang module 可见性（SharedUI.podspec 2026-10-02 实测同款；
   #    本 Pod 直接 import ChuanqiCut，必须自行注入 include 路径）
   s.pod_target_xcconfig = {
-    'SWIFT_INCLUDE_PATHS' => '$(inherited) "$(PODS_TARGET_SRCROOT)/../../../../bindings/swift/Sources/CChuanqiCut/include"'
+    'SWIFT_INCLUDE_PATHS' => '$(inherited) "$(PODS_TARGET_SRCROOT)/../../../../engine/bindings/swift/Sources/CChuanqiCut/include"'
   }
 end

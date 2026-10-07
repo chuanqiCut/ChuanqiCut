@@ -68,6 +68,6 @@ Pod::Spec.new do |s|
   #    的 include 路径注入 SWIFT_INCLUDE_PATHS，否则 import SharedUI 即报
   #    unable to resolve module dependency: 'CChuanqiCut'。路径：本目录向上四级到仓库根。
   s.pod_target_xcconfig = {
-    'SWIFT_INCLUDE_PATHS' => '$(inherited) "$(PODS_TARGET_SRCROOT)/../../../../bindings/swift/Sources/CChuanqiCut/include"'
+    'SWIFT_INCLUDE_PATHS' => '$(inherited) "$(PODS_TARGET_SRCROOT)/../../../../engine/bindings/swift/Sources/CChuanqiCut/include"'
   }
 end

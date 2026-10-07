@@ -61,9 +61,9 @@ Pod::Spec.new do |s|
   #    （本 spec）不受其影响，必须自行声明（2026-10-02 实测）。
   #    路径：本目录向上四级到仓库根。
   s.pod_target_xcconfig = {
-    'SWIFT_INCLUDE_PATHS' => '$(inherited) "$(PODS_TARGET_SRCROOT)/../../../../bindings/swift/Sources/CChuanqiCut/include"'
+    'SWIFT_INCLUDE_PATHS' => '$(inherited) "$(PODS_TARGET_SRCROOT)/../../../../engine/bindings/swift/Sources/CChuanqiCut/include"'
   }
 
   # 不锁版本：仓库内本地 :path 集成，与 App 用同一份仓库。
-  s.dependency 'ChuanqiCut'
+  s.dependency 'ChuanqiCutEngine'
 end

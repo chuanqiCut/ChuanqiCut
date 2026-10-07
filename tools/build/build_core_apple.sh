@@ -113,7 +113,7 @@ BUILD_BASE="$ROOT_DIR/build/apple"
 IOS_DEVICE_DIR="$BUILD_BASE/ios-device"
 IOS_SIM_DIR="$BUILD_BASE/ios-sim"
 MACOS_DIR="$BUILD_BASE/macos"
-HEADERS_DIR="$ROOT_DIR/core/include"
+HEADERS_DIR="$ROOT_DIR/engine/core/include"
 
 echo "==> ChuanqiCut Apple XCFramework build"
 echo "    cmake : $CMAKE_BIN"

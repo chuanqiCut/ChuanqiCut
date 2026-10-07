@@ -8,7 +8,7 @@
 // 本视图只读展示。播放态切换走既有 togglePlayback（红线 #5：不改模型）。
 
 import SwiftUI
-import ChuanqiCut
+import ChuanqiCutEngine
 import SharedUI  // 基座：Theme/注入点（ADR-0031）
 
 struct EditorTransportBar: View {

@@ -29,8 +29,10 @@ enum EditorPlatform {
 /// macOS：左侧（Preview + Transport + Timeline 上下排）+ 右侧 MediaLibraryPanel
 /// iOS 竖屏（compact）：Preview 弹性 → Transport → Timeline(140) → BottomToolbar
 /// iOS 横屏（regular）：与 macOS 同构 + 右栏面板
-struct EditorLayoutContainer<Preview: View, Transport: View, Timeline: View,
+struct EditorLayoutContainer<Compact: View, Preview: View, Transport: View, Timeline: View,
                               Toolbar: View, Panel: View>: View {
+    /// iOS 竖屏整页（UIA-034 起 = UIKit 三件套容器，ADR-0024）；macOS/横屏不调用。
+    @ViewBuilder let compact: () -> Compact
     @ViewBuilder let preview: () -> Preview
     @ViewBuilder let transport: () -> Transport
     @ViewBuilder let timeline: () -> Timeline
@@ -87,21 +89,8 @@ struct EditorLayoutContainer<Preview: View, Transport: View, Timeline: View,
     }
 
     private var verticalLayout: some View {
-        VStack(spacing: 0) {
-            preview()
-                .frame(maxHeight: .infinity)   // 预览最大化：吃掉全部剩余高度
-
-            transport()
-                .frame(height: Theme.Size.transportBarHeight)
-
-            Divider()
-
-            timeline()
-                .frame(height: Theme.Size.timelineHeightCompact)
-
-            toolbar()
-                .frame(height: Theme.Size.bottomToolbarHeight)
-        }
+        // UIA-034：竖屏整页交给 UIKit 容器（ADR-0024；SwiftUI 版布局退役）。
+        compact()
     }
 
     private var horizontalLayout: some View {

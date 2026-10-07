@@ -27,7 +27,7 @@
 
 #include "cq/base/concurrency.h"
 #include "cq/base/status.h"
-#include "cq/base/time.h"
+#include "cq/base/rational_time.h"
 #include "cq/gfx/gfx_device.h"
 #include "cq/media/asset_registry.h"
 #include "cq/model/timeline.h"

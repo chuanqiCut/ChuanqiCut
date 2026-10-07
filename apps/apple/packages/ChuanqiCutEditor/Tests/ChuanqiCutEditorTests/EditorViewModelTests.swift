@@ -7,7 +7,7 @@
 
 import XCTest
 @testable import ChuanqiCutEditor
-import ChuanqiCut
+import ChuanqiCutEngine
 
 @MainActor
 final class EditorViewModelTests: XCTestCase {

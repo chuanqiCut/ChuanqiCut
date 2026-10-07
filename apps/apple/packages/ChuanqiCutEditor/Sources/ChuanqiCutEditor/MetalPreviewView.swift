@@ -21,7 +21,7 @@
 
 import SwiftUI
 import MetalKit
-import ChuanqiCut
+import ChuanqiCutEngine
 
 // MARK: - 追帧收敛判定（UIA-020，纯函数可测）
 

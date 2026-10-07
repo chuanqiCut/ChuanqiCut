@@ -21,18 +21,34 @@ def pods_post_install(installer)
     removed += 1
   end
 
-  # ---- 2) ChuanqiCutEngine 头文件树（镜像 core/include 目录结构） ----
+  # ---- 2) 头文件并入源码树（与磁盘布局一致，2026-10-07 传哲：看代码方便）----
+  #    core/include 并到 core 组下与 src 平级；pal/apple 的头与 .mm 混排。
+  #    全部为导航器引用（不进 headermap/编译——声明走 private_header_files）。
   engine = project.objects.find { |o| o.isa == 'PBXGroup' && o.name == 'ChuanqiCutEngine' }
   added = 0
   if engine
-    old = engine.children.find { |c| c.isa == 'PBXGroup' && c.display_name == 'core/include' }
-    old&.remove_from_project
-    root_group = engine.new_group('core/include')
-    build_tree = lambda do |dir, group|
+    # 清理旧版独立分组（历次形态）
+    ['core/include（头文件，只读浏览）', 'core/include'].each do |old_name|
+      stale = project.objects.find { |o| o.isa == 'PBXGroup' && o.parent&.name == 'ChuanqiCutEngine' && o.display_name == old_name }
+      # 只删「顶层游离」的旧组：其父是 Engine 组本身且不含 src 子组（新版并入 core/src 树，父不同）
+      next unless stale
+      next if stale.children.any? { |c| c.isa == 'PBXGroup' && c.display_name == 'src' }
+      stale.remove_from_project
+    end
+
+    ensure_group = lambda do |parent, name|
+      parent.children.find { |c| c.isa == 'PBXGroup' && c.display_name == name } ||
+        parent.new_group(name)
+    end
+    add_tree = lambda do |group, dir|
       Pathname.new(dir).children.sort.each do |child|
         if child.directory?
-          build_tree.call(child, group.new_group(child.basename.to_s))
-        elsif child.extname == ".h"
+          add_tree.call(ensure_group.call(group, child.basename.to_s), child.to_s)
+        elsif child.extname == '.h'
+          exists = group.children.any? do |c|
+            c.isa == 'PBXFileReference' && c.real_path.exist? && c.real_path.to_s == child.to_s
+          end
+          next if exists
           ref = group.new_file(child.to_s)
           ref.source_tree = 'SOURCE_ROOT'
           ref.path = child.relative_path_from(project.path.dirname).to_s
@@ -40,7 +56,11 @@ def pods_post_install(installer)
         end
       end
     end
-    build_tree.call(File.join(repo_root, 'engine/core/include'), root_group)
+    core_group = ensure_group.call(engine, 'core')
+    include_group = ensure_group.call(core_group, 'include')
+    add_tree.call(include_group, File.join(repo_root, 'engine/core/include'))
+    pal_apple = ensure_group.call(ensure_group.call(engine, 'pal'), 'apple')
+    add_tree.call(pal_apple, File.join(repo_root, 'engine/pal/apple'))
   end
 
   # ---- 3) CChuanqiCut 模块文件补录（cq_sdk.h/module.modulemap 声明进了编译但

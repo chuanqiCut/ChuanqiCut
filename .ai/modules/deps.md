@@ -1,5 +1,7 @@
 # 模块：依赖治理
 
+> **归属**：集成机（依赖治理 + 热点文件） —— 归属表见 docs/tasks/PLAN-三线并行.md §1a / ADR-0029（双机分工与门禁跑批，2026-10-07）
+
 **边界**：`third_party/`、`tools/deps/`、`tools/compliance/`、`tools/build/`
 
 ## 三份文件

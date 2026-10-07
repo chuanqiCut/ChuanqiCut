@@ -1,5 +1,7 @@
 # 模块：相机（iOS 原生域，ADR-0014）
 
+> **归属**：B 线（相机/特效；pal/apple 相机与检测子域随 B） —— 归属表见 docs/tasks/PLAN-三线并行.md §1a / ADR-0029（双机分工与门禁跑批，2026-10-07）
+
 > 建立：2026-10-05（此前只散落在 TASK-CAM-* 与 HANDOFF-004，无模块文档）
 > 位置：`apps/apple/ios/iOSApp/Camera/`
 > 边界：相机是 **App 层资产域**，不经 PAL / C ABI（ADR-0014）。SharedUI 只持

@@ -1,5 +1,7 @@
 # session 层：线程模型与队列骨架（CORE-008）
 
+> **归属**：A 线（编辑器/UI；会话层） —— 归属表见 docs/tasks/PLAN-三线并行.md §1a / ADR-0029（双机分工与门禁跑批，2026-10-07）
+
 > 规格：`docs/specs/ARCH-001-技术方案总纲.md` §6
 > 任务卡：`docs/tasks/TASK-CORE-008.md`
 > 落地日期：2026-09-29

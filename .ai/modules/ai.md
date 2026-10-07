@@ -1,5 +1,7 @@
 # 模块：AI 推理与智能效果
 
+> **归属**：A/C 分子域（智能成片 AIEDIT→A；端侧推理效果链→C） —— 归属表见 docs/tasks/PLAN-三线并行.md §1a / ADR-0029（双机分工与门禁跑批，2026-10-07）
+
 **边界**：`core/src/ai/`、`core/include/cq/infer/`、`pal/<platform>/infer_*`
 
 ## MediaPipe 引不引入？（常被问，明确回答）

@@ -1,5 +1,7 @@
 # 模块：Apple 平台适配（PAL）
 
+> **归属**：集成机归口（相机/检测子域随 B、媒体编解码子域随 C，冲突由集成机裁决） —— 归属表见 docs/tasks/PLAN-三线并行.md §1a / ADR-0029（双机分工与门禁跑批，2026-10-07）
+
 **边界**：`pal/apple/`、`apps/apple/`、`bindings/swift/`
 
 ## 目标

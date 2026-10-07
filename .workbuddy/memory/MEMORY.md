@@ -12,7 +12,7 @@
 ## 项目定性
 - 跨平台视频编辑 SDK + 各端原生 App：`core/` C++20 内核，`pal/<platform>/` 适配，`apps/<platform>/` 原生 UI。
 - **iOS / macOS P0** → Android P1（须给方案）→ HarmonyOS P2（本期只做 `pal/ohos/` 接口编译检查，不动）。
-- 团队当前**单人**，不做并行 write_set 划分，有新人后再拆。
+- **双机并行开发**（三线 A/B/C，PLAN-三线并行）：**本机 = 集成机**（唯一真构建机），其他设备性能差、无真机、门禁不可信（P78 案底）。
 - 真机参考 iPhone 17 Pro，等 iOS 能跑由传哲本人实测 → **日志与埋点必须先行做扎实**。
 
 ## 不可协商的基线
@@ -24,6 +24,12 @@
 ## AI 协作机制
 - 单一真源 `.ai/source/AGENTS.root.md` → `tools/ai/sync_context.py` 生成 AGENTS.md / CLAUDE.md / .cursorrules / .windsurfrules / copilot-instructions.md。**改规则改真源再跑脚本**，禁手改产物。
 - 编码阶段：**一个任务一个新会话**，开场读真源 + 模块文档 + 任务单卡。
+- **双机分工 v2（ADR-0029，2026-10-07 传哲拍板）**：
+  - **模块归属成文**（PLAN-三线并行 §1a，各 `.ai/modules/*.md` 头部有归属行）：A=编辑器/UI（ui-apple/ui-android/model/session/preview/project + AIEDIT）、B=相机特效（camera）、C=内核/媒体/渲染（media/render/gfx/audio/shader/export）、集成机=core/pal/pal-android/deps/热点；`pal-apple` 集成机归口、B/C 分子域。**一机同一时间只待一条线**。
+  - **开发机 = 简化档（编码优先）**：优先编码不等门禁；自查 = 编译 + 相关单测（Swift 必须 `-typecheck`，`-parse` 绿不是绿）；**不跑全量门禁**，收工把剩余门禁/真机项 append 进 `docs/tasks/TODO-POOL-门禁真机待办池.md`，推送即收工。
+  - **本机（集成机）= 每日批次**（传哲每天定期跑）：fetch → 合并守门（全量 `run_gate.sh`，远端"已验证"按未验证处理）→ 消化待办池 → **真机一趟多单**（iPhone 17 Pro，攒着合并执行）→ 数字回填 → 关条目。
+  - **待办池 append-only 归开发机，清扫/关闭/编号只归集成机** —— 管理文档（池/编号/告警头/清扫）单写者 = 集成机，双机同改必分叉（P82：撞号归一轮本机 4f0aa67 弃用重做）。
+  - 发号水位（2026-10-07 后）：ADR 下一号 **0030**（0025~0028 预占素材库多轨）；pitfalls 下一号 **P83**。
 - **收工逐项勾清单**（真源「任务结束必须同步上下文」）：`.ai/modules/` → ADR（改了既有惯例必须新增）→ TASK 卡 → HANDOFF → pitfalls → baselines → 当日日志 → MEMORY.md。模糊的"要回写"等于没写（连漏两轮的教训）。
 - 门类补充：门禁状态写**具体数字**（如 `Debug 44/44、Release 44/44`），不写"全绿"；HANDOFF 里的任务状态要**对着 commit 历史核**，不能照抄上一版。
 - 「本期明确不支持」要写进头文件/文档，不要只在对话里说。

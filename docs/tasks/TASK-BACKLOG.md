@@ -517,9 +517,9 @@ RENDER-001/红线 #6 路线，勿把相机滤镜直接当 SDK 能力引用。
 
 | ID | 层 | 任务 | 依赖 | 写集要点 | 验收 |
 |---|---|---|---|---|---|
-| INFRA-013 | 基建 | 壳工程改造：`apps/apple/packages/` 骨架 + 双 Podfile/project.yml 适配 + `run_gate.sh` 逐 Pod 测试段 | ADR-0031 | 双 Podfile、双 project.yml、`tools/ci/run_gate.sh` | 双壳 xcodegen+pod install+构建冒烟过；门禁绿 |
+| INFRA-013 | 基建 | 壳工程改造：`apps/apple/packages/` 骨架 + 双 Podfile/project.yml 适配 + `run_gate.sh` 逐 Pod 测试段 ✅ 2026-10-07（双 Podfile+门禁段+基座注入点；project.yml 零改动） | ADR-0031 | 双 Podfile、双 project.yml、`tools/ci/run_gate.sh` | 双壳 xcodegen+pod install+构建冒烟过；门禁绿 |
 | INFRA-014 | 基建 | SharedUI 瘦身为 UI 基座（功能子域迁出即删源，仅留 Common/Theme） | INFRA-013 | `SharedUI.podspec`、`Sources/SharedUI/Common/**` | 测试套仍绿；全仓 grep 零悬空 import |
-| INFRA-015 | 基建 | `ChuanqiCutPlayer` Pod 迁移（Player 全域 + 测试） | INFRA-014 | `packages/ChuanqiCutPlayer/**` | Player 测试数字对齐迁移前不掉用例 |
+| INFRA-015 | 基建 | `ChuanqiCutPlayer` Pod 迁移（Player 全域 + 测试）✅ 2026-10-07（52 用例随迁零丢失；SharedUI 88+Player 52=140 对齐 HEAD；MediaSheet 经 PlayerPreviewInjector 解耦） | INFRA-014 | `packages/ChuanqiCutPlayer/**` | Player 测试数字对齐迁移前不掉用例 |
 | INFRA-016 | 基建 | `ChuanqiCutImport` Pod 迁移（MediaPicker + UIA-009/011/012 导入链；落库接缝对 Assets） | INFRA-014 | `packages/ChuanqiCutImport/**` | 导入链单测过；双壳构建过 |
 | INFRA-017 | 基建 | `ChuanqiCutAssets` Pod 建域（素材表/素材库收敛；LIB-* UI 配套） | INFRA-014 | `packages/ChuanqiCutAssets/**` | 素材表回归测试过 |
 | INFRA-018 | 基建 | `ChuanqiCutCamera` Pod 迁移（iOSApp/Camera + 契约层；**metallib 构建链迁 podspec script_phase**） | INFRA-017 | `packages/ChuanqiCutCamera/**` | metallib 非空壳；真机一趟（池攒单）相机检查点全过 |

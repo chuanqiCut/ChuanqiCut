@@ -1422,3 +1422,11 @@ TASK-CAM-012 剩余风险栏其实预判了（"若真机上 CI 工作空间表�
   （append-only）**，清扫/关闭/编号只归集成机；②开发机对既有文档的编号/告警头改动一律
   改为「向集成机提案」；③模块级撞面靠归属表事前避免（PLAN-三线并行 §1a），
   不再靠事后裁定。
+
+### P83 · `kCVPixelBufferColorSpaceKey` 进了主干 —— 美颜合并轮的相机代码在 App target 首次真编译即炸（凭记忆写 API 案底第 5 次）
+**日期**：2026-10-07　**来源**：壳工程 Pod 拆分阶段 0/1 双壳构建验证（首次对 9da6270 美颜合并轮跑 iOS App target 编译）　**验证状态**：已修复（`kCVImageBufferCGColorSpaceKey`；iOS/mac 双壳 BUILD SUCCEEDED）
+
+- 现象：iOS `-scheme ChuanqiCutApp` 构建失败：`CameraRecorder.swift:130 cannot find 'kCVPixelBufferColorSpaceKey' in scope`。文件 `import CoreVideo` 齐全，怀疑点不在 import。
+- 根因：**SDK 里没有这个常量**。实锤方法：`grep -rn ColorSpaceKey $(xcrun --show-sdk-path --sdk iphonesimulator)/System/Library/Frameworks/CoreVideo.framework/Headers/` —— 全部 CoreVideo 头文件只有 `kCVImageBufferCGColorSpaceKey`。美颜合并轮（9da6270，远端）凭记忆写了"看起来合理"的常量；该轮自述验证 = `swiftc -parse` 对照（只查语法不查类型），且该文件此前从未被 App target 真编译过 —— P46/P48/P49/P78 同一坑第 5 次。
+- 修复：改用 `kCVImageBufferCGColorSpaceKey`（iOS 4.0+，值 = CGColorSpaceRef；CVPixelBuffer 继承 CVImageBuffer 的附件键语义）。CAM-018「预览 vs 录制颜色一致性」真机验收点依赖这个 sRGB 标记，修复后按池 [2] 执行真机项。
+- 防复发规则：①**合并快检必须含 App target 真编译**（`xcodebuild -sdk iphonesimulator build` + mac Debug build，增量约 2~5 分钟）——`-parse` 对照不构成证据，已写进 ADR-0030 快检清单；②写 AVFoundation/CoreVideo 常量前先 grep 本机 SDK 头文件定名，不凭记忆、不上网猜。

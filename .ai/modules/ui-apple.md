@@ -670,16 +670,24 @@ RESEARCH-004/005 结论全部维持，本文补**操作层**，关键增量：
 
 | Task ID | 标题 | 状态 |
 |---|---|---|
+| INFRA-013/015 | 壳工程改造 + ChuanqiCutPlayer Pod 迁移（ADR-0031 阶段 0/1） | ✅ 2026-10-07：Player 14 源文件+4 测试文件迁独立 Pod；MediaSheet 经 PlayerPreviewInjector 解耦（基座注入，横向零依赖）；双壳 BUILD SUCCEEDED |
 | UIA-015~027 | 播放器全域（MVP+进阶 12 卡） | ✅ 落地；真机 5 检查点 = 池 [1] |
-| UIA-032/033 | 编辑页剪映式重构 / Theme 令牌（曾号 015/016 让位） | 已建卡，在飞 |
+| UIA-032/033 | 编辑页剪映式重构 / Theme 令牌（曾号 015/016 让位） | 已建卡，在飞（阶段 5 迁 ChuanqiCutEditor Pod 后在新 Pod 内重构） |
 | UIA-034~037 | 编辑页 UIKit 批（曾 §12 021~024） | 预占未建卡 |
 | UIA-028~031 | 素材库/草稿箱/多轨/导出面板 UI | 预占（落 Assets/Draft/Editor Pod，ADR-0031） |
+
+### Pod 拆分进度（ADR-0031 / PLAN-壳工程与功能Pod）
+
+- ✅ 阶段 0（INFRA-013）：双 Podfile + 门禁 apple-player 段 + 基座注入点；AppEntry 留 SharedUI（真壳化挂阶段 5）。
+- ✅ 阶段 1（INFRA-015）：ChuanqiCutPlayer 落地。实测 Player 零基座/SDK 符号（触感反馈内联，原引 MediaPicker 的 PickerFeedback）→ Pod 零依赖声明（拓扑微调记录在 podspec 注释）。
+- ⏳ 阶段 2~5：Import / Assets / Camera / Editor+Draft。
 
 ### 测试与门禁记录（阶段批）
 
 | 日期 | 阶段/范围 | 结论（数字） |
 |---|---|---|
-| 2026-10-07 | SharedUI 测试套 + iOS 构建 | 128 用例 0 失败；iOS BUILD SUCCEEDED 项目代码 0 告警 |
+| 2026-10-07 | Pod 拆分阶段 0/1 阶段批 | SharedUI swift test **88/88**；ChuanqiCutPlayer swift test **52/52**；合计 140 对齐迁移前 HEAD（守恒核过）；iOS 模拟器 + macOS 双壳 BUILD SUCCEEDED；全量门禁数字见当日日志 |
+| 2026-10-07 | SharedUI 测试套 + iOS 构建（迁移前基线） | 128→140 用例（美颜合并轮 +12）；iOS BUILD SUCCEEDED 项目代码 0 告警 |
 
 ### 调研 · 决策 · 池指针
 

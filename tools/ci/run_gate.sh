@@ -9,7 +9,7 @@
 #   2. headers   PAL/公共头纯净性（tools/pal/check_pal_headers.py）
 #   3. core-dbg  内核 Debug 构建 + 全量单测（-Werror）
 #   4. core-rel  内核 Release 构建 + 全量单测（-Werror + LTO）
-#   5. apple     XCFramework 三切片 + Swift 绑定测试 + SharedUI 测试
+#   5. apple     XCFramework 三切片 + Swift 绑定测试 + SharedUI/功能 Pod 测试
 #   6. golden    golden 样本齐备性（tests/golden/verify.py）
 #
 # 用法：
@@ -49,7 +49,7 @@ print_summary() {
             grep -hE '[0-9]+% tests passed' "${LOG_DIR}/${step}.log" | sed "s/^/ ${step}: /"
         fi
     done
-    for step in apple-swift-bindings apple-sharedui; do
+    for step in apple-swift-bindings apple-sharedui apple-player; do
         if [ -f "${LOG_DIR}/${step}.log" ]; then
             grep -hE "Test Suite '.*' (passed|failed)" "${LOG_DIR}/${step}.log" | tail -2 | sed "s/^/ ${step}: /"
         fi
@@ -141,6 +141,15 @@ else
     else
         echo "    FAIL [apple-sharedui] —— 最后 30 行："
         tail -30 "${LOG_DIR}/apple-sharedui.log" | sed 's/^/    /'
+        FAIL=$((FAIL+1)); print_summary; exit 1
+    fi
+    # 功能 Pod 测试逐包跑（ADR-0031 分治；新增 Pod 时在此追加同款块）
+    if (cd apps/apple/packages/ChuanqiCutPlayer && swift test --disable-sandbox) >"${LOG_DIR}/apple-player.log" 2>&1; then
+        echo "    PASS [apple-player]（日志：${LOG_DIR}/apple-player.log）"
+        PASS=$((PASS+1))
+    else
+        echo "    FAIL [apple-player] —— 最后 30 行："
+        tail -30 "${LOG_DIR}/apple-player.log" | sed 's/^/    /'
         FAIL=$((FAIL+1)); print_summary; exit 1
     fi
 fi

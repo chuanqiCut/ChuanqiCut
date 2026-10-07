@@ -28,9 +28,9 @@
   - **模块归属成文**（PLAN-三线并行 §1a，各 `.ai/modules/*.md` 头部有归属行）：A=编辑器/UI（ui-apple/ui-android/model/session/preview/project + AIEDIT）、B=相机特效（camera）、C=内核/媒体/渲染（media/render/gfx/audio/shader/export）、集成机=core/pal/pal-android/deps/热点；`pal-apple` 集成机归口、B/C 分子域。**一机同一时间只待一条线**。
   - **模块册分册制（ADR-0030）**：调研/任务/进度/测试及门禁记录统一写 `.ai/modules/<模块>.md` 末尾「模块册」（归属线更新）；新 RESEARCH/SPEC/REVIEW 落 docs/ 原位但须在模块册登记指针。**全局册单写者 = 集成机**：TASK-BACKLOG、两份 README、pitfalls、baselines、PLAN、ADR、workbuddy/MEMORY——开发机零直写，要改走池条目或提案；开发机过程记录写自己模块册 + 池条目，**不写共享当日日志**。
   - **开发机 = 简化档（编码优先）**：优先编码不等门禁；自查 = 编译 + 相关单测（Swift 必须 `-typecheck`）；**不跑全量门禁、不碰真机**，收工把剩余门禁/真机项 append 进 `docs/tasks/TODO-POOL-门禁真机待办池.md`，推送即收工。
-  - **本机（集成机）= 阶段批（ADR-0030 修订日批）**：**合并快检必做**（core 编译 + SharedUI 测试窄检 + 冲突/旧号扫描，远端"已验证"按未验证处理）；**全量门禁 + 真机一趟多单按阶段触发**（PLAN 阶段收尾 / 一批任务卡闭环 / 真机单攒齐 / 周度兜底），不每日空跑。池 append-only 归开发机，清扫/关闭/编号只归集成机（P82）。
-  - **壳工程与功能 Pod（ADR-0031）**：主工程 = 壳（AppEntry/装配/路由/权限）；Pod = ChuanqiCut（SDK，不动）+ SharedUI（瘦身基座 Common/Theme）+ ChuanqiCutPlayer/Import/Assets/Camera/Draft/Editor 七功能 Pod；**功能 Pod 横向零依赖**（交接走壳装配），依赖只指向基座/SDK/Assets；Camera 仅 iOS。实施 = INFRA-013~020 六阶段（BACKLOG §14），每阶段收尾 = 一个阶段批门禁点；Camera 迁移最大风险 = metallib 构建链（ADR-0021）。
-  - 发号水位（2026-10-07 晚后）：ADR 下一号 **0032**（0025~0028 预占素材库多轨）；pitfalls 下一号 **P83**；INFRA-013~020 已登记未建卡。
+  - **本机（集成机）= 阶段批（ADR-0030 修订日批）**：**合并快检必做**（core 编译 + SharedUI 测试窄检 + **双壳 App target 真编译**（P83 后补入）+ 冲突/旧号扫描，远端"已验证"按未验证处理）；**全量门禁 + 真机一趟多单按阶段触发**（PLAN 阶段收尾 / 一批任务卡闭环 / 真机单攒齐 / 周度兜底），不每日空跑。池 append-only 归开发机，清扫/关闭/编号只归集成机（P82）。
+  - **壳工程与功能 Pod（ADR-0031）**：主工程 = 壳（AppEntry/装配/路由/权限）；Pod = ChuanqiCut（SDK，不动）+ SharedUI（瘦身基座 Common/Theme）+ ChuanqiCutPlayer/Import/Assets/Camera/Draft/Editor 七功能 Pod；**功能 Pod 横向零依赖**（交接走壳装配/基座注入点），依赖只指向基座/SDK/Assets；Camera 仅 iOS。实施 = INFRA-013~020 六阶段（BACKLOG §14），每阶段收尾 = 一个阶段批门禁点；Camera 迁移最大风险 = metallib 构建链（ADR-0021）。**进度（2026-10-07 深夜）**：阶段 0/1 ✅（INFRA-013/015：ChuanqiCutPlayer 落地，MediaSheet 经 PlayerPreviewInjector 解耦；Player 实测零基座/SDK 符号 → Pod 零依赖声明）；**域迁移开工前必须做全符号跨域引用分析**（Player 阶段漏了 PickerFeedback 的教训——grep 未限定标识符，不只查类型名）。
+  - 发号水位（2026-10-07 深夜后）：ADR 下一号 **0032**（0025~0028 预占素材库多轨）；pitfalls 下一号 **P84**（本轮已用 P83：SDK 常量凭记忆书写 + App target 未真编译）；INFRA-013/015 ✅，016~020 已登记未建卡。
 - **收工逐项勾清单**（真源「任务结束必须同步上下文」）：`.ai/modules/` → ADR（改了既有惯例必须新增）→ TASK 卡 → HANDOFF → pitfalls → baselines → 当日日志 → MEMORY.md。模糊的"要回写"等于没写（连漏两轮的教训）。
 - 门类补充：门禁状态写**具体数字**（如 `Debug 44/44、Release 44/44`），不写"全绿"；HANDOFF 里的任务状态要**对着 commit 历史核**，不能照抄上一版。
 - 「本期明确不支持」要写进头文件/文档，不要只在对话里说。

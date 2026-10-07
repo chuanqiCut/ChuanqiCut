@@ -127,7 +127,11 @@ final class CameraRecorder: @unchecked Sendable {
                 // 按未标记写出，播放器按 sRGB 解读 → 产物与预览颜色不一致
                 // （SPEC-CAM-018-019 §1.2；池若实际不接受该键，真机冒烟后
                 //  按任务卡备选方案自建带色彩空间的 CVPixelBufferPool）。
-                kCVPixelBufferColorSpaceKey as String:
+                // 修正（P83，2026-10-07）：kCVPixelBufferColorSpaceKey 不存在于
+                // SDK（美颜合并轮凭记忆书写，App target 首次真编译才炸）；
+                // 色彩空间附件键是 CVImageBuffer 系的 kCVImageBufferCGColorSpaceKey
+                // （iOS 4.0+，CVPixelBuffer 继承生效），值 = CGColorSpaceRef。
+                kCVImageBufferCGColorSpaceKey as String:
                     CGColorSpace(name: CGColorSpace.sRGB) ?? CGColorSpaceCreateDeviceRGB(),
             ])
 

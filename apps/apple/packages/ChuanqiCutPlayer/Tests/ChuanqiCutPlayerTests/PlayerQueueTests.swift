@@ -7,7 +7,7 @@
 // 运行：cd apps/apple/packages/SharedUI && swift test --disable-sandbox
 
 import XCTest
-@testable import SharedUI
+@testable import ChuanqiCutPlayer
 
 @MainActor
 final class PlayerQueueTests: XCTestCase {

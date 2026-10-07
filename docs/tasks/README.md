@@ -11,13 +11,15 @@
 2. 按 [`../../.ai/templates/task.md`](../../.ai/templates/task.md) 建卡，写集不得与其他在飞任务相交；
 3. 在 BACKLOG 对应行标注 ✅（完成后）；在本表登记一行。
 
-## 已建卡登记表（64 张，2026-10-07）
+## 已建卡登记表（66 张，2026-10-07）
 ### 基建 INFRA / DOC
 | 卡 | 标题 |
 |---|---|
 | [INFRA-001](TASK-INFRA-001.md) | monorepo 目录骨架与 CMake 顶层 |
 | [INFRA-002](TASK-INFRA-002.md) | 内核 CMake 构建 + CTest（桌面） |
 | [INFRA-009](TASK-INFRA-009.md) | Apple 端双工程拆分 + CocoaPods 源码集成 |
+| [INFRA-013](TASK-INFRA-013.md) | 壳工程改造：Pods 骨架 + 双 Podfile + 门禁逐 Pod 测试段（ADR-0031 阶段 0）✅ |
+| [INFRA-015](TASK-INFRA-015.md) | ChuanqiCutPlayer Pod 迁移（ADR-0031 阶段 1 样板）✅ |
 | [DOC-001](TASK-DOC-001.md) | 文档体系统一分层与归档（ADR-0019 落地） |
 
 ### 内核 CORE / MODEL / MEDIA

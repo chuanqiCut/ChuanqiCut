@@ -79,7 +79,8 @@
    文件），推送即收工；**池的清扫 / 关闭 / 编号改动只归集成机**（双机同改管理文档必分叉，
    P82 案底）。
 3. **集成机阶段批（ADR-0030 修订「日批」）**：**合并快检必做**——`git fetch && git pull` 后
-   跑窄检（`build_core.sh` + SharedUI `swift test` + 冲突标记/旧号扫描 + 写集越界检查
+   跑窄检（`build_core.sh` + SharedUI `swift test` + **双壳 App target 真编译**
+   （iphonesimulator/mac Debug，P83 案底后补入）+ 冲突标记/旧号扫描 + 写集越界检查
    （diff vs 任务卡声明）+ 远端薄弱点专项：Swift `-typecheck`、Swift 6 发送域、重复声明、
    `-Werror` 真伪；远端"已验证"按未验证处理）；**全量 `run_gate.sh` + 真机一趟多单**
    （iPhone 17 Pro，传哲操作）按**阶段**触发：一个 PLAN 阶段收尾 / 一批任务卡闭环 /

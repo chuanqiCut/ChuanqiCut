@@ -24,13 +24,13 @@
 #include <memory>
 
 #include "cq/base/concurrency.h"  // CancelToken
-#include "cq/base/log.h"          // CQ_LOG_*_WF：带 workflow 的分级日志（CORE-010）
+#include "cq/base/logging.h"          // CQ_LOG_*_WF：带 workflow 的分级日志（CORE-010）
 #include "cq/base/perf.h"        // 性能埋点 + CQ_SLOW_CALL_WF（真机实测用）
 #include "cq/base/status.h"       // Status / StatusCode
-#include "cq/base/time.h"         // RationalTime
+#include "cq/base/rational_time.h"         // RationalTime
 #include "cq/media/frame_provider.h"  // FrameProvider（MEDIA-010 抽象）
 #include "cq/media/decoder_pool.h"   // IDecoderPool / DecoderOf（MEDIA-012 接入）
-#include "cq/pal/common.h"        // NativeImageHandle / PalPtr
+#include "cq/pal/pal_common.h"        // NativeImageHandle / PalPtr
 #include "cq/pal/media.h"         // IMediaDemuxer / MediaPacket / MediaFrame / MediaSource
 
 namespace cq {

@@ -16,7 +16,7 @@
 #include <vector>
 
 #include "cq/session/editor_session.h"
-#include "cq/session/snapshot.h"
+#include "cq/session/session_snapshot.h"
 #include "cq/session/thread_model.h"
 
 namespace {

@@ -32,7 +32,7 @@
 #include <cstdio>  // FILE / stderr：本头文件自洽所需（不能指望调用方替我们 include）
 
 #include "cq/base/status.h"
-#include "cq/base/time.h"
+#include "cq/base/rational_time.h"
 
 namespace cq {
 

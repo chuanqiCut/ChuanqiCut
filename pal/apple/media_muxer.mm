@@ -14,7 +14,7 @@
 #include <string>
 
 #include "cq/base/status.h"
-#include "cq/base/time.h"
+#include "cq/base/rational_time.h"
 #include "media_decode.h"  // GetCvPixelBuffer（仅 Apple TU）
 #include "media_muxer.h"
 

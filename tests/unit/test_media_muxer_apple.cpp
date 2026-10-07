@@ -22,7 +22,7 @@
 #include <vector>
 
 #include "cq/base/status.h"
-#include "cq/base/time.h"
+#include "cq/base/rational_time.h"
 #include "cq/pal/media.h"     // IMediaMuxer / CreateMediaMuxer（平台无关接缝）
 #include "media_decode.h"     // VideoToolboxDecoder / GetCvPixelBuffer（仅帧源，Apple TU）
 

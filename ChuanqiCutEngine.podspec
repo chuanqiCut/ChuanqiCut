@@ -1,33 +1,33 @@
-# ChuanqiCut.podspec — CocoaPods 集成（C++/OC SDK 层）
+# ChuanqiCutEngine.podspec — CocoaPods 集成（C++/OC SDK 层；2026-10-07 正常化）
 #
 # 定位（INFRA-009 起，见 docs/COCOAPODS.md）：
 #   * 本 podspec 负责 **SDK 层**：C++20 内核 + ObjC++ PAL + Swift 绑定源码。
 #   * App（apps/apple/ios 与 apps/apple/mac 两个独立工程）经各自的 Podfile
 #     引用本 pod 与 SharedUI pod；App **不使用 SPM**。
-#   * ⚠️ 不要在 SPM 与 pod 两边同时引入 ChuanqiCut：同一份 Swift 源码被各编
+#   * ⚠️ 不要在 SPM 与 pod 两边同时引入 ChuanqiCutEngine：同一份 Swift 源码被各编
 #     一次会出现重复符号。SPM（bindings/swift/Package.swift）只保留作
 #     `swift test` 测试宿主，不在 App 依赖链上。
 #
-# 两种集成模式（subspec 切换）：
-#   * Source（默认）：现场编译 C++20 内核与 ObjC++ PAL —— 调试内核、分析
-#     问题、无预构建产物时用（owner 决策 2026-10-02）
-#   * Binary        ：链接预构建的 XCFramework，不编译 C++ —— 发布期/提速用
+# 集成模式：**只有源码模式**（现场编译 C++20 内核与 ObjC++ PAL，owner 决策
+# 2026-10-02）。Binary 子规格（预构建 XCFramework）2026-10-07 移除——从未被
+# 任何 Podfile 引用过；发布形态立项时再以独立产物路径回归。
 #
 # 用法（App 的 Podfile）：
-#   pod 'ChuanqiCut/Source', :path => '../..'           # 源码模式（默认）
-#   pod 'ChuanqiCut/Binary', :path => '../..'           # 二进制模式
+#   pod 'ChuanqiCutEngine', :path => '../../..'
 #
-# ⚠️ Binary 模式前置：必须先生成 xcframework
-#     tools/build/build_core_apple.sh --config=Release && bindings/swift/prepare.sh
-#
-# ⚠️ Swift 绑定源码 `import CChuanqiCut`：C module 与 pod module（ChuanqiCut）
+# ⚠️ Swift 绑定源码 `import CChuanqiCut`：C module 与 pod module（ChuanqiCutEngine）
 #    必须是两个名字。**不要**在本 podspec 上设 s.module_map —— CocoaPods 会把
 #    自定义 modulemap 当作 pod 自身的 module（实证：2026-09-30 pod install 残留
 #    产物 ChuanqiCut-iOS.modulemap 即 `module CChuanqiCut`），App 侧
-#    `import ChuanqiCut` 随即断裂。正确做法是 pod_target_xcconfig 的
+#    `import ChuanqiCutEngine` 随即断裂。正确做法是 pod_target_xcconfig 的
 #    SWIFT_INCLUDE_PATHS 指向 bindings/swift/Sources/CChuanqiCut/include/，
 #    让 Swift 编译期看见独立的 CChuanqiCut clang module——该 modulemap 与
 #    cq_sdk.h 符号链接与 SPM 共用同一份文件，不复制。
+#
+# ⚠️ 头文件已正常声明进 source_files（2026-10-07，传哲：正常 pod 写了就有）。
+#    前置条件：与系统头重名的 7 个头已改名（见 source_files 处注释）——headermap
+#    按**基名**映射无视目录，重名会顶掉系统 `<time.h>` 等导致级联崩。
+#    **禁止再新增与系统头同名的头文件。**
 
 Pod::Spec.new do |s|
   # 2026-10-07（传哲拍板）：SDK 层整体改名 Engine——pod/module/SPM target 统一
@@ -69,24 +69,48 @@ Pod::Spec.new do |s|
 
   # 默认源码模式：现场编译整个 C++ 内核（owner 决策 2026-10-02）。
   # 便于调试与分析问题，且 clone 后无「先构建 xcframework」的前置。
-  s.default_subspecs = 'Source'
+  # frameworks（Source 子规格并入主体，2026-10-07）
+  s.frameworks   = 'Foundation', 'Metal', 'AVFoundation', 'CoreMedia',
+                   'VideoToolbox', 'CoreVideo', 'CoreGraphics',
+                   'AudioToolbox', 'QuartzCore'
+  # IOSurface 是 macOS 专有框架，iOS SDK 里不存在（PALA-002 已踩过一次）。
+  s.osx.frameworks = 'IOSurface'
 
   # =========================================================================
-  # 公共部分：C ABI 的 Clang module + Swift 绑定源码
+  # C ABI 的 Clang module + Swift 绑定源码 + C++/ObjC++ 内核源码
   # =========================================================================
   # ⚠️ 不要在这里设 s.module_map（见文件头「Swift 绑定源码 import CChuanqiCut」）。
   #    CChuanqiCut clang module 经 SWIFT_INCLUDE_PATHS 暴露给 Swift 编译期；
-  #    pod 自身的 module（ChuanqiCut）由 CocoaPods 生成。
+  #    pod 自身的 module（ChuanqiCutEngine）由 CocoaPods 生成。
   #
   # shim.c 不是业务逻辑：SwiftPM/CocoaPods 都需要一个真实源文件才会为 C target
   # 生成 module（BIND-002 实测：只有头文件会报 "no such module"）。
   # Swift 绑定源码与 SPM 共用同一份文件，不复制。
+  #
+  # 头文件正常声明（2026-10-07，传哲：正常 pod 写了就有）：core/include/**/*.h +
+  # pal/apple/**/*.h + cq_sdk.h 全部进 source_files → Pods 导航器可见可跳转。
+  # ⚠️ 前置：**7 个与系统头重名的头已改名**（time.h→rational_time.h、base/log.h→
+  #    logging.h、pal/log.h→pal_log.h、clock.h→pal_clock.h、common.h→pal_common.h、
+  #    media/cache.h→media_cache.h、session/snapshot.h→session_snapshot.h）——
+  #    headermap 按**基名**映射（无视目录），重名会把系统 `<time.h>` 顶掉导致
+  #    "'cstdint' file not found" 级联崩（2026-10-02 实测）。改名后碰撞扫描=0，
+  #    core 45/45 回归通过。**禁止再新增与系统头同名的头文件**。
   s.source_files = 'bindings/swift/Sources/CChuanqiCut/shim.c',
-                   'bindings/swift/Sources/ChuanqiCut/**/*.swift'
+                   'bindings/swift/Sources/ChuanqiCut/**/*.swift',
+                   'core/src/**/*.cpp',
+                   'pal/apple/**/*.mm'
 
-  # 模块文件与头文件本体不属于 source_files，声明保留防止打包路径剥离。
+  # 头文件走 **private**（2026-10-07 定案）：私有头不进 CocoaPods 自动生成的
+  # umbrella/Clang module（C++ 头进 ObjC 模块上下文 = <cstddef> file not found
+  # 级联崩），但仍在 Pods 导航器可见可跳转，且进 headermap 供本 pod 的 C++/ObjC++
+  # 编译使用（重名头已改名，劫持源清零）。cq_sdk.h 由 CChuanqiCut 模块暴露，
+  # 不重复声明为公开头。
+  s.private_header_files = 'core/include/**/*.h',
+                           'pal/apple/**/*.h',
+                           'bindings/swift/Sources/CChuanqiCut/include/cq_sdk.h'
+
+  # 模块文件不进 source_files（modulemap 由 SWIFT_INCLUDE_PATHS 指向），保留防剥离。
   s.preserve_paths = 'bindings/swift/Sources/CChuanqiCut/include/module.modulemap',
-                     'bindings/swift/Sources/CChuanqiCut/include/cq_sdk.h',
                      # 让 core 头文件在 Pods 导航器可见（答疑 2026-10-07：源码模式
                      # 下"看不到头文件"）。⚠️ 只 preserve、不进 source_files——
                      # headermap 基名劫持 <time.h> 案底见 Source subspec 注释。
@@ -112,60 +136,19 @@ Pod::Spec.new do |s|
   # 内核是 C++20，消费方必须链 C++ 运行时。
   s.libraries = 'c++'
 
-  # =========================================================================
-  # Binary — 链接预构建 XCFramework（默认）
-  # =========================================================================
-  s.subspec 'Binary' do |ss|
-    # XCFramework 内含三个切片（ios-arm64 / ios-simulator / macos），
-    # 由 tools/build/build_core_apple.sh 产出，bindings/swift/prepare.sh 拷到此路径。
-    # ⚠️ 该目录是**构建产物**（.gitignore 已忽略），远端分发时需要 CI 先生成再打包。
-    ss.vendored_frameworks = 'bindings/swift/Frameworks/ChuanqiCut.xcframework'
-  end
-
-  # =========================================================================
-  # Source — 现场编译 C++20 内核 + ObjC++ PAL
-  # =========================================================================
-  # 用途：调试内核、或没有预构建产物时（例如 clone 后只想跑 iOS 模拟器）。
-  # 注意：这条路径**不经过**项目的 CMake，编译设置在这里重建 —— 两者若漂移，
-  #       以 cmake/CompileOptions.cmake 为准，回来同步本段。
-  s.subspec 'Source' do |ss|
-    # ⚠️ **不要把 .h 声明进 source_files / *_header_files**：
-    #    CocoaPods 会为 target 生成 headermap（hmap），按**文件基名**映射所有
-    #    声明过的头。core/include/cq/base/time.h 一旦声明，pod 内所有编译的
-    #    `#include <time.h>`（系统头！CoreFoundation/Darwin 都会引）就先命中
-    #    我们的 C++ 头 → ObjC module 上下文里 <cstdint> 不可见 →
-    #    "'cstdint' file not found" → 系统模块全体级联崩（2026-10-02 实测）。
-    #    头文件不必进任何 build phase：C++/ObjC++ 编译靠下面的
-    #    HEADER_SEARCH_PATHS（-I 只按路径前缀匹配，不按基名劫持；
-    #    time.h 在 cq/base/ 子目录，#include <time.h> 不会命中它）。
-    ss.source_files        = 'core/src/**/*.cpp',
-                             'pal/apple/**/*.mm'
-
-    ss.libraries    = 'c++'
-    ss.frameworks   = 'Foundation', 'Metal', 'AVFoundation', 'CoreMedia',
-                      'VideoToolbox', 'CoreVideo', 'CoreGraphics',
-                      'AudioToolbox', 'QuartzCore'
-    # IOSurface 是 macOS 专有框架，iOS SDK 里不存在（PALA-002 已踩过一次）。
-    ss.osx.frameworks = 'IOSurface'
-
-    # 版本宏：cq_sdk.cpp 裸用 CQ_VERSION_MAJOR/MINOR/PATCH，正常由 CMake 注入
-    # （core/CMakeLists.txt target_compile_definitions）。pod 编译不经 CMake，
-    # 在此从 s.version 派生注入，避免两处漂移。
-    cq_major, cq_minor, cq_patch = s.version.to_s.split('.')
-
-    # ⚠️ subspec 的 xcconfig 同 key 会**覆盖**根 spec 的值（不是链式 $(inherited)），
-    #    故 HEADER_SEARCH_PATHS 必须把根 spec 的 CChuanqiCut include 路径一并写全。
-    ss.pod_target_xcconfig = {
-      'CLANG_CXX_LANGUAGE_STANDARD' => 'c++20',
-      'CLANG_CXX_LIBRARY'           => 'libc++',
-      'CLANG_ENABLE_OBJC_ARC'       => 'YES',
-      'HEADER_SEARCH_PATHS'         => '$(inherited) "$(PODS_TARGET_SRCROOT)/core/include" ' \
-                                       '"$(PODS_TARGET_SRCROOT)/bindings/swift/Sources/CChuanqiCut/include"',
-      'GCC_PREPROCESSOR_DEFINITIONS' => '$(inherited) CQ_VERSION_MAJOR=%s CQ_VERSION_MINOR=%s CQ_VERSION_PATCH=%s' %
-                                       [cq_major, cq_minor, cq_patch],
-      # 内核禁用异常；与 cmake 保持一致（ARCH-001）。
-      'GCC_ENABLE_CPP_EXCEPTIONS'   => 'NO',
-      'GCC_ENABLE_CPP_RTTI'         => 'NO'
-    }
-  end
+  # 版本宏：cq_sdk.cpp 裸用 CQ_VERSION_*，正常由 CMake 注入；pod 编译不经 CMake，
+  # 在此从 s.version 派生注入，避免两处漂移。
+  cq_major, cq_minor, cq_patch = s.version.to_s.split('.')
+  s.pod_target_xcconfig = {
+    'CLANG_CXX_LANGUAGE_STANDARD' => 'c++20',
+    'CLANG_CXX_LIBRARY'           => 'libc++',
+    'CLANG_ENABLE_OBJC_ARC'       => 'YES',
+    'GCC_PREPROCESSOR_DEFINITIONS' => '$(inherited) CQ_VERSION_MAJOR=%s CQ_VERSION_MINOR=%s CQ_VERSION_PATCH=%s' %
+                                     [cq_major, cq_minor, cq_patch],
+    # 内核禁用异常；与 cmake 保持一致（ARCH-001）。
+    'GCC_ENABLE_CPP_EXCEPTIONS'   => 'NO',
+    'GCC_ENABLE_CPP_RTTI'         => 'NO',
+    'HEADER_SEARCH_PATHS'         => '$(inherited) "$(PODS_TARGET_SRCROOT)/core/include" ' \
+                                     '"$(PODS_TARGET_SRCROOT)/bindings/swift/Sources/CChuanqiCut/include"'
+  }
 end

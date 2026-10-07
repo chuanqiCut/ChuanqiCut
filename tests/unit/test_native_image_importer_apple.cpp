@@ -26,7 +26,7 @@
 #include <vector>
 
 #include "cq/base/status.h"
-#include "cq/base/time.h"
+#include "cq/base/rational_time.h"
 #include "cq/pal/gfx.h"
 #include "cq/pal/media.h"
 #include "cq/media/system_frame_provider.h"

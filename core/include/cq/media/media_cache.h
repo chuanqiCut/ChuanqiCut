@@ -29,7 +29,7 @@
 #include <map>
 
 #include "cq/base/status.h"            // Status
-#include "cq/base/time.h"              // RationalTime
+#include "cq/base/rational_time.h"              // RationalTime
 #include "cq/media/frame_provider.h"   // IFrameCache
 
 namespace cq {

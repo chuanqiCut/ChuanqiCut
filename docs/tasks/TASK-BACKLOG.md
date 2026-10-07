@@ -524,6 +524,7 @@ RENDER-001/红线 #6 路线，勿把相机滤镜直接当 SDK 能力引用。
 | INFRA-017 | 基建 | `ChuanqiCutAssets` Pod 建域（素材表/素材库收敛；LIB-* UI 配套）**改挂 LIB 依赖（2026-10-07 实测定案）**：素材逻辑与 EditorViewModel 不可分，硬拆即假工程——随 LIB-001 契约冻结建域，先随 Editor Pod | LIB-001 | `packages/ChuanqiCutAssets/**` | 素材表回归测试过 |
 | INFRA-018 | 基建 | `ChuanqiCutCamera` Pod 迁移（iOSApp/Camera + 契约层；iOS 专属）✅ 2026-10-07 提前（传哲指定；metallib 管线留壳工程 SRC 指向 Pod 源——script_phase 产物到不了 App bundle 实测假绿，见 P85；EditorEntryInjector 解耦） | INFRA-013 | `packages/ChuanqiCutCamera/**` | metallib 非空壳 ✅ 8431B+kernelNames；真机一趟（池攒单）相机检查点全过 ⏳ |
 | INFRA-019 | 基建 | `ChuanqiCutEditor` Pod 迁移（Editor+Timeline+AppEntry/EditorViewModel；UIA-032 在新 Pod 内重构）✅ 2026-10-07（36 用例；Theme 公开化入基座；MediaSheet 随 Editor 待 LIB 拆 Assets） | INFRA-013 | `packages/ChuanqiCutEditor/**` | 编辑器测试过；双壳构建过 |
+| INFRA-021 | 基建 | ChuanqiCutEngine pod 正常化（头文件可见/docs 移除/Binary 移除/重名头改名）✅ 2026-10-07（[TASK-INFRA-021](TASK-INFRA-021.md)；pods_post_install 钩子） | INFRA-013 | podspec/pods_post_install.rb | Pods 工程 docs=0/头 42；core 45/45 |
 | INFRA-020 | 基建 | `ChuanqiCutDraft` Pod 骨架（PROJ-001 落地后填肉）✅ 2026-10-07（占位域符号；暂不进 Podfile，首功能落地时接线） | INFRA-013 | `packages/ChuanqiCutDraft/**` | 骨架编译过；随 PROJ-005/UIA-029 填功能 |
 
 **批次（= ADR-0031 六阶段）**：阶段 0 = 013+014；阶段 1 = 015；阶段 2 = 016；阶段 3 = 017；

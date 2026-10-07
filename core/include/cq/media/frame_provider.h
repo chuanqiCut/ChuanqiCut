@@ -33,8 +33,8 @@
 
 #include "cq/base/concurrency.h"  // CancelToken
 #include "cq/base/status.h"       // Status
-#include "cq/base/time.h"         // RationalTime
-#include "cq/pal/common.h"        // opaque 句柄、平台无关枚举
+#include "cq/base/rational_time.h"         // RationalTime
+#include "cq/pal/pal_common.h"        // opaque 句柄、平台无关枚举
 #include "cq/pal/media.h"         // PAL IFrameProvider / MediaSource / MediaFrame（本层之下）
 
 namespace cq {

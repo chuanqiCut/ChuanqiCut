@@ -53,8 +53,8 @@
 #include <vector>
 
 #include "cq/base/status.h"
-#include "cq/base/time.h"
-#include "cq/pal/common.h"  // TextureHandle
+#include "cq/base/rational_time.h"
+#include "cq/pal/pal_common.h"  // TextureHandle
 #include "cq/preview/preview_frame_source.h"
 
 namespace cq {

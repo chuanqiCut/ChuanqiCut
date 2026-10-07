@@ -7,12 +7,12 @@
 #define CQ_PAL_PAL_H_
 
 #include "cq/pal/capabilities.h"
-#include "cq/pal/clock.h"
-#include "cq/pal/common.h"
+#include "cq/pal/pal_clock.h"
+#include "cq/pal/pal_common.h"
 #include "cq/pal/fs.h"
 #include "cq/pal/gfx.h"
 #include "cq/pal/inference.h"
-#include "cq/pal/log.h"
+#include "cq/pal/pal_log.h"
 #include "cq/pal/media.h"
 #include "cq/pal/audio.h"
 

@@ -17,14 +17,14 @@
 #include <utility>
 #include <vector>
 
-#include "cq/base/log.h"  // CORE-010：workflow 日志（cq_log_configure_from_env）
+#include "cq/base/logging.h"  // CORE-010：workflow 日志（cq_log_configure_from_env）
 #include "cq/base/status.h"
 #include "cq/pal/capabilities.h"
 #include "cq_session_impl.h"
 #include "cq/model/timeline.h"
 #include "cq/preview/player_clock.h"
 #include "cq/session/editor_session.h"
-#include "cq/session/snapshot.h"
+#include "cq/session/session_snapshot.h"
 #include "cq/session/thread_model.h"
 
 // CQSession 的真实定义移至内核私有共享头（cq_session_impl.h）——

@@ -19,7 +19,7 @@
 
 #include "cq/base/concurrency.h"
 #include "cq/base/status.h"
-#include "cq/base/time.h"
+#include "cq/base/rational_time.h"
 #include "cq/gfx/gfx_device.h"
 #include "cq/media/pal_frame_provider.h"
 #include "cq/model/model_snapshot.h"

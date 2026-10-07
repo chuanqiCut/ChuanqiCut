@@ -22,7 +22,7 @@
 
 #include "cq/base/concurrency.h"  // CancelToken
 #include "cq/base/status.h"        // Status / StatusCode
-#include "cq/base/time.h"          // RationalTime
+#include "cq/base/rational_time.h"          // RationalTime
 #include "cq/pal/media.h"          // AudioTrackConfig / PcmBuffer（音频轨复用）
 
 // C 类型（CoreVideo），在纯 C++ 下也合法（与 media_decode.h 的 CVPixelBufferRef 一致）。

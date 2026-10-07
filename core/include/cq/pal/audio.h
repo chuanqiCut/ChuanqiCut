@@ -18,8 +18,8 @@
 #include <cstdint>
 
 #include "cq/base/concurrency.h"  // CancelToken
-#include "cq/base/time.h"          // RationalTime（time.h 已含 status.h）
-#include "cq/pal/common.h"
+#include "cq/base/rational_time.h"          // RationalTime（time.h 已含 status.h）
+#include "cq/pal/pal_common.h"
 
 namespace cq {
 

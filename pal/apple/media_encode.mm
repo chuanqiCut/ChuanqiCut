@@ -26,7 +26,7 @@
 
 #include "cq/base/perf.h"
 #include "cq/base/status.h"
-#include "cq/base/time.h"
+#include "cq/base/rational_time.h"
 #include "media_encode.h"
 
 namespace cq {

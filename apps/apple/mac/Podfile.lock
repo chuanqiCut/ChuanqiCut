@@ -2,9 +2,7 @@ PODS:
   - ChuanqiCutEditor (0.1.0):
     - ChuanqiCutEngine
     - SharedUI
-  - ChuanqiCutEngine (0.1.0):
-    - ChuanqiCutEngine/Source (= 0.1.0)
-  - ChuanqiCutEngine/Source (0.1.0)
+  - ChuanqiCutEngine (0.1.0)
   - ChuanqiCutImport (0.1.0):
     - SharedUI
   - ChuanqiCutPlayer (0.1.0)
@@ -13,7 +11,7 @@ PODS:
 
 DEPENDENCIES:
   - ChuanqiCutEditor (from `../packages/ChuanqiCutEditor`)
-  - ChuanqiCutEngine/Source (from `../../..`)
+  - ChuanqiCutEngine (from `../../..`)
   - ChuanqiCutImport (from `../packages/ChuanqiCutImport`)
   - ChuanqiCutPlayer (from `../packages/ChuanqiCutPlayer`)
   - SharedUI (from `../packages/SharedUI`)
@@ -32,11 +30,11 @@ EXTERNAL SOURCES:
 
 SPEC CHECKSUMS:
   ChuanqiCutEditor: 971bf78a0e0b912703073e96de81e667f994f97a
-  ChuanqiCutEngine: 419782ce205947761ebf928cbf4fd177514479ee
+  ChuanqiCutEngine: 2a67a43ec7f29bb32db35d9f9e1925c7fc0e0343
   ChuanqiCutImport: aa33c8eb24b733c0cdf8cf8b64df7a2e38cab8e3
   ChuanqiCutPlayer: f0dd0794e4b67626604e5764e35a7456f3593001
   SharedUI: f8159d1a65fa7c7465f757b1d25bc209d45d08bf
 
-PODFILE CHECKSUM: 78095857dbb6d4f08584a078361e61640fb5f6b0
+PODFILE CHECKSUM: 2b59c4b03b1bc663abadae214d97c2f0a656108f
 
 COCOAPODS: 1.17.0

@@ -28,7 +28,7 @@
 
 #include "cq/base/concurrency.h"                 // CancelToken
 #include "cq/base/status.h"
-#include "cq/base/time.h"                        // RationalTime
+#include "cq/base/rational_time.h"                        // RationalTime
 #include "cq/gfx/gfx_device.h"                   // IGfxDevice / IGfxEncoder
 #include "cq/pal/gfx.h"                          // IBlitPass（PAL 层，平台原生 shader 实现）
 #include "cq/media/asset_registry.h"             // AssetRegistry
@@ -36,7 +36,7 @@
 #include "cq/media/frame_provider_factory.h"     // IFrameProviderFactory
 #include "cq/model/model_snapshot.h"             // ModelSnapshot / IModelSnapshotProvider
 #include "cq/model/timeline.h"                   // Timeline
-#include "cq/pal/common.h"                       // TextureHandle / TextureFormat / PalPtr
+#include "cq/pal/pal_common.h"                       // TextureHandle / TextureFormat / PalPtr
 #include "cq/pal/gfx.h"                          // IRenderTarget / INativeImageImporter
 #include "cq/preview/preview_frame_source.h"      // IPreviewFrameSource（预览泵的接缝）
 

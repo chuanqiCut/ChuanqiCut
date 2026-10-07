@@ -15,7 +15,7 @@
 #include <utility>
 #include <vector>
 
-#include "cq/base/log.h"   // CQ_LOG_*_WF：带 workflow 的分级日志（CORE-010）
+#include "cq/base/logging.h"   // CQ_LOG_*_WF：带 workflow 的分级日志（CORE-010）
 #include "cq/base/perf.h"  // CQ_SLOW_CALL_WF
 
 namespace cq {

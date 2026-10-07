@@ -22,7 +22,7 @@
 
 #include "cq/base/concurrency.h"  // CancelToken
 #include "cq/base/status.h"        // Status / StatusCode
-#include "cq/base/time.h"          // RationalTime
+#include "cq/base/rational_time.h"          // RationalTime
 #include "cq/pal/media.h"          // IMediaMuxer / VideoTrackConfig / AudioTrackConfig
 #include "media_encode.h"          // AppleVideoEncoder（内部引擎）
 

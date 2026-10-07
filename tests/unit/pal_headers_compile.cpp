@@ -17,18 +17,18 @@
 // —— 顺序无关性：先单独包含各域头，再包含聚合头 ——
 #include "cq/pal/audio.h"
 #include "cq/pal/capabilities.h"
-#include "cq/pal/clock.h"
-#include "cq/pal/common.h"
+#include "cq/pal/pal_clock.h"
+#include "cq/pal/pal_common.h"
 #include "cq/pal/fs.h"
 #include "cq/pal/gfx.h"
 #include "cq/pal/inference.h"
-#include "cq/pal/log.h"
+#include "cq/pal/pal_log.h"
 #include "cq/pal/media.h"
 
 // 聚合头（再次包含，验证幂等）。
 #include "cq/pal/pal.h"
 
-#include "cq/base/time.h"  // kProjectTimeScale
+#include "cq/base/rational_time.h"  // kProjectTimeScale
 
 namespace cq {
 namespace {

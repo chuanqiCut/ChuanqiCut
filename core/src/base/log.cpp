@@ -16,7 +16,7 @@
 #include <mutex>
 #include <vector>
 
-#include "cq/base/log.h"
+#include "cq/base/logging.h"
 
 namespace cq {
 

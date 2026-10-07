@@ -468,9 +468,29 @@ public struct CameraView: View {
             }
             Toggle("高清拍照（全分辨率）", isOn: $model.highResPhoto)
             Toggle("MetalFX 预览增强（实验）", isOn: $model.fxUpscaleEnabled)
+            Toggle("人像虚化（景深，拍照生效）", isOn: Binding(
+                get: { model.portraitBlurEnabled },
+                set: { model.setPortraitBlurEnabled($0) }
+            ))
+            .disabled(!model.isPortraitBlurSupported || model.isRecording)
+            if model.portraitBlurEnabled {
+                HStack {
+                    Text("f 值").frame(width: 64, alignment: .leading)
+                    Slider(value: $model.aperture, in: 0...1)
+                    Text(String(format: "%.2f", model.aperture))
+                        .font(.caption.monospacedDigit())
+                        .frame(width: 44)
+                }
+            }
             if !model.isDualCamSupported {
                 // SPEC-CAM-001 A8：不支持机型明示（顶栏开关已置灰）
                 Text("本机不支持双摄（需 A12 及以上机型）")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            }
+            if !model.isPortraitBlurSupported {
+                // CAM-023：无深度能力明示（开关已置灰，不伪造）
+                Text("本机无景深能力（需双摄 / TrueDepth / LiDAR 机型），人像虚化不可用")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
             }

@@ -139,6 +139,29 @@ final class CameraViewModel: ObservableObject {
     /// PiP 画面选择（true = PiP 显示前摄、主画面为后摄；swap 互换）。
     @Published private(set) var pipShowsFront = true
 
+    // MARK: 人像虚化（CAM-023；深度仅服务拍照路径）
+
+    /// 深度能力（任意摄位有深度设备即可开；开启后当前摄位无深度会失败并明示）。
+    let isPortraitBlurSupported = CameraManager.depthCapableDevice(for: .back) != nil
+        || CameraManager.depthCapableDevice(for: .front) != nil
+    @Published private(set) var portraitBlurEnabled = false
+    /// f 值（0...1）：0 = 无虚化；对虚化半径线性单调。
+    @Published var aperture: Double = 0.5
+
+    func setPortraitBlurEnabled(_ enabled: Bool) {
+        guard !isRecording, enabled != portraitBlurEnabled else { return }
+        manager.setPortraitBlurEnabled(enabled) { [weak self] applied in
+            guard let self else { return }
+            if applied {
+                self.portraitBlurEnabled = enabled
+            } else {
+                self.errorMessage = enabled
+                    ? "人像虚化开启失败（当前摄位可能无景深能力，或与双摄冲突）"
+                    : "人像虚化关闭失败"
+            }
+        }
+    }
+
     func setDualCamEnabled(_ enabled: Bool) {
         guard !isRecording, enabled != dualCamEnabled else { return }
         guard isDualCamSupported || !enabled else { return }
@@ -420,7 +443,8 @@ final class CameraViewModel: ObservableObject {
         isCapturing = true
         let failure = NSError(domain: "cq.camera", code: 1,
                               userInfo: [NSLocalizedDescriptionKey: "未取到照片数据"])
-        manager.capturePhoto(highResolution: highResPhoto) { [weak self] buffer in
+        manager.capturePhoto(highResolution: highResPhoto,
+                             depthDelivery: portraitBlurEnabled) { [weak self] buffer, depthData in
             // 回调在采集队列；单张照片的一次性处理在这里做，不抢主线程。
             // ciContext 线程安全，与预览/录制复用同一实例。
             // let（确定初始化）而非 var：Task 闭包是 @Sendable，捕获 var 直接编译错（P49）。
@@ -434,6 +458,14 @@ final class CameraViewModel: ObservableObject {
                                                  anchors: renderer.faceBoxes.currentAnchors(),
                                                  animalEyes: renderer.faceBoxes.currentAnimalEyes(),
                                                  bodyAnchors: renderer.faceBoxes.currentBodyAnchors())
+                    }
+                    // CAM-023：人像虚化（滤镜后、贴纸后语义保持——贴纸已在 process 内叠加，
+                    // 虚化其上会糊掉贴纸 → 虚化置于 process 之前不可取；v1 口径 = 虚化
+                    // 应用在整链之后（含贴纸），贴纸同为"画面主体"不参与景深，真机观感
+                    // 定案后再决定是否调序）。深度缺失 = 跳过虚化（诚实降级）。
+                    if let depthData, self?.portraitBlurEnabled == true {
+                        image = PortraitBlur.composite(image, depthData: depthData,
+                                                       aperture: self?.aperture ?? 0)
                     }
                     if let cgImage = ciContext.createCGImage(image, from: image.extent) {
                         processed = .success(cgImage)

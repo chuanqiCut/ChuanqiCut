@@ -467,9 +467,9 @@ RENDER-001/红线 #6 路线，勿把相机滤镜直接当 SDK 能力引用。
 
 | ID | 层 | 任务 | 依赖 | 写集要点 | 验收 |
 |---|---|---|---|---|---|
-| UIA-034 | UI | EditorViewController 骨架（三区 UIKit 容器 + SwiftUI 装配） | — | SharedUI `Editor/UIKit/**`(新)、EditorScreen 装配 | 双平台编译；既有测试零回归 |
-| UIA-035 | UI | 时间线 UIKit 自绘 + 手势 + CADisplayLink 播放头（卡顿修复主体） | 034 | SharedUI `Editor/UIKit/Timeline*` | 播放头移动仅重绘播放头层；主线程单帧 <16ms（真机走查） |
-| UIA-036 | UI | 预览浮层/传输条 + 底部工具栏/二级条 | 034 | SharedUI `Editor/UIKit/{Preview,Toolbar}*` | 剪映形状走查清单（RESEARCH-008 §2） |
+| UIA-034 | UI | EditorViewController 骨架（三区 UIKit 容器 + SwiftUI 装配）✅ 2026-10-07 | — | SharedUI `Editor/UIKit/**`(新)、EditorScreen 装配 | 双平台编译；既有测试零回归 |
+| UIA-035 | UI | 时间线 UIKit 自绘 + 手势 + CADisplayLink 播放头（卡顿修复主体）✅ 2026-10-07（播放头独立层每帧只动 path；真机 <16ms 走查 = 池 [3]） | 034 | SharedUI `Editor/UIKit/Timeline*` | 播放头移动仅重绘播放头层；主线程单帧 <16ms（真机走查） |
+| UIA-036 | UI | 预览浮层/传输条 + 底部工具栏/二级条 ✅ 2026-10-07（一级条落地；二级条随各能力实装引入） | 034 | SharedUI `Editor/UIKit/{Preview,Toolbar}*` | 剪映形状走查清单（RESEARCH-008 §2） |
 | UIA-037 | UI | 时间线缩略图（异步抽帧，吸收时间线视觉建议位） | 035 | 同上 + 抽帧缓存 | 主线程不解码；缩略图随片段可见 |
 
 **批次**：阶段 0（真机性能剖面，回填 baselines，UIA-034 前半天）→ 034 → 035 ∥ 036 → 037。
@@ -524,7 +524,13 @@ RENDER-001/红线 #6 路线，勿把相机滤镜直接当 SDK 能力引用。
 | INFRA-017 | 基建 | `ChuanqiCutAssets` Pod 建域（素材表/素材库收敛；LIB-* UI 配套）**改挂 LIB 依赖（2026-10-07 实测定案）**：素材逻辑与 EditorViewModel 不可分，硬拆即假工程——随 LIB-001 契约冻结建域，先随 Editor Pod | LIB-001 | `packages/ChuanqiCutAssets/**` | 素材表回归测试过 |
 | INFRA-018 | 基建 | `ChuanqiCutCamera` Pod 迁移（iOSApp/Camera + 契约层；iOS 专属）✅ 2026-10-07 提前（传哲指定；metallib 管线留壳工程 SRC 指向 Pod 源——script_phase 产物到不了 App bundle 实测假绿，见 P85；EditorEntryInjector 解耦） | INFRA-013 | `packages/ChuanqiCutCamera/**` | metallib 非空壳 ✅ 8431B+kernelNames；真机一趟（池攒单）相机检查点全过 ⏳ |
 | INFRA-019 | 基建 | `ChuanqiCutEditor` Pod 迁移（Editor+Timeline+AppEntry/EditorViewModel；UIA-032 在新 Pod 内重构）✅ 2026-10-07（36 用例；Theme 公开化入基座；MediaSheet 随 Editor 待 LIB 拆 Assets） | INFRA-013 | `packages/ChuanqiCutEditor/**` | 编辑器测试过；双壳构建过 |
+| INFRA-022 | 基建 | 引擎源码收拢 engine/（pod 根=engine，docs 天然脱离文档探测；CMake/SPM/工程引用重定基）✅ 2026-10-07（[TASK-INFRA-022](TASK-INFRA-022.md)） | INFRA-021 | `engine/**` | core 45/45；bindings 26/26；双壳构建绿 |
+| INFRA-021 | 基建 | ChuanqiCutEngine pod 正常化（头文件可见/docs 移除/Binary 移除/重名头改名）✅ 2026-10-07（[TASK-INFRA-021](TASK-INFRA-021.md)；pods_post_install 钩子） | INFRA-013 | podspec/pods_post_install.rb | Pods 工程 docs=0/头 42；core 45/45 |
 | INFRA-020 | 基建 | `ChuanqiCutDraft` Pod 骨架（PROJ-001 落地后填肉）✅ 2026-10-07（占位域符号；暂不进 Podfile，首功能落地时接线） | INFRA-013 | `packages/ChuanqiCutDraft/**` | 骨架编译过；随 PROJ-005/UIA-029 填功能 |
+
+**待拍板（INFRA-023，2026-10-07 登记）**：Swift 绑定与五个 UI 包的 SPM 包现在**只承担
+`swift test` 测试宿主**（App 依赖链 100% 走 pod，源码同一份）。若要彻底移除 SPM，需把
+五包测试迁到 pod `test_spec`（xcodebuild test），牵动门禁跑法——**待传哲拍板是否值得**。
 
 **批次（= ADR-0031 六阶段）**：阶段 0 = 013+014；阶段 1 = 015；阶段 2 = 016；阶段 3 = 017；
 阶段 4 = 018；阶段 5 = 019+020。同域业务任务与该域迁移**不并行**（串行让路）。

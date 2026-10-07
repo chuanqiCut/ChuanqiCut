@@ -15,7 +15,7 @@
 
 import XCTest
 import Metal
-import ChuanqiCut
+import ChuanqiCutEngine
 @testable import ChuanqiCutEditor
 
 // @MainActor：PreviewFrameRenderer 是 MainActor 隔离（见其文件头）。

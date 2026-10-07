@@ -7,8 +7,20 @@
 // 不进模型；预览空态与底部工具栏共用同一个入口）。
 
 import SwiftUI
-import ChuanqiCut
+import ChuanqiCutEngine
 import SharedUI  // 基座：Theme/注入点（ADR-0031）
+
+#if os(iOS)
+/// iOS：UIKit 三件套容器（ADR-0024）。
+private typealias CompactEditorHost = EditorCompactEditorView
+#else
+/// macOS 永不进入 compact 分支（EditorLayoutContainer macOS 布局不调用该槽位）；
+/// 占位类型仅为满足泛型实例化。
+private struct CompactEditorHost: View {
+    init(viewModel: EditorViewModel, onOpenMedia: @escaping () -> Void) {}
+    var body: some View { Color.clear }
+}
+#endif
 
 public struct EditorView: View {
     @EnvironmentObject private var viewModel: EditorViewModel
@@ -20,6 +32,10 @@ public struct EditorView: View {
 
     public var body: some View {
         EditorLayoutContainer(
+            compact: {
+                CompactEditorHost(viewModel: viewModel,
+                                  onOpenMedia: { showMediaSheet = true })
+            },
             preview: {
                 PreviewZone(preview: viewModel.preview,
                             pump: viewModel.previewPump,

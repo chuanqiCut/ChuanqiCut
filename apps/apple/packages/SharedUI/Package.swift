@@ -18,7 +18,7 @@ let package = Package(
         .library(name: "SharedUI", targets: ["SharedUI"])
     ],
     dependencies: [
-        .package(path: "../../../../bindings/swift")
+        .package(path: "../../../../engine/bindings/swift")
     ],
     targets: [
         .target(
@@ -26,7 +26,7 @@ let package = Package(
             dependencies: [
                 // ⚠️ 本地包身份取**目录名**（bindings/swift → "swift"）而非包内
                 //    Package.swift 里的 name；写 "ChuanqiCut" 会报 unknown package。
-                .product(name: "ChuanqiCut", package: "swift")
+                .product(name: "ChuanqiCutEngine", package: "swift")
             ],
             path: "Sources/SharedUI"
         ),

@@ -12,7 +12,7 @@
 // 属性参数区不在此（UIA-006 接真实参数时再进面板框架 UIA-019）。
 
 import SwiftUI
-import ChuanqiCut
+import ChuanqiCutEngine
 import SharedUI  // 基座：Theme/注入点（ADR-0031）
 import UniformTypeIdentifiers
 

@@ -44,6 +44,11 @@ targets:
     platform: iOS
     # 收录 iOSApp；CIKernel 的 .metal 排除在 Sources 之外（见下方脚本说明）。
     sources:
+      # 内核头文件浏览引用（2026-10-07，传哲：头文件在工程看不到）：蓝色文件夹引用，
+      # 不参与编译（buildPhase: none）——编译走 Engine Pod 的 HEADER_SEARCH_PATHS。
+      - path: ../../../engine/core/include
+        type: folder
+        buildPhase: none
       - path: iOSApp
         excludes:
           - "**/beauty_bilateral.metal"

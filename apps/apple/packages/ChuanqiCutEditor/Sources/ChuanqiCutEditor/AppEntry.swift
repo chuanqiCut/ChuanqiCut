@@ -14,7 +14,7 @@ import SwiftUI
 import Foundation
 import Darwin
 import os
-import ChuanqiCut
+import ChuanqiCutEngine
 
 // MARK: - 错误
 

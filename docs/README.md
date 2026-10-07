@@ -108,7 +108,23 @@ cat docs/handoff/HANDOFF-004-*.md      # 3. 最近交接（状态以最新一份
 
 ---
 
-## 五、任务（tasks/）
+## 五、接口参考（api/）
+
+| 文档 | 角色 |
+|---|---|
+| [`engine-api.md`](api/engine-api.md) | **引擎公共接口参考（C ABI）**：由 `tools/docs/gen_api_reference.py` 从 `engine/bindings/swift/Sources/CChuanqiCut/include/cq_sdk.h` 自动生成（接口变更后重跑；`--check` 可比对是否过期）。**不要手改**。 |
+
+---
+
+## 六、周报（reports/）
+
+| 文档 | 角色 |
+|---|---|
+| [`WEEKLY-*.md`](reports/WEEKLY-2026-W41.md) | **周报**（2026-10-07 立，传哲拍板）：项目介绍/当前架构/本周进度/关键数字/下周目标/风险，集成机每周出刊（规则见 [reports/README](reports/README.md)） |
+
+---
+
+## 六、任务（tasks/）
 
 | 文档 | 角色 |
 |---|---|

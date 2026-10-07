@@ -672,9 +672,59 @@ RESEARCH-004/005 结论全部维持，本文补**操作层**，关键增量：
 |---|---|---|
 | INFRA-013/015 | 壳工程改造 + ChuanqiCutPlayer Pod 迁移（ADR-0031 阶段 0/1） | ✅ 2026-10-07：Player 14 源文件+4 测试文件迁独立 Pod；MediaSheet 经 PlayerPreviewInjector 解耦（基座注入，横向零依赖）；双壳 BUILD SUCCEEDED |
 | UIA-015~027 | 播放器全域（MVP+进阶 12 卡） | ✅ 落地；真机 5 检查点 = 池 [1] |
-| UIA-032/033 | 编辑页剪映式重构 / Theme 令牌（曾号 015/016 让位） | 已建卡，在飞（阶段 5 迁 ChuanqiCutEditor Pod 后在新 Pod 内重构） |
-| UIA-034~037 | 编辑页 UIKit 批（曾 §12 021~024） | 预占未建卡 |
-| UIA-028~031 | 素材库/草稿箱/多轨/导出面板 UI | 预占（落 Assets/Draft/Editor Pod，ADR-0031） |
+| UIA-032/033 | 编辑页剪映式重构 / Theme 令牌（曾号 015/016 让位） | ✅ 已落地（2026-10-05，见 REVIEW-2026-10-05 走查） |
+| UIA-034~036 | 编辑页 UIKit 批（曾 §12 021~024；ADR-0024） | ✅ 已落地（2026-10-07）；真机走查 = 池 [3] |
+| UIA-037 | 时间线缩略图（异步抽帧 + 缓存） | 编码完（2026-10-07）；**验证未跑（用户指示跳过）= 池 [6] 第一优先** |
+| UIA-038 | 时间线居中播放头 + 捏合缩放 + 帧精度标尺（用户命题） | 编码完（2026-10-07，与 037 同批）；验证同挂池 [6] |
+| UIA-028~031 | 素材库/草稿箱/多轨/导出面板 UI | 预占（落 Assets/Draft/Editor Pod，ADR-0031；方向性需求见 PLAN §13 LIB 域） |
+
+### 编辑页 UIKit 重建（UIA-034~036，2026-10-07 落地；ADR-0024）
+
+- 结构：`ChuanqiCutEditor` Pod 内新增 `UIKit/`（EditorViewController / EditorCompactEditorView /
+  EditorTimelineUIView / EditorTransportBarView / EditorToolbarUIView，全部 `#if os(iOS)`）。
+- **每帧驱动不经 SwiftUI**：CADisplayLink（播放中运行）直读 vm.playhead → 播放头独立
+  CAShapeLayer 只改 path + 时间码 label；VM 零改动（playhead 维持 15Hz @Published 供
+  macOS SwiftUI 路径）。30Hz 整树重算根因消除（真机 <16ms 待验 = 池 [3]）。
+- 交互语义逐字对照旧 SwiftUI 版：拖拽中本地预览层（ADR-0012 不提交），松手一条命令
+  （move/trimEnd）+ refreshFromKernel；空白处 pan 让位 UIScrollView 滚动
+  （gestureRecognizerShouldBegin 命中分流）。
+- 装配：EditorLayoutContainer 增 `compact` 槽位（iOS 竖屏整页 = UIKit 容器）；
+  macOS/横屏 SwiftUI 路径零改动（占位 typealias 满足泛型）。媒体抽屉仍由 SwiftUI
+  壳的 sheet 承载（工具栏「媒体」回调）。
+- Engine 改名同轮：`ChuanqiCutEngine`（module_name='ChuanqiCut'，import 零改动；
+  podspec 文件同名改 `ChuanqiCutEngine.podspec`）。
+
+### UIA-037/038 落地（2026-10-07 编码完；验证未跑 = 池 [6]）
+
+用户命题（2026-10-07 中途追加）：红条居中 / 轨道区捏合缩放（帧级下界、全时长上界）/
+精度最小一帧 / 至少展示三帧画面 + 问询 SwiftUI 可行性与双端是否分写。
+
+- **SwiftUI 可行性定案**（详见 TASK-UIA-038 §SwiftUI）：居中播放头在 iOS 16 部署目标
+  下 SwiftUI 做不干净（onScrollGeometryChange=iOS18 / scrollPosition=iOS17）；
+  macOS Canvas 无 ScrollView 反而简单。**落法 = 纯逻辑一套共享、展示双端分写**
+  （iOS 维持 UIKit = ADR-0024 方向；macOS SwiftUI Canvas），正合 ARCH-005。
+- **新增** `TimelineThumbnails.swift`：`ClipFrameSampler`（槽宽/张数 ≥3 帧/采样点/
+  槽位映射/1s 桶，纯函数）、`TimelineThumbnailStore`（键=(assetId,源秒桶) 同素材共享、
+  in-flight 去重、失败记账不重试、LRU 240、**并发解码上限 3**、抽帧 seam 注入闭包；
+  默认实现 AVAssetImageGenerator——**AVFoundation 只许进本文件**，ADR-0022 决策 4
+  Player 域先例）、`TimelineZoomMath`（缩放界限 + snapToFrame；帧时长 30fps [E] 待
+  MEDIA 线透传真实帧率）。
+- **居中播放头（UIKit 重做）**：播放头从滚动内容移出为**固定覆盖层**（视口中央），
+  播放中每帧开销 = 一次 setContentOffset（不再改 path）；拖时间线 = scrub
+  （scrollViewDidScroll → onScrub → VM.setPlayhead，isSyncingOffset 抑制回环，
+  isPlaying 时宿主忽略）；UIPinchGestureRecognizer 播放头为锚缩放 → 全量重建
+  （状态快照 reload）→ 重新居中。
+- **TimelineLayout.anchorX**（默认 0 = 既有行为零回归锚）：UIKit 内容坐标形态
+  （anchorX=LEAD=视口宽/2）；SwiftUI 视口坐标形态（scrollSeconds=播放头时刻）；
+  visibleRange 按 anchor 两侧折算；标尺候选前置 1f/2f/5f（帧级只在放大时胜出）。
+- **SwiftUI 接入**：pan 未命中 = scrub；Magnification 以 simultaneousGesture 并入；
+  `.task(id: SyncKey(version,pps,width,assetCount))` 驱动请求；store.revision 读入
+  body 建立重绘依赖；槽位图 Image(decorative:) 绘制，边框压图上遮边缘。
+- **测试**：TimelineThumbnailTests 新增 **22 用例**（采样几何 6 / 缩放界限 3 / 锚定几何 5 /
+  Store 行为 7+1：去重、失败不重试、LRU、并发上限、invalidate、缺素材 no-op）。
+- ⚠️ **验证状态：swift test 与 iOS 模拟器构建均未执行**（用户 2026-10-07 指示跳过，
+  直接登记收工）——本节全部结论是"编码完成"不是"验证通过"；数据一律未实测
+  （baselines 无新数字）。池 [6] 第一优先 = Editor 包 swift test + iOS 构建。
 
 ### Pod 拆分进度（ADR-0031 / PLAN-壳工程与功能Pod）—— **全域完成（2026-10-07）**
 
@@ -690,6 +740,7 @@ RESEARCH-004/005 结论全部维持，本文补**操作层**，关键增量：
 
 | 日期 | 阶段/范围 | 结论（数字） |
 |---|---|---|
+| 2026-10-07 | UIA-037/038 编码轮 | **未执行**（用户指示跳过）：Editor 包 swift test（新增 22 用例）与 iOS 模拟器构建挂池 [6]；既有基线 Editor 36 用例 / 守恒 140 未复核 |
 | 2026-10-07 | Pod 拆分阶段 0/1 阶段批 | SharedUI swift test **88/88**；ChuanqiCutPlayer swift test **52/52**；合计 140 对齐迁移前 HEAD（守恒核过）；iOS 模拟器 + macOS 双壳 BUILD SUCCEEDED；全量门禁数字见当日日志 |
 | 2026-10-07 | SharedUI 测试套 + iOS 构建（迁移前基线） | 128→140 用例（美颜合并轮 +12）；iOS BUILD SUCCEEDED 项目代码 0 告警 |
 

@@ -19,9 +19,9 @@
 #include "cq/gfx/gfx_device.h"
 
 // PAL 与 base（GFX 之下/之上依赖，验证跨层 include 顺序无关）。
-#include "cq/pal/common.h"
+#include "cq/pal/pal_common.h"
 #include "cq/pal/gfx.h"
-#include "cq/base/time.h"
+#include "cq/base/rational_time.h"
 #include "cq/base/status.h"
 #include "cq/base/concurrency.h"
 

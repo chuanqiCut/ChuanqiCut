@@ -140,8 +140,8 @@ if [ "${SKIP_APPLE}" -eq 1 ]; then
     skip_step "apple" "跳过（--fast / --skip-apple）"
 else
     run_step "apple-xcframework" tools/build/build_core_apple.sh --config=Release
-    run_step "apple-prepare" "${ROOT_DIR}/bindings/swift/prepare.sh"
-    if (cd bindings/swift && swift test --disable-sandbox --scratch-path "${ROOT_DIR}/build/spm/bindings") >"${LOG_DIR}/apple-swift-bindings.log" 2>&1; then
+    run_step "apple-prepare" "${ROOT_DIR}/engine/bindings/swift/prepare.sh"
+    if (cd engine/bindings/swift && swift test --disable-sandbox --scratch-path "${ROOT_DIR}/build/spm/bindings") >"${LOG_DIR}/apple-swift-bindings.log" 2>&1; then
         echo "    PASS [apple-swift-bindings]（日志：${LOG_DIR}/apple-swift-bindings.log）"
         PASS=$((PASS+1))
     else

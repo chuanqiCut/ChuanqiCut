@@ -14,7 +14,7 @@ let package = Package(
     platforms: [ .iOS(.v16), .macOS(.v15) ],
     products: [ .library(name: "ChuanqiCutEditor", targets: ["ChuanqiCutEditor"]) ],
     dependencies: [
-        .package(path: "../../../../bindings/swift"),
+        .package(path: "../../../../engine/bindings/swift"),
         .package(path: "../SharedUI"),
     ],
     targets: [
@@ -22,7 +22,7 @@ let package = Package(
             name: "ChuanqiCutEditor",
             dependencies: [
                 // ⚠️ 本地包身份取目录名（bindings/swift → "swift"），同 SharedUI 惯例
-                .product(name: "ChuanqiCut", package: "swift"),
+                .product(name: "ChuanqiCutEngine", package: "swift"),
                 .product(name: "SharedUI", package: "SharedUI"),
             ],
             path: "Sources/ChuanqiCutEditor"

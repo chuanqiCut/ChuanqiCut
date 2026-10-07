@@ -21,46 +21,56 @@ def pods_post_install(installer)
     removed += 1
   end
 
-  # ---- 2) 头文件并入源码树（与磁盘布局一致，2026-10-07 传哲：看代码方便）----
-  #    core/include 并到 core 组下与 src 平级；pal/apple 的头与 .mm 混排。
-  #    全部为导航器引用（不进 headermap/编译——声明走 private_header_files）。
+  # ---- 2) core 按模块混排（头文件快捷方式与实现同组，2026-10-07 传哲拍板）----
+  #    磁盘保持 include/src 分离（SDK 惯例：公开头=消费者命名空间）；导航器为虚拟视图：
+  #    core/<模块> 组 = include/cq/<模块>/**.h + core/src/<模块>/**.cpp，顶层声明入 core 直属。
   engine = project.objects.find { |o| o.isa == 'PBXGroup' && o.name == 'ChuanqiCutEngine' }
   added = 0
   if engine
-    # 清理旧版独立分组（历次形态）
-    ['core/include（头文件，只读浏览）', 'core/include'].each do |old_name|
-      stale = project.objects.find { |o| o.isa == 'PBXGroup' && o.parent&.name == 'ChuanqiCutEngine' && o.display_name == old_name }
-      # 只删「顶层游离」的旧组：其父是 Engine 组本身且不含 src 子组（新版并入 core/src 树，父不同）
-      next unless stale
-      next if stale.children.any? { |c| c.isa == 'PBXGroup' && c.display_name == 'src' }
-      stale.remove_from_project
-    end
+    # 清掉旧形态的 core 组（镜像树版/独立浏览组），全量重建
+    old_core = engine.children.find { |c| c.isa == 'PBXGroup' && c.display_name == 'core' }
+    old_core&.remove_from_project
 
     ensure_group = lambda do |parent, name|
       parent.children.find { |c| c.isa == 'PBXGroup' && c.display_name == name } ||
         parent.new_group(name)
     end
-    add_tree = lambda do |group, dir|
+    add_file = lambda do |group, abs|
+      exists = group.children.any? do |c|
+        c.isa == 'PBXFileReference' && c.real_path.exist? && c.real_path.to_s == abs
+      end
+      return if exists
+      ref = group.new_file(abs)
+      ref.source_tree = 'SOURCE_ROOT'
+      ref.path = Pathname.new(abs).relative_path_from(project.path.dirname).to_s
+      added += 1
+    end
+    add_tree = lambda do |group, dir, exts|
       Pathname.new(dir).children.sort.each do |child|
         if child.directory?
-          add_tree.call(ensure_group.call(group, child.basename.to_s), child.to_s)
-        elsif child.extname == '.h'
-          exists = group.children.any? do |c|
-            c.isa == 'PBXFileReference' && c.real_path.exist? && c.real_path.to_s == child.to_s
-          end
-          next if exists
-          ref = group.new_file(child.to_s)
-          ref.source_tree = 'SOURCE_ROOT'
-          ref.path = child.relative_path_from(project.path.dirname).to_s
-          added += 1
+          add_tree.call(ensure_group.call(group, child.basename.to_s), child.to_s, exts)
+        elsif exts.include?(child.extname)
+          add_file.call(group, child.to_s)
         end
       end
     end
-    core_group = ensure_group.call(engine, 'core')
-    include_group = ensure_group.call(core_group, 'include')
-    add_tree.call(include_group, File.join(repo_root, 'engine/core/include'))
-    pal_apple = ensure_group.call(ensure_group.call(engine, 'pal'), 'apple')
-    add_tree.call(pal_apple, File.join(repo_root, 'engine/pal/apple'))
+
+    src_root  = File.join(repo_root, 'engine/core/src')
+    inc_root  = File.join(repo_root, 'engine/core/include/cq')
+    core = ensure_group.call(engine, 'core')
+
+    modules = (Pathname.new(src_root).children.select(&:directory?).map { |c| c.basename.to_s } +
+               Pathname.new(inc_root).children.select(&:directory?).map { |c| c.basename.to_s }).uniq.sort
+    modules.each do |mod|
+      g = ensure_group.call(core, mod)
+      inc_dir = File.join(inc_root, mod)
+      src_dir = File.join(src_root, mod)
+      add_tree.call(g, inc_dir, ['.h'])  if File.directory?(inc_dir)
+      add_tree.call(g, src_dir, ['.cpp']) if File.directory?(src_dir)
+    end
+    # 顶层散件（cq_sdk.cpp 等）与 include/cq 直属头 → core 直属
+    add_tree.call(core, src_root, ['.cpp'])
+    add_tree.call(core, inc_root, ['.h'])
   end
 
   # ---- 3) CChuanqiCut 模块文件补录（cq_sdk.h/module.modulemap 声明进了编译但

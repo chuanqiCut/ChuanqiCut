@@ -106,6 +106,13 @@ final class EditorViewController: UIViewController {
         timelineView.onCommitDrag = { [weak self] drag in
             self?.commitDrag(drag)
         }
+        // 拖时间线 = 拖播放头（UIA-038，红条恒中央）；播放中不抢播放头。
+        timelineView.onScrub = { [weak self] seconds in
+            guard let self, !self.viewModel.isPlaying else { return }
+            let ts = RationalTime.projectTimescale
+            let ticks = Int64((seconds * Double(ts)).rounded())
+            self.viewModel.setPlayhead(RationalTime(value: ticks, timescale: ts))
+        }
         transportBar.onTogglePlayback = { [weak self] in
             self?.viewModel.togglePlayback()
         }
@@ -252,12 +259,20 @@ final class EditorViewController: UIViewController {
     }
 
     private func reloadTimeline() {
+        let assets = Dictionary(uniqueKeysWithValues: viewModel.mediaLibrary.map { ($0.id, $0.path) })
         timelineView.reload(tracks: viewModel.timeline.tracks,
-                            clips: viewModel.timeline.clips)
+                            clips: viewModel.timeline.clips,
+                            assets: assets,
+                            playheadSeconds: playheadSeconds)
         let empty = viewModel.timeline.clips.isEmpty
         emptyStateView.isHidden = !empty
         transportBar.setEnabled(!empty)
         syncPreview()
+    }
+
+    /// 播放头秒值（唯一换算点；红线 #4：其余位置只读 RationalTime 本值）。
+    private var playheadSeconds: Double {
+        Double(viewModel.playhead.value) / Double(viewModel.playhead.timescale)
     }
 
     private func syncPlayback() {

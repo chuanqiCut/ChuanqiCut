@@ -33,6 +33,9 @@ enum ClipFrameSampler {
     static let maxSamplesPerClip = 60
     /// 每片段至少展示的缩略图帧数（UIA-038）。
     static let minFramesPerClip = 3
+    /// 首选缩略图槽宽（pt）—— 也是缩放上界的「一帧宽度」（UIA-038）。
+    /// 双端共享：UIKit 时间线与 SwiftUI Canvas 的槽位/缩放界限都取它。
+    static let preferredSlotWidth: CGFloat = 36
 
     /// 缩略图槽宽：片段足够宽用首选值；过窄时压缩到「三帧恰好铺满」，
     /// 保证窄片段也能展示 ≥3 帧。

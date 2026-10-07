@@ -51,8 +51,12 @@ apps/apple/ios/ChuanqiCut.xcodeproj/
 apps/apple/ios/ChuanqiCut.xcworkspace/
 apps/apple/mac/ChuanqiCut.xcodeproj/
 apps/apple/mac/ChuanqiCut.xcworkspace/
-# SPM 构建目录（SharedUI 包仅保留作 swift test 测试宿主，同 bindings/swift/.build）
-apps/apple/packages/SharedUI/.build/
+# SPM 构建目录（包内 swift test 测试宿主的 .build 一律不入库；P84 规则：
+# 新建任何包目录由通配规则覆盖，不再逐包登记；临时编译产物统一目录 = /build/，
+# SPM 用 `swift test --scratch-path "$ROOT/build/spm/<包名>"` 重定向）
+apps/apple/packages/*/.build/
+bindings/swift/.build/
+/.build/
 # Xcode 用户态状态与索引
 xcuserdata/
 DerivedData/

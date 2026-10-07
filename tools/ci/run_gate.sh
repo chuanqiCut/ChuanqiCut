@@ -7,6 +7,7 @@
 # 检查项（按序执行，任一失败立即非零退出 = 一票否决）：
 #   1. deps      依赖治理 manifest 校验（需 Python >= 3.11 / tomllib）
 #   2. headers   PAL/公共头纯净性（tools/pal/check_pal_headers.py）
+#   2b. artifacts 产物入库检查（P84：.build/、根 build/、DerivedData 等一律不得被 git 跟踪）
 #   3. core-dbg  内核 Debug 构建 + 全量单测（-Werror）
 #   4. core-rel  内核 Release 构建 + 全量单测（-Werror + LTO）
 #   5. apple     XCFramework 三切片 + Swift 绑定测试 + SharedUI/功能 Pod 测试
@@ -111,6 +112,19 @@ fi
 # 2. PAL/公共头纯净性
 run_step "headers" python3 tools/pal/check_pal_headers.py
 
+# 2b. 产物入库检查（P84 规则兜底：构建产物永不入库；SPM 产物统一 --scratch-path 到 /build/spm/）
+artifacts_bad="$(git ls-files | grep -E '(^|/)\.build/|^build/|/DerivedData/|\.xcuserstate$|\.DS_Store$' || true)"
+if [ -n "${artifacts_bad}" ]; then
+    echo "==> [artifacts] FAIL —— 以下构建产物被 git 跟踪（前 20 条）："
+    echo "${artifacts_bad}" | head -20 | sed 's/^/    /'
+    echo "    规则：新建包目录必须确认 .gitignore 覆盖（apps/apple/packages/*/.build/ 通配）；"
+    echo "    SPM 跑测试一律 --scratch-path \"\$ROOT/build/spm/<包名>\"（临时编译统一目录 /build/）。"
+    FAIL=$((FAIL+1)); print_summary; exit 1
+else
+    echo "==> [artifacts] PASS（无构建产物被 git 跟踪）"
+    PASS=$((PASS+1))
+fi
+
 # 3. 内核 Debug + 全量单测
 run_step "core-dbg" tools/build/build_core.sh --platform=apple --config=Debug --test
 
@@ -127,7 +141,7 @@ if [ "${SKIP_APPLE}" -eq 1 ]; then
 else
     run_step "apple-xcframework" tools/build/build_core_apple.sh --config=Release
     run_step "apple-prepare" "${ROOT_DIR}/bindings/swift/prepare.sh"
-    if (cd bindings/swift && swift test --disable-sandbox) >"${LOG_DIR}/apple-swift-bindings.log" 2>&1; then
+    if (cd bindings/swift && swift test --disable-sandbox --scratch-path "${ROOT_DIR}/build/spm/bindings") >"${LOG_DIR}/apple-swift-bindings.log" 2>&1; then
         echo "    PASS [apple-swift-bindings]（日志：${LOG_DIR}/apple-swift-bindings.log）"
         PASS=$((PASS+1))
     else
@@ -135,7 +149,7 @@ else
         tail -30 "${LOG_DIR}/apple-swift-bindings.log" | sed 's/^/    /'
         FAIL=$((FAIL+1)); print_summary; exit 1
     fi
-    if (cd apps/apple/packages/SharedUI && swift test --disable-sandbox) >"${LOG_DIR}/apple-sharedui.log" 2>&1; then
+    if (cd apps/apple/packages/SharedUI && swift test --disable-sandbox --scratch-path "${ROOT_DIR}/build/spm/SharedUI") >"${LOG_DIR}/apple-sharedui.log" 2>&1; then
         echo "    PASS [apple-sharedui]（日志：${LOG_DIR}/apple-sharedui.log）"
         PASS=$((PASS+1))
     else
@@ -144,7 +158,7 @@ else
         FAIL=$((FAIL+1)); print_summary; exit 1
     fi
     # 功能 Pod 测试逐包跑（ADR-0031 分治；新增 Pod 时在此追加同款块）
-    if (cd apps/apple/packages/ChuanqiCutPlayer && swift test --disable-sandbox) >"${LOG_DIR}/apple-player.log" 2>&1; then
+    if (cd apps/apple/packages/ChuanqiCutPlayer && swift test --disable-sandbox --scratch-path "${ROOT_DIR}/build/spm/ChuanqiCutPlayer") >"${LOG_DIR}/apple-player.log" 2>&1; then
         echo "    PASS [apple-player]（日志：${LOG_DIR}/apple-player.log）"
         PASS=$((PASS+1))
     else

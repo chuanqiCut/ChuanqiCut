@@ -24,9 +24,10 @@ ctest --test-dir build                          # 全量
 
 ### Apple App
 ```bash
-xcodebuild -workspace apps/apple/ChuanqiCut.xcworkspace -scheme iOSApp build
-xcodebuild -workspace apps/apple/ChuanqiCut.xcworkspace -scheme MacApp build
-xcodebuild test -scheme SharedUI
+xcodebuild -workspace apps/apple/ios/ChuanqiCut.xcworkspace -scheme ChuanqiCutApp -sdk iphonesimulator build
+xcodebuild -workspace apps/apple/mac/ChuanqiCut.xcworkspace -scheme ChuanqiCutMacApp build
+# SPM 测试宿主（临时编译统一目录 /build/spm/，P84：包目录内不得落 .build）
+swift test --disable-sandbox --scratch-path "$PWD/../../../../../build/spm/SharedUI"     # 在 apps/apple/packages/SharedUI 下
 ```
 
 ### Android

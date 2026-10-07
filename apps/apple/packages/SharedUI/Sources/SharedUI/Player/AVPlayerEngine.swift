@@ -25,6 +25,16 @@ final class AVPlayerEngine: PlayerEngine {
 
     private(set) var state: PlayerEngineState = .idle
     private(set) var duration: TimeInterval = 0
+    /// 当前播放时刻（秒）。
+    ///
+    /// ⚠️ 本属性在 `PlayerEngine` 协议里是必需项，但初版实现**整个漏了** ——
+    /// 因为那批代码从未真正编过（`-parse` 验收），协议遵循检查也就无从触发。
+    /// 尚未装载 item 时 `currentTime()` 是非 numeric 的 CMTime（indefinite），
+    /// 不得把 NaN 往上抛，按 0 处理。
+    var currentTime: TimeInterval {
+        let time = avPlayer.currentTime()
+        return time.isNumeric ? time.seconds : 0
+    }
     private(set) var videoSize: CGSize?
     private(set) var frameDuration: TimeInterval = 1.0 / 30.0
     private(set) var isRemoteSource = false
@@ -45,7 +55,7 @@ final class AVPlayerEngine: PlayerEngine {
         didSet {
             guard oldValue != rate else { return }
             // defaultRate（iOS 16 / macOS 13+）：play() 自动以该速率起播。
-            avPlayer.defaultRate = rate
+            avPlayer.defaultRate = Float(rate)
             if isPlaying { avPlayer.rate = Float(rate) }
         }
     }
@@ -70,9 +80,13 @@ final class AVPlayerEngine: PlayerEngine {
 
     // MARK: 观察者（load 时重建，invalidate 时拆除）
 
-    private var timeObserver: Any?
+    /// ⚠️ 下面三个 observer token 标 `nonisolated(unsafe)`：本类 @MainActor，
+    /// 而 `deinit` 不能隔离到主actor，Swift 6 会禁止在 deinit 里触碰隔离存储。
+    /// 安全性来自它们只在本类型内部闭环使用（add → remove/invalidate），
+    /// 不跨线程转手；若哪天要把 token 交给别的域，必须重新设计而不是沿用。
+    nonisolated(unsafe) private var timeObserver: Any?
+    nonisolated(unsafe) private var endObserver: NSObjectProtocol?
     private var statusObservation: NSKeyValueObservation?
-    private var endObserver: NSObjectProtocol?
     private var item: AVPlayerItem?
     /// timeControlStatus 观察挂在 avPlayer（跨 load 存活），只在 init 建、deinit 拆。
     private var playbackObservation: NSKeyValueObservation?
@@ -89,7 +103,13 @@ final class AVPlayerEngine: PlayerEngine {
         self.playbackObservation = player.observe(\.timeControlStatus, options: [.new]) { [weak self] observed, _ in
             let status = observed.timeControlStatus
             let playing = status != .paused
-            let buffering = status == .waitingToMinimizeStalling
+            // ⚠️ `TimeControlStatus` 没有 `.waitingToMinimizeStalling` 这一 case
+            // （只有 waitingToPlayAtSpecifiedRate / playing / paused）—— 「卡在缓冲」
+            // 要看 `reasonForWaitingToPlay`，本文件初版画名称导致 macOS 侧编译失败。
+            var buffering = false
+            if status == .waitingToPlayAtSpecifiedRate {
+                buffering = observed.reasonForWaitingToPlay == .toMinimizeStalls
+            }
             Task { @MainActor [weak self] in
                 self?.onPlayStateChange?(playing)
                 self?.onBufferingChange?(buffering)
@@ -170,10 +190,11 @@ final class AVPlayerEngine: PlayerEngine {
             do {
                 let tracks = try await asset.loadTracks(withMediaType: .video)
                 guard let track = tracks.first else { return }
-                async let size = track.load(.naturalSize)
-                async let fps = track.load(.nominalFrameRate)
-                let naturalSize = try await size
-                let frameRate = try await fps
+                // ⚠️ 不用 `async let`：子任务会捕获非 Sendable 的 AVAssetTrack，
+                // Swift 6 直接判 #SendingRisksDataRace。这两条元数据是同一 asset 的
+                // 两次短暂读取，串行 await 的代价远小于引入 Sendable 包装。
+                let naturalSize = try await track.load(.naturalSize)
+                let frameRate = try await track.load(.nominalFrameRate)
                 if naturalSize.width > 0 && naturalSize.height > 0 {
                     self.videoSize = CGSize(width: naturalSize.width, height: naturalSize.height)
                 }
@@ -186,21 +207,11 @@ final class AVPlayerEngine: PlayerEngine {
         }
         Task { @MainActor [weak self] in
             guard let self = self else { return }
-            // 章节元数据（chapterMetadataGroups(bestMatchingPreferredLanguages:)，
-            // 本机 SDK 验证无弃用标记；同步调用放主 Task——章节数量级小，开销可忽略）。
-            let groups = asset.chapterMetadataGroups(
-                bestMatchingPreferredLanguages: Locale.preferredLanguages)
-            self.chapters = groups.enumerated().compactMap { index, group in
-                let timeRange = group.timeRange
-                guard timeRange.duration.seconds > 0,
-                      timeRange.start.seconds.isFinite,
-                      timeRange.duration.seconds.isFinite else { return nil }
-                let title = group.items.compactMap { item -> String? in
-                    guard item.identifier == AVMetadata.Identifier.commonKeyTitle else { return nil }
-                    return item.stringValue
-                }.first ?? "章节 \(index + 1)"
-                return PlayerChapter(id: index, start: timeRange.start.seconds, name: title)
-            }
+            // 章节元数据：同步 API 在 iOS 16 / macOS 13 起已弃用，且 `AVMetadataItem
+            // .stringValue` 同步取值同样弃用 → 一律走 async 版本
+            // （`loadChapterMetadataGroups` / `load(.stringValue)`）。
+            // 旧注释写着「本机 SDK 验证无弃用标记」，是没做 iOS 编译验证时的误判。
+            self.chapters = await Self.loadChapters(from: asset)
             // 同值重发 = "章节元数据有刷新"信号。
             self.onStateChange?(self.state)
         }
@@ -215,9 +226,20 @@ final class AVPlayerEngine: PlayerEngine {
                 self.subtitleGroup = legibleGroup
                 self.audioTracks = Self.trackOptions(from: audibleGroup)
                 self.subtitleTracks = Self.trackOptions(from: legibleGroup)
+                // ⚠️ 本 SDK 的 Swift 名是 `select(_:in:)` / `selectedMediaOption(in:)`
+                // （`selectMediaOption(_:inMediaSelectionGroup:)` 已重命名），且
+                // `AVMediaSelection` 根本没有 audio/legible 那种便捷
+                // 成员 —— 初版两处都按记忆写的名字。
+                // `selectedMediaOption(in:)`（旧名 selectMediaOption 系 API 已重命名）。
                 let current = self.item?.currentMediaSelection
-                self.currentAudioTrackID = Self.optionID(current?.audioMediaSelectionOption, in: audibleGroup)
-                self.currentSubtitleTrackID = Self.optionID(current?.legibleMediaSelectionOption, in: legibleGroup)
+                if let group = audibleGroup {
+                    self.currentAudioTrackID = Self.optionID(
+                        current?.selectedMediaOption(in: group), in: group)
+                }
+                if let group = legibleGroup {
+                    self.currentSubtitleTrackID = Self.optionID(
+                        current?.selectedMediaOption(in: group), in: group)
+                }
                 // 同值重发 = "轨道元数据有刷新"信号（与时长广播同机制）。
                 self.onStateChange?(self.state)
             } catch {
@@ -246,6 +268,38 @@ final class AVPlayerEngine: PlayerEngine {
         avPlayer.pause()
     }
 
+    // MARK: 章节元数据（async API，替代 iOS 16 起弃用的同步取值）
+
+    /// 装载章节列表。失败按「无章节」处理 —— 章节是增强信息，缺了不该影响播放。
+    private static func loadChapters(from asset: AVAsset) async -> [PlayerChapter] {
+        guard let groups = try? await asset.loadChapterMetadataGroups(
+            bestMatchingPreferredLanguages: Locale.preferredLanguages) else { return [] }
+        var chapters: [PlayerChapter] = []
+        for (index, group) in groups.enumerated() {
+            let timeRange = group.timeRange
+            guard timeRange.duration.seconds > 0,
+                  timeRange.start.seconds.isFinite,
+                  timeRange.duration.seconds.isFinite else { continue }
+            chapters.append(PlayerChapter(id: index,
+                                          start: timeRange.start.seconds,
+                                          name: (try? await Self.chapterTitle(in: group))
+                                              ?? "章节 \(index + 1)"))
+        }
+        return chapters
+    }
+
+    /// 标题取值：`AVMetadataIdentifier` 是 NS_EXTENSIBLE_STRING_ENUM → Swift 里是
+    /// 结构体 + 静态成员，且常量名前缀会被编译器裁掉（AVMetadataCommonIdentifierTitle
+    /// → `.commonIdentifierTitle`）。旧写法 `AVMetadata.Identifier.commonKeyTitle`
+    /// 在本机 SDK 上并不存在。
+    private static func chapterTitle(in group: AVTimedMetadataGroup) async throws -> String? {
+        for item in group.items
+        where item.identifier == AVMetadataIdentifier.commonIdentifierTitle {
+            if let value = try await item.load(.stringValue) { return value }
+        }
+        return nil
+    }
+
     func seek(to seconds: TimeInterval, precise: Bool) {
         let clamped = max(0, seconds)
         let time = CMTime(seconds: clamped, preferredTimescale: 600)
@@ -259,14 +313,14 @@ final class AVPlayerEngine: PlayerEngine {
     func selectAudioTrack(id: Int?) {
         guard let group = audioGroup else { return }
         let option = id.flatMap { id in group.options.indices.contains(id) ? group.options[id] : nil }
-        item?.selectMediaOption(option, in: group)
+        item?.select(option, in: group)
         currentAudioTrackID = id
     }
 
     func selectSubtitleTrack(id: Int?) {
         guard let group = subtitleGroup else { return }
         let option = id.flatMap { id in group.options.indices.contains(id) ? group.options[id] : nil }
-        item?.selectMediaOption(option, in: group)
+        item?.select(option, in: group)
         currentSubtitleTrackID = id
     }
 

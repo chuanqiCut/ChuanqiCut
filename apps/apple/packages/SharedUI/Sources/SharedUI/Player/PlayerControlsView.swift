@@ -599,23 +599,26 @@ struct PlayerScrubber: View {
     var body: some View {
         GeometryReader { geo in
             trackStack(width: geo.size.width)
+                .contentShape(Rectangle())
+                // 手势需要「轨道宽度」才能把触点换算成分数 —— 必须挂在
+                // GeometryReader 内部（旧版写在 reader 外，`width` 根本不在作用域，
+                // 靠 `swiftc -parse` 验收没发现）。
+                .gesture(scrubGesture(width: geo.size.width))
+                .accessibilityElement()
+                .accessibilityLabel("播放进度")
+                .accessibilityValue("\(PlayerTimeFormat.clock(vm.displaySeconds))，共 \(PlayerTimeFormat.clock(vm.duration))")
+                .accessibilityAdjustableAction { direction in
+                    switch direction {
+                    case .increment:
+                        vm.skip(relative: vm.doubleTapSeconds)
+                    case .decrement:
+                        vm.skip(relative: -vm.doubleTapSeconds)
+                    @unknown default:
+                        break
+                    }
+                }
         }
         .frame(height: 32)
-        .contentShape(Rectangle())
-        .gesture(scrubGesture)
-        .accessibilityElement()
-        .accessibilityLabel("播放进度")
-        .accessibilityValue("\(PlayerTimeFormat.clock(vm.displaySeconds))，共 \(PlayerTimeFormat.clock(vm.duration))")
-        .accessibilityAdjustableAction { direction in
-            switch direction {
-            case .increment:
-                vm.skip(relative: vm.doubleTapSeconds)
-            case .decrement:
-                vm.skip(relative: -vm.doubleTapSeconds)
-            @unknown default:
-                break
-            }
-        }
     }
 
     private var fraction: Double {
@@ -696,7 +699,7 @@ struct PlayerScrubber: View {
         return min(max(fraction * width - Self.bubbleWidth / 2, 0), width - Self.bubbleWidth)
     }
 
-    private var scrubGesture: some Gesture {
+    private func scrubGesture(width: CGFloat) -> some Gesture {
         DragGesture(minimumDistance: 0)
             .onChanged { value in
                 if !vm.isScrubbing {

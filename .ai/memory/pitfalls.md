@@ -1334,7 +1334,7 @@ run_gate.sh 负载下实测抖出（Debug 43/44，"执行计数为 1" FAIL）。
   跨线程容器的不变量要写在**头文件成员旁**（代码会留下来，对话不会）。
 
 ### P78 · 另一会话用 `swiftc -parse` 当 SharedUI 验收标准 —— 38 处类型错误 + 一个从未提交的类型进了主干
-**日期**：2026-10-06　**来源**：合并 `origin/main`（17 个远端提交）跑门禁发现　**验证状态**：已定位，**未修复**（归属为远端会话产物，待 owner 处置）
+**日期**：2026-10-06　**来源**：合并 `origin/main`（17 个远端提交）跑门禁发现　**验证状态**：**已修复**（2026-10-07：SharedUI 128 用例全绿 + iOS App BUILD SUCCEEDED 且项目代码 0 告警；详见 P79）
 
 - 现象：门禁 `apple-sharedui` FAIL，`apps/apple/packages/SharedUI/Sources/SharedUI/Player/`
   下 10 个文件、38 个唯一编译错误站点。核 dgb/rel（45/45）与 Swift 绑定不受影响。
@@ -1353,3 +1353,27 @@ run_gate.sh 负载下实测抖出（Debug 43/44，"执行计数为 1" FAIL）。
   `-swift-version 6`）；②外部会话的产物进主干前，**必须在合并侧跑一次完整门禁**，
   不能因为「对方自称验证过」放行（远端的"已验证"按未验证处理，见 CLAUDE.md 委托小节）；
   ③任务卡 `verification` 里出现 `-parse` 应直接驳回。
+
+### P79 · 「从未编译过」的代码不是「没 bug」，是「bug 全没被发现」—— 修完 38 处编译错误后，行为 bug 成批浮出
+**日期**：2026-10-07　**来源**：P78 的修复过程　**验证状态**：已修复（SharedUI 128 用例全绿；iOS App BUILD SUCCEEDED + 项目代码 0 告警）
+
+- 事实：`SharedUI/Player/` 那一批代码**从未被编译过**，所以第一次真编译（P78）暴露 38 处错误；
+  修到能编后第一次真跑测试（128 例），又暴露 **5 处行为 bug**。每一处都不是我能猜到的，
+  全是测试 ⇄ 实现的口径差：
+  1. `Dialogue` 行 `split(separator:",", maxSplits: 8)` 只切出 9 段，而守卫是 `fields.count >= 10`
+     → **所有字幕行被静默丢弃**（`guard ... else { continue }` 吞得毫无声息）。
+  2. `PlayerRecentStore` 里 `urlString` 存的是 `absoluteString`（`file:///...`），却拿去喂
+     `FileManager.fileExists(atPath:)` → 恒 false → **每次装载把全部本地条目清空**，
+     「跨会话最近播放」名存实亡。
+  3. `didSet` **在 init 里不会触发** —— 从 UserDefaults 恢复的倍速没有推给引擎，
+     「记忆读出来了但速率还是 1x」。
+  4. 循环/Double-tap 分支调了 `engine.play()` 却没同步 `isPlaying`，UI 停在暂停态。
+  5. `String(data: encoding: .utf16)` 对「只有 BOM / 长度不足」会**成功返回空串**，
+     导致坏文件被判成 `.empty` 而不是 `.unsupportedFormat`。
+- 教训：**「编译过了」只代表语法与类型自洽，不代表行为成立。** 一个模块若能编却从未跑过测试，
+  它的 bug 密度等于「没写过测试」的模块。补的时候唯一有效的抓手是**先让既有测试跑通顺** ——
+  这五处全部是被测试直接指出的，没有一处靠肉眼审查发现。
+- 方法沉淀（可复用）：**修复别人的半成品时，按「编译 → 单测 → 平台编译」三级推进，每级只修本级暴露的问题**，
+  不要试图一次性读懂全部意图；测试是唯一权威的规格说明书。
+- 顺带清掉的假注释：源码里写着「本机 SDK 验证无弃用标记」—— 实际 iOS 编译报两条弃用告警
+  （`chapterMetadataGroups` / `AVMetadataItem.stringValue`，iOS 16 起）。**没编译过的验证结论一律作废。**

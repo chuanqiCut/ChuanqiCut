@@ -1,5 +1,7 @@
 # 模块：core/base 内核基础
 
+> **归属**：集成机（内核基础 + 热点文件） —— 归属表见 docs/tasks/PLAN-三线并行.md §1a / ADR-0029（双机分工与门禁跑批，2026-10-07）
+
 **边界**：`core/src/base/`、`core/include/cq/base/`、`core/include/cq/pal/`、`core/src/session/`
 
 ## 职责

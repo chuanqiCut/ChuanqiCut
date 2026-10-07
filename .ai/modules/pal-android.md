@@ -1,5 +1,7 @@
 # 模块：Android 平台适配（PAL）
 
+> **归属**：集成机（P2 预留） —— 归属表见 docs/tasks/PLAN-三线并行.md §1a / ADR-0029（双机分工与门禁跑批，2026-10-07）
+
 **边界**：`pal/android/`、`apps/android/`、`bindings/kotlin/`
 
 ## 基线

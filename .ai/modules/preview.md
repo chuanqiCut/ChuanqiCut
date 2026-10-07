@@ -1,5 +1,7 @@
 # preview 层（预览渲染器，BIND-003 子步骤 4/5）
 
+> **归属**：A 线（编辑器/UI） —— 归属表见 docs/tasks/PLAN-三线并行.md §1a / ADR-0029（双机分工与门禁跑批，2026-10-07）
+
 > 建立：2026-10-02
 > 位置：`core/include/cq/preview/` + `core/src/preview/`
 > 上游：MODEL-001（时间线）、AssetRegistry（素材表）、MEDIA-020（取帧）、PAL（GFX / 导入）

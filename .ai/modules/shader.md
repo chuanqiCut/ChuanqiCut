@@ -1,5 +1,7 @@
 # 模块：Shader（双层机制）
 
+> **归属**：C 线（内核/媒体/渲染） —— 归属表见 docs/tasks/PLAN-三线并行.md §1a / ADR-0029（双机分工与门禁跑批，2026-10-07）
+
 **可手改**：`shaders/src/*.glsl`（Portable）、`pal/<platform>/shaders/*`（Platform-Native）
 **不可手改**：`shaders/generated/`（产物，不入库）
 

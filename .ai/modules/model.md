@@ -1,5 +1,7 @@
 # 模块：时间线模型与命令
 
+> **归属**：A 线（编辑器/UI；时间线模型与命令） —— 归属表见 docs/tasks/PLAN-三线并行.md §1a / ADR-0029（双机分工与门禁跑批，2026-10-07）
+
 **边界**：`core/src/model/`、`core/src/command/`、`core/src/anim/`
 
 ## 职责

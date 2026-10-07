@@ -1,5 +1,7 @@
 # 模块：导出
 
+> **归属**：C 线（内核/媒体/渲染） —— 归属表见 docs/tasks/PLAN-三线并行.md §1a / ADR-0029（双机分工与门禁跑批，2026-10-07）
+
 **边界**：`core/src/export/`、`pal/<platform>/media_enc*`
 
 ## 职责

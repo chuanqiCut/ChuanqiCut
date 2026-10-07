@@ -108,7 +108,15 @@ cat docs/handoff/HANDOFF-004-*.md      # 3. 最近交接（状态以最新一份
 
 ---
 
-## 五、周报（reports/）
+## 五、接口参考（api/）
+
+| 文档 | 角色 |
+|---|---|
+| [`engine-api.md`](api/engine-api.md) | **引擎公共接口参考（C ABI）**：由 `tools/docs/gen_api_reference.py` 从 `engine/bindings/swift/Sources/CChuanqiCut/include/cq_sdk.h` 自动生成（接口变更后重跑；`--check` 可比对是否过期）。**不要手改**。 |
+
+---
+
+## 六、周报（reports/）
 
 | 文档 | 角色 |
 |---|---|

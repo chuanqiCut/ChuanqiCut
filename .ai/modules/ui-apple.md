@@ -600,3 +600,24 @@ RESEARCH-004/005 结论全部维持，本文补**操作层**，关键增量：
   UIA-019 PanelRoute 状态机需增加"工具栏槽位状态"。明确不采纳：Resolve Pages、
   Premiere 浮动面板、BMD 芯片条。未核实项已标 [hypothesis]，精确控件排布
   待真机走查截图核对（§6.2）。
+
+## 播放器域修复（P78 / P79，2026-10-07）
+
+`SharedUI/Player/` 那一批远端代码**从未真编译过**（当时以 `swiftc -parse` 验收），
+合入后门禁 `apple-sharedui` FAIL。本机三级修复：
+
+1. **编译（38 处）**：缺 `import SwiftUI`、iOS 专属 API 未加平台分支（`prioritizesVideoDevices` /
+   `canStartPictureInPictureAutomaticallyFromInline`）、AVFoundation API 名按记忆写
+   （实际是 `select(_:in:)` / `selectedMediaOption(in:)` / `AVMetadataIdentifier.commonIdentifierTitle` /
+   `URL.resolvingBookmarkData` 的 `bookmarkDataIsStale` 是 `inout Bool`）、
+   `PlayerEngine.currentTime` 整个缺失、Swift 6 并发（`@preconcurrency` 遵循、NSObject 继承、
+   `nonisolated(unsafe)` 让 deinit 能拆 observer、`async let` 捕获非 Sendable 的 AVAssetTrack）。
+2. **行为（5 处，全由既有测试指出）**：ASS `maxSplits: 8`→9（否则 Dialogue 整行被丢弃）、
+   RecentStore 的 `absoluteString` 误当 path（装载即清空全部本地条目）、
+   `didSet` 在 init 不触发（倍速记忆不生效）、循环续播未同步 `isPlaying`、
+   UTF-16 解码成功但为空串被误判成「文件是空的」。补了从未入库的 `PlayerZoomMath`。
+3. **平台**：iOS App `-scheme ChuanqiCutApp` BUILD SUCCEEDED + 项目代码 0 告警（顺带消掉两条
+   iOS 16 弃用：`chapterMetadataGroups` / `AVMetadataItem.stringValue` → async 版本）。
+
+**后续改动本域的硬要求**：改完必须同时跑 `swift test --disable-sandbox`（SharedUI 根目录）
+与 iOS App 编译；iOS 专属分支在 macOS 侧编译**看不到**（P49）。

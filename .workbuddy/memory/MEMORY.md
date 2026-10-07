@@ -205,8 +205,9 @@ App 侧在 `EditorViewModel.init()` 最早处调 `ChuanqiCut.configureLogFromEnv
 ## 悬而未决（需传哲拍板，AI 不得代决）
 1. **FFmpeg LGPL v2.1+ 链接处置**（目标文件归档 / 商业授权 / 动态链接 / 不接入改平台原生）—— 需法务，**已确认延后不阻塞**。
 2. 性能基线未建立（PERF-001 未做），文档性能数字仍是估算；本机 Intel Mac 无 ANE、无 ProRes 硬编，不得采样本机数字。
-3. **`SharedUI/Player/` 处于不可编译状态（P78，2026-10-07 起）**：10 文件 38 个类型错误站点，
-   且 `PlayerZoomMath` 类型从未进过仓库。门禁 `apple-sharedui` 因此 FAIL，与本次改动无关。
-   处置方式（修复 / 从 SPM target 摘除 / 回退该批提交）待拍板。
+3. ~~`SharedUI/Player/` 不可编译（P78）~~ **已解决 2026-10-07**：传哲拍板全量修复 ——
+   编译 38 处 + 行为 5 处 + 补写从未入库的 `PlayerZoomMath`；SharedUI 128 用例全绿、
+   iOS App BUILD SUCCEEDED 且项目代码 0 告警（详见 P78/P79 与 `.ai/modules/ui-apple.md`
+   「播放器域修复」节）。
 4. **UIA-015 / UIA-016 撞号**：本地侧分别是「编辑页重构」「Theme 令牌扩展」，远端侧分别是
    「独立播放器 MVP」「播放器系统级播控补完」—— 同名不同物。两卡头部已加告警，是否改名待拍板。

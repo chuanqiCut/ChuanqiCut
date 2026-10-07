@@ -121,15 +121,17 @@ struct MediaLibraryPanel: View {
         }
         .background(Theme.panelBackground)
         // UIA-026：播放器 sheet（单条预览 / 批量连播；关闭即回收，预览用语义）
+        // ADR-0031：播放器域已迁 ChuanqiCutPlayer Pod，功能 Pod 横向零依赖 ——
+        // 壳层经 PlayerPreviewInjector 注入视图工厂；未注入（单测环境）空占位可观察降级。
         .sheet(isPresented: Binding(
             get: { playerURLs != nil },
             set: { if !$0 { playerURLs = nil } }
         )) {
             if let urls = playerURLs {
-                if urls.count == 1, let only = urls.first {
-                    PlayerScreen(url: only)
+                if let preview = PlayerPreviewInjector.makePlayerPreview?(urls) {
+                    preview
                 } else {
-                    PlayerScreen(urls: urls)
+                    Color.clear
                 }
             }
         }

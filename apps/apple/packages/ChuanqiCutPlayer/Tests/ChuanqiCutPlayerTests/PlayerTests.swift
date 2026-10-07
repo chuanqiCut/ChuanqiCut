@@ -9,7 +9,7 @@
 
 import CoreGraphics
 import XCTest
-@testable import SharedUI
+@testable import ChuanqiCutPlayer
 
 @MainActor
 final class PlayerTests: XCTestCase {

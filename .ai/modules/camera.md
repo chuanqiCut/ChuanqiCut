@@ -114,7 +114,7 @@ usage，而 CI 的 CIRenderDestination 要求 ShaderWrite → destination nil �
 
 | 日期 | 阶段/范围 | 结论（数字） |
 |---|---|---|
-| 2026-10-07 | 全量门禁（含相机源） | PASS=9 / FAIL=0 / SKIP=0；真机清单攒单待跑 |
+| 2026-10-07 | 壳工程双壳构建（首次 App target 真编 CAM-018 代码） | 抓出 P0：`kCVPixelBufferColorSpaceKey` 不存在于 SDK（P83）→ 已修 `kCVImageBufferCGColorSpaceKey`；iOS/mac BUILD SUCCEEDED。池 [2] 真机项不变 |
 
 ### 调研 · 决策 · 池指针
 

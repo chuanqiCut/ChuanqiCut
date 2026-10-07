@@ -6,6 +6,7 @@
 import SwiftUI
 import SharedUI
 import ChuanqiCut
+import ChuanqiCutPlayer  // 播放器域 Pod（ADR-0031 阶段 1）：Launcher/MiniBar/注入装配
 
 @main
 struct ChuanqiCutMacApp: App {
@@ -15,6 +16,12 @@ struct ChuanqiCutMacApp: App {
 
     init() {
         ChuanqiCut.markMainThread()
+        // ADR-0031：播放器联动装配 —— MediaSheet（编辑器域）经基座注入器弹播放器，
+        // 功能 Pod 横向零依赖；PlayerScreen 双 init 语义在此对齐。
+        PlayerPreviewInjector.makePlayerPreview = { urls in
+            urls.count == 1 ? AnyView(PlayerScreen(url: urls[0]))
+                            : AnyView(PlayerScreen(urls: urls))
+        }
         do {
             // 先创建再包进 StateObject：wrappedValue 是非 throwing 自动闭包，
             // 不能直接写 `StateObject(wrappedValue: try ...)`。

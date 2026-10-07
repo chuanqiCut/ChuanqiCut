@@ -480,7 +480,11 @@ final class PlayerViewModel: ObservableObject {
         isBoosting = true
         rateBeforeBoost = rate
         rate = Self.boostRate
-        PickerFeedback.selectionChanged()
+        // ADR-0031 阶段 1：Pod 迁移后不引 MediaPicker 域的 PickerFeedback，
+        // 触感反馈内联（平台惯用法；调用点在 MainActor，Swift 6 隔离由编译器校验）。
+        #if canImport(UIKit)
+        UIImpactFeedbackGenerator(style: .light).impactOccurred()
+        #endif
         keepControlsVisible()
     }
 

@@ -1,10 +1,19 @@
-# SharedUI.podspec — SwiftUI 共享编辑器组件（UIA-002 建立，INFRA-009 pod 化）
+# SharedUI.podspec — SwiftUI UI 基座（Theme/通用组件；UIA-002 建立，INFRA-009 pod 化）
 #
 # 定位：
 #   * App 集成的**真源**是本 podspec（ios/ 与 mac/ 的 Podfile 均以 :path 引用）。
 #   * 同目录 Package.swift 仅保留作 `swift test` 测试宿主（UIA-002 验收测试），
 #     **不在 App 依赖链上**。两份构建定义描述同一份 Sources/SharedUI 源码，
 #     改动源码接口时两边都要顾到；App 侧行为以 pod 路径为准。
+#
+# 迁出注记（ADR-0031 壳工程与功能 Pod 分治，2026-10-07）：本 Pod 正在瘦身为
+# **UI 基座**（终态仅 Common/Theme/通用组件），功能域逐阶段迁出为独立 Pod：
+#   Player   → ChuanqiCutPlayer（阶段 1 已迁，2026-10-07，INFRA-015）；
+#   MediaPicker/导入 → ChuanqiCutImport（阶段 2）；素材库 → ChuanqiCutAssets（阶段 3）；
+#   Camera   → ChuanqiCutCamera（阶段 4，iOS 专属 + metallib 构建链随迁）；
+#   Editor+Timeline → ChuanqiCutEditor（阶段 5）。迁出即删源（source_files
+#   通配自动生效）；功能 Pod 横向零依赖，跨域交接走 PlayerPreviewInjector 等
+#   基座注入点（Common/）。
 #
 # 为什么 SharedUI 必须跟 ChuanqiCut 一起走 pod：
 #   SPM 依赖图与 CocoaPods 互不相通（podspec 引不了 SPM 包，反之亦然）。

@@ -8,7 +8,7 @@
 
 import CoreGraphics
 import XCTest
-@testable import SharedUI
+@testable import ChuanqiCutPlayer
 
 final class PlayerSubtitleTests: XCTestCase {
 

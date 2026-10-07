@@ -7,6 +7,7 @@
 import SwiftUI
 import SharedUI
 import ChuanqiCut  // 页脚展示 SDK 版本号（ChuanqiCut.version）
+import ChuanqiCutPlayer  // 首页播放入口（PlayerLauncherScreen；ADR-0031 Pod 迁移）
 
 struct HomeView: View {
 

@@ -43,5 +43,22 @@ def pods_post_install(installer)
     build_tree.call(File.join(repo_root, 'engine/core/include'), root_group)
   end
 
+  # ---- 3) CChuanqiCut 模块文件补录（cq_sdk.h/module.modulemap 声明进了编译但
+  #         1.17 不生成导航条目；shim.c 已在 source_files 有条目）----
+  cmod = project.objects.find { |o| o.isa == 'PBXGroup' && o.display_name == 'CChuanqiCut' }
+  if cmod
+    module_files = {
+      'cq_sdk.h'         => 'engine/bindings/swift/Sources/CChuanqiCut/include/cq_sdk.h',
+      'module.modulemap' => 'engine/bindings/swift/Sources/CChuanqiCut/include/module.modulemap',
+    }
+    module_files.each do |disp, rel|
+      next if cmod.children.any? { |c| c.display_name == disp }
+      ref = cmod.new_file(File.join(repo_root, rel))
+      ref.source_tree = 'SOURCE_ROOT'
+      ref.path = rel
+      added += 1
+    end
+  end
+
   Pod::UI.puts "[pods_post_install] docs 引用删除 #{removed} 条；引擎头文件条目 #{added} 条。"
 end

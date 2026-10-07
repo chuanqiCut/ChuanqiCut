@@ -215,8 +215,11 @@ App 侧在 `EditorViewModel.init()` 最早处调 `ChuanqiCut.configureLogFromEnv
    iOS App BUILD SUCCEEDED 且项目代码 0 告警（详见 P78/P79 与 `.ai/modules/ui-apple.md`
    「播放器域修复」节）。
 4. **UIA-015 / UIA-016 撞号**：本地侧分别是「编辑页重构」「Theme 令牌扩展」，远端侧分别是
-   「独立播放器 MVP」「播放器系统级播控补完」—— 同名不同物。两卡头部已加告警，是否改名待拍板。
-   **撞号裁定落地前，不再从 UIA 序列取号**（新增待办一律走 `docs/tasks/TODO-*.md`）。
+   「独立播放器 MVP」「播放器系统级播控补完」—— 同名不同物。
+   **✅ 2026-10-07 已裁定（传哲）：编辑器线让位** —— 编辑页重构改 UIA-032、Theme 令牌改 UIA-033、
+   BACKLOG §12 的 UIA-021~024 改 UIA-034~037、ADR-0022（编辑页）改 0024、RESEARCH-006（剪映）改 008；
+   播放器线保留 UIA-015~027 全链。清扫轮已过全量门禁 + linkcheck（当日日志「撞号清扫轮」节）。
+   UIA 序列恢复取号，但取号前 `git fetch` 核对远端水位不变（ADR-0019 §4）。
    **同源新增（2026-10-07 合并轮）**：**CAM-015 / CAM-016 撞号** —— 本机线（美颜色彩空间
    修正 / 人脸区域化）vs 远端线（预览渲染修复 / 预览方向修复），双卡并存于
    `TASK-CAM-015.md` / `TASK-CAM-016.md`（告警头），BACKLOG 双行注记；

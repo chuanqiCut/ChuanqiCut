@@ -443,12 +443,15 @@ Spec AIEDIT-001 / ADR-0020 / TASK-AIEDIT-000。首页 `HomeView.swift` 新增第
   UIA-015 iOS 相机页 / UIA-016 iOS 剪辑页 / UIA-017 macOS 惯例化 →
   UIA-018 时间线视觉（缩略图异步，主线程不解码红线不变）。均为纯视图层，
   Command/ViewModel/Session 不动。下一步：cq-spec-authoring 出 SPEC-UIA-014。
+  （编号备注 2026-10-07：本段为 RESEARCH-004 时代建议位；UIA-015~018 现归播放器线，
+  编辑域实际落地 = UIA-032/033 + §12 的 UIA-034~037，macOS 惯例化/时间线视觉重开时取新号。）
 
 ---
 
-# UIA-015/016/020 落地（2026-10-05）：编辑页剪映式重构 + 预览活性
+# UIA-032/033/020 落地（2026-10-05）：编辑页剪映式重构 + 预览活性
 
-Spec UIA-015（`docs/specs/UIA-015-编辑页重构.md`，RESEARCH-004 §3.4/§6.2 落地）。
+Spec UIA-032（`docs/specs/UIA-032-编辑页重构.md`，RESEARCH-004 §3.4/§6.2 落地；
+原编号 UIA-015/016，2026-10-07 撞号裁定编辑器线让位改号）。
 用户命题「编辑页丑 + 导入后预览无画面 + 播放按钮不工作」。
 
 ## 预览活性（UIA-020，关键机制）
@@ -465,7 +468,7 @@ Spec UIA-015（`docs/specs/UIA-015-编辑页重构.md`，RESEARCH-004 §3.4/§6.
 - 守卫：SharedUITests `PreviewLivenessTests`（3 用例：导入推进 epoch+泵 requested、
   refreshFromKernel 推进、SettleRule 纯函数）。
 
-## 编辑页结构（UIA-015，iOS 竖屏剪映式）
+## 编辑页结构（UIA-032，iOS 竖屏剪映式）
 
 ```
 EditorView（sheet 状态在编辑器层）
@@ -494,7 +497,7 @@ EditorView（sheet 状态在编辑器层）
 2. 新文件后 pod install 的同时，**改 project.yml 必须 xcodegen → pod install
    顺序不可倒**（P54/P56），且 App 验证 scheme 固定 `ChuanqiCutApp`（P61）。
 
-Theme 增量（UIA-016）：`transportBackground/toolbarBackground/accent/accentText`
+Theme 增量（UIA-033）：`transportBackground/toolbarBackground/accent/accentText`
 + `Space`/`Radius` 阶梯；全量令牌清扫仍归后续批次（BACKLOG §11 登记）。
 # UIA-015 落地（2026-10-05）：独立视频播放器 MVP（Player/ 域）
 
@@ -622,13 +625,13 @@ RESEARCH-004/005 结论全部维持，本文补**操作层**，关键增量：
   单指变焦（Snapchat）；状态反馈一条带；拍完必进编辑（流水线）；改版保肌肉记忆回退
   （iOS 26 相机争议与回调的教训）。
 - **编辑页八律**：核心 = **一个工具栏槽位、两套内容、选中驱动**（CapCut 定式：
-  一级项目工具栏 ↔ 片段编辑条同槽替换）——UIA-016 的关键细化；撤销/重做恒置预览区顶；
+  一级项目工具栏 ↔ 片段编辑条同槽替换）——UIA-033/§12 二级条的关键细化；撤销/重做恒置预览区顶；
   参数不遮预览；二级面板 sheet 幅度随复杂度；关键帧三层收纳；面板组织三范式
   （分页/情境/浮动，轻剪辑取情境）；Inspector 按属性域分组（Video/Audio/Color）；
   新范式默认+旧范式逃生门（FCP Position、VN Quick/Pro）。
-- **手势词汇表趋同**（双指缩放/平移时间线、长按拿起、边缘 trim）——UIA-016/018 对齐，
+- **手势词汇表趋同**（双指缩放/平移时间线、长按拿起、边缘 trim）——§12 时间线与视觉批次对齐，
   不自创手势。
-- **落地**：§5 delta 表逐任务列了 UIA-015~019 的新增输入（编号备注：UIA-015~018 现为播放器卡实际占用，§5 表为 RESEARCH-004 时代建议位，视觉升级批次届时按 PLAN-播放器进阶 §5 取新号）；
+- **落地**：§5 delta 表逐任务列了编辑域各任务的新增输入（编号备注 2026-10-07 更新：UIA-015~018 归播放器线；编辑域落地 = UIA-032/033，UIKit 重建 = UIA-034~037，§5 表为 RESEARCH-004 时代建议位）；
   UIA-019 PanelRoute 状态机需增加"工具栏槽位状态"。明确不采纳：Resolve Pages、
   Premiere 浮动面板、BMD 芯片条。未核实项已标 [hypothesis]，精确控件排布
   待真机走查截图核对（§6.2）。

@@ -47,13 +47,13 @@ enum Theme {
         static let timelineHeight: CGFloat = 220
         static let panelWidth: CGFloat = 280
         static let panelMinWidth: CGFloat = 200
-        /// iOS 竖屏时间线固定条高（UIA-015 剪映式；调高/缩放留后续任务）。
+        /// iOS 竖屏时间线固定条高（UIA-032 剪映式；调高/缩放留后续任务）。
         static let timelineHeightCompact: CGFloat = 140
         static let transportBarHeight: CGFloat = 44
         static let bottomToolbarHeight: CGFloat = 58
     }
 
-    // MARK: - 编辑页语义常量（UIA-016 增量；全量令牌清扫待批，RESEARCH-004 §6.0）
+    // MARK: - 编辑页语义常量（UIA-033 增量；全量令牌清扫待批，RESEARCH-004 §6.0）
 
     /// 播放控制条底色（预览正下方）：比预览背景略抬升一级。
     static let transportBackground = Color(red: 0.09, green: 0.09, blue: 0.11)

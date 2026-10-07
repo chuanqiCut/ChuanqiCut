@@ -1,17 +1,17 @@
 # TASK-UIA-020：预览活性修复（模型推进 → 同 pts 重渲染）
 
-> **状态：✅ 已落地（2026-10-05，本集成机）**——门禁数字与走查证据见 `docs/reviews/REVIEW-2026-10-05-UIA015-编辑页走查.md`、`.workbuddy/memory/2026-10-05.md`。
+> **状态：✅ 已落地（2026-10-05，本集成机）**——门禁数字与走查证据见 `docs/reviews/REVIEW-2026-10-05-UIA032-编辑页走查.md`、`.workbuddy/memory/2026-10-05.md`。
 
 ```yaml
 id:          TASK-UIA-020
 layer:       UI
 goal:        导入/编辑/撤销等命令落地后，预览在当前播放头自动重渲染（消除"导入后黑屏/编辑后旧画面"）
-input:       [docs/specs/UIA-015-编辑页重构.md §4.1, .ai/modules/preview.md §10, RESEARCH-004]
+input:       [docs/specs/UIA-032-编辑页重构.md §4.1（原 UIA-015，让位改号）, .ai/modules/preview.md §10, RESEARCH-004]
 output:      [AppEntry.swift renderEpoch, MetalPreviewView.swift seq 追帧, SharedUITests 新用例]
 write_set:   apps/apple/packages/SharedUI/Sources/SharedUI/AppEntry.swift、
              apps/apple/packages/SharedUI/Sources/SharedUI/Editor/MetalPreviewView.swift、
              apps/apple/packages/SharedUI/Sources/SharedUI/Editor/PreviewZone.swift（renderEpoch
-             透传一行，UIA-015 重构前先行的胶水）、
+             透传一行，UIA-032 重构前先行的胶水）、
              apps/apple/packages/SharedUI/Tests/SharedUITests/**
 read_set:    bindings/swift/Sources/ChuanqiCut/PreviewPump.swift、.ai/modules/preview.md、ADR-0016
 deps:        []
@@ -24,11 +24,11 @@ verification:
   - xcodebuild build -workspace apps/apple/ios/ChuanqiCut.xcworkspace -scheme ChuanqiCutApp -sdk iphonesimulator -destination 'generic/platform=iOS Simulator'
   - xcodebuild build -workspace apps/apple/mac/ChuanqiCut.xcworkspace -scheme ChuanqiCutMacApp -destination 'platform=macOS'
 risk:        追帧停止条件从 pts 比较改为 seq 比较可能影响 UIA-003 像素级用例 → 先跑全量既有测试锁定基线，纯函数分步断言
-parallel:    true   # 与 UIA-016 写集不相交；UIA-015 依赖本卡
+parallel:    true   # 与 UIA-033 写集不相交；UIA-032 依赖本卡
 ```
 
 ## 背景
-SPEC-UIA-015 §1 症状 2：`MetalPreviewView.sync` 只在 pts 变化时向泵请求；`applySnapshot` 不触发重渲染——导入前对空时间线渲染的空隙黑帧（seq 未变）被永远 blit。`CQ_DEMO_VIDEO` 演示钩子把播放头设到 0.5s，掩盖了缺口。
+SPEC-UIA-032 §1 症状 2：`MetalPreviewView.sync` 只在 pts 变化时向泵请求；`applySnapshot` 不触发重渲染——导入前对空时间线渲染的空隙黑帧（seq 未变）被永远 blit。`CQ_DEMO_VIDEO` 演示钩子把播放头设到 0.5s，掩盖了缺口。
 
 ## 实现要点
 1. `EditorViewModel`：`@Published private(set) var renderEpoch: UInt64`；`applySnapshot` / `refreshTimeline` 末尾 `previewPump?.request(pts: playhead)` + `renderEpoch += 1`。

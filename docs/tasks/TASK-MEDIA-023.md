@@ -9,7 +9,7 @@
 id:          TASK-MEDIA-023
 layer:       SDK
 goal:        VideoToolbox 解码输出尺寸上限 1080p（VT 内部解码+缩放一体），把单帧取帧耗时压进帧间隔，播放达到素材满帧
-input:       [baselines「预览播放吞吐」、RESEARCH-006 §1 #4、ADR-0017]
+input:       [baselines「预览播放吞吐」、RESEARCH-008 §1 #4（原 RESEARCH-006 剪映范式，让位改号）、ADR-0017]
 output:      [media_decode.mm 输出属性、pala_decode 降采样断言]
 write_set:   pal/apple/media_decode.{h,mm}、tests/unit/test_media_decode_apple.cpp、
              .ai/memory/baselines.md（真机复测回填）

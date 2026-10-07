@@ -8,7 +8,7 @@
 id:          TASK-MEDIA-025
 layer:       SDK
 goal:        HDR（BT.2020 + HLG/PQ）素材解码输出正确转换到 BT.709 SDR；SDR 素材行为不变；源/输出色彩标签全链路可见
-input:       [用户反馈、SDK 头文件核查（VTPixelTransferProperties.h / CMFormatDescription.h）、RESEARCH-006 §1]
+input:       [用户反馈、SDK 头文件核查（VTPixelTransferProperties.h / CMFormatDescription.h）、RESEARCH-008 §1（原 RESEARCH-006 剪映范式，让位改号）]
 output:      [media_decode.{h,mm} 色彩转换、诊断日志、单测]
 write_set:   pal/apple/media_decode.{h,mm}、tests/unit/test_media_decode_apple.cpp、baselines（真机验证记录）
 read_set:    .ai/modules/pal-apple.md、ADR-0003、ADR-0010

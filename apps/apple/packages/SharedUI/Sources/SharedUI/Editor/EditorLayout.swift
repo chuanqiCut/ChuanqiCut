@@ -1,9 +1,9 @@
-// SharedUI — 编辑器布局容器（UIA-002 立骨架；UIA-015 iOS 分支改剪映式）
+// SharedUI — 编辑器布局容器（UIA-002 立骨架；UIA-032 iOS 分支改剪映式）
 //
 // 收敛 `#if os(iOS)` / `#if os(macOS)` 差异到本文件，业务视图不直接写条件编译
 // （ui-apple.md 硬约束 #6）。
 //
-// UIA-015：iOS 竖屏从「桌面三区硬切」改为「单焦点 + 抽屉」（RESEARCH-004 §3.4）：
+// UIA-032：iOS 竖屏从「桌面三区硬切」改为「单焦点 + 抽屉」（RESEARCH-004 §3.4）：
 //   预览弹性占满 → 播放控制条 → 时间线固定条 → 底部工具栏；素材库进底部
 //   抽屉（MediaSheet），无常驻属性侧栏。macOS 布局同构保留（惯例化归 UIA-017）。
 
@@ -61,7 +61,7 @@ struct EditorLayoutContainer<Preview: View, Transport: View, Timeline: View,
                     .frame(height: Theme.Size.timelineHeight)
             }
 
-            // 右侧：素材库面板（UIA-015 起与 iOS 抽屉同源）
+            // 右侧：素材库面板（UIA-032 起与 iOS 抽屉同源）
             panel()
                 .frame(minWidth: Theme.Size.panelMinWidth, idealWidth: Theme.Size.panelWidth)
         }
@@ -77,7 +77,7 @@ struct EditorLayoutContainer<Preview: View, Transport: View, Timeline: View,
     @ViewBuilder
     private var iosLayout: some View {
         if hSizeClass == .compact {
-            // 竖屏（UIA-015 剪映式）：单焦点 + 抽屉
+            // 竖屏（UIA-032 剪映式）：单焦点 + 抽屉
             verticalLayout
         } else {
             // 横屏：与 macOS 同构

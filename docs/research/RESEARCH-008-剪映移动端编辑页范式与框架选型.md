@@ -1,9 +1,13 @@
-# RESEARCH-006：剪映移动端编辑页范式复刻 + SwiftUI/UIKit 框架选型
+# RESEARCH-008：剪映移动端编辑页范式复刻 + SwiftUI/UIKit 框架选型
+
+> **编号让位说明**：本文原取号 **RESEARCH-006**，与播放器线「独立播放器内核与交互调研」撞号
+> （RESEARCH-006 于 2026-10-05 同日被双线各自占用）。2026-10-07 传哲裁定**编辑器线让位**，
+> 本文改号 **RESEARCH-008**；播放器调研保留 RESEARCH-006。
 
 > 日期：2026-10-05 深夜
 > 上游命题：用户真机走查反馈「播放很卡顿；界面依然丑；调研剪映移动端界面看能不能复刻；SwiftUI 难实现就改 UIKit」
 > 上游调研：RESEARCH-004（§3.4 剪映范式骨架）、RESEARCH-005（面板 IA）
-> 下游：ADR-0022（编辑页 UIKit 混合，已按用户授权立）、SPEC-UIA-021（下一步）、播放流畅度验收
+> 下游：ADR-0024（编辑页 UIKit 混合，已按用户授权立）、TASK-UIA-034（下一步）、播放流畅度验收
 > **数字纪律**：第三方事实为公开资料转述 [E]；性能根因标注代码证据；真机占比未实测的标 hypothesis
 
 ---
@@ -53,7 +57,7 @@
 
 | 组件 | SwiftUI 现状/可行性 | UIKit |
 |---|---|---|
-| 布局/工具栏/抽屉 | 成熟（UIA-015 已落） | 成熟 |
+| 布局/工具栏/抽屉 | 成熟（UIA-032 已落） | 成熟 |
 | 预览 + MTKView | ✅ UIViewRepresentable 已封装 | ✅ 原生 |
 | 播放驱动 | ⚠️ Timer+Task churn（根因 #3）；TimelineView(.animation) 受 iOS16 行为约束 | ✅ CADisplayLink 标准做法，60/120Hz 自适应 |
 | 时间线显示 | ✅ Canvas 已有 | ✅ CALayer/自绘等价 |
@@ -61,7 +65,7 @@
 | 每帧状态分发 | ❌ @Published 整树重算（根因 #1）——要修必须状态大拆分，等于跟框架对抗 | ✅ CADisplayLink 层内直接 setNeedsDisplay 指定 layer，零 SwiftUI 参与 |
 | 缩略图/波形异步层（UIA-018） | ⚠️ 无细粒度失效控制 | ✅ 图层预取/降级可控 |
 
-**结论（ADR-0022）：编辑页核心三件套换 UIKit，外层保持 SwiftUI。**
+**结论（ADR-0024）：编辑页核心三件套换 UIKit，外层保持 SwiftUI。**
 - 剪映/CapCut 本体即 UIKit [E]；上表 4 个 ⚠️/❌ 全部是「为流畅要跟 SwiftUI 对抗」的点，满足用户预设的「SwiftUI 比较难实现」条件；
 - **不做全量 UIKit 化**：Home/相机/相册/智能成片向导保留 SwiftUI（既有资产，且不在卡顿路径上）；
 - **EditorViewModel/Command 链路零改动**（ARCH-005：共享的是状态与命令，不是 UI 框架；红线 #5 在 UIKit 层同样成立：只 submit，不直改模型）；既有 TimelineLayout 纯函数几何直接复用（UIA-005 手势语义/ADR-0012 提交时机不变）；
@@ -73,15 +77,15 @@
 
 ```
 EditorScreen（SwiftUI 壳保留：初始化/错误页/DEBUG 钩子）
-└ EditorViewController（UIKit，UIA-021）
+└ EditorViewController（UIKit，UIA-034）
    ├ PreviewContainerView：MTKView（既有 PreviewMTKView 复用）
    │   + 浮层控件（播放钮/时间码，播放态浮现）+ 单击手势
-   ├ TimelineScrollView（UIScrollView + 自绘 CALayer，UIA-022）
+   ├ TimelineScrollView（UIScrollView + 自绘 CALayer，UIA-035）
    │   · 内容层 CALayer：轨道/片段/标尺（仅模型变化时重绘）
    │   · 播放头独立 CALayer：CADisplayLink 驱动 position（每帧只动一层）
    │   · 捏合缩放/长按拖拽/右缘裁剪（UIGestureRecognizer，几何=TimelineLayout 复用）
    ├ TransportView：时间码（CADisplayLink 内刷新 label，不经 SwiftUI）
-   └ BottomToolbarView：一级工具 + 二级替换条（UIA-023）
+   └ BottomToolbarView：一级工具 + 二级替换条（UIA-036）
 ```
 
 ### 4.2 性能预算（可判定验收）
@@ -95,12 +99,12 @@ EditorScreen（SwiftUI 壳保留：初始化/错误页/DEBUG 钩子）
 
 | 任务 | 范围 | 依赖 |
 |---|---|---|
-| UIA-021 | EditorViewController 骨架 + 三区 UIKit 容器 + SwiftUI 装配 | — |
-| UIA-022 | 时间线 UIKit 自绘 + 手势 + display-link 播放头（卡顿修复主体） | UIA-021 |
-| UIA-023 | 预览浮层/传输条 + 底部工具栏/二级条 | UIA-021 |
-| UIA-024 | 时间线缩略图（原 UIA-018 内容并入，异步抽帧） | UIA-022 |
+| UIA-034 | EditorViewController 骨架 + 三区 UIKit 容器 + SwiftUI 装配 | — |
+| UIA-035 | 时间线 UIKit 自绘 + 手势 + display-link 播放头（卡顿修复主体） | UIA-034 |
+| UIA-036 | 预览浮层/传输条 + 底部工具栏/二级条 | UIA-034 |
+| UIA-037 | 时间线缩略图（原 UIA-018 内容并入，异步抽帧） | UIA-035 |
 
-（原 UIA-017 macOS 惯例化、UIA-018 时间线视觉保留登记；018 被本方案吸收时在 BACKLOG 标注让位。）
+（macOS 惯例化、时间线视觉保留登记；时间线视觉被本方案吸收时在 BACKLOG 标注让位。原编号 UIA-021~024 已让位播放器线，2026-10-07 裁定改 034~037。）
 
 ## 5. 非目标
 
@@ -111,8 +115,8 @@ EditorScreen（SwiftUI 壳保留：初始化/错误页/DEBUG 钩子）
 
 ## 6. 开放问题（开工前定）
 
-1. 真机性能剖面（阶段 0）做不做在 UIA-021 前？建议：做——半天工作量，决定 4K 素材是否需要预览缩放管线；
-2. 缩略图抽帧的缓存策略（内存上界/预取窗口）——UIA-024 开工前定；
+1. 真机性能剖面（阶段 0）做不做在 UIA-034 前？建议：做——半天工作量，决定 4K 素材是否需要预览缩放管线；
+2. 缩略图抽帧的缓存策略（内存上界/预取窗口）——UIA-037 开工前定；
 3. 二级工具栏第一批上哪些操作（建议：分割/删除/音量/变速，配合内核既有命令——**分割需要内核新命令，跨线提案给集成机**）。
 
 ## 7. 数字纪律声明

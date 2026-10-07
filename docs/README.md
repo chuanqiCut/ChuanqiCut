@@ -48,7 +48,8 @@ cat docs/handoff/HANDOFF-004-*.md      # 3. 最近交接（状态以最新一份
 | [`RESEARCH-004-拍摄与编辑UI主流方案调研.md`](research/RESEARCH-004-拍摄与编辑UI主流方案调研.md) | 拍摄与编辑 UI 主流方案调研 |
 | [`RESEARCH-005-功能面板信息架构与四端布局调研.md`](research/RESEARCH-005-功能面板信息架构与四端布局调研.md) | 功能面板信息架构与四端布局调研，下游 UIA-019 |
 | [`RESEARCH-006-独立播放器内核与交互调研.md`](research/RESEARCH-006-独立播放器内核与交互调研.md) | 独立播放器内核选型（AVPlayer 过渡 vs 自研 C++ session vs FFmpeg/mpv 等 8 方案对比）与交互范式（一线产品手势/控制层/键盘/无障碍），支撑 SPEC-UIA-020 与 ADR-0022 |
-| [`RESEARCH-007-顶级拍摄剪辑App布局与操作逻辑深度调研.md`](research/RESEARCH-007-顶级拍摄剪辑App布局与操作逻辑深度调研.md) | 全球顶级拍摄/剪辑 App 的控件分区、手势与面板切换规则深拆（18 家），§5 delta 表为 UIA-015~019 Spec 的操作层输入 |
+| [`RESEARCH-007-顶级拍摄剪辑App布局与操作逻辑深度调研.md`](research/RESEARCH-007-顶级拍摄剪辑App布局与操作逻辑深度调研.md) | 全球顶级拍摄/剪辑 App 的控件分区、手势与面板切换规则深拆（18 家），§5 delta 表为编辑域 Spec 的操作层输入（建议位编号备注见文内） |
+| [`RESEARCH-008-剪映移动端编辑页范式与框架选型.md`](research/RESEARCH-008-剪映移动端编辑页范式与框架选型.md) | 剪映移动端编辑页范式拆解 + SwiftUI/UIKit 框架选型，下游 ADR-0024 / BACKLOG §12（**原 006，2026-10-07 撞号让位改号**） |
 | `legacy/`（7 份） | 第一代调研素材（2026-09-23 前）：6 份 `技术调研_*.md` + `技术方案决策书`。**只读**，每份头部有状态横幅；性能数字一律 [E]、结论已被评审修正 |
 
 **规则**：新的调研产出一律建 `RESEARCH-00x-<标题>.md`（编号纪律见 ADR-0019）；
@@ -56,7 +57,7 @@ cat docs/handoff/HANDOFF-004-*.md      # 3. 最近交接（状态以最新一份
 
 ---
 
-## 三、决策记录（decisions/，ADR-0001 ~ 0021）
+## 三、决策记录（decisions/，ADR-0001 ~ 0024）
 
 | ADR | 决策 |
 |---|---|
@@ -81,6 +82,9 @@ cat docs/handoff/HANDOFF-004-*.md      # 3. 最近交接（状态以最新一份
 | [0019](decisions/ADR-0019-文档体系分层与归档规则.md) | **文档体系分层与归档规则**（本地图的权威定义） |
 | [0020](decisions/ADR-0020-智能成片与大模型接入边界.md) | 智能成片与大模型（LLM）接入边界（特征上云/素材不出设备/EditPlan 校验） |
 | [0021](decisions/ADR-0021-CoreImage-kernel不走Xcode内建Metal阶段.md) | CIKernel 构建链路：`.metal` 用 `metal -fcikernel` 编，不走 Xcode 内建 Metal 阶段 |
+| [0022](decisions/ADR-0022-独立播放器AVPlayer过渡与内核演进接缝.md) | 独立播放器 AVPlayer 过渡 + `PlayerEngine` 接缝与 C++ session 演进触发条件 |
+| [0023](decisions/ADR-0023-外挂字幕解析层归属.md) | 外挂字幕解析层归属（Swift 过渡性豁免与下沉 C++ 反转条件） |
+| [0024](decisions/ADR-0024-编辑页UIKit混合.md) | 编辑页核心三件套采用 UIKit（SwiftUI 外壳混合装配；**原 0022，2026-10-07 撞号让位改号**） |
 
 **规则**：改变既有惯例/架构约束必须新增 ADR；取号前先 `git fetch`（双机并行撞号纪律见 ADR-0019 §4）。
 

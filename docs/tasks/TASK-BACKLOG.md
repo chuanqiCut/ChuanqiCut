@@ -443,60 +443,63 @@ RENDER-001/红线 #6 路线，勿把相机滤镜直接当 SDK 能力引用。
 
 ---
 
-## 11. 编辑页重构（UIA-015/016/020，2026-10-05 新增；SPEC-UIA-015）
+## 11. 编辑页重构（UIA-032/033/020，2026-10-05 新增；SPEC-UIA-032）
 
 > 用户命题：编辑页丑（与剪映范式错位）+ 导入后预览无画面 + 播放入口不可用。调研：RESEARCH-004（§3.4/§6.2）。
-> 号段：线 A 预占 UIA-015~018 内取用（本机 = 集成机，登记即占号）；UIA-020 为新领号（相邻线 A 域）。
+> 号段：原取 UIA-015/016，与播放器线撞号，2026-10-07 裁定编辑器线让位改 **UIA-032/033**（登记即占号）；UIA-020 为新领号（相邻线 A 域）。
 
 | ID | 层 | 任务 | 依赖 | 写集要点 | 验收 |
 |---|---|---|---|---|---|
 | UIA-020 | UI | 预览活性修复（模型推进 → 同 pts 重渲染，seq 追帧） | — | `AppEntry.swift`、`MetalPreviewView.swift`、SharedUITests | 泵 requested 单测；全量零回归 |
-| UIA-016 | UI | Theme 令牌扩展（增量，全量清扫待批） | — | `Common/Theme.swift` | Editor 新文件无裸 RGB；编译绿 |
-| UIA-015 | UI | iOS 编辑页剪映式重构（预览最大化/播放条/底部工具栏/媒体抽屉） | 020、016 | `Editor/*`（七文件）+ `ChuanqiCutApp.swift` DEBUG 钩子 | 走查截图 + 全量测试 + 双平台编译 |
+| UIA-033 | UI | Theme 令牌扩展（增量，全量清扫待批；原 UIA-016 让位改号） | — | `Common/Theme.swift` | Editor 新文件无裸 RGB；编译绿 |
+| UIA-032 | UI | iOS 编辑页剪映式重构（预览最大化/播放条/底部工具栏/媒体抽屉；原 UIA-015 让位改号） | 020、033 | `Editor/*`（七文件）+ `ChuanqiCutApp.swift` DEBUG 钩子 | 走查截图 + 全量测试 + 双平台编译 |
 | MEDIA-022 | SDK | HEVC 解码支持 + 探测失败诚实透传 ✅ 2026-10-05 | — | `pal/apple/media_decode.mm`、绑定 probe 透传、AppEntry 文案 | HEVC golden probe=0 + 像素断言；门禁全绿（诊断见任务卡 §背景） |
 
-**批次**：020 ∥ 016 → 015。**关键路径**：020 → 015。
+**批次**：020 ∥ 033 → 032。**关键路径**：020 → 032。
 | MEDIA-024 | SDK | 顺序快路径对真实 4K60 失效修复 + 泵帧外秒级尖刺定位（播放卡顿定案修复） | — | `system_frame_provider.cpp`、`preview_renderer.cpp`、单测 | 真机 rendered/s ≥ 55 且无秒级尖刺（数据见 baselines） |
 
-**登记未开工**：UIA-017（macOS 惯例化）、UIA-018（时间线视觉——被 RESEARCH-006/UIA-024 吸收时标注让位）、Theme 2.0 全量清扫（RESEARCH-004 §6.0，待批）、UIA-019 面板框架立项、MEDIA-024（2026-10-06 立项，数据已定案）。
+**登记未开工**：macOS 惯例化（原 UIA-017 建议位已让位播放器线，重开时取新号）、时间线视觉（原 UIA-018 建议位——被 RESEARCH-008/§12 时间线缩略图吸收时标注让位）、Theme 2.0 全量清扫（RESEARCH-004 §6.0，待批）、UIA-019 面板框架立项、MEDIA-024（2026-10-06 立项，数据已定案）。
 
-## 12. 编辑页 UIKit 重建（UIA-021~024，2026-10-05 新增；RESEARCH-006 + ADR-0022）
+## 12. 编辑页 UIKit 重建（UIA-034~037，2026-10-05 新增；RESEARCH-008 + ADR-0024）
 
 > 用户命题：播放卡顿 + 界面丑 → 复刻剪映移动端范式；SwiftUI 难实现就改 UIKit。
-> 决策：ADR-0022（编辑页核心三件套 UIKit，外层 SwiftUI 壳，Command 链路零改动）。
+> 决策：ADR-0024（编辑页核心三件套 UIKit，外层 SwiftUI 壳，Command 链路零改动）。
+> **让位说明**：本节任务原取 UIA-021~024，与播放器线进阶卡撞号，2026-10-07 裁定编辑器线让位改 **UIA-034~037**。
 
 | ID | 层 | 任务 | 依赖 | 写集要点 | 验收 |
 |---|---|---|---|---|---|
-| UIA-021 | UI | EditorViewController 骨架（三区 UIKit 容器 + SwiftUI 装配） | — | SharedUI `Editor/UIKit/**`(新)、EditorScreen 装配 | 双平台编译；既有测试零回归 |
-| UIA-022 | UI | 时间线 UIKit 自绘 + 手势 + CADisplayLink 播放头（卡顿修复主体） | 021 | SharedUI `Editor/UIKit/Timeline*` | 播放头移动仅重绘播放头层；主线程单帧 <16ms（真机走查） |
-| UIA-023 | UI | 预览浮层/传输条 + 底部工具栏/二级条 | 021 | SharedUI `Editor/UIKit/{Preview,Toolbar}*` | 剪映形状走查清单（RESEARCH-006 §2） |
-| UIA-024 | UI | 时间线缩略图（异步抽帧，吸收原 UIA-018） | 022 | 同上 + 抽帧缓存 | 主线程不解码；缩略图随片段可见 |
+| UIA-034 | UI | EditorViewController 骨架（三区 UIKit 容器 + SwiftUI 装配） | — | SharedUI `Editor/UIKit/**`(新)、EditorScreen 装配 | 双平台编译；既有测试零回归 |
+| UIA-035 | UI | 时间线 UIKit 自绘 + 手势 + CADisplayLink 播放头（卡顿修复主体） | 034 | SharedUI `Editor/UIKit/Timeline*` | 播放头移动仅重绘播放头层；主线程单帧 <16ms（真机走查） |
+| UIA-036 | UI | 预览浮层/传输条 + 底部工具栏/二级条 | 034 | SharedUI `Editor/UIKit/{Preview,Toolbar}*` | 剪映形状走查清单（RESEARCH-008 §2） |
+| UIA-037 | UI | 时间线缩略图（异步抽帧，吸收时间线视觉建议位） | 035 | 同上 + 抽帧缓存 | 主线程不解码；缩略图随片段可见 |
 
-**批次**：阶段 0（真机性能剖面，回填 baselines，UIA-021 前半天）→ 021 → 022 ∥ 023 → 024。
-**关键路径**：021 → 022。
+**批次**：阶段 0（真机性能剖面，回填 baselines，UIA-034 前半天）→ 034 → 035 ∥ 036 → 037。
+**关键路径**：034 → 035。
 
 ## 13. 素材库·草稿·混排·多轨（LIB 新前缀，2026-10-07 新增；[PLAN-素材库草稿混排多轨](PLAN-素材库草稿混排多轨.md)）
 
 > 传哲 2026-10-07 四需求：本地素材库 / 草稿管理 / 多类型混排+GIF·LivePhoto 产出 / 多轨叠加。
 > 号段已由集成机在本 PLAN §4 占号（EXPORT-004~007 被 AI-ENG-001 预留，新卡从 010 起；
-> UIA-028~031 在 UIA-015/016 撞号裁定落地前只预占不建卡）。RENDER-001/011/012、PROJ-001~004、
-> EXPORT-001/002、AUDIO-004 为既有号，见上文各节。
+> UIA-028~031 已预占——UIA-015/016 撞号已于 2026-10-07 裁定落地，可按依赖建卡）。
+> RENDER-001/011/012、PROJ-001~004、EXPORT-001/002、AUDIO-004 为既有号，见上文各节。
+> **ADR 让位注记**：本节原预留 ADR-0024~0027，因编辑器线让位占用 0024（编辑页 UIKit），
+> 全部顺延为 **ADR-0025~0028**。
 
 | ID | 层 | 任务 | 依赖 | 写集要点 | 验收 |
 |---|---|---|---|---|---|
-| LIB-001 | 跨平台 | 素材库契约冻结（资产类型 video/still/animated/livephoto、存储布局、元数据 schema、与 Session AssetRegistry 关系） | 定稿 ADR-0024 | `core/include/cq/library/*.h` | 契约评审通过；零平台类型 |
+| LIB-001 | 跨平台 | 素材库契约冻结（资产类型 video/still/animated/livephoto、存储布局、元数据 schema、与 Session AssetRegistry 关系） | 定稿 ADR-0025 | `core/include/cq/library/*.h` | 契约评审通过；零平台类型 |
 | LIB-002 | 跨平台 | 素材库存储与索引（入库/扫描/检索/失效标记） | LIB-001 | `core/src/library/*` | 往返一致；跨会话可重建索引 |
 | LIB-003 | 跨平台+PALA | 缩略图与元数据（probe 复用；缩略图生成/缓存） | LIB-002 | `core/src/library/thumbs*`、`pal/apple/media_thumb*` | 缩略图命中率；主线程不解码 |
 | LIB-004 | 跨平台+UI | 入库链路改造：拍摄/导出/相册/文件→落库，替换 importMedia tmp 链（UIA-009/011/012 欠账收口；C/A 拆两卡） | LIB-002 | core `library/ingest*` + SharedUI 导入链 | 全部产出有库内资产 ID；tmp 链退役 |
 | LIB-005 | 跨平台 | 素材管理：删除/重命名/去重/引用保护（被草稿引用→缺失标记） | LIB-002, PROJ-001 | `core/src/library/manage*` | 引用保护语义单测；无静默连删 |
 | PROJ-005 | 跨平台 | 草稿箱索引与生命周期（建/开/存/复制/删/封面） | PROJ-001 | `core/src/project/drafts*` | 崩溃后草稿可恢复（自动保存接线） |
-| MEDIA-028 | 跨平台+PALA | 静图/动图帧源：FrameProvider 扩展 still（单帧+声明时长）/ animated（帧序列，GIF 帧延迟→120000 网格） | MEDIA-020, 定稿 ADR-0025/0026 | `core/src/media/`、`pal/apple/media_gif*` | GIF 逐帧时间与解码器一致（golden） |
+| MEDIA-028 | 跨平台+PALA | 静图/动图帧源：FrameProvider 扩展 still（单帧+声明时长）/ animated（帧序列，GIF 帧延迟→120000 网格） | MEDIA-020, 定稿 ADR-0026/0027 | `core/src/media/`、`pal/apple/media_gif*` | GIF 逐帧时间与解码器一致（golden） |
 | MEDIA-029 | 跨平台+PALA | LivePhoto 探测与解码（photo+video 配对识别；Apple-only，其他端降级普通素材） | MEDIA-028 | `pal/apple/media_livephoto*` + core 探测接缝 | 配对识别真机验证；缺失降级不崩溃 |
-| EXPORT-010 | 跨平台+PALA | GIF 导出（逐帧量化编码器；尺寸/帧率/循环参数） | EXPORT-002, RENDER-011, 定稿 ADR-0027 | `core/src/export/`、`pal/apple/media_enc*` | golden 对比；导出走同一 RenderGraph |
-| EXPORT-011 | 跨平台+PALA | LivePhoto 导出（视频+封面配对写入相册 / 文件对；入相册=显式授权） | EXPORT-002, 定稿 ADR-0027 | `pal/apple/media_livephoto*` | 相册成对写入真机验证；文件对可打开 |
-| UIA-028 | UI | 素材库页面（浏览/搜索/多选/管理；联动编辑与播放器复用 UIA-026 接缝） | LIB-002/005, UIA-026 | SharedUI（预占，裁定后建卡） | 管理操作走库 ABI；失效素材置灰 |
-| UIA-029 | UI | 草稿箱页面（列表/封面/时长/体积；开/编/删/复制） | PROJ-005 | SharedUI（预占，裁定后建卡） | 冷启动进草稿箱；崩溃恢复入口 |
-| UIA-030 | UI | 多轨时间线 UI（轨道增删/排序/静音锁定；Z 序=轨序） | UIA-022, RENDER-011 | SharedUI（预占，裁定后建卡） | 多轨真机走查 <16ms/帧 |
+| EXPORT-010 | 跨平台+PALA | GIF 导出（逐帧量化编码器；尺寸/帧率/循环参数） | EXPORT-002, RENDER-011, 定稿 ADR-0028 | `core/src/export/`、`pal/apple/media_enc*` | golden 对比；导出走同一 RenderGraph |
+| EXPORT-011 | 跨平台+PALA | LivePhoto 导出（视频+封面配对写入相册 / 文件对；入相册=显式授权） | EXPORT-002, 定稿 ADR-0028 | `pal/apple/media_livephoto*` | 相册成对写入真机验证；文件对可打开 |
+| UIA-028 | UI | 素材库页面（浏览/搜索/多选/管理；联动编辑与播放器复用 UIA-026 接缝） | LIB-002/005, UIA-026 | SharedUI（预占，依赖就绪后建卡） | 管理操作走库 ABI；失效素材置灰 |
+| UIA-029 | UI | 草稿箱页面（列表/封面/时长/体积；开/编/删/复制） | PROJ-005 | SharedUI（预占，依赖就绪后建卡） | 冷启动进草稿箱；崩溃恢复入口 |
+| UIA-030 | UI | 多轨时间线 UI（轨道增删/排序/静音锁定；Z 序=轨序） | UIA-035, RENDER-011 | SharedUI（预占，依赖就绪后建卡） | 多轨真机走查 <16ms/帧 |
 | UIA-031 | UI | 导出面板 v1（格式含 GIF/LivePhoto；入相册/文件显式授权流；进度/取消） | EXPORT-001/010/011 | SharedUI（预占，裁定后建卡） | 取消可中断；授权文案过审口径 |
 
 **批次**：期 1 = RENDER-001 ∥ PROJ-001~003 ∥ EXPORT-001 ∥ LIB-001~003；期 2 = MEDIA-028/029 ∥ RENDER-011 ∥ EXPORT-010/011 ∥ LIB-004/005 + PROJ-004/005 ∥ AUDIO-004；期 3 = UIA-028~031。

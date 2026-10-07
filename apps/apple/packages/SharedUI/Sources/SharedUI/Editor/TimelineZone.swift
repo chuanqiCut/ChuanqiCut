@@ -1,8 +1,8 @@
-// SharedUI — 时间线区容器（UIA-004 宿主；UIA-015 重构）
+// SharedUI — 时间线区容器（UIA-004 宿主；UIA-032 重构）
 //
 // 自绘本体在 Timeline/EditorTimelineView.swift（单 Canvas，几何在 TimelineLayout）。
 //
-// UIA-015 变更：
+// UIA-032 变更：
 //   * 播放/暂停与撤销/重做入口迁出 —— 播放进 EditorTransportBar（预览正下方），
 //     撤销/重做 iOS 进 EditorBottomToolbar、macOS 保留在本区头部（Cmd+Z 快捷键
 //     挂在按钮上，进菜单栏归 UIA-017）。

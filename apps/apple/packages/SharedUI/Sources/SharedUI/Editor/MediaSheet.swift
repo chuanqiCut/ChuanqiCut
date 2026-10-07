@@ -1,4 +1,4 @@
-// SharedUI — 媒体抽屉：素材库面板（UIA-015，自 PropertyPanelZone 迁移）
+// SharedUI — 媒体抽屉：素材库面板（UIA-032，自 PropertyPanelZone 迁移）
 //
 // 素材库两条导入入口，汇入同一 EditorViewModel.importMedia（Spec UIA-011 §2）：
 //   * 从文件导入：fileImporter（"文件"App 路径）
@@ -164,7 +164,7 @@ struct MediaLibraryPanel: View {
     }
 }
 
-/// iOS 底部抽屉壳（UIA-015）：半屏 detents + 拖拽指示器；macOS 不用本壳
+/// iOS 底部抽屉壳（UIA-032）：半屏 detents + 拖拽指示器；macOS 不用本壳
 /// （右栏直嵌 MediaLibraryPanel，无 sheet）。
 struct MediaSheet: View {
     var body: some View {
@@ -178,7 +178,7 @@ struct MediaSheet: View {
     }
 }
 
-// MARK: - 相册导入胶水（UIA-011 单选落地，UIA-012 扩为批量；UIA-015 自
+// MARK: - 相册导入胶水（UIA-011 单选落地，UIA-012 扩为批量；UIA-032 自
 //        PropertyPanelZone 迁移至此 —— 内容随素材库面板走，语义零改动）
 
 /// 相册选取项 → 临时文件 URL → 既有 importMedia 的批量胶水，加载态 / 错误汇总自持。

@@ -1,13 +1,17 @@
-# ADR-0022：编辑页核心三件套采用 UIKit（SwiftUI 外壳混合装配）
+# ADR-0024：编辑页核心三件套采用 UIKit（SwiftUI 外壳混合装配）
 
-- 状态：已接受（2026-10-05，用户授权「SwiftUI 比较难实现就改 UIKit」+ RESEARCH-006 论证满足该条件）
-- 关联：RESEARCH-006、ARCH-005（共享状态与命令，不共享 UI）、ADR-0012（交互期不提交命令）、ADR-0021
+> **编号让位说明（2026-10-07）**：本 ADR 原取号 **ADR-0022**，与播放器线「独立播放器 AVPlayer
+> 过渡」撞号（播放器侧 2026-10-05 先入库）。传哲裁定编辑器线让位，本 ADR 改发 **ADR-0024**；
+> 播放器线保留 ADR-0022。
+
+- 状态：已接受（2026-10-05，用户授权「SwiftUI 比较难实现就改 UIKit」+ RESEARCH-008 论证满足该条件）
+- 关联：RESEARCH-008、ARCH-005（共享状态与命令，不共享 UI）、ADR-0012（交互期不提交命令）、ADR-0021
 - 影响面：`apps/apple/packages/SharedUI/Sources/SharedUI/Editor/**`（新增 UIKit 域）、`apps/apple/ios/iOSApp/**`（装配）
 
 ## 背景
 
 用户真机走查：播放卡顿 + 界面丑，要求复刻剪映移动端范式；询问 SwiftUI 难实现是否改 UIKit。
-RESEARCH-006 诊断：播放卡顿的 UI 侧根因 = ① 30Hz `playhead` @Published 触发整树 body
+RESEARCH-008 诊断：播放卡顿的 UI 侧根因 = ① 30Hz `playhead` @Published 触发整树 body
 重算（EnvironmentObject 粒度过粗）；② 时间线单 Canvas 全量重绘（含逐次文字 resolve）；
 ③ 60Hz Timer+Task 驱动链。三者要在 SwiftUI 内修到剪映级流畅 = TimelineView 行为约束 +
 状态大拆分 + 手势细节对抗，成本高于直接使用 UIKit 的原生设施。
@@ -25,7 +29,7 @@ RESEARCH-006 诊断：播放卡顿的 UI 侧根因 = ① 30Hz `playhead` @Publis
 4. **每帧驱动不经 SwiftUI**：播放头 position、时间码 label 由 CADisplayLink 在
    UIKit 层内直接更新；`playhead` 的 @Published 发布降频为「状态同步」（10~15Hz
    或仅在暂停/交互结束时），不再承担逐帧渲染职责。
-5. macOS 编辑页维持 SwiftUI（UIA-017 另行）；Android/鸿蒙按对应平台惯例，不共享 UI。
+5. macOS 编辑页维持 SwiftUI（惯例化另行立项）；Android/鸿蒙按对应平台惯例，不共享 UI。
 
 ## 后果
 
@@ -38,4 +42,4 @@ RESEARCH-006 诊断：播放卡顿的 UI 侧根因 = ① 30Hz `playhead` @Publis
 
 ## 编号
 
-集成机发号：ADR-0022（此前已用至 0021）。
+集成机发号：原发 ADR-0022（当时已用至 0021），后因与播放器线同号撞车，2026-10-07 撞号裁定让位改发 **ADR-0024**（0022 归播放器线 AVPlayer 过渡）。

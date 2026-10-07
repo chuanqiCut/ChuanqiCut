@@ -14,7 +14,7 @@ import ChuanqiCut
 
 @main
 struct ChuanqiCutApp: App {
-    /// DEBUG 冒烟/截图辅助（UIA-015）：`CQ_AUTO_ROUTE=editor` 直进编辑器，
+    /// DEBUG 冒烟/截图辅助（UIA-032）：`CQ_AUTO_ROUTE=editor` 直进编辑器，
     /// 绕过首页 —— 与 CQ_DEMO_VIDEO 同模式的启动钩子（模拟器无法脚本点按时
     /// 的自动化入口；真机走查与正式路径不依赖本方法）。
     #if DEBUG

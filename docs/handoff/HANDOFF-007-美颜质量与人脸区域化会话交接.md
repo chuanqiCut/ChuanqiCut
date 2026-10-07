@@ -1,20 +1,23 @@
-# HANDOFF-007：美颜质量修复与人脸区域化会话交接（CAM-015/016）
+# HANDOFF-007：美颜质量修复与人脸区域化会话交接（CAM-018/019）
+
+> ⚠️ 本文写于 2026-10-06，任务当时用号 CAM-015/016；2026-10-07 撞号裁定本机线让位，
+> 现号 **CAM-018/019**（下文旧号均按此桥接；SPEC 现名 `SPEC-CAM-018-019`，pitfalls 现 P80/P81）。
 
 - 日期：2026-10-06
-- 上游：SPEC-CAM-015-016、TASK-CAM-015、TASK-CAM-016、pitfalls P62/P63
+- 上游：SPEC-CAM-018-019（曾 SPEC-CAM-015-016）、TASK-CAM-018/019（曾 015/016）、pitfalls P80/P81（曾 62/63）
 - 触发：真机验收反馈"磨皮画面开闪、美白不基于人脸"（2026-10-06）
 
 ## 本轮做了什么（对着 commit 核）
 
 1. **根因诊断**（对话轮完成，全部有 file:line 证据）：
    - 磨皮闪烁 = σr 定标域（harness 未标记 BGRA=gamma）≠ 真机运行域
-     （默认 workingColorSpace=线性），双边权重塌陷 → 皮肤沸腾。P62。
+     （默认 workingColorSpace=线性），双边权重塌陷 → 皮肤沸腾。P80（曾 62）。
    - 美白/磨皮全画面 = `CameraBeauty.apply` 无任何人脸区域参与（设计现状非 bug）。
    - 顺带发现：录制池缓冲无色彩空间标记，产物与预览颜色不一致（hypothesis）。
-2. **CAM-015**：CIContext 显式 gamma sRGB working space（根因修复）；预览/录制
+2. **CAM-018**：CIContext 显式 gamma sRGB working space（根因修复）；预览/录制
    输出显式 sRGB；录制池缓冲加 `kCVPixelBufferColorSpaceKey`；引擎安装三路径
    一次性 os_log（INSTALLED/FALLBACK 原因）。
-3. **CAM-016**：`CameraBeautyParams.apply(to:faces:)` 三态契约（nil=全画面兜底 /
+3. **CAM-019**：`CameraBeautyParams.apply(to:faces:)` 三态契约（nil=全画面兜底 /
    []=直通 / 非空=蒙版区域化，默认参向后兼容）；`FaceMask.swift` 纯函数
    （ciRect 翻转外扩 / smoothedBox / mask 黑底+羽化椭圆）；检测接线
    （`detector.offer` → `FaceBoxStore`）；预览/拍照/录制三消费方同源传 faces。
@@ -27,7 +30,7 @@
 | 谁 | 事项 |
 |---|---|
 | 构建机 | `swift test`（SharedUI 全量 + FaceMaskTests）；相机模块 iOS typecheck（P46 技法） |
-| 传哲（真机） | ① 磨皮不闪、保边恢复（CAM-015 核心验收）；② 滤镜观感基线复核（workingColorSpace 域变化的连带影响）；③ 美白只在脸/背景不糊/无脸不处理/跳帧不抖；④ 预览 vs 录制颜色一致性（池缓冲色彩空间键接受度）；⑤ 真机 log 确认 `beauty engine INSTALLED` |
+| 传哲（真机） | ① 磨皮不闪、保边恢复（CAM-018 核心验收）；② 滤镜观感基线复核（workingColorSpace 域变化的连带影响）；③ 美白只在脸/背景不糊/无脸不处理/跳帧不抖；④ 预览 vs 录制颜色一致性（池缓冲色彩空间键接受度）；⑤ 真机 log 确认 `beauty engine INSTALLED` |
 | 回填 | baselines.md：检测耗时（CQ_DEBUG_PROFILE）、蒙版观感参数定案（boxExpansion 0.15 / solidCoreRatio 0.56 均 [E]） |
 | 未决 | 池若不接受色彩空间键 → SPEC §6-3 备选（自建 CVPixelBufferPool） |
 
@@ -44,9 +47,9 @@
 
 ## 坑与教训
 
-- P62（harness 定标域必须钉进真机 CIContext）——本坑根因链完整，防复发规则
+- P80（曾 62；harness 定标域必须钉进真机 CIContext）——本坑根因链完整，防复发规则
   已写；真机验收结果出来后回填"修复有效"。
-- P63（CIImage DAG 宿主脚本先行）——本轮抓出 2 个 API 假设错；新 CI 几何/渐变
+- P81（曾 63；CIImage DAG 宿主脚本先行）——本轮抓出 2 个 API 假设错；新 CI 几何/渐变
   代码照此流程。
 - 本机 Swift 5.5 连 `guard let x` 简写都 parse 不过（SE-0345），宿主脚本要写
   5.5 兼容语法；产物代码按构建机 5.9+ 口径。

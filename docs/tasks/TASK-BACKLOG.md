@@ -399,17 +399,16 @@ INFRA-001/002 → CORE-001~005 → CORE-006(PAL冻结) → PALA-001/010
 | CAM-012 | B 期 | 磨皮升级 Metal kernel(替换 A 期高斯近似) | CAM-003 | `Camera/Effects/`、CameraBeauty 封装层 | 单调/off 恒等口径不变;≤8ms [E] |
 | CAM-013 | B 期 | 美型 MeshWarp(瘦脸/大眼/下巴,关键点驱动) | CAM-011 | `Camera/Effects/`、CameraReshapeParams | 无脸直通;真机无接缝/抖动 |
 | CAM-014 | B 期 | 贴纸 + 头部道具锚定(处理链最后一段) | CAM-011 | `Camera/Effects/`、StickerAnchor、资产 | 锚定纯函数锁定;资产许可干净 |
-| CAM-015 | B 期 | ⚠️ **撞号（见下方注）** 本机线：美颜色彩空间修正(workingColorSpace 对齐 harness gamma 域)+录制色彩对齐+引擎状态日志 | CAM-012 | `CameraViewModel/Recorder/Renderer/BeautyKernel.swift` | 代码 grep+typecheck;真机不闪(人工);SPEC-CAM-015-016 |
-| CAM-015 | B 期 | ⚠️ **撞号** 远端线：~~预览 CI→drawable 渲染修复 + 帧计数去伪绿~~（中间纹理+渲染 pass 落地，门禁过） | CAM-003 | `Camera/CameraRenderer/VideoView.swift` | BUILD SUCCEEDED 0W；失败计数口径 |
-| CAM-016 | B 期 | ⚠️ **撞号** 本机线：美白/磨皮人脸区域化(接 CAM-011 检测桥,羽化蒙版混合,nil/[]/非空三态) | CAM-015 | SharedUI `Camera/{FaceMask,CameraBeauty}.swift`、三消费方、SharedUITests | 坐标/三态纯函数单测;无脸直通;真机人工;SPEC-CAM-015-016 |
-| CAM-016 | B 期 | ⚠️ **撞号** 远端线：**预览方向修复（颠倒 + 横竖屏跟踪 + aspect-fill，SPEC v1.2 A7）** | CAM-015 | `Camera/{Manager,Renderer,ViewModel,View}.swift` | 三方向预览正立铺满；拍照/录像方向一致 |
+| CAM-015 | B 期 | ~~预览 CI→drawable 渲染修复 + 帧计数去伪绿~~✅（中间纹理+渲染 pass 落地，门禁过） | CAM-003 | `Camera/CameraRenderer/VideoView.swift` | BUILD SUCCEEDED 0W；失败计数口径 |
+| CAM-016 | B 期 | **预览方向修复（颠倒 + 横竖屏跟踪 + aspect-fill，SPEC v1.2 A7）**✅ | CAM-015 | `Camera/{Manager,Renderer,ViewModel,View}.swift` | 三方向预览正立铺满；拍照/录像方向一致 |
+| CAM-018 | B 期 | ~~美颜色彩空间修正(workingColorSpace 对齐 harness gamma 域)+录制色彩对齐+引擎状态日志~~✅ **曾号 CAM-015**（2026-10-07 撞号让位） | CAM-012 | `CameraViewModel/Recorder/Renderer/BeautyKernel.swift` | 代码 grep+typecheck;真机不闪(人工);SPEC-CAM-018-019 |
+| CAM-019 | B 期 | ~~美白/磨皮人脸区域化(接 CAM-011 检测桥,羽化蒙版混合,nil/[]/非空三态)~~✅ **曾号 CAM-016**（同批让位） | CAM-018 | SharedUI `Camera/{FaceMask,CameraBeauty}.swift`、三消费方、SharedUITests | 坐标/三态纯函数单测;无脸直通;真机人工;SPEC-CAM-018-019 |
 | CAM-021 | B 期 | **双摄提前（MultiCamSession 画中画 + 独立开关 + 录合成流，SPEC v1.2 A8）** | CAM-016 | `Camera/{Manager,Renderer,ViewModel,View}.swift` | 双摄同画可录；不支持机型降级明示；实测入库 |
 | CAM-022~024 | C 期 | MetalFX / 景深人像 / 宠物 / 美体（双摄已提前） | CAM-011~ | 待 C 期任务卡 | 待细化 |
 
-> ⚠️ **CAM-015/016 编号撞号**（2026-10-07 双线合并发现）：本机线（美颜修复）与远端线
-> （预览渲染/方向修复）各自独立取了同一批号，两张卡已按 UIA-015/016 先例并存于
-> `TASK-CAM-015.md` / `TASK-CAM-016.md`，是否重命名待传哲拍板；**裁定前不再从 CAM
-> 序列取新号**（同 UIA 撞号处置）。
+> 📌 **CAM-015/016 撞号已裁定**（2026-10-07，沿 UIA-032/033 同日裁定先例）：远端渲染线（先入库 +
+> 活线）保留原号；本机美颜线（已完结）让位 → **CAM-018/019**。卡片：`TASK-CAM-015/016.md`（渲染线）、
+> `TASK-CAM-018/019.md`（美颜线，曾号 015/016）。同批：pitfalls 本机条目 P62/P63 → P80/P81。
 
 **关键路径**：`CAM-002 → CAM-003 → CAM-004 → CAM-005`。
 **注意**：相机特效与编辑器特效是两套实现（ADR-0014 代价）——时间线滤镜仍等

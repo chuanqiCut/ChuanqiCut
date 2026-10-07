@@ -81,7 +81,7 @@ public struct CameraBeautyParams: Equatable, Sendable {
 
     /// 应用美颜。off 时原样返回入参（=== 恒等，调用方无需特判）。
     ///
-    /// faces 三态（CAM-016，SPEC-CAM-015-016 §4）：
+    /// faces 三态（CAM-019，SPEC-CAM-018-019 §4）：
     ///   nil  = 无检测数据（能力缺失/未接入）→ 全画面（旧行为，向后兼容）；
     ///   []   = 检测过但无脸 → **直通**（对齐 CAM-013 美型「无脸直通」口径）；
     ///   非空 = 图像归一化人脸框（origin 左上，CAM-011 契约）→ 磨皮/美白

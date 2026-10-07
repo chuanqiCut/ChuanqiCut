@@ -153,7 +153,7 @@ final class BeautyKernel: @unchecked Sendable {
     }
 
     /// 幂等安装：bundle 里有本卡 metallib 才装，否则保持 SharedUI 默认实现。
-    /// 每条路径一次性日志（CAM-015 诊断：修「引擎是否在跑」不可知——历史上
+    /// 每条路径一次性日志（CAM-018 诊断：修「引擎是否在跑」不可知——历史上
     /// 96B 空壳 metallib 曾静默回落默认实现且无从发现，见 ADR-0021）。
     static func installSharedSmoothingIfNeeded() {
         guard CameraBeautyEngine.smoothing == nil else { return }

@@ -162,7 +162,7 @@ Liquid Glass 需要 **SDK 26 构建 + iOS/macOS 26 运行**，而 ADR-0010 基�
 3. 分隔条可拖（时间线高度可调）；菜单栏补齐（文件/编辑/播放，Cmd+Z 已有）；
 4. 空格播放/暂停、双击预览全屏。
 
-### 6.4 时间线视觉（UIA-018）
+### 6.4 时间线视觉（原建议位 UIA-018——已被 §12 时间线缩略图 **UIA-037** 吸收，2026-10-07 撞号重排）
 
 1. 片段 = **缩略图条**（异步抽帧，遵守「主线程不解码」硬约束 #4，缓存复用 MetalPreviewView 链路）+ 圆角 + 选中描边；
 2. 轨道色带语义：视频蓝 / 音频绿 / 文字紫（行业惯例 [E]）；
@@ -187,7 +187,7 @@ Liquid Glass 需要 **SDK 26 构建 + iOS/macOS 26 运行**，而 ADR-0010 基�
 | UIA-015 iOS 相机页 | §6.1 | `iOSApp/Camera/CameraView.swift`（视图层） | 编译 + 真机走查清单（§8 项 6） |
 | UIA-016 iOS 剪辑页 | §6.2 | `Editor/EditorLayout.swift` iOS 分支、TimelineZone、新 BottomToolbar/sheet | 编译 + 走查；`TimelineLayout` 单测不回归 |
 | UIA-017 macOS 惯例化 | §6.3 | `Editor/EditorLayout.swift` mac 分支、MacApp 入口 | 编译 + 走查；Cmd+Z/空格键功能不回归 |
-| UIA-018 时间线视觉 | §6.4 | `Timeline/EditorTimelineView.swift`、Theme | 500 片段布局 ≤ 既有基线 0.663ms/帧（baselines）；缩略图异步（无主线程解码） |
+| ~~UIA-018~~→UIA-037 时间线视觉 | §6.4 | `Timeline/EditorTimelineView.swift`、Theme | 500 片段布局 ≤ 既有基线 0.663ms/帧（baselines）；缩略图异步（无主线程解码） |
 
 - 顺序：UIA-014 → 015/016/017 可串行 → 018；共享文件 `Theme.swift` 由 UIA-014 一次改净，后续任务只读。
 - 视觉验收的主观性处理：**走查清单制**（每屏列点：层级/对齐/间距/态完备），替代「变好看」这类不可判定表述（cq-spec-authoring 纪律）。

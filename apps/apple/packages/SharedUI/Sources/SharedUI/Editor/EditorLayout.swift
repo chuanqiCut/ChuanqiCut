@@ -5,7 +5,7 @@
 //
 // UIA-032：iOS 竖屏从「桌面三区硬切」改为「单焦点 + 抽屉」（RESEARCH-004 §3.4）：
 //   预览弹性占满 → 播放控制条 → 时间线固定条 → 底部工具栏；素材库进底部
-//   抽屉（MediaSheet），无常驻属性侧栏。macOS 布局同构保留（惯例化归 UIA-017）。
+//   抽屉（MediaSheet），无常驻属性侧栏。macOS 布局同构保留（惯例化批次原记 UIA-017，已让位，重开取新号）。
 
 import SwiftUI
 
@@ -13,7 +13,7 @@ import SwiftUI
 
 enum EditorPlatform {
     /// 时间线头部（撤销/重做 + 调试版本号）只在 macOS 显示：iOS 的入口在
-    /// 底部工具栏。macOS 快捷键挂在头部按钮上（UIA-017 进菜单栏）。
+    /// 底部工具栏。macOS 快捷键挂在头部按钮上（进菜单栏归 macOS 惯例化批次，原 UIA-017 建议位已让位）。
     static var showsTimelineHeader: Bool {
         #if os(macOS)
         true

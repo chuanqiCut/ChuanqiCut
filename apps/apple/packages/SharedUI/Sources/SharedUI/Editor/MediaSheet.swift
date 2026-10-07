@@ -8,7 +8,7 @@
 //
 // 本视图同时是两个宿主的内容层（ARCH-005「共享状态不共享 UI」的最小实践）：
 //   * iOS：EditorBottomToolbar 的 bottom sheet（detents medium/large）
-//   * macOS：编辑器右栏（原 PropertyPanelZone 位置，行为等价迁移，UIA-017 再惯例化）
+//   * macOS：编辑器右栏（原 PropertyPanelZone 位置，行为等价迁移，macOS 惯例化批次再惯例化——原 UIA-017 建议位已让位）
 // 属性参数区不在此（UIA-006 接真实参数时再进面板框架 UIA-019）。
 
 import SwiftUI

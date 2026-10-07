@@ -1,15 +1,17 @@
 ---
 name: cq-build-test
-description: 任何代码改动后跑构建与测试。产出精确命令、日志摘要与门禁结论。
+description: 代码改动后跑模块级构建与测试（先窄后宽）。全量门禁按阶段批由集成机跑（ADR-0030），开发会话不跑全量。产出精确命令、日志摘要与自查结论。
 ---
 
 # 构建与测试
 
 ## 触发
-任何 Swift / ObjC / C++ / Kotlin / GLSL 改动之后。
+任何 Swift / ObjC / C++ / Kotlin / GLSL 改动之后（模块级）；全量门禁 = 阶段批
+（PLAN 阶段收尾 / 一批任务卡闭环，集成机执行）。
 
 ## 原则
-**先跑最窄的相关测试，再跑项目门禁。** 不要一上来跑全量（慢），也不要只跑全量（定位慢）。
+**先跑最窄的相关测试。** 开发会话到此为止——**不跑全量 `run_gate.sh`（阶段批归集成机，
+ADR-0030），不碰真机**；全量验证项登记进 `docs/tasks/TODO-POOL-门禁真机待办池.md`。
 
 ## 命令
 
@@ -46,7 +48,7 @@ python3 tests/golden/verify.py --json   # 样本齐备性/参数一致性（需 
 # ⚠️ 视觉比对（PSNR/SSIM）归 QA-002，尚未实现 —— 当前 golden 门禁只查齐备性。
 ```
 
-### 门禁（提交前）
+### 门禁（阶段批，集成机执行）
 ```bash
 tools/ci/run_gate.sh          # 本机总门禁（INFRA-010）：deps 校验 + 头纯净性 +
                               # Debug/Release 全量单测 + XCFramework/Swift/SharedUI

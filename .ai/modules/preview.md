@@ -291,3 +291,26 @@ ctest --test-dir build -R gfx_device           # 30 断言（含视口原语用�
 cd bindings/swift && swift test --disable-sandbox                 # 23 用例
 cd apps/apple/packages/SharedUI && swift test --disable-sandbox   # 20 用例
 ```
+
+---
+
+## 模块册（ADR-0030：任务/进度/测试门禁记录按模块归口）
+
+> 本节由归属线更新（一机一线，天然单写者）；BACKLOG / pitfalls / baselines 等
+> 全局册零直写（集成机阶段批落账）。新调研/规格/审查落 docs/ 原位，但必须在此登记指针。
+
+### 任务与进度（在飞 + 近期；全量 DAG 见 TASK-BACKLOG）
+
+| Task ID | 标题 | 状态 |
+|---|---|---|
+| — | 首次落账于下一阶段批；历史状态见 TASK-BACKLOG | — |
+
+### 测试与门禁记录（阶段批）
+
+| 日期 | 阶段/范围 | 结论（数字） |
+|---|---|---|
+| — | 未实测（本模块无独立阶段批记录） | — |
+
+### 调研 · 决策 · 池指针
+
+- BIND-003（预览 C ABI）· ADR-0016/0017/0018

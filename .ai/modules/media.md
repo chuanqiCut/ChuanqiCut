@@ -538,3 +538,28 @@ CQ_LOG_LEVEL=debug  CQ_LOG_WORKFLOW=decode,mem,perf  CQ_LOG_WF_LEVEL=decode=trac
 
 排障手册：真机「门禁偶发 SEGFAULT」先看 `~/Library/Logs/DiagnosticReports/*.ips`，
 `std::map` / `std::deque` 的树平衡/迭代器帧出现 = 并发写坏容器，不是内存踩踏。
+
+---
+
+## 模块册（ADR-0030：任务/进度/测试门禁记录按模块归口）
+
+> 本节由归属线更新（一机一线，天然单写者）；BACKLOG / pitfalls / baselines 等
+> 全局册零直写（集成机阶段批落账）。新调研/规格/审查落 docs/ 原位，但必须在此登记指针。
+
+### 任务与进度（在飞 + 近期；全量 DAG 见 TASK-BACKLOG）
+
+| Task ID | 标题 | 状态 |
+|---|---|---|
+| MEDIA-021/022/023/025/027 | 顺序取帧/HEVC/降采样/HDR/冻结修复 | ✅ |
+| MEDIA-024 | 播放卡顿 GOP 重解码（真因已定案） | 待实施 |
+| MEDIA-028/029 | 静图/动图帧源 · LivePhoto | 预占（§13） |
+
+### 测试与门禁记录（阶段批）
+
+| 日期 | 阶段/范围 | 结论（数字） |
+|---|---|---|
+| 2026-10-07 | core 全量 | core-dbg 45/45、core-rel 45/45（P77 并发修复后零回归） |
+
+### 调研 · 决策 · 池指针
+
+- ADR-0016/0017 · pitfalls P66/P70/P77 · HANDOFF-006

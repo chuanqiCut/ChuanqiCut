@@ -483,6 +483,9 @@ RENDER-001/红线 #6 路线，勿把相机滤镜直接当 SDK 能力引用。
 > RENDER-001/011/012、PROJ-001~004、EXPORT-001/002、AUDIO-004 为既有号，见上文各节。
 > **ADR 让位注记**：本节原预留 ADR-0024~0027，因编辑器线让位占用 0024（编辑页 UIKit），
 > 全部顺延为 **ADR-0025~0028**。
+> **Pod 域归属（ADR-0031，2026-10-07）**：LIB-*、UIA-028 → `ChuanqiCutAssets` Pod；
+> PROJ-005、UIA-029 → `ChuanqiCutDraft` Pod；UIA-030/031 → `ChuanqiCutEditor` Pod；
+> MEDIA-028/029、EXPORT-010/011 → C 线内核支撑（core/pal，不进 UI Pod）。
 
 | ID | 层 | 任务 | 依赖 | 写集要点 | 验收 |
 |---|---|---|---|---|---|
@@ -503,3 +506,25 @@ RENDER-001/红线 #6 路线，勿把相机滤镜直接当 SDK 能力引用。
 
 **批次**：期 1 = RENDER-001 ∥ PROJ-001~003 ∥ EXPORT-001 ∥ LIB-001~003；期 2 = MEDIA-028/029 ∥ RENDER-011 ∥ EXPORT-010/011 ∥ LIB-004/005 + PROJ-004/005 ∥ AUDIO-004；期 3 = UIA-028~031。
 **关键路径**：RENDER-001 → RENDER-011 → EXPORT-010；PROJ-001 → PROJ-005 → UIA-029。
+
+---
+
+## 14. 壳工程与功能 Pod 拆分（INFRA-013~020，2026-10-07 新增；[ADR-0031](../decisions/ADR-0031-主工程壳化与功能Pod分治.md) + [PLAN-壳工程与功能Pod](PLAN-壳工程与功能Pod.md)）
+
+> 传哲 2026-10-07 拍板：主工程壳化，草稿/素材管理/播放器/拍摄/素材导入各自独立 podspec。
+> 八张卡全部**集成机执行**（热点文件：podspec×8 / Podfile×2 / project.yml×2 / run_gate.sh）；
+> 每阶段收尾 = 一个阶段批门禁点（ADR-0030）。
+
+| ID | 层 | 任务 | 依赖 | 写集要点 | 验收 |
+|---|---|---|---|---|---|
+| INFRA-013 | 基建 | 壳工程改造：`apps/apple/packages/` 骨架 + 双 Podfile/project.yml 适配 + `run_gate.sh` 逐 Pod 测试段 | ADR-0031 | 双 Podfile、双 project.yml、`tools/ci/run_gate.sh` | 双壳 xcodegen+pod install+构建冒烟过；门禁绿 |
+| INFRA-014 | 基建 | SharedUI 瘦身为 UI 基座（功能子域迁出即删源，仅留 Common/Theme） | INFRA-013 | `SharedUI.podspec`、`Sources/SharedUI/Common/**` | 测试套仍绿；全仓 grep 零悬空 import |
+| INFRA-015 | 基建 | `ChuanqiCutPlayer` Pod 迁移（Player 全域 + 测试） | INFRA-014 | `packages/ChuanqiCutPlayer/**` | Player 测试数字对齐迁移前不掉用例 |
+| INFRA-016 | 基建 | `ChuanqiCutImport` Pod 迁移（MediaPicker + UIA-009/011/012 导入链；落库接缝对 Assets） | INFRA-014 | `packages/ChuanqiCutImport/**` | 导入链单测过；双壳构建过 |
+| INFRA-017 | 基建 | `ChuanqiCutAssets` Pod 建域（素材表/素材库收敛；LIB-* UI 配套） | INFRA-014 | `packages/ChuanqiCutAssets/**` | 素材表回归测试过 |
+| INFRA-018 | 基建 | `ChuanqiCutCamera` Pod 迁移（iOSApp/Camera + 契约层；**metallib 构建链迁 podspec script_phase**） | INFRA-017 | `packages/ChuanqiCutCamera/**` | metallib 非空壳；真机一趟（池攒单）相机检查点全过 |
+| INFRA-019 | 基建 | `ChuanqiCutEditor` Pod 迁移（Editor+Timeline；UIA-032 在新 Pod 内重构） | INFRA-017 | `packages/ChuanqiCutEditor/**` | 编辑器测试过；双壳构建过 |
+| INFRA-020 | 基建 | `ChuanqiCutDraft` Pod 骨架（PROJ-001 落地后填肉） | INFRA-017 | `packages/ChuanqiCutDraft/**` | 骨架编译过；随 PROJ-005/UIA-029 填功能 |
+
+**批次（= ADR-0031 六阶段）**：阶段 0 = 013+014；阶段 1 = 015；阶段 2 = 016；阶段 3 = 017；
+阶段 4 = 018；阶段 5 = 019+020。同域业务任务与该域迁移**不并行**（串行让路）。

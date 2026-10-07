@@ -313,3 +313,26 @@ Debug 43/43、Release 43/43（本机门禁 PASS=9 / FAIL=0）。
   自己在 `log.cpp` 写了 `EqualsIgnoreCase()`（先转 `unsigned char` 再喂 `tolower`，负 char 直接传 int 是 UB）
 - 补了 `#include <cstdio>`：之前 `log.h` 用了 `FILE`/`stderr` 却指望调用方替它 include，
   `perf.h` 一 include `log.h` 就炸 —— 头文件必须自洽
+
+---
+
+## 模块册（ADR-0030：任务/进度/测试门禁记录按模块归口）
+
+> 本节由归属线更新（一机一线，天然单写者）；BACKLOG / pitfalls / baselines 等
+> 全局册零直写（集成机阶段批落账）。新调研/规格/审查落 docs/ 原位，但必须在此登记指针。
+
+### 任务与进度（在飞 + 近期；全量 DAG 见 TASK-BACKLOG）
+
+| Task ID | 标题 | 状态 |
+|---|---|---|
+| CORE-001~010 | 内核基础各卡 | 状态见 BACKLOG §2（现状口径：core 45/45 双配置） |
+
+### 测试与门禁记录（阶段批）
+
+| 日期 | 阶段/范围 | 结论（数字） |
+|---|---|---|
+| 2026-10-07 | 全量门禁 | PASS=9 / FAIL=0 / SKIP=0（core-dbg 45/45、core-rel 45/45） |
+
+### 调研 · 决策 · 池指针
+
+- 热点文件守门（cq_sdk.h/CMakeLists）· ADR-0011（core 不调 PAL 工厂）

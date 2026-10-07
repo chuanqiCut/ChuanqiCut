@@ -186,3 +186,26 @@ include 用相对路径 `../cq_session_impl.h`，pod 构建无私有 search path
 - UIA-004 时间线视图：Session.queryTracks/queryClips（Swift 封装，主线程直读）
 - UIA-009 子步骤 2 预览收口：EditorModelState.CurrentTimeline() 即预览该用的
   读路径（渲染时原子加载最新快照），替代 CQPreview 本地 Timeline
+
+---
+
+## 模块册（ADR-0030：任务/进度/测试门禁记录按模块归口）
+
+> 本节由归属线更新（一机一线，天然单写者）；BACKLOG / pitfalls / baselines 等
+> 全局册零直写（集成机阶段批落账）。新调研/规格/审查落 docs/ 原位，但必须在此登记指针。
+
+### 任务与进度（在飞 + 近期；全量 DAG 见 TASK-BACKLOG）
+
+| Task ID | 标题 | 状态 |
+|---|---|---|
+| — | 首次落账于下一阶段批；历史状态见 TASK-BACKLOG | — |
+
+### 测试与门禁记录（阶段批）
+
+| 日期 | 阶段/范围 | 结论（数字） |
+|---|---|---|
+| — | 未实测（本模块无独立阶段批记录） | — |
+
+### 调研 · 决策 · 池指针
+
+- CORE-008/009（线程模型与 EditorSession）· ADR-0016（共享命令队列）

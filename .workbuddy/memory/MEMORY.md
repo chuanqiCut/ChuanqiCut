@@ -24,12 +24,13 @@
 ## AI 协作机制
 - 单一真源 `.ai/source/AGENTS.root.md` → `tools/ai/sync_context.py` 生成 AGENTS.md / CLAUDE.md / .cursorrules / .windsurfrules / copilot-instructions.md。**改规则改真源再跑脚本**，禁手改产物。
 - 编码阶段：**一个任务一个新会话**，开场读真源 + 模块文档 + 任务单卡。
-- **双机分工 v2（ADR-0029，2026-10-07 传哲拍板）**：
+- **双机分工 v2.1（ADR-0029/0030/0031，2026-10-07 传哲拍板）**：
   - **模块归属成文**（PLAN-三线并行 §1a，各 `.ai/modules/*.md` 头部有归属行）：A=编辑器/UI（ui-apple/ui-android/model/session/preview/project + AIEDIT）、B=相机特效（camera）、C=内核/媒体/渲染（media/render/gfx/audio/shader/export）、集成机=core/pal/pal-android/deps/热点；`pal-apple` 集成机归口、B/C 分子域。**一机同一时间只待一条线**。
-  - **开发机 = 简化档（编码优先）**：优先编码不等门禁；自查 = 编译 + 相关单测（Swift 必须 `-typecheck`，`-parse` 绿不是绿）；**不跑全量门禁**，收工把剩余门禁/真机项 append 进 `docs/tasks/TODO-POOL-门禁真机待办池.md`，推送即收工。
-  - **本机（集成机）= 每日批次**（传哲每天定期跑）：fetch → 合并守门（全量 `run_gate.sh`，远端"已验证"按未验证处理）→ 消化待办池 → **真机一趟多单**（iPhone 17 Pro，攒着合并执行）→ 数字回填 → 关条目。
-  - **待办池 append-only 归开发机，清扫/关闭/编号只归集成机** —— 管理文档（池/编号/告警头/清扫）单写者 = 集成机，双机同改必分叉（P82：撞号归一轮本机 4f0aa67 弃用重做）。
-  - 发号水位（2026-10-07 后）：ADR 下一号 **0030**（0025~0028 预占素材库多轨）；pitfalls 下一号 **P83**。
+  - **模块册分册制（ADR-0030）**：调研/任务/进度/测试及门禁记录统一写 `.ai/modules/<模块>.md` 末尾「模块册」（归属线更新）；新 RESEARCH/SPEC/REVIEW 落 docs/ 原位但须在模块册登记指针。**全局册单写者 = 集成机**：TASK-BACKLOG、两份 README、pitfalls、baselines、PLAN、ADR、workbuddy/MEMORY——开发机零直写，要改走池条目或提案；开发机过程记录写自己模块册 + 池条目，**不写共享当日日志**。
+  - **开发机 = 简化档（编码优先）**：优先编码不等门禁；自查 = 编译 + 相关单测（Swift 必须 `-typecheck`）；**不跑全量门禁、不碰真机**，收工把剩余门禁/真机项 append 进 `docs/tasks/TODO-POOL-门禁真机待办池.md`，推送即收工。
+  - **本机（集成机）= 阶段批（ADR-0030 修订日批）**：**合并快检必做**（core 编译 + SharedUI 测试窄检 + 冲突/旧号扫描，远端"已验证"按未验证处理）；**全量门禁 + 真机一趟多单按阶段触发**（PLAN 阶段收尾 / 一批任务卡闭环 / 真机单攒齐 / 周度兜底），不每日空跑。池 append-only 归开发机，清扫/关闭/编号只归集成机（P82）。
+  - **壳工程与功能 Pod（ADR-0031）**：主工程 = 壳（AppEntry/装配/路由/权限）；Pod = ChuanqiCut（SDK，不动）+ SharedUI（瘦身基座 Common/Theme）+ ChuanqiCutPlayer/Import/Assets/Camera/Draft/Editor 七功能 Pod；**功能 Pod 横向零依赖**（交接走壳装配），依赖只指向基座/SDK/Assets；Camera 仅 iOS。实施 = INFRA-013~020 六阶段（BACKLOG §14），每阶段收尾 = 一个阶段批门禁点；Camera 迁移最大风险 = metallib 构建链（ADR-0021）。
+  - 发号水位（2026-10-07 晚后）：ADR 下一号 **0032**（0025~0028 预占素材库多轨）；pitfalls 下一号 **P83**；INFRA-013~020 已登记未建卡。
 - **收工逐项勾清单**（真源「任务结束必须同步上下文」）：`.ai/modules/` → ADR（改了既有惯例必须新增）→ TASK 卡 → HANDOFF → pitfalls → baselines → 当日日志 → MEMORY.md。模糊的"要回写"等于没写（连漏两轮的教训）。
 - 门类补充：门禁状态写**具体数字**（如 `Debug 44/44、Release 44/44`），不写"全绿"；HANDOFF 里的任务状态要**对着 commit 历史核**，不能照抄上一版。
 - 「本期明确不支持」要写进头文件/文档，不要只在对话里说。

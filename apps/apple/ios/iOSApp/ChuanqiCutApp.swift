@@ -12,6 +12,8 @@ import SwiftUI
 import SharedUI
 import ChuanqiCut
 import ChuanqiCutPlayer  // 播放器域 Pod（ADR-0031）；装配 PlayerPreviewInjector
+import ChuanqiCutImport  // 导入域 Pod：装配 MediaLibraryInjector（相册浏览器）
+import ChuanqiCutEditor  // 编辑器域 Pod：EditorScreen/HomeView 播放入口
 
 @main
 struct ChuanqiCutApp: App {
@@ -34,6 +36,10 @@ struct ChuanqiCutApp: App {
         // ADR-0031：相机 → 编辑器装配 —— 录制产物进编辑器（CameraView 消费注入点）。
         EditorEntryInjector.makeEditor = { url in
             AnyView(EditorScreen(initialMediaURL: url))
+        }
+        // ADR-0031：编辑器 → 相册浏览器装配（MediaSheet 弹导入面板，UIA-013）。
+        MediaLibraryInjector.makeAlbumPicker = { onDeliver in
+            AnyView(AlbumPickerScreen(onDeliver: onDeliver))
         }
     }
 

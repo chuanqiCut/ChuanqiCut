@@ -21,8 +21,10 @@ use_modular_headers!
 target 'ChuanqiCutMacApp' do
   pod 'ChuanqiCut/Source', :path => '../../..'
   pod 'SharedUI', :path => '../packages/SharedUI'
-  # 功能 Pod（ADR-0031 分治）：Player 阶段 1（2026-10-07）；后续 Import/Assets/Editor 逐阶段追加
+  # 功能 Pod（ADR-0031 分治，2026-10-07 全域完成）：Player/Camera(仅iOS)/Import/Editor
   pod 'ChuanqiCutPlayer', :path => '../packages/ChuanqiCutPlayer'
+  pod 'ChuanqiCutImport', :path => '../packages/ChuanqiCutImport'
+  pod 'ChuanqiCutEditor', :path => '../packages/ChuanqiCutEditor'
 end
 
 post_install do |installer|

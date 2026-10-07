@@ -528,5 +528,9 @@ RENDER-001/红线 #6 路线，勿把相机滤镜直接当 SDK 能力引用。
 | INFRA-021 | 基建 | ChuanqiCutEngine pod 正常化（头文件可见/docs 移除/Binary 移除/重名头改名）✅ 2026-10-07（[TASK-INFRA-021](TASK-INFRA-021.md)；pods_post_install 钩子） | INFRA-013 | podspec/pods_post_install.rb | Pods 工程 docs=0/头 42；core 45/45 |
 | INFRA-020 | 基建 | `ChuanqiCutDraft` Pod 骨架（PROJ-001 落地后填肉）✅ 2026-10-07（占位域符号；暂不进 Podfile，首功能落地时接线） | INFRA-013 | `packages/ChuanqiCutDraft/**` | 骨架编译过；随 PROJ-005/UIA-029 填功能 |
 
+**待拍板（INFRA-023，2026-10-07 登记）**：Swift 绑定与五个 UI 包的 SPM 包现在**只承担
+`swift test` 测试宿主**（App 依赖链 100% 走 pod，源码同一份）。若要彻底移除 SPM，需把
+五包测试迁到 pod `test_spec`（xcodebuild test），牵动门禁跑法——**待传哲拍板是否值得**。
+
 **批次（= ADR-0031 六阶段）**：阶段 0 = 013+014；阶段 1 = 015；阶段 2 = 016；阶段 3 = 017；
 阶段 4 = 018；阶段 5 = 019+020。同域业务任务与该域迁移**不并行**（串行让路）。

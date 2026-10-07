@@ -25,9 +25,9 @@ def pods_post_install(installer)
   engine = project.objects.find { |o| o.isa == 'PBXGroup' && o.name == 'ChuanqiCutEngine' }
   added = 0
   if engine
-    old = engine.children.find { |c| c.isa == 'PBXGroup' && c.display_name == 'core/include（头文件，只读浏览）' }
+    old = engine.children.find { |c| c.isa == 'PBXGroup' && c.display_name == 'core/include' }
     old&.remove_from_project
-    root_group = engine.new_group('core/include（头文件，只读浏览）')
+    root_group = engine.new_group('core/include')
     build_tree = lambda do |dir, group|
       Pathname.new(dir).children.sort.each do |child|
         if child.directory?

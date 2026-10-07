@@ -328,9 +328,8 @@ loading 覆盖 → 落 tmp → async 交付 → importMedia → loading 解除 +
   - `visionPointToImageNormalized` / `visionRectToImageNormalized` — 坐标映射。
 - **坐标契约（B 期全链，013/014 消费方照此）**：图像归一化坐标、**origin 左上**、
   两轴 0...1，与像素尺寸/方向无关；Vision 的左下原点在检测器内翻转，消费方不再翻。
-- **接线状态**：`offer()` 尚未挂进 `CameraViewModel.wireCallbacks`（本卡 write_set
-  不含该文件）——**CAM-013 首个消费方落地时接线**，届时一并把
-  `smoothingStrength` 接美颜面板。
+- **接线状态**：`offer()` 已挂进 `CameraViewModel.wireCallbacks`（CAM-016，2026-10-06，
+  美颜区域化为首个消费方；`smoothingStrength` 接面板仍留 CAM-013）。
 - 诊断埋点：`lastDetectionDurationMs` / `totalDetections` / `totalDroppedByRate` /
   `totalFailed`（真机耗时入 baselines 的数据源）。
 - 验证：simulator SDK `-typecheck` 0 错 0 警（比 -parse 强，抓出 4 个 API 形状错，
@@ -365,6 +364,39 @@ loading 覆盖 → 落 tmp → async 交付 → importMedia → loading 解除 +
   同一 .metal → metallib，连同真 BeautyKernel/CameraBeauty 在 macOS 宿主 GPU 上
   跑算法断言（profile 单调/方差单调/边缘过渡宽度/平台对比度/1080p 耗时），
   诊断开关 `CQ_DEBUG_PROFILE=1`。真机指标（≤8ms）仍待实测回填 baselines。
+
+---
+
+# CAM-015/016 落地（2026-10-06）：美颜色彩空间修正 + 人脸区域化
+
+真机验收反馈（磨皮闪烁、美白不基于人脸）触发，SPEC-CAM-015-016。**接口/装配形状**：
+
+- **`CameraBeautyParams.apply(to:faces:)`（SharedUI 契约变更，默认参向后兼容）**：
+  `nil`=无检测数据全画面（macOS/未接检测方旧行为）、`[]`=**直通**（对齐美型无脸
+  直通口径）、非空=图像归一化人脸框（左上原点，CAM-011 契约）→ 羽化蒙版区域化。
+  引擎注入签名 `(CIImage, Double) -> CIImage?` **不变**——蒙版在 `apply` 内以
+  `CIBlendWithMask` 施加，kernel 零改动。
+- **`SharedUI/Camera/FaceMask.swift`（新，纯函数宿主可测）**：`ciRect`（归一化→CI
+  y 翻转+外扩 15% 夹取）/ `smoothedBox`（两角点复用 smoothKeypoints）/
+  `mask`（黑底全画面 + 每脸径向渐变椭圆）。**黑底是刻意的**：cropped 只做交集，
+  不叠底则蒙版 extent = 椭圆矩形，语义靠采样巧合（P63）。
+- **`CIContext` 显式 gamma sRGB working space（CAM-015 根因修复）**：
+  harness 用未标记 BGRA（gamma 域）定标 σr，真机默认线性域下双边权重塌陷 →
+  皮肤逐帧沸腾。**新铁律：凡 harness 定标的 CI 参数，真机运行域必须与定标域
+  一致**（P62）。预览/录制输出色彩空间同步显式 sRGB；录制池缓冲加
+  `kCVPixelBufferColorSpaceKey`（池若不接受按 SPEC §6-3 备选自建池，真机冒烟定）。
+- **检测接线**：`wireCallbacks` 挂 `detector.offer(buffer, at: pts)`（采集队列
+  非阻塞，内部 15Hz 降频+忙丢弃）；`onResult`（检测队列）→ `FaceBoxStore`
+  （CameraRenderer.swift 内，锁保护 latest-wins + 框平滑，前后摄切换 reset）。
+  预览 draw / 拍照 / 录制 appendVideo 三路同源传 faces（录制实时跟随主体）。
+- **诊断**：`BeautyKernel.installSharedSmoothingIfNeeded` 三路径一次性
+  os_log（INSTALLED / FALLBACK+原因）——修"引擎是否在跑"不可知（96B 空壳前科）。
+  `CQ_DEBUG_PROFILE=1` 打印检测耗时/计数（baselines 回填数据源）。
+- **验证（本机，宿主脚本）**：坐标翻转/外扩夹取/平滑三态/蒙版渲染采样
+  **12/12 PASS**；区域化端到端（脸内 76→115 变亮、背景 76→76 不变）**2/2 PASS**。
+  FaceMaskTests 13 用例落盘待构建机 swift test；iOS typecheck（P46 技法）待
+  构建机——**本机 Swift 5.5 连 parse 都过不了 SE-0345 简写**。真机人工验收
+  （不闪/保边/背景不糊/预览=录制）归传哲。
 
 ---
 

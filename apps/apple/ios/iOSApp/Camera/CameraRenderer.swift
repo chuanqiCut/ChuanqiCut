@@ -64,6 +64,50 @@ final class CameraFrameSlot {
     }
 }
 
+// MARK: - 人脸框槽（CAM-016）
+
+/// 检测队列写 / 渲染与录制线程读，锁保护，latest-wins（同 CameraFrameSlot 纪律）。
+/// 语义对齐 CameraBeauty.apply 契约：nil = 尚无检测数据（美颜全画面兜底）；
+/// [] = 检测过但无脸（直通）；非空 = 平滑后的图像归一化人脸框（origin 左上）。
+final class FaceBoxStore {
+
+    private let lock = NSLock()
+    private var latest: [CGRect]?
+    /// 框帧间平滑状态：只在检测队列触碰（VisionDetector.onResult 串行回调），无锁。
+    private var previousMain: CGRect?
+
+    /// 检测队列调用。box 为图像归一化坐标（CAM-011 契约）；nil = 本帧无脸。
+    func update(with normalizedBox: CGRect?) {
+        lock.lock()
+        defer { lock.unlock() }
+        guard let box = normalizedBox else {
+            latest = []
+            previousMain = nil   // 目标离开画面：复位，重现时不带旧历史
+            return
+        }
+        // 框平滑：检测 15Hz 降频 + 跳帧场景下抑制蒙版抖动（羽化兜底，参数 [E]）。
+        let smoothed = FaceMask.smoothedBox(previous: previousMain, current: box,
+                                            params: KeypointSmoothingParams(strength: 0.5))
+        previousMain = smoothed
+        latest = [smoothed]
+    }
+
+    /// 渲染/录制线程调用。
+    func current() -> [CGRect]? {
+        lock.lock()
+        defer { lock.unlock() }
+        return latest
+    }
+
+    /// 前后摄切换等场景清状态：旧摄人脸框不污染新画面（首帧前 nil=全画面兜底）。
+    func reset() {
+        lock.lock()
+        latest = nil
+        previousMain = nil
+        lock.unlock()
+    }
+}
+
 /// 帧统计（`@unchecked Sendable`：跨 Metal 完成线程读写，内部锁保护）。
 ///
 /// 单独成类是为了让 `@Sendable` 的完成回调**捕获它而不是捕获 renderer**（P49 同族），
@@ -153,6 +197,7 @@ final class CameraPreviewRenderer: NSObject, MTKViewDelegate {
     private static let logger = Logger(subsystem: "com.chuanqi.cut", category: "camera.preview")
 
     let frameSlot = CameraFrameSlot()
+    let faceBoxes = FaceBoxStore()
     let commandQueue: MTLCommandQueue
 
     private let ciContext: CIContext
@@ -160,6 +205,9 @@ final class CameraPreviewRenderer: NSObject, MTKViewDelegate {
     private var preset: CameraFilterPreset = .none
     private let beautyLock = NSLock()
     private var beauty: CameraBeautyParams = .off
+    /// CAM-015：预览输出色彩空间，与录制侧显式对齐（sRGB，替代语义含糊的 DeviceRGB）。
+    private static let outputColorSpace = CGColorSpace(name: CGColorSpace.sRGB)
+        ?? CGColorSpaceCreateDeviceRGB()
 
     // MARK: 诊断计数（真机帧率验收口径 = SPEC-CAM-001 A5）
     //
@@ -276,8 +324,9 @@ final class CameraPreviewRenderer: NSObject, MTKViewDelegate {
     }
 
     /// 统一处理链（预览/拍照共用语义）：美颜 → 滤镜。录制侧在 Recorder 内保持同序。
-    func process(_ image: CIImage) -> CIImage {
-        var result = currentBeauty().apply(to: image)
+    /// faces 语义见 CameraBeauty.apply（nil=全画面兜底 / []=无脸直通 / 非空=区域化）。
+    func process(_ image: CIImage, faces: [CGRect]? = nil) -> CIImage {
+        var result = currentBeauty().apply(to: image, faces: faces)
         if let filtered = currentFilter().apply(to: result) {
             result = filtered
         }
@@ -299,7 +348,7 @@ final class CameraPreviewRenderer: NSObject, MTKViewDelegate {
         }
 
         var image = CIImage(cvPixelBuffer: buffer)
-        image = process(image)
+        image = process(image, faces: faceBoxes.current())
 
         let extent = image.extent
         let width = Int(extent.width)
@@ -313,8 +362,9 @@ final class CameraPreviewRenderer: NSObject, MTKViewDelegate {
         // 1) CI 渲进中间纹理（这里 requirement 是 usage 含 ShaderWrite，配 bgra 目标）。
         //    render(toMTLTexture:) 非 throws（iOS 17.2 SDK 无同步 render(toDestination:)，
         //    P48）：CI 内部的失败不抛到此层，成败只能看下面渲染完成后的完成状态。
+        //    CAM-015：显式 sRGB 输出（与录制侧同一色彩空间，替代语义含糊的 DeviceRGB）。
         ciContext.render(image, to: scratch, commandBuffer: commandBuffer,
-                         bounds: extent, colorSpace: CGColorSpaceCreateDeviceRGB())
+                         bounds: extent, colorSpace: Self.outputColorSpace)
 
         // 2) 采样中间纹理渲进 drawable（CAM-016 渲染 pass，取代被 P65 封死的 blit）：
         //    - colorAttachment 是 framebufferOnly 纹理唯一合法写法；

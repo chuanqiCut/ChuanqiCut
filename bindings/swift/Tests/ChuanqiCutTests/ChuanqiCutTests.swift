@@ -7,7 +7,7 @@
 // （--disable-sandbox：本机的 SwiftPM 沙箱会拦 ~/.swiftpm/security 的写入）
 
 import XCTest
-@testable import ChuanqiCut
+@testable import ChuanqiCutEngine
 
 /// 承接 @Sendable 回调里的结果（Swift 6 不允许在并发闭包中捕获 `var`）。
 private final class VersionBox: @unchecked Sendable {

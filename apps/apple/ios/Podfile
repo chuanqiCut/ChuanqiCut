@@ -10,7 +10,7 @@
 #
 # 默认源码模式（/Source subspec）：现场编译 C++20 内核 + ObjC++ PAL + Swift
 # 绑定，便于调试内核和分析问题；无需预构建 xcframework。
-# 需要发布级二进制集成时改用：pod 'ChuanqiCut/Binary', :path => '../../..'
+# 需要发布级二进制集成时改用：pod 'ChuanqiCutEngine/Binary', :path => '../../..'
 # （前置：tools/build/build_core_apple.sh --config=Release && bindings/swift/prepare.sh）
 
 platform :ios, '16.0'
@@ -19,7 +19,7 @@ platform :ios, '16.0'
 use_modular_headers!
 
 target 'ChuanqiCutApp' do
-  pod 'ChuanqiCut/Source', :path => '../../..'
+  pod 'ChuanqiCutEngine/Source', :path => '../../..'
   pod 'SharedUI', :path => '../packages/SharedUI'
   # 功能 Pod（ADR-0031 分治，2026-10-07 全域完成）：Player/Camera(仅iOS)/Import/Editor
   pod 'ChuanqiCutPlayer', :path => '../packages/ChuanqiCutPlayer'

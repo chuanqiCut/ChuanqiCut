@@ -28,7 +28,7 @@ Pod::Spec.new do |s|
   s.frameworks   = 'Metal', 'MetalKit', 'AVFoundation', 'CoreImage', 'CoreVideo'
 
   # SDK（内核 Session）+ 基座（Theme/注入点）
-  s.dependency 'ChuanqiCut'
+  s.dependency 'ChuanqiCutEngine'
   s.dependency 'SharedUI'
 
   # ⚠️ CChuanqiCut clang module 可见性（SharedUI.podspec 2026-10-02 实测同款；

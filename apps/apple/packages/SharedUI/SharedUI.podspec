@@ -65,5 +65,5 @@ Pod::Spec.new do |s|
   }
 
   # 不锁版本：仓库内本地 :path 集成，与 App 用同一份仓库。
-  s.dependency 'ChuanqiCut'
+  s.dependency 'ChuanqiCutEngine'
 end

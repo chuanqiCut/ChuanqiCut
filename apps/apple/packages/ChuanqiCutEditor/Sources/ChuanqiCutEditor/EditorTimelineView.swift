@@ -23,7 +23,7 @@
 //    同名的 TimelineView（与 UIA-003 撞名 Preview 完全同类，pitfalls P22）。
 
 import SwiftUI
-import ChuanqiCut
+import ChuanqiCutEngine
 import SharedUI  // 基座：Theme/注入点（ADR-0031）
 
 // MARK: - 视图模型侧的时间线状态

@@ -10,7 +10,7 @@
 // 渲染刻度，不是时间语义的存储形式 —— 存储/提交仍走整数 RationalTime）。
 
 import CoreGraphics
-import ChuanqiCut
+import ChuanqiCutEngine
 
 /// 拖拽/裁剪期间的**本地几何覆盖**（UIA-005）。
 ///

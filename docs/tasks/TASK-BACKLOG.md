@@ -467,9 +467,9 @@ RENDER-001/红线 #6 路线，勿把相机滤镜直接当 SDK 能力引用。
 
 | ID | 层 | 任务 | 依赖 | 写集要点 | 验收 |
 |---|---|---|---|---|---|
-| UIA-034 | UI | EditorViewController 骨架（三区 UIKit 容器 + SwiftUI 装配） | — | SharedUI `Editor/UIKit/**`(新)、EditorScreen 装配 | 双平台编译；既有测试零回归 |
-| UIA-035 | UI | 时间线 UIKit 自绘 + 手势 + CADisplayLink 播放头（卡顿修复主体） | 034 | SharedUI `Editor/UIKit/Timeline*` | 播放头移动仅重绘播放头层；主线程单帧 <16ms（真机走查） |
-| UIA-036 | UI | 预览浮层/传输条 + 底部工具栏/二级条 | 034 | SharedUI `Editor/UIKit/{Preview,Toolbar}*` | 剪映形状走查清单（RESEARCH-008 §2） |
+| UIA-034 | UI | EditorViewController 骨架（三区 UIKit 容器 + SwiftUI 装配）✅ 2026-10-07 | — | SharedUI `Editor/UIKit/**`(新)、EditorScreen 装配 | 双平台编译；既有测试零回归 |
+| UIA-035 | UI | 时间线 UIKit 自绘 + 手势 + CADisplayLink 播放头（卡顿修复主体）✅ 2026-10-07（播放头独立层每帧只动 path；真机 <16ms 走查 = 池 [3]） | 034 | SharedUI `Editor/UIKit/Timeline*` | 播放头移动仅重绘播放头层；主线程单帧 <16ms（真机走查） |
+| UIA-036 | UI | 预览浮层/传输条 + 底部工具栏/二级条 ✅ 2026-10-07（一级条落地；二级条随各能力实装引入） | 034 | SharedUI `Editor/UIKit/{Preview,Toolbar}*` | 剪映形状走查清单（RESEARCH-008 §2） |
 | UIA-037 | UI | 时间线缩略图（异步抽帧，吸收时间线视觉建议位） | 035 | 同上 + 抽帧缓存 | 主线程不解码；缩略图随片段可见 |
 
 **批次**：阶段 0（真机性能剖面，回填 baselines，UIA-034 前半天）→ 034 → 035 ∥ 036 → 037。

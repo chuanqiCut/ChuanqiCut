@@ -6,7 +6,7 @@
 // macOS 不挂本条（撤销/重做仍在 TimelineZone 头部吃 Cmd 快捷键，macOS 惯例化批次再进菜单栏——原 UIA-017 建议位已让位，重开时取新号）。
 
 import SwiftUI
-import ChuanqiCut
+import ChuanqiCutEngine
 import SharedUI  // 基座：Theme/注入点（ADR-0031）
 
 struct EditorBottomToolbar: View {

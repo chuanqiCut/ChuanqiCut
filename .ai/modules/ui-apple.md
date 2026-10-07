@@ -676,6 +676,22 @@ RESEARCH-004/005 结论全部维持，本文补**操作层**，关键增量：
 | UIA-034~037 | 编辑页 UIKit 批（曾 §12 021~024） | 预占未建卡 |
 | UIA-028~031 | 素材库/草稿箱/多轨/导出面板 UI | 预占（落 Assets/Draft/Editor Pod，ADR-0031） |
 
+### 编辑页 UIKit 重建（UIA-034~036，2026-10-07 落地；ADR-0024）
+
+- 结构：`ChuanqiCutEditor` Pod 内新增 `UIKit/`（EditorViewController / EditorCompactEditorView /
+  EditorTimelineUIView / EditorTransportBarView / EditorToolbarUIView，全部 `#if os(iOS)`）。
+- **每帧驱动不经 SwiftUI**：CADisplayLink（播放中运行）直读 vm.playhead → 播放头独立
+  CAShapeLayer 只改 path + 时间码 label；VM 零改动（playhead 维持 15Hz @Published 供
+  macOS SwiftUI 路径）。30Hz 整树重算根因消除（真机 <16ms 待验 = 池 [3]）。
+- 交互语义逐字对照旧 SwiftUI 版：拖拽中本地预览层（ADR-0012 不提交），松手一条命令
+  （move/trimEnd）+ refreshFromKernel；空白处 pan 让位 UIScrollView 滚动
+  （gestureRecognizerShouldBegin 命中分流）。
+- 装配：EditorLayoutContainer 增 `compact` 槽位（iOS 竖屏整页 = UIKit 容器）；
+  macOS/横屏 SwiftUI 路径零改动（占位 typealias 满足泛型）。媒体抽屉仍由 SwiftUI
+  壳的 sheet 承载（工具栏「媒体」回调）。
+- Engine 改名同轮：`ChuanqiCutEngine`（module_name='ChuanqiCut'，import 零改动；
+  podspec 文件同名改 `ChuanqiCutEngine.podspec`）。
+
 ### Pod 拆分进度（ADR-0031 / PLAN-壳工程与功能Pod）—— **全域完成（2026-10-07）**
 
 - ✅ 阶段 0（INFRA-013）：双 Podfile + 门禁逐 Pod 测试段 + 基座注入点。

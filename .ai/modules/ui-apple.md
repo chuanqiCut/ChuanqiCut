@@ -694,6 +694,38 @@ RESEARCH-004/005 结论全部维持，本文补**操作层**，关键增量：
 - Engine 改名同轮：`ChuanqiCutEngine`（module_name='ChuanqiCut'，import 零改动；
   podspec 文件同名改 `ChuanqiCutEngine.podspec`）。
 
+### UIA-037/038 落地（2026-10-07 编码完；验证未跑 = 池 [6]）
+
+用户命题（2026-10-07 中途追加）：红条居中 / 轨道区捏合缩放（帧级下界、全时长上界）/
+精度最小一帧 / 至少展示三帧画面 + 问询 SwiftUI 可行性与双端是否分写。
+
+- **SwiftUI 可行性定案**（详见 TASK-UIA-038 §SwiftUI）：居中播放头在 iOS 16 部署目标
+  下 SwiftUI 做不干净（onScrollGeometryChange=iOS18 / scrollPosition=iOS17）；
+  macOS Canvas 无 ScrollView 反而简单。**落法 = 纯逻辑一套共享、展示双端分写**
+  （iOS 维持 UIKit = ADR-0024 方向；macOS SwiftUI Canvas），正合 ARCH-005。
+- **新增** `TimelineThumbnails.swift`：`ClipFrameSampler`（槽宽/张数 ≥3 帧/采样点/
+  槽位映射/1s 桶，纯函数）、`TimelineThumbnailStore`（键=(assetId,源秒桶) 同素材共享、
+  in-flight 去重、失败记账不重试、LRU 240、**并发解码上限 3**、抽帧 seam 注入闭包；
+  默认实现 AVAssetImageGenerator——**AVFoundation 只许进本文件**，ADR-0022 决策 4
+  Player 域先例）、`TimelineZoomMath`（缩放界限 + snapToFrame；帧时长 30fps [E] 待
+  MEDIA 线透传真实帧率）。
+- **居中播放头（UIKit 重做）**：播放头从滚动内容移出为**固定覆盖层**（视口中央），
+  播放中每帧开销 = 一次 setContentOffset（不再改 path）；拖时间线 = scrub
+  （scrollViewDidScroll → onScrub → VM.setPlayhead，isSyncingOffset 抑制回环，
+  isPlaying 时宿主忽略）；UIPinchGestureRecognizer 播放头为锚缩放 → 全量重建
+  （状态快照 reload）→ 重新居中。
+- **TimelineLayout.anchorX**（默认 0 = 既有行为零回归锚）：UIKit 内容坐标形态
+  （anchorX=LEAD=视口宽/2）；SwiftUI 视口坐标形态（scrollSeconds=播放头时刻）；
+  visibleRange 按 anchor 两侧折算；标尺候选前置 1f/2f/5f（帧级只在放大时胜出）。
+- **SwiftUI 接入**：pan 未命中 = scrub；Magnification 以 simultaneousGesture 并入；
+  `.task(id: SyncKey(version,pps,width,assetCount))` 驱动请求；store.revision 读入
+  body 建立重绘依赖；槽位图 Image(decorative:) 绘制，边框压图上遮边缘。
+- **测试**：TimelineThumbnailTests 新增 **22 用例**（采样几何 6 / 缩放界限 3 / 锚定几何 5 /
+  Store 行为 7+1：去重、失败不重试、LRU、并发上限、invalidate、缺素材 no-op）。
+- ⚠️ **验证状态：swift test 与 iOS 模拟器构建均未执行**（用户 2026-10-07 指示跳过，
+  直接登记收工）——本节全部结论是"编码完成"不是"验证通过"；数据一律未实测
+  （baselines 无新数字）。池 [6] 第一优先 = Editor 包 swift test + iOS 构建。
+
 ### Pod 拆分进度（ADR-0031 / PLAN-壳工程与功能Pod）—— **全域完成（2026-10-07）**
 
 - ✅ 阶段 0（INFRA-013）：双 Podfile + 门禁逐 Pod 测试段 + 基座注入点。
@@ -708,6 +740,7 @@ RESEARCH-004/005 结论全部维持，本文补**操作层**，关键增量：
 
 | 日期 | 阶段/范围 | 结论（数字） |
 |---|---|---|
+| 2026-10-07 | UIA-037/038 编码轮 | **未执行**（用户指示跳过）：Editor 包 swift test（新增 22 用例）与 iOS 模拟器构建挂池 [6]；既有基线 Editor 36 用例 / 守恒 140 未复核 |
 | 2026-10-07 | Pod 拆分阶段 0/1 阶段批 | SharedUI swift test **88/88**；ChuanqiCutPlayer swift test **52/52**；合计 140 对齐迁移前 HEAD（守恒核过）；iOS 模拟器 + macOS 双壳 BUILD SUCCEEDED；全量门禁数字见当日日志 |
 | 2026-10-07 | SharedUI 测试套 + iOS 构建（迁移前基线） | 128→140 用例（美颜合并轮 +12）；iOS BUILD SUCCEEDED 项目代码 0 告警 |
 

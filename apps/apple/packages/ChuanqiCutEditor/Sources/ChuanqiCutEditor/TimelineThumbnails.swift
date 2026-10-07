@@ -176,7 +176,7 @@ final class TimelineThumbnailStore: ObservableObject {
     /// 请求一个片段的采样集（已按 LRU/去重/失败记账过滤）。
     /// `sourceSeconds` 来自 ClipFrameSampler.sampleSourceSeconds。
     func requestSamples(assetId: UInt64, sourceSeconds: [Double]) {
-        guard let path = assets[assetId] else { return }
+        guard assets[assetId] != nil else { return }
         for second in sourceSeconds {
             let key = TimelineThumbnailKey(
                 assetId: assetId,
@@ -187,8 +187,6 @@ final class TimelineThumbnailStore: ObservableObject {
             inflight.insert(key)
             pending.append(key)
         }
-        // 路径惰性解析：只在真正发起解码时转 URL。
-        pendingPaths[path] = pendingPaths[path] ?? URL(fileURLWithPath: path)
         pump()
     }
 
@@ -212,13 +210,9 @@ final class TimelineThumbnailStore: ObservableObject {
         cache.removeAll()
         order.removeAll()
         failed.removeAll()
-        pendingPaths.removeAll()
     }
 
     // MARK: 内部
-
-    /// 路径 → URL（pending 键关联；与键解耦以便 invalidate 清理）。
-    private var pendingPaths: [String: URL] = [:]
 
     private func pump() {
         while running < Self.maxConcurrentDecodes, !pending.isEmpty {
@@ -227,7 +221,7 @@ final class TimelineThumbnailStore: ObservableObject {
                 inflight.remove(key)
                 continue
             }
-            let url = pendingPaths[path] ?? URL(fileURLWithPath: path)
+            let url = URL(fileURLWithPath: path)
             running += 1
             let second = Double(key.bucket) * Self.bucketSeconds + Self.bucketSeconds / 2
             tasks[key] = Task { [weak self] in

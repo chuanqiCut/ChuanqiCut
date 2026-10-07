@@ -26,7 +26,7 @@ let package = Package(
         .iOS(.v16),
     ],
     products: [
-        .library(name: "ChuanqiCut", targets: ["ChuanqiCut"])
+        .library(name: "ChuanqiCutEngine", targets: ["ChuanqiCutEngine"])
     ],
     targets: [
         .binaryTarget(
@@ -64,8 +64,10 @@ let package = Package(
                 .linkedFramework("IOSurface", .when(platforms: [.macOS])),
             ]
         ),
+        // 2026-10-07：target 名改 ChuanqiCutEngine（与 pod module 一致；Xcode 26 显式
+        // 模块构建要求 module 名 == 目标名，module_name 别名技巧不可用）。路径不变。
         .target(
-            name: "ChuanqiCut",
+            name: "ChuanqiCutEngine",
             dependencies: ["CChuanqiCut"],
             path: "Sources/ChuanqiCut",
             linkerSettings: [
@@ -85,7 +87,7 @@ let package = Package(
         ),
         .testTarget(
             name: "ChuanqiCutTests",
-            dependencies: ["ChuanqiCut"],
+            dependencies: ["ChuanqiCutEngine"],
             path: "Tests/ChuanqiCutTests"
         ),
     ]

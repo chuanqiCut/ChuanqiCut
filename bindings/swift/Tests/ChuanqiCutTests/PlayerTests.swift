@@ -6,7 +6,7 @@
 // 语义重点：时刻 = 墙钟的函数（不是帧数累加）；恒为整帧；停止态恒 0。
 
 import XCTest
-@testable import ChuanqiCut
+@testable import ChuanqiCutEngine
 
 final class PlayerTests: XCTestCase {
 

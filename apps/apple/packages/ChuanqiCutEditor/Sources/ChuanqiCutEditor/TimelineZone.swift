@@ -11,7 +11,7 @@
 //   * 快照版本指示（UIA-002 调试残留，RESEARCH-004 §2 点名）移入 #if DEBUG。
 
 import SwiftUI
-import ChuanqiCut
+import ChuanqiCutEngine
 import SharedUI  // 基座：Theme/注入点（ADR-0031）
 
 struct TimelineZone: View {

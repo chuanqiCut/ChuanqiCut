@@ -37,8 +37,8 @@ App **不使用 SPM**；`bindings/swift/Package.swift` 仅作绑定层 `swift te
 ## 2. 两种集成模式（subspec）
 
 ```ruby
-pod 'ChuanqiCut/Source', :path => '../../..'   # 源码模式（**默认**）
-pod 'ChuanqiCut/Binary', :path => '../../..'   # 二进制模式（发布期/提速）
+pod 'ChuanqiCutEngine/Source', :path => '../../..'   # 源码模式（**默认**；pod 名 2026-10-07 起带 Engine 后缀）
+pod 'ChuanqiCutEngine/Binary', :path => '../../..'   # 二进制模式（发布期/提速）
 ```
 
 | subspec | 内容 | 适用场景 |
@@ -118,3 +118,22 @@ open ChuanqiCut.xcworkspace  # ⚠️ 开 workspace，不是 xcodeproj
 | `s.homepage` / `s.source` | 无 git remote，`REPLACE_ME.invalid` 占位（提供 `CQ_POD_SOURCE_GIT` lint 逃生口） | owner |
 | XCFramework 分发 | 产物不入库，需 CI 生成后随 pod 发布 | 依赖治理（ADR-0008） |
 | Source subspec 接入 FFmpeg | core 尚未引用 FFmpeg 符号；demux 落地时 Source subspec 需补 prebuilt 库链接 | MEDIA 系列任务 |
+
+
+---
+
+## 附：Pods 工程导航器噪音与头文件可见性（2026-10-07 排查定案）
+
+三个实证结论（当天四方案试错后收口）：
+
+1. **docs/ 出现在 Pods 工程**：CocoaPods 1.11.3 自动文档探测（`file_accessor` docs glob
+   `doc{s}{*,.*}/**/*`，相对 **pod 根**）。Engine Pod 根 = 仓库根 → 整棵 docs/ 被登记
+   为文件引用（仅导航器，不编译不进产物）。**无开关**。曾试把 podspec 挪到
+   `apps/apple/engine/` 让 pod 根脱离 docs/——结果 CocoaPods 对 **pod 根外的源文件
+   静默丢弃**（bindings 引用 0 条、空目标零产物"成功"，比噪音危险得多，已回退）。
+   结论：接受导航器噪音；根治需物理搬仓（放弃 Source 现场编译模式），不值。
+2. **core 头文件在导航器不可见**：`preserve_paths` **不产生** Pods 工程文件引用
+   （实测 0 条，它只影响打包不剥离）；头文件也**永不进 source_files**（headermap
+   按基名劫持 `<time.h>` 的 2026-10-02 案底，编译走 HEADER_SEARCH_PATHS）。
+3. **头文件浏览的正解**：App 工程（xcodegen）加 `core/include` **文件夹引用**
+   （`type: folder` + `buildPhase: none`，蓝色可浏览、零编译参与）——双 project.yml 已配。

@@ -108,7 +108,15 @@ cat docs/handoff/HANDOFF-004-*.md      # 3. 最近交接（状态以最新一份
 
 ---
 
-## 五、任务（tasks/）
+## 五、周报（reports/）
+
+| 文档 | 角色 |
+|---|---|
+| [`WEEKLY-*.md`](reports/WEEKLY-2026-W41.md) | **周报**（2026-10-07 立，传哲拍板）：项目介绍/当前架构/本周进度/关键数字/下周目标/风险，集成机每周出刊（规则见 [reports/README](reports/README.md)） |
+
+---
+
+## 六、任务（tasks/）
 
 | 文档 | 角色 |
 |---|---|

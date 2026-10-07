@@ -30,7 +30,10 @@
 #    cq_sdk.h 符号链接与 SPM 共用同一份文件，不复制。
 
 Pod::Spec.new do |s|
-  s.name          = 'ChuanqiCut'
+  # 2026-10-07（传哲拍板）：SDK 层整体改名 Engine——pod/module/SPM target 统一
+  #   'ChuanqiCutEngine'（Xcode 26 显式模块构建要求 module 名 == 目标名，module_name
+  #   别名不可用）；import 全仓同步更新；C 模块 CChuanqiCut 与静态库 libChuanqiCut 不变。
+  s.name          = 'ChuanqiCutEngine'
   s.version       = '0.1.0'
   s.summary       = 'Cross-platform video editing SDK (C++20 kernel + PAL + Swift bindings)'
   s.description   = <<-DESC
@@ -83,7 +86,11 @@ Pod::Spec.new do |s|
 
   # 模块文件与头文件本体不属于 source_files，声明保留防止打包路径剥离。
   s.preserve_paths = 'bindings/swift/Sources/CChuanqiCut/include/module.modulemap',
-                     'bindings/swift/Sources/CChuanqiCut/include/cq_sdk.h'
+                     'bindings/swift/Sources/CChuanqiCut/include/cq_sdk.h',
+                     # 让 core 头文件在 Pods 导航器可见（答疑 2026-10-07：源码模式
+                     # 下"看不到头文件"）。⚠️ 只 preserve、不进 source_files——
+                     # headermap 基名劫持 <time.h> 案底见 Source subspec 注释。
+                     'core/include/**/*.h'
 
   # Swift 编译期：让 `import CChuanqiCut` 解析到与 SPM 共用的 module.modulemap；
   # shim.c 的 `#include "cq_sdk.h"` 也走这条搜索路径。

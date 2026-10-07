@@ -10,7 +10,7 @@
 
 import SwiftUI
 import SharedUI
-import ChuanqiCut
+import ChuanqiCutEngine
 import ChuanqiCutPlayer  // 播放器域 Pod（ADR-0031）；装配 PlayerPreviewInjector
 import ChuanqiCutImport  // 导入域 Pod：装配 MediaLibraryInjector（相册浏览器）
 import ChuanqiCutEditor  // 编辑器域 Pod：EditorScreen/HomeView 播放入口

@@ -11,7 +11,7 @@
 
 import XCTest
 import Metal
-@testable import ChuanqiCut
+@testable import ChuanqiCutEngine
 
 final class PreviewTests: XCTestCase {
 

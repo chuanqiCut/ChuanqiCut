@@ -13,7 +13,7 @@
 // 运行：cd apps/apple/packages/SharedUI && swift test --disable-sandbox
 
 import XCTest
-import ChuanqiCut
+import ChuanqiCutEngine
 @testable import ChuanqiCutEditor
 
 @MainActor

@@ -9,7 +9,7 @@
 //   * 空时间线显示引导态（标题 + 主操作），不再是无装饰黑屏。
 
 import SwiftUI
-import ChuanqiCut
+import ChuanqiCutEngine
 import SharedUI  // 基座：Theme/注入点（ADR-0031）
 
 struct PreviewZone: View {

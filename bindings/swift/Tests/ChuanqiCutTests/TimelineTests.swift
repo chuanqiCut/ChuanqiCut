@@ -7,7 +7,7 @@
 //   * 重叠提交被内核拒绝 —— 版本不推进、片段不出现
 
 import XCTest
-@testable import ChuanqiCut
+@testable import ChuanqiCutEngine
 
 final class TimelineTests: XCTestCase {
 

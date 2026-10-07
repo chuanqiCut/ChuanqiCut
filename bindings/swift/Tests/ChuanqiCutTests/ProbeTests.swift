@@ -9,7 +9,7 @@
 // 运行：cd bindings/swift && swift test --disable-sandbox
 
 import XCTest
-import ChuanqiCut
+import ChuanqiCutEngine
 
 final class ProbeTests: XCTestCase {
 

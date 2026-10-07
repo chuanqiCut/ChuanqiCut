@@ -86,7 +86,14 @@ verification:
   - cd apps/apple/packages/SharedUI && swift test --disable-sandbox        # 构建机
   - xcodegen generate && xcodebuild build -workspace ChuanqiCut.xcworkspace -scheme ChuanqiCutApp  # 构建机
   - tools/ci/run_gate.sh                                                   # 构建机全量
-  - for f in Player/*.swift; do swiftc -parse "$f"; done                   # 本机静态（Swift 5.5 仅语法）
+  # ⚠️ 旧写法 `for f in Player/*.swift; do swiftc -parse "$f"; done` 已废弃：
+  # `-parse` 只验语法，**曾经让 38 处类型错误 + 一个从未入库的类型（PlayerZoomMath）
+  # 通过验收并推上主干**（P78）。本机（C 机 macOS 26.7 / Xcode 26.6）跑得动真检查，
+  # 没有理由再用语法级兜底。
+  - cd apps/apple/packages/SharedUI && swift test --disable-sandbox        # 类型+行为（构建机/本机）
+  - xcodebuild build -workspace ChuanqiCut.xcworkspace -scheme ChuanqiCutApp \
+      -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' -derivedDataPath /tmp/dd
+      # iOS 专属分支（PiP/亮度/转屏）必须单独编——macOS 侧编译看不到它们（P49）
   - python3 tools/ai/linkcheck_docs.py                                     # 本机
 risk:       AVAssetImageGenerator async API 的 Swift 6 Sendable 标注完整性未在本机验证（hypothesis）→ 构建机编译确认；AVPlayer seek 精度/起播延迟未实测 → 真机回填 baselines；iOS 专属分支（PiP/亮度/转屏）是 macOS 验证盲区（P49）→ 人工 iOS 视角审查 + 构建机 typecheck
 parallel:   false   # 伞任务一次成域，子步骤串行（同文件族）

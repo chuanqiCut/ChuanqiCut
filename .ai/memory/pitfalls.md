@@ -1280,7 +1280,7 @@ that has already been added to another AVAssetReader`（signal 6）。AVAsset �
 - 修复（CORE-010）：①`SlowCallAlarm` 收到 `core/base/perf.h` 成统一设施，带 workflow、
   默认阈值 500ms、Release 可用；②看门狗与阶段跟踪提到 Release（其余开销仅一次 relaxed
   atomic store + 一次 steady_clock）；③所有本来收进 NDEBUG 的**成员/计数器**同步解开。
-- 防复发规则（见 [TASK-CORE-010](../docs/tasks/TASK-CORE-010.md)）：
+- 防复发规则（见 [TASK-CORE-010](../../docs/tasks/TASK-CORE-010.md)）：
   **改完任何依赖 NDEBUG 的代码，必须 Debug + Release 双向编译验证**，不能只跑 Debug；
   判断某诊断「该不该进 Release」的标准是 —— **它报的是「系统在偏离正轨」还是「我想看细节」**，
   前者（降级发生、上界命中、慢调用、看门狗）一律 Warn 且 Release 可见，后者才留 Debug/Trace。

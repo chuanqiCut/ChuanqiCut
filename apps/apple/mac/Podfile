@@ -19,7 +19,7 @@ platform :osx, '15.4'
 use_modular_headers!
 
 target 'ChuanqiCutMacApp' do
-  pod 'ChuanqiCutEngine', :path => '../../..'
+  pod 'ChuanqiCutEngine', :path => '../../../engine'
   pod 'SharedUI', :path => '../packages/SharedUI'
   # 功能 Pod（ADR-0031 分治，2026-10-07 全域完成）：Player/Camera(仅iOS)/Import/Editor
   pod 'ChuanqiCutPlayer', :path => '../packages/ChuanqiCutPlayer'

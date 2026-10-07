@@ -18,7 +18,7 @@ let package = Package(
         .library(name: "SharedUI", targets: ["SharedUI"])
     ],
     dependencies: [
-        .package(path: "../../../../bindings/swift")
+        .package(path: "../../../../engine/bindings/swift")
     ],
     targets: [
         .target(

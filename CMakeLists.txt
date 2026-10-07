@@ -33,8 +33,8 @@ set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 enable_testing()
 
 # ---- 聚合各层（按写集：core / pal / apps / third_party / tools / tests）----
-add_subdirectory(core)
-add_subdirectory(pal)
+add_subdirectory(engine/core)
+add_subdirectory(engine/pal)
 add_subdirectory(apps)
 add_subdirectory(third_party)
 add_subdirectory(tools)

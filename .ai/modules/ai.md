@@ -87,7 +87,7 @@ pal/apple/net/          URLSession + SSE（零第三方）                     �
 ## 硬规则（违反即 PR 驳回）
 
 1. **原始素材默认不出设备**：上云只有 FeatureReport（KB 级聚合统计）+ 用户消息；人脸只报 count/area_ratio 布尔级，不做识别。
-2. **LLM 输出 = EditPlan（`cq.editplan/1`）action 列表**，动词集 8 个封顶；时间字段一律 `{value, timescale}` 且 `timescale==120000`，浮点秒一律非法；未知 schema 版本拒绝并降级，不猜测解析。
+2. **LLM 输出 = EditPlan（`cq.editplan/1`）action 列表**，动词集 9 个封顶（SPEC §6.1 行文"八个"系笔误，枚举清单为准，2026-10-08 冻结时裁定）；时间字段一律 `{value, timescale}` 且 `timescale==120000`，浮点秒一律非法；未知 schema 版本拒绝并降级，不猜测解析。
 3. **C++ 校验器是唯一权威**（schema + 引用 + 时间线合法性）；修复重试 ≤2 → 规则引擎降级（`generator: local_rules`）。
 4. **AI 产物全走 Command**（与人手同一撤销栈，批次原子可撤销）；禁止 AI 链路直接改 ModelSnapshot。
 5. 供应商可插拔（OpenAI-compatible 协议收敛），key 不落盘明文（Keychain，绑定层职责）。
@@ -115,15 +115,43 @@ tools/build/build_core.sh --platform=apple
 
 | Task ID | 标题 | 状态 |
 |---|---|---|
-| AIEDIT-000~011 | 智能成片管线 | 立项（卡全建，未开工） |
+| AIEDIT-001 | 智能成片契约冻结（FeatureReport/EditPlan/ILlmClient/INetTransport + 校验器） | **编码完成（2026-10-08）**：本机 clang13 直编单测 117 检查 0 失败（golden 58 例：合法 18/18、非法 40/40 错误码精确匹配）；**构建机门禁未跑 = 池[8]** |
+| AIEDIT-002~011 | 其余管线卡 | 未开工（002/004/005/011 依赖 001 已解，可排期） |
 | AIEDIT-012~015 | 号段 | 预占 |
+
+### AIEDIT-001 落地形状（2026-10-08；下游卡开工前必读）
+
+- **契约头**：`engine/core/include/cq/ai/{feature_report.h, edit_plan.h, llm_client.h}` +
+  `engine/core/include/cq/pal/net.h`（INetTransport/SSE 拆帧边界冻结：空行分事件、剥
+  data: 前缀、跳注释行，"[DONE]" 哨兵原样送达）。
+- **动词集按 9 个冻结**（select_intro/highlight/outro + place_clip/remove_range/trim_clip/
+  reorder + set_transition/set_bgm_placeholder）——SPEC §6.1 行文"八个"系笔误，两处枚举
+  清单一致按 9 落（见 edit_plan.h 文件头注记）。op 名 ↔ 枚举映射实现在
+  edit_plan_validator.cpp（`namespace cq` 直层，与头声明一致）。
+- **校验器**：`engine/core/src/ai/plan/edit_plan_validator.{h,cpp}`（内核私有头，不进
+  PUBLIC include）。三层：手写 RFC 8259 JSON 解析（转义/代理对/无尾逗号/无前导零/嵌套
+  深度 64 上限/int64 溢出检测）→ 结构（schema/必填/类型/per-op 字段齐全）→ 语义
+  （引用/值域/__int128 防溢出边界/段重叠/排列）。浮点秒两种形态（直接浮点与对象内
+  浮点）都在形状检查**前**识别为 kAiPlanFloatTime。
+- **错误码**：status.h 9500~9513（kAiPlan* 段）+ StatusCategory::kAiPlan(11)；码值
+  static_assert 锁定，manifest.txt 按码名断言。
+- **宽松策略**：未知**字段**忽略（向前兼容），未知 **op/转场/schema 版本**拒绝——
+  扩展必须走 schema 版本号，不走私加字段。校验器无时间线上下文，trim/remove 落点
+  校验归执行器（AIEDIT-006）。
+- **golden**：`engine/core/src/ai/plan/edit_plan_golden/`（58 例 + manifest.txt 增量
+  登记处，append-only；生成脚本已删防覆盖手加用例）。测试目标 cq_tests_ai_edit_plan
+  需 `-I engine/core/src`（私有头）。
+- **EditPlanAction 用 has_asset/has_shot 存在性标志**（与空串/缺省区分）——下游执行器
+  判字段时用 has_*，不要用字符串空判。
 
 ### 测试与门禁记录（阶段批）
 
 | 日期 | 阶段/范围 | 结论（数字） |
 |---|---|---|
-| — | 未实测（本模块无独立阶段批记录） | — |
+| 2026-10-08 | AIEDIT-001 单测（本机 clang 13 直编最小组合：validator + status + test，非 ctest 通道） | 117 检查 0 失败：golden 合法 18/18、非法 40/40（错误码按码名精确匹配）；编译零警告（-Wall -Wextra -Wconversion -Wshadow -Wold-style-cast）；**build_core.sh / ctest -R ai_edit_plan 未跑（本机无 cmake/ninja）= 池[8]** |
 
 ### 调研 · 决策 · 池指针
 
 - ADR-0020/0005 · RESEARCH-003/RESEARCH-001 F8 · SPEC-AIEDIT-001
+
+- HANDOFF-017（2026-10-08）：AIEDIT-001 编码完成、构建机门禁未跑（池 [8]）；后续卡承接见 `docs/tasks/TASK-AIEDIT-001.md`「冻结裁定」。

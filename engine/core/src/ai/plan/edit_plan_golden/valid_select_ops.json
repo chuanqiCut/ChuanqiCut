@@ -1,0 +1,29 @@
+{
+  "schema": "cq.editplan/1",
+  "based_on": {
+    "assets": [
+      "a1",
+      "a2",
+      "a3"
+    ],
+    "timeline_rev": 0
+  },
+  "actions": [
+    {
+      "op": "select_intro",
+      "asset": "a1",
+      "shot": 0,
+      "reason": "稳定开场"
+    },
+    {
+      "op": "select_highlight",
+      "asset": "a2",
+      "shot": 1
+    },
+    {
+      "op": "select_outro",
+      "asset": "a3",
+      "shot": 1
+    }
+  ]
+}

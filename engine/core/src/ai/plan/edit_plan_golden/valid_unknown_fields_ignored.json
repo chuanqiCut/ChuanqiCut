@@ -1,0 +1,30 @@
+{
+  "schema": "cq.editplan/1",
+  "based_on": {
+    "assets": [
+      "a1"
+    ],
+    "timeline_rev": 0,
+    "future_hint": true
+  },
+  "actions": [
+    {
+      "op": "place_clip",
+      "asset": "a1",
+      "shot": 0,
+      "timeline_start": {
+        "value": 0,
+        "timescale": 120000
+      },
+      "source_in": {
+        "value": 0,
+        "timescale": 120000
+      },
+      "duration": {
+        "value": 1000,
+        "timescale": 120000
+      },
+      "confidence": 0.9
+    }
+  ]
+}

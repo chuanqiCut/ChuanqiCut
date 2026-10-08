@@ -1,0 +1,25 @@
+{
+  "schema": "cq.editplan/1",
+  "based_on": {
+    "assets": [
+      "a1",
+      "a2",
+      "a3"
+    ],
+    "timeline_rev": 0
+  },
+  "actions": [
+    {
+      "op": "remove_range",
+      "timeline_start": {
+        "value": 120000,
+        "timescale": 120000
+      },
+      "duration": {
+        "value": 60000,
+        "timescale": 120000
+      },
+      "reason": "删除中段糊的"
+    }
+  ]
+}

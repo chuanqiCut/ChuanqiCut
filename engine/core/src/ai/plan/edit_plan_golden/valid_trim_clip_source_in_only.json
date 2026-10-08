@@ -1,0 +1,24 @@
+{
+  "schema": "cq.editplan/1",
+  "based_on": {
+    "assets": [
+      "a1",
+      "a2",
+      "a3"
+    ],
+    "timeline_rev": 0
+  },
+  "actions": [
+    {
+      "op": "trim_clip",
+      "timeline_start": {
+        "value": 0,
+        "timescale": 120000
+      },
+      "source_in": {
+        "value": 12000,
+        "timescale": 120000
+      }
+    }
+  ]
+}

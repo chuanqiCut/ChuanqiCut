@@ -1,0 +1,65 @@
+# AIEDIT-001 EditPlan 校验器 golden 样例集（manifest，增量登记处）
+# 格式：<文件名>;valid | <文件名>;invalid;<StatusToString 码名>
+# 校验上下文（default 资产表，测试注入）：
+#   a1: duration=1200000 (10s) @120000, shots=3
+#   a2: duration=2400000 (20s), shots=4
+#   a3: duration=600000  (5s),  shots=2
+# 新增用例：放一个 JSON（≤2KB）+ 在文件末尾追加一行。
+valid_spec_example.json;valid
+valid_single_place_clip.json;valid
+valid_empty_actions.json;valid
+valid_select_ops.json;valid
+valid_bgm_placeholder.json;valid
+valid_remove_range.json;valid
+valid_trim_clip_duration_only.json;valid
+valid_trim_clip_source_in_only.json;valid
+valid_reorder.json;valid
+valid_narrative_full.json;valid
+valid_generator_local_rules.json;valid
+valid_boundary_exact_source.json;valid
+valid_adjacent_segments.json;valid
+valid_same_asset_multi_shots.json;valid
+valid_timeline_rev.json;valid
+valid_unicode_reason.json;valid
+valid_unknown_fields_ignored.json;valid
+valid_transition_none.json;valid
+invalid_json_syntax.json;invalid;AiPlanJsonMalformed
+invalid_json_empty.json;invalid;AiPlanJsonMalformed
+invalid_json_top_level_array.json;invalid;AiPlanFieldType
+invalid_schema_version2.json;invalid;AiPlanSchemaUnknown
+invalid_schema_missing.json;invalid;AiPlanFieldMissing
+invalid_schema_type.json;invalid;AiPlanFieldType
+invalid_actions_missing.json;invalid;AiPlanFieldMissing
+invalid_actions_not_array.json;invalid;AiPlanFieldType
+invalid_action_elem_not_object.json;invalid;AiPlanFieldType
+invalid_op_unknown.json;invalid;AiPlanUnknownOp
+invalid_op_missing.json;invalid;AiPlanFieldMissing
+invalid_based_on_missing.json;invalid;AiPlanFieldMissing
+invalid_based_on_rev_float.json;invalid;AiPlanFieldType
+invalid_time_float_seconds.json;invalid;AiPlanFloatTime
+invalid_time_timescale_60000.json;invalid;AiPlanTimescaleMismatch
+invalid_time_timescale_missing.json;invalid;AiPlanFieldMissing
+invalid_time_value_missing.json;invalid;AiPlanFieldMissing
+invalid_time_timescale_float.json;invalid;AiPlanFloatTime
+invalid_time_value_string.json;invalid;AiPlanFieldType
+invalid_time_value_overflow.json;invalid;AiPlanFieldType
+invalid_source_in_negative.json;invalid;AiPlanTimeNonPositive
+invalid_duration_zero.json;invalid;AiPlanTimeNonPositive
+invalid_source_range_overrun.json;invalid;AiPlanSourceRange
+invalid_source_range_overflow.json;invalid;AiPlanSourceRange
+invalid_asset_unknown.json;invalid;AiPlanAssetUnknown
+invalid_based_on_asset_unknown.json;invalid;AiPlanAssetUnknown
+invalid_shot_out_of_range.json;invalid;AiPlanShotOutOfRange
+invalid_shot_negative.json;invalid;AiPlanShotOutOfRange
+invalid_timeline_overlap.json;invalid;AiPlanTimelineOverlap
+invalid_reorder_dup.json;invalid;AiPlanReorderNotPermutation
+invalid_reorder_size.json;invalid;AiPlanReorderNotPermutation
+invalid_reorder_index_out.json;invalid;AiPlanReorderNotPermutation
+invalid_transition_kind.json;invalid;AiPlanTransitionKindUnknown
+invalid_transition_missing_kind.json;invalid;AiPlanFieldMissing
+invalid_place_clip_missing_duration.json;invalid;AiPlanFieldMissing
+invalid_select_missing_asset.json;invalid;AiPlanFieldMissing
+invalid_asset_field_type.json;invalid;AiPlanFieldType
+invalid_narrative_type.json;invalid;AiPlanFieldType
+invalid_assistant_message_type.json;invalid;AiPlanFieldType
+invalid_generator_type.json;invalid;AiPlanFieldType

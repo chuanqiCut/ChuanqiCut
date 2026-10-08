@@ -1,0 +1,11 @@
+{
+  "based_on": {
+    "assets": [
+      "a1",
+      "a2",
+      "a3"
+    ],
+    "timeline_rev": 0
+  },
+  "actions": []
+}

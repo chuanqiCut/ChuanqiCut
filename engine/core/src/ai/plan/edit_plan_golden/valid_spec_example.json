@@ -1,0 +1,55 @@
+{
+  "schema": "cq.editplan/1",
+  "based_on": {
+    "assets": [
+      "a1",
+      "a2",
+      "a3"
+    ],
+    "timeline_rev": 0
+  },
+  "actions": [
+    {
+      "op": "place_clip",
+      "asset": "a2",
+      "shot": 1,
+      "timeline_start": {
+        "value": 0,
+        "timescale": 120000
+      },
+      "source_in": {
+        "value": 12000,
+        "timescale": 120000
+      },
+      "duration": {
+        "value": 18000,
+        "timescale": 120000
+      },
+      "reason": "质量最高（0.86）且有正面人脸，适合开场"
+    },
+    {
+      "op": "set_transition",
+      "timeline_start": {
+        "value": 18000,
+        "timescale": 120000
+      },
+      "kind": "cross_fade",
+      "duration": {
+        "value": 3000,
+        "timescale": 120000
+      },
+      "reason": "两段调性接近，软切"
+    }
+  ],
+  "narrative": {
+    "structure": "开场-a2→发展-a1→高潮-a3",
+    "dropped": [
+      {
+        "asset": "a3",
+        "shot": 0,
+        "reason": "疑似重复"
+      }
+    ],
+    "assistant_message": "我用3段素材剪了一支片子。"
+  }
+}

@@ -190,6 +190,10 @@ final class CameraViewModel: ObservableObject {
     @Published var bodyReshape = BodyReshapeParams() {
         didSet { renderer?.setBodyReshape(bodyReshape) }
     }
+    /// 美妆（CAM-026：唇/腮/眼影/眉/美瞳区域着色）。预览即时生效；录制锁定。
+    @Published var makeup = MakeupParams() {
+        didSet { renderer?.setMakeup(makeup) }
+    }
 
     /// 对焦/曝光复位到连续自动（UI「自动」按钮）。
     func resetFocusAndExposure() {
@@ -252,11 +256,15 @@ final class CameraViewModel: ObservableObject {
         // CAM-024：检出宠物（有姿态）时提取双眼锚点——有脸优先人脸，无脸贴纸锚宠物。
         // CAM-025：人体四关节齐全时提取美体锚点。
         if let faceBoxes = renderer?.faceBoxes {
+            // CAM-027：把皮肤语义蒙版装进美颜契约层（读同一 faceBoxes 的最新锚点）。
+            // 不安装则 CameraBeauty 走 CAM-019 框级椭圆，逐位等价。
+            PortraitSemantics.installSkinMask(faceBoxStore: faceBoxes)
             detector.onResult = { [faceBoxes, weak detector] snapshot in
                 faceBoxes.update(with: snapshot.face?.box)
                 faceBoxes.updateAnchors(snapshot.face.flatMap(CameraReshapeAnchors.init(face:)))
                 faceBoxes.updateAnimalEyes(snapshot.animals.first.flatMap(StickerEyeAnchor.init(animal:)))
                 faceBoxes.updateBodyAnchors(snapshot.body.flatMap(BodyReshapeAnchors.init(body:)))
+                faceBoxes.updateMakeupAnchors(snapshot.face.flatMap(MakeupAnchors.init(face:)))
                 if ProcessInfo.processInfo.environment["CQ_DEBUG_PROFILE"] == "1", let detector {
                     let ms = detector.lastDetectionDurationMs.map { String(format: "%.1f", $0) } ?? "nil"
                     print("cq.debug: face detect lastMs=\(ms) total=\(detector.totalDetections) failed=\(detector.totalFailed) dropped=\(detector.totalDroppedByRate)")
@@ -375,6 +383,7 @@ final class CameraViewModel: ObservableObject {
             beauty: beauty,       // 美颜同步锁定
             reshape: reshape,     // 美型同步锁定（CAM-013）
             bodyReshape: bodyReshape,  // 美体同步锁定（CAM-025）
+            makeup: makeup,            // 美妆同步锁定（CAM-026）
             sticker: stickerCatalog.first { $0.id == selectedStickerID },  // 贴纸锁定（CAM-014）
             dualComposer: dualComposer,
             faceBoxes: faceBoxes, // 人脸框/锚点实时读取（蒙版跟随 + warp/贴纸跟随，WYSIWYG）

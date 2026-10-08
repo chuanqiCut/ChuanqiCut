@@ -36,6 +36,27 @@ static inline float cq_beauty_spatial(float d) {
     return exp(-d * d / 8.0f);
 }
 
+// ── CAM-029 磨皮算法升级（2026-10-07，RESEARCH-009 §差距3）──────────────────
+
+// 唇齿/眉眼色域保护 [E]：唇 = 红主导（R 显著高于 G/B）；牙/眼白 = 高亮低饱和。
+// 返回 0...1 磨皮权重系数：保护区 → ~0.15（保留细节），正常皮肤 → 1。
+// 几何/语义蒙版（CAM-026 唇蒙版 / CAM-027 分割）就位后此项退居二线兜底。
+static inline float cq_beauty_protect(float4 c) {
+    float mx = max(max(c.r, c.g), c.b);
+    float mn = min(min(c.r, c.g), c.b);
+    float sat = (mx - mn) / max(mx, 1e-4f);
+    float redness = (c.r - max(c.g, c.b)) / max(mx, 1e-4f);
+    float lip = smoothstep(0.08f, 0.25f, redness);
+    float brightFlat = smoothstep(0.75f, 0.95f, mx) * (1.0f - smoothstep(0.08f, 0.2f, sat));
+    return 1.0f - 0.85f * max(lip, brightFlat);
+}
+
+// 肤色域自适应 σ（亮度分档）[E]：暗部（阴影/发际）少磨（0.6×），亮部（颧/额）多磨
+//（1.4×）——降低暗部噪声放大与亮部磨不净的双向问题。y0 = 中心亮度 0...1。
+static inline float cq_beauty_sigma_local(float sigma_range, float y0) {
+    return sigma_range * (0.6f + 0.8f * smoothstep(0.2f, 0.8f, y0));
+}
+
 extern "C" {
 
 // Pass 1：下采样 + 水平亮度域双边。
@@ -52,7 +73,11 @@ float4 cq_beauty_down_h(coreimage::sampler src,
     float2 center = cq_beauty_clamp_pos((src.coord() + 0.5f) * inv_scale, ext);
     float4 c0 = src.sample(center);
     float y0 = cq_beauty_luma(c0);
-    float sigma2 = 2.0f * sigma_range * sigma_range;
+    // CAM-029：肤色域自适应 σ（按中心亮度分档）+ 唇齿/眉眼色域保护（中心像素定案，
+    // 邻点共用同一保护系数——省逐 tap 计算，观感差异可忽略 [E]）。
+    float sigma_local = cq_beauty_sigma_local(sigma_range, y0);
+    float protect = cq_beauty_protect(c0);
+    float sigma2 = 2.0f * sigma_local * sigma_local * max(protect, 0.15f);
 
     float4 acc = c0;
     float wsum = 1.0f;

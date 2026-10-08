@@ -126,7 +126,7 @@ public struct CameraView: View {
             Button {
                 showBeautyPanel = true
             } label: {
-                let allOff = model.beauty.isOff && model.reshape.isOff && model.bodyReshape.isOff
+                let allOff = model.beauty.isOff && model.reshape.isOff && model.bodyReshape.isOff && model.makeup.isOff
                 Image(systemName: allOff ? "face.dashed" : "face.smiling")
                     .font(.title2)
                     .foregroundStyle(allOff ? .white : .yellow)
@@ -417,11 +417,27 @@ public struct CameraView: View {
                     .font(.caption.monospacedDigit())
                     .frame(width: 32)
             }
+            Text("美妆").font(.subheadline)
+            HStack(spacing: 10) {
+                ForEach(["自然", "元气", "浓颜"], id: \.self) { name in
+                    Button(name) {
+                        model.makeup = MakeupParams.presets[name] ?? .off
+                    }
+                    .buttonStyle(.bordered)
+                    .tint(.white)
+                }
+                Spacer()
+                Button("无") {
+                    model.makeup = .off
+                }
+                .buttonStyle(.bordered)
+            }
             HStack {
                 Button("重置") {
                     model.beauty = .off
                     model.reshape = .off
                     model.bodyReshape = .off
+                    model.makeup = .off
                 }
                 .buttonStyle(.bordered)
                 Spacer()

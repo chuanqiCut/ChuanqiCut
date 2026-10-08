@@ -94,6 +94,41 @@
 - 验收回填：baselines「编辑页主线程单帧」段 + 新「时间线缩略图」段；关 TASK-UIA-037/038 待验标记
 - 备注：可并入 [1][2][3] 同一趟真机；[6] 未自查通过前不得视为完成
 
+### [9] 相机 C 期三条（CAM-026 美妆 / CAM-027 人像分割 / CAM-029 磨皮升级）——构建机门禁 + 缺项（⏳ 待门禁 + 待真机）
+
+- 来源：本机 / B 相机线 + 2026-10-08（上一工具会话产物，未提交；HANDOFF-017 收口轮）
+- 改动面：B 线 · apps/apple/packages/ChuanqiCutCamera（契约 1 新：MakeupParams.swift；
+  实现 1 新：Effects/MakeupRenderer.swift；改 5：CameraRenderer / CameraRecorder /
+  CameraViewModel / CameraView / Effects/beauty_bilateral.metal）
+- **本轮已做：回退一处让整包编不过的半成品接线** —— CameraRenderer.process 原引用
+  `PortraitSemantics.skinMask(for:)`（该类型全仓无实现）与 `apply(to:faces:skinMask:)`
+  （CameraBeauty 只有 `apply(to:faces:)` 单一签名，见 CameraBeauty.swift:91）→ 已改回
+  `currentBeauty().apply(to: image, faces: faces)` 并留说明注释。全仓已无该两处引用。
+- 待办（构建机，第一优先）：[ ] **iOS 双壳构建 -scheme ChuanqiCutApp**（本机 Xcode 13.1 /
+  Swift 5.5.1 编不了：部署目标 iOS 16、代码已用 Swift 5.7 `if let x {` 简写）；
+  [ ] Camera 契约 `swift test`（本机 swiftpm 5.5 解析不了 tools-version 6.1）；
+  [ ] 冲突/旧号扫描（本轮只动 Impl 一处 + 文档）
+- ~~CAM-026 契约单测~~ ✅ **2026-10-08 晚已交付**：`Tests/ChuanqiCutCameraTests/MakeupMaskTests.swift`
+  10 用例（凸包 / 坐标翻转 / extent 恒等 / 唇内挖空渲染采样 / 参数夹取与预设键名）。
+  **本机跑不了（swiftpm 5.5），需构建机 `swift test` 实证。**
+- **CAM-027 v1 已交付（2026-10-08 晚）**：契约层 `PortraitSkinMask` + `CameraBeautyEngine.semanticMask`
+  注入点（`apply(to:faces:)` 签名零改动）+ Impl 薄壳 `Detection/PortraitSemantics.swift` +
+  ViewModel 装配 1 处 + `PortraitSkinMaskTests.swift` 7 用例。**新增门禁关注点**：
+  `FaceBoxStore` 补了 `@unchecked Sendable` 一致性（并发契约变更，构建机需确认无误警）。
+  本期**不做**头发分割（SDK 15 无该符号）与肤色聚类（归 CAM-028）——已写进文件注释。
+- 待办（编码缺口，非验证）：
+  [ ] **CAM-029 三个未决**（① 保护与自适应 σ 只落在 pass1 down_h、pass2 up_v_mix 未用——
+  有意还是漏改需传哲定；② BeautyKernel 参数面未动，protect 0.85 / σ 0.6×~1.4× 现为写死常量；
+  ③ 「细节回注」卡上的第 ① 项**完全没做**，缺 beauty_harness 剖面实测：保边保持率 ≥60%、
+  高频能量恢复 ≥80% [E]、全脸 ≤8ms）；[ ] **CAM-027 仍然零实现**（PortraitSemantics.swift
+  未建；卡要求「API 形状保持 apply(to:faces:) 不变、调用方零改动」——别再给调用方加参数）
+- 待办（真机 iPhone 17 Pro，归传哲，可并 CAM 大批同一趟）：[ ] 美妆五区域跟随无漂移、
+  口腔不染色、强度滑杆单调；[ ] 预览=录制色（WYSIWYG，含双摄 PiP 路）；
+  [ ] 磨皮 A/B：唇齿/眉眼是否还被磨、暗部是否少磨亮部多磨、**回去对 CAM-012 版本比**；
+  [ ] 全链路帧率与 ≤8ms 预算（GPU 剖面）
+- 验收回填：baselines「磨皮」段（现 9.85ms 为旧值，升级后需重测）+ 关 TASK-CAM-026/027/029
+- 备注：池 [8]（AIEDIT-001 编辑线）与本条同机同轮产物，换机会时可一并带走
+
 ## 已消化
 
 （集成机关闭的条目移到这里，带 ✅ + 日期 + 数字 / 结论。）
@@ -116,8 +151,28 @@
   贴纸锚定、美体形变；[ ] CAM-030：录制成功率回归（音频先到场景）、档位/帧率切换、
   高清拍照入相册、变焦/曝光对焦手感、录制计时；[ ] MetalFX 开/关 A/B 帧率与画质；
   [ ] 检测 30Hz 功耗对账（不划算回 24Hz，一行）
-- 集成机落账清单：[ ] pitfalls **P86**=契约单测全绿≠装配正确（预览 FaceBoxStore 断线，
-  两线同病过全部门禁）；**P87**=AVAssetWriter 音频必须守会话起点（startSession 在首
+- 集成机落账清单：[ ] pitfalls **P87**=契约单测全绿≠装配正确（预览 FaceBoxStore 断线，
+  两线同病过全部门禁）；**P88**=AVAssetWriter 音频必须守会话起点
+  （2026-10-08 改号：原写的 P86 已被「同机双会话互吞」占用）（startSession 在首
   视频帧，音频先到即 .failed 不可恢复；注释声称的语义必须真实现）；[ ] **ADR-0032 提案**
   =人像能力算法驱动定则（无算法即无效果，nil→直通，传哲 2026-10-07；已落地代码与用例）；
   [ ] BACKLOG 登记 CAM-022~030 + 算法定则行；[ ] baselines 待实测项见 HANDOFF-014
+
+### [8] AIEDIT-001 契约冻结 + EditPlan 校验器——构建机门禁（⏳ 待门禁）
+
+- 来源：开发机 / A 编辑器线（AIEDIT 并入 A，PLAN-三线并行 §1a）· 2026-10-08 编码会话
+- 改动面：engine/core/include/cq/ai/{feature_report.h, edit_plan.h, llm_client.h}(新) +
+  engine/core/include/cq/pal/net.h(新) + engine/core/include/cq/base/status.h(+AI 决策段
+  9500~9513 与 kAiPlan 分类，只追加不动既有段) + engine/core/src/base/status.cpp(case 补齐) +
+  engine/core/src/ai/plan/edit_plan_validator.{h,cpp}(新) +
+  engine/core/src/ai/plan/edit_plan_golden/(新，58 JSON 夹具 + manifest.txt，总 <100KB) +
+  tests/unit/test_edit_plan_validator.cpp(新) + engine/core/CMakeLists.txt(1 源文件) +
+  tests/CMakeLists.txt(1 测试目标) —— 与 TASK-AIEDIT-001 写集一致（路径按仓库实际
+  core/ → engine/core/ 落）
+- 待办（构建机，第一优先）：[ ] cmake 配置 + build_core.sh --platform=apple（-Werror，
+  本机无 cmake/ninja 未跑；新增 TU 已过 clang13 -Wall -Wextra -Wconversion -Wshadow
+  -Wold-style-cast 零警告自证）；[ ] ctest -R ai_edit_plan（本机 clang++ 直编最小组合
+  已实测 117 检查 0 失败：合法 18/18 + 非法 40/40 错误码精确匹配，构建机需在 ctest 通道
+  复跑确认 CMake 注册无误）；[ ] 冲突/旧号扫描（本轮未触碰任何在飞文件）
+- 验收回填：模块册 ai.md 门禁记录行 + baselines「AIEDIT-001」段（无性能项，契约任务）
+- 备注：真机无涉（纯 C++ 契约层，无 UI/无渲染）；池[4] 全量门禁触发时本条可并入

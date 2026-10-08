@@ -81,6 +81,8 @@ final class FaceBoxStore {
     /// 美体锚点（CAM-025）：人体四关节（双肩/双髋）齐全时写入，缺任一 = nil
     /// （该帧美体跳过；半身几何不可信，不做部分形变）。
     private var latestBodyAnchors: BodyReshapeAnchors?
+    /// 美妆锚点（CAM-026）：区域关键点集合（唇/眉/眼/瞳），无脸 = nil（美妆直通）。
+    private var latestMakeupAnchors: MakeupAnchors?
     /// 框帧间平滑状态：只在检测队列触碰（VisionDetector.onResult 串行回调），无锁。
     private var previousMain: CGRect?
 
@@ -123,6 +125,13 @@ final class FaceBoxStore {
         latestBodyAnchors = anchors
     }
 
+    /// 检测队列调用：美妆锚点（CAM-026；无脸传 nil）。
+    func updateMakeupAnchors(_ anchors: MakeupAnchors?) {
+        lock.lock()
+        defer { lock.unlock() }
+        latestMakeupAnchors = anchors
+    }
+
     /// 渲染/录制线程调用。
     func current() -> [CGRect]? {
         lock.lock()
@@ -151,6 +160,13 @@ final class FaceBoxStore {
         return latestBodyAnchors
     }
 
+    /// 渲染/录制线程调用（CAM-026）。
+    func currentMakeupAnchors() -> MakeupAnchors? {
+        lock.lock()
+        defer { lock.unlock() }
+        return latestMakeupAnchors
+    }
+
     /// 前后摄切换等场景清状态：旧摄人脸框不污染新画面（清后 nil=直通）。
     func reset() {
         lock.lock()
@@ -158,6 +174,7 @@ final class FaceBoxStore {
         latestAnchors = nil
         latestAnimalEyes = nil
         latestBodyAnchors = nil
+        latestMakeupAnchors = nil
         previousMain = nil
         lock.unlock()
     }
@@ -267,6 +284,8 @@ final class CameraPreviewRenderer: NSObject, MTKViewDelegate {
     private var reshape: CameraReshapeParams = .off
     private let bodyReshapeLock = NSLock()
     private var bodyReshape: BodyReshapeParams = .off
+    private let makeupLock = NSLock()
+    private var makeup: MakeupParams = .off
     private let stickerLock = NSLock()
     private var sticker: StickerAsset?
     private let fxLock = NSLock()
@@ -456,6 +475,13 @@ final class CameraPreviewRenderer: NSObject, MTKViewDelegate {
         bodyReshapeLock.unlock()
     }
 
+    /// 主线程调用（美妆面板，CAM-026）。
+    func setMakeup(_ newMakeup: MakeupParams) {
+        makeupLock.lock()
+        makeup = newMakeup
+        makeupLock.unlock()
+    }
+
     /// 主线程调用（设置面板 FX 开关，CAM-022）。默认关 = 与原链路逐位等价。
     func setFXUpscaleEnabled(_ enabled: Bool) {
         fxLock.lock()
@@ -492,6 +518,12 @@ final class CameraPreviewRenderer: NSObject, MTKViewDelegate {
         bodyReshapeLock.lock()
         defer { bodyReshapeLock.unlock() }
         return bodyReshape
+    }
+
+    private func currentMakeup() -> MakeupParams {
+        makeupLock.lock()
+        defer { makeupLock.unlock() }
+        return makeup
     }
 
     private func currentFXUpscaleEnabled() -> Bool {
@@ -544,7 +576,14 @@ final class CameraPreviewRenderer: NSObject, MTKViewDelegate {
     func process(_ image: CIImage, faces: [CGRect]? = nil,
                  anchors: CameraReshapeAnchors? = nil,
                  animalEyes: StickerEyeAnchor? = nil,
-                 bodyAnchors: BodyReshapeAnchors? = nil) -> CIImage {
+                 bodyAnchors: BodyReshapeAnchors? = nil,
+                 makeupAnchors: MakeupAnchors? = nil) -> CIImage {
+        // ⚠️ CAM-027 语义蒙版接线于 2026-10-08 **回退**（HANDOFF-017 / 池[9]）：
+        // 当时此处写成 `beauty.apply(to:image, faces:faces, skinMask:
+        // PortraitSemantics.skinMask(for: image))`，但 PortraitSemantics 从未实现、
+        // CameraBeauty 也没有 skinMask 重载 → ChuanqiCutCamera Pod 整包编不过。
+        // CAM-027 卡要求「API 形状保持 `apply(to:faces:)` 不变、调用方零改动」——
+        // 正确做法是改 CameraBeauty **内部**取语义蒙版，而不是给调用方加参数。
         var result = currentBeauty().apply(to: image, faces: faces)
         if let warp = FaceWarp.shared {
             if let anchors {
@@ -555,6 +594,10 @@ final class CameraPreviewRenderer: NSObject, MTKViewDelegate {
                                     controls: BodyWarpGeometry.controls(from: bodyAnchors,
                                                                         params: currentBodyReshape()))
             }
+        }
+        if let makeupAnchors {
+            result = MakeupRenderer.apply(to: result, anchors: makeupAnchors,
+                                          params: currentMakeup())
         }
         if let filtered = currentFilter().apply(to: result) {
             result = filtered
@@ -617,7 +660,8 @@ final class CameraPreviewRenderer: NSObject, MTKViewDelegate {
         image = process(image, faces: mainStore.current(),
                         anchors: mainStore.currentAnchors(),
                         animalEyes: mainIsBack ? faceBoxes.currentAnimalEyes() : nil,
-                        bodyAnchors: mainIsBack ? faceBoxes.currentBodyAnchors() : nil)
+                        bodyAnchors: mainIsBack ? faceBoxes.currentBodyAnchors() : nil,
+                        makeupAnchors: mainIsBack ? faceBoxes.currentMakeupAnchors() : nil)
         if currentDualMode(), let pipBuffer, pipBuffer !== mainBuffer {
             let pipStore = mainIsBack ? frontFaceBoxes : faceBoxes
             var pipImage = CIImage(cvPixelBuffer: pipBuffer)
@@ -648,7 +692,8 @@ final class CameraPreviewRenderer: NSObject, MTKViewDelegate {
         image = process(image, faces: mainStore.current(),
                         anchors: mainStore.currentAnchors(),
                         animalEyes: mainIsBack ? faceBoxes.currentAnimalEyes() : nil,
-                        bodyAnchors: mainIsBack ? faceBoxes.currentBodyAnchors() : nil)
+                        bodyAnchors: mainIsBack ? faceBoxes.currentBodyAnchors() : nil,
+                        makeupAnchors: mainIsBack ? faceBoxes.currentMakeupAnchors() : nil)
         // PiP（双摄）：第二路同样过完整处理链（WYSIWYG，验收 A8）；帧缺失该拍只出主画面。
         if currentDualMode(), let pipBuffer = pipSlot.latest() {
             var pipImage = CIImage(cvPixelBuffer: pipBuffer)

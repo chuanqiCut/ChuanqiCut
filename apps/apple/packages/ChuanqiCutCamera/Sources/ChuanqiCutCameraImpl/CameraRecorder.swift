@@ -68,6 +68,8 @@ final class CameraRecorder: @unchecked Sendable {
     private let reshape: CameraReshapeParams
     /// 美体参数（CAM-025）：录制开始时锁定。
     private let bodyReshape: BodyReshapeParams
+    /// 美妆参数（CAM-026）：录制开始时锁定。
+    private let makeup: MakeupParams
     /// 贴纸资产（CAM-014）：录制开始时锁定；nil = 无贴纸。
     private let sticker: StickerAsset?
     /// 双摄合成器（CAM-021）：提供时以合成结果为录制源（主+PiP 已按预览同链处理）；
@@ -97,6 +99,7 @@ final class CameraRecorder: @unchecked Sendable {
     init(outputURL: URL, ciContext: CIContext,
          preset: CameraFilterPreset, beauty: CameraBeautyParams,
          reshape: CameraReshapeParams = .off, bodyReshape: BodyReshapeParams = .off,
+         makeup: MakeupParams = .off,
          sticker: StickerAsset? = nil,
          dualComposer: ((CVImageBuffer, CMTime) -> CIImage)? = nil,
          faceBoxes: FaceBoxStore? = nil, withAudio: Bool) {
@@ -106,6 +109,7 @@ final class CameraRecorder: @unchecked Sendable {
         self.beauty = beauty
         self.reshape = reshape
         self.bodyReshape = bodyReshape
+        self.makeup = makeup
         self.sticker = sticker
         self.dualComposer = dualComposer
         self.faceBoxes = faceBoxes
@@ -231,6 +235,10 @@ final class CameraRecorder: @unchecked Sendable {
                                           controls: BodyWarpGeometry.controls(from: bodyAnchors,
                                                                               params: bodyReshape))
                 }
+            }
+            if let makeupAnchors = faceBoxes?.currentMakeupAnchors() {
+                composed = MakeupRenderer.apply(to: composed, anchors: makeupAnchors,
+                                                params: makeup)
             }
             if let filtered = preset.apply(to: composed) {
                 composed = filtered

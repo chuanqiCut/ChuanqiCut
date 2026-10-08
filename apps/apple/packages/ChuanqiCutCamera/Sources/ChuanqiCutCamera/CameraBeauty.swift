@@ -24,6 +24,12 @@ import Foundation
 /// 实现要求：对强度单调、不改变 extent、只构造 CIImage DAG（懒执行，线程安全）。
 public typealias CameraBeautySmoothingEngine = @Sendable (CIImage, Double) -> CIImage?
 
+/// 语义蒙版引擎签名（CAM-027）：`(输入图, 归一化人脸框) -> 蒙版图`。
+/// 返回 nil = 本帧不接管（无关键点 / 能力缺失）→ 调用方回落到框级椭圆蒙版
+/// （`FaceMask.mask`，CAM-019 行为）——**默认即这条老路径，零回归**。
+/// 实现要求：只构造 CIImage DAG（懒执行、线程安全），extent 与输入图一致。
+public typealias CameraBeautySemanticMaskEngine = @Sendable (CIImage, [CGRect]) -> CIImage?
+
 /// 磨皮算法注入点。原生侧（iOS App）启动时安装 Metal 引擎；不安装 =
 /// 默认 CI 近似。锁保护：主线程写（启动期一次），渲染/录制线程读。
 /// 实现说明：Swift 5.9（本机验证工具链）没有 nonisolated(unsafe)，用
@@ -33,6 +39,7 @@ public enum CameraBeautyEngine {
     private final class Storage: @unchecked Sendable {
         private let lock = NSLock()
         private var impl: CameraBeautySmoothingEngine?
+        private var maskImpl: CameraBeautySemanticMaskEngine?
         var smoothing: CameraBeautySmoothingEngine? {
             get {
                 lock.lock()
@@ -42,6 +49,19 @@ public enum CameraBeautyEngine {
             set {
                 lock.lock()
                 impl = newValue
+                lock.unlock()
+            }
+        }
+        /// 语义皮肤蒙版（CAM-027）。nil = 框级椭圆蒙版（老行为）。
+        var semanticMask: CameraBeautySemanticMaskEngine? {
+            get {
+                lock.lock()
+                defer { lock.unlock() }
+                return maskImpl
+            }
+            set {
+                lock.lock()
+                maskImpl = newValue
                 lock.unlock()
             }
         }
@@ -55,9 +75,17 @@ public enum CameraBeautyEngine {
         set { storage.smoothing = newValue }
     }
 
+    /// 当前语义皮肤蒙版（CAM-027）。**nil = 框级椭圆蒙版**，即 2026-10-08 之前的
+    /// 全部行为——不安装注入点就零风险回归，这也是默认形态。
+    public static var semanticMask: CameraBeautySemanticMaskEngine? {
+        get { storage.semanticMask }
+        set { storage.semanticMask = newValue }
+    }
+
     /// 测试隔离用：恢复默认实现。
     public static func reset() {
         smoothing = nil
+        semanticMask = nil
     }
 }
 
@@ -91,7 +119,10 @@ public struct CameraBeautyParams: Equatable, Sendable {
     public func apply(to image: CIImage, faces: [CGRect]? = nil) -> CIImage {
         guard !isOff else { return image }
         guard let faces, !faces.isEmpty else { return image }
-        let mask = faces.flatMap { FaceMask.mask(forNormalizedBoxes: $0, in: image.extent) }
+        // CAM-027：蒙版来源可替换。默认（未安装注入点）= FaceMask 框级椭圆，
+        // 与改造前逐位等价；安装了则用「语义 ∩ 框」。**签名与调用方零改动**。
+        let mask = CameraBeautyEngine.semanticMask?(image, faces)
+            ?? FaceMask.mask(forNormalizedBoxes: faces, in: image.extent)
 
         var result = image
 

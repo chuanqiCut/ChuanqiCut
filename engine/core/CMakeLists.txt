@@ -78,7 +78,10 @@ add_library(cq_core STATIC
     # 单测以 operator new 计数实测）。全部预分配，耗尽返回 Status 不扩容。
     src/audio/audio_graph.cpp
     src/audio/pcm_pool.cpp
-    src/audio/spsc_ring.cpp)
+    src/audio/spsc_ring.cpp
+    # AIEDIT-001：EditPlan 校验器（手写 JSON 解析 + 结构/语义校验 + golden 样例）。
+    # 契约头 core/include/cq/ai/ 在 cq_core PUBLIC include 目录下自动可见。
+    src/ai/plan/edit_plan_validator.cpp)
 
 # 版本号由 CMake 注入，不在 cq_sdk.h 里硬编码（否则必然与 project VERSION 漂移）。
 target_compile_definitions(cq_core PRIVATE

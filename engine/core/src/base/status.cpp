@@ -24,6 +24,20 @@ const char* StatusToString(StatusCode code) {
         case StatusCode::kInvalidArgument:   return "InvalidArgument";
         case StatusCode::kOverflow:          return "Overflow";
         case StatusCode::kInternal:          return "Internal";
+        case StatusCode::kAiPlanJsonMalformed:      return "AiPlanJsonMalformed";
+        case StatusCode::kAiPlanSchemaUnknown:      return "AiPlanSchemaUnknown";
+        case StatusCode::kAiPlanFieldMissing:       return "AiPlanFieldMissing";
+        case StatusCode::kAiPlanFieldType:          return "AiPlanFieldType";
+        case StatusCode::kAiPlanFloatTime:          return "AiPlanFloatTime";
+        case StatusCode::kAiPlanTimescaleMismatch:  return "AiPlanTimescaleMismatch";
+        case StatusCode::kAiPlanTimeNonPositive:    return "AiPlanTimeNonPositive";
+        case StatusCode::kAiPlanUnknownOp:          return "AiPlanUnknownOp";
+        case StatusCode::kAiPlanAssetUnknown:       return "AiPlanAssetUnknown";
+        case StatusCode::kAiPlanShotOutOfRange:     return "AiPlanShotOutOfRange";
+        case StatusCode::kAiPlanSourceRange:        return "AiPlanSourceRange";
+        case StatusCode::kAiPlanTimelineOverlap:    return "AiPlanTimelineOverlap";
+        case StatusCode::kAiPlanReorderNotPermutation: return "AiPlanReorderNotPermutation";
+        case StatusCode::kAiPlanTransitionKindUnknown: return "AiPlanTransitionKindUnknown";
         case StatusCode::kUnknown:           return "Unknown";
     }
     return "Unknown";
@@ -47,6 +61,20 @@ StatusCategory CategoryOf(StatusCode code) {
         case StatusCode::kInvalidArgument:   return StatusCategory::kInvalidArgument;
         case StatusCode::kOverflow:          return StatusCategory::kNumeric;
         case StatusCode::kInternal:          return StatusCategory::kInternal;
+        case StatusCode::kAiPlanJsonMalformed:
+        case StatusCode::kAiPlanSchemaUnknown:
+        case StatusCode::kAiPlanFieldMissing:
+        case StatusCode::kAiPlanFieldType:
+        case StatusCode::kAiPlanFloatTime:
+        case StatusCode::kAiPlanTimescaleMismatch:
+        case StatusCode::kAiPlanTimeNonPositive:
+        case StatusCode::kAiPlanUnknownOp:
+        case StatusCode::kAiPlanAssetUnknown:
+        case StatusCode::kAiPlanShotOutOfRange:
+        case StatusCode::kAiPlanSourceRange:
+        case StatusCode::kAiPlanTimelineOverlap:
+        case StatusCode::kAiPlanReorderNotPermutation:
+        case StatusCode::kAiPlanTransitionKindUnknown: return StatusCategory::kAiPlan;
         case StatusCode::kUnknown:           return StatusCategory::kUnknown;
     }
     return StatusCategory::kUnknown;

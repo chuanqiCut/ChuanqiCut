@@ -596,3 +596,19 @@ target_link_libraries(cq_tests_core_audio_graph PRIVATE cq_core)
 cq_require_cxx20(cq_tests_core_audio_graph)
 apply_cq_warnings(cq_tests_core_audio_graph)
 add_test(NAME core_audio_graph COMMAND cq_tests_core_audio_graph)
+
+# ---- AIEDIT-001：EditPlan 校验器 + golden 样例集（58 例）----
+# 手写 JSON 解析 + 结构/语义校验；红线 4 时间浮点机器检查。
+# golden 目录通过编译宏注入（测试二进制运行时读取 JSON 夹具）。
+add_executable(cq_tests_ai_edit_plan
+    unit/test_edit_plan_validator.cpp)
+# 私有头 edit_plan_validator.h 在 core/src 下（cq_core 的 PRIVATE include 不传播）。
+target_include_directories(cq_tests_ai_edit_plan PRIVATE
+    ${CMAKE_SOURCE_DIR}/engine/core/include
+    ${CMAKE_SOURCE_DIR}/engine/core/src)
+target_compile_definitions(cq_tests_ai_edit_plan PRIVATE
+    CQ_EDIT_PLAN_GOLDEN_DIR="${CMAKE_SOURCE_DIR}/engine/core/src/ai/plan/edit_plan_golden")
+target_link_libraries(cq_tests_ai_edit_plan PRIVATE cq_core)
+cq_require_cxx20(cq_tests_ai_edit_plan)
+apply_cq_warnings(cq_tests_ai_edit_plan)
+add_test(NAME ai_edit_plan COMMAND cq_tests_ai_edit_plan)

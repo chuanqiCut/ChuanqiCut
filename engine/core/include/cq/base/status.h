@@ -43,6 +43,7 @@ enum class StatusCategory : int32_t {
     kNumeric = 8,       // 数值溢出：有理数/坐标运算越界（CORE-001 复用）
     kInternal = 9,      // 内部错误：不应发生的内部不一致
     kUnknown = 10,      // 未知：兜底
+    kAiPlan = 11,       // AI 决策：EditPlan 校验失败（9500..9549，AIEDIT-001）
 };
 
 // 稳定错误码。每个值显式写死，新增码必须追加到各自区间的「尾部间隙」，
@@ -82,6 +83,25 @@ enum class StatusCode : int32_t {
 
     // ---- 内部错误（9000..9099）----
     kInternal = 9000,
+
+    // ---- AI 决策 / EditPlan 校验（9500..9549，AIEDIT-001，CQ_AI_PLAN_* 语义段）----
+    // 校验器是 LLM 输出的唯一权威校验方（ADR-0020 决策 3）；
+    // 码值同时是 golden 样例集的断言目标（tests/unit/test_edit_plan_validator.cpp），
+    // 供管线（AIEDIT-005）按码分类回传 LLM 自动修复。
+    kAiPlanJsonMalformed = 9500,        // JSON 语法非法（RFC 8259）
+    kAiPlanSchemaUnknown = 9501,        // schema 版本不认识（拒绝并降级，绝不猜测解析）
+    kAiPlanFieldMissing = 9502,         // 必填字段缺失
+    kAiPlanFieldType = 9503,            // 字段 JSON 类型错误
+    kAiPlanFloatTime = 9504,            // 时间字段出现浮点（红线 4 的机器检查）
+    kAiPlanTimescaleMismatch = 9505,    // 时间对象 timescale != 120000（kProjectTimeScale）
+    kAiPlanTimeNonPositive = 9506,      // 时间值非法（负值 / 要求为正的时长非正）
+    kAiPlanUnknownOp = 9507,            // 未知动词（有界动词集之外）
+    kAiPlanAssetUnknown = 9508,         // asset_id 引用不存在（对照 FeatureReport 资产表）
+    kAiPlanShotOutOfRange = 9509,       // shot 序号越界（<0 或 >= shot_count）
+    kAiPlanSourceRange = 9510,          // source_in + duration 越过素材时长（含溢出防御）
+    kAiPlanTimelineOverlap = 9511,      // place_clip 时间线段重叠
+    kAiPlanReorderNotPermutation = 9512,// reorder 非排列（重复/越界/长度不符）
+    kAiPlanTransitionKindUnknown = 9513,// 未知转场类型（不在 model TransitionKind 对应集）
 
     // ---- 未知（9900..）----
     kUnknown = 9900,

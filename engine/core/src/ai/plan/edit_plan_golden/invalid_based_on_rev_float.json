@@ -1,0 +1,10 @@
+{
+  "schema": "cq.editplan/1",
+  "based_on": {
+    "assets": [
+      "a1"
+    ],
+    "timeline_rev": 0.5
+  },
+  "actions": []
+}

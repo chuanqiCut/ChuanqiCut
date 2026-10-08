@@ -129,6 +129,85 @@
 - 验收回填：baselines「磨皮」段（现 9.85ms 为旧值，升级后需重测）+ 关 TASK-CAM-026/027/029
 - 备注：池 [8]（AIEDIT-001 编辑线）与本条同机同轮产物，换机会时可一并带走
 
+### [10] 构建机门禁 + 真机参数回填清单（执行者的入门动作，2026-10-08 立）
+
+> **这是给「下一台设备上的执行者 / AI」的入门文档**，聚合了池 [8]（AIEDIT-001）与
+> 池 [9]（相机 CAM-026/027/029）要跑的命令与要回填的参数。**不占任务序列号**（ADR-0019 §4）。
+> 背景与本机为什么跑不了：见 pitfalls P90 与 HANDOFF-017 §1。
+
+#### 第 0 步：先把「机器」记下来（P90 的直接要求）
+
+**不记机器环境的数据一律作废**（引用 baselines 必须带机器环境）。开工第一行先跑：
+
+```bash
+sw_vers; xcodebuild -version; xcrun swift --version; which cmake ninja brew
+```
+
+回填到：`.workbuddy/memory/MEMORY.md` §17 机器表 + `.ai/memory/baselines.md` 对应段的机器代号。
+**跑不了的直接写「未实测（工具链上限：<版本>）」，不要写 `—`、不要留空、不要写"全绿"。**
+参照：本机（本机记录了 Swift 5.5.1 / Xcode 13.1 / 无 cmake）所有 iOS 构建与 `swift test`、
+`build_core.sh`、`ctest` **全部跑不了**——这一条已经坑过一次。
+
+#### 第 1 步：命令清单（复制即跑，逐条记结果）
+
+| # | 命令 | 记什么 | 期望 |
+|---|---|---|---|
+| 1 | `tools/build/build_core.sh --platform=apple` | PASS/FAIL 计数、**警告数** | AIEDIT-001 新增 TU 在 `-Werror` 下零警告 |
+| 2 | `ctest -R ai_edit_plan` | **通过数 / 总数**（写具体数字） | 校验器 117 检查 0 失败（本机 clang13 直编已得此数，ctest 通道首次验证） |
+| 3 | `ctest --test-dir build`（全量） | Debug x/y、Release x/y | 不写"全绿" |
+| 4 | `xcodebuild -workspace ... -scheme ChuanqiCutApp build` | BUILD SUCCEEDED + **target 数与告警数** | ⚠️ 必须 `-scheme ChuanqiCutApp`：只编 Pods 静态库是假绿（P61，日志里 `Target dependency graph (1 target)` 就是线索） |
+| 5 | ChuanqiCutCamera `swift test` | 通过数/总数 | 守恒 36 + 新增 MakeupMask 10 + PortraitSkinMask 7 = **53/53** |
+| 6 | SharedUI `swift test` | 通过数/总数 | 守恒 **140**（改了 CameraBeauty，必须零回归） |
+| 7 | metallib 核对 | 字节数 + `cq_beauty_down_h/up_v_mix` kernel 名均在 | 旧值 8431B；CAM-029 改过 `beauty_bilateral.metal`，要重新核大小 |
+
+SPM 临时产物一律 `swift test --disable-sandbox --scratch-path "$ROOT/build/spm/<包名>"`（P84）。
+
+#### 第 2 步：必须记录的参数（缺一项就回填不全）
+
+**A · AIEDIT-001（池 [8]）**
+
+| 参数 | 取值方式 | 回填位置 |
+|---|---|---|
+| ctest 通过/总数 | 第 2 步 #2 | `TASK-AIEDIT-001.md` 进度表 + `ai.md` 门禁记录行 |
+| Debug / Release 全量计数 | #3 | 同上；结论写具体数字 |
+| **CMake 注册三件事**（私有头 include / `CQ_EDIT_PLAN_GOLDEN_DIR` 宏 / 链接 `cq_core`）是否如预期 | #1+#2 通过即成立 | baselines「AIEDIT-001」段由「未实测」改为实测行 |
+| 编译耗时 [E] | #1 计时 | baselines 同段（可选项） |
+
+**B · 相机（池 [9]）**
+
+| 参数 | 取值方式 | 回填位置 |
+|---|---|---|
+| iOS/mac 双壳构建结果 + 告警数 | #4 | `camera.md` 门禁记录行 |
+| Camera 契约测试 53/53 | #5 | `camera.md` + 三张 TASK 卡 |
+| SharedUI 守恒 140（**CameraBeauty 改动的回归防线**） | #6 | `camera.md` + `ui-apple.md` |
+| `@unchecked Sendable` 是否引出新告警 | #4 告警明细 | `camera.md` + TASK-CAM-027（**并发契约变更，必须给结论**） |
+| metallib 大小 + kernel 名 | #7 | `camera.md`（旧值 8431B 可比对） |
+
+**C · 真机（iPhone 17 Pro，传哲操作，一趟多单）+ GPU harness 剖面**
+
+必记：**设备型号 + iOS 版本 + 录制档位（分辨率/帧率）+ 是否开双摄**。
+
+| 场景 | 参数 | 回填到 |
+|---|---|---|
+| 美妆（CAM-026） | 五区域跟随是否漂移、口腔/牙齿是否被染色、强度滑杆是否单调、开关前后帧率 | baselines「美妆」段（新建） |
+| 皮肤蒙版（CAM-027） | 眼/眉/唇是否还被磨皮波及（**卡验收第一条**）、无脸是否直通、锚点抖动时蒙版是否闪 | baselines「人像蒙版」段（新建） |
+| 磨皮（CAM-029） | **harness 三参数**：保边保持率（≥60% [E]）、高频能量恢复（≥80% [E]）、全脸耗时（**≤8ms 是硬阈值**）；并与 **CAM-012 旧版本 A/B** | baselines「磨皮」段替换旧值 **9.85ms**（那是 CAM-012 的数，不能当升级后阈值） |
+| 录制 WYSIWYG | 预览 = 录制色、双摄 PiP 路是否同样处理 | baselines「录制」段 |
+| 性能与内存 | 全链路 fps、峰值 `footprint`（jetsam 排查必备，P75/P76）、`nonok/s` | baselines「性能/内存」段 |
+
+金属 API 校验层是否开启要一并注明（P65/P61：开与关会让运行时合法性不同）。
+
+#### 第 3 步：回填位置清单（逐项勾，别漏）
+
+1. `.ai/memory/baselines.md`：上述各段由「未实测」→ 实测行（**必须带机器代号**）
+2. `docs/tasks/TODO-POOL-门禁真机待办池.md`：失效项按标题加 ✅ + 日期 + 数字，移入「已消化」
+3. `.ai/modules/ai.md`、`.ai/modules/camera.md`：门禁记录表加一行（日期/范围/结论数字）
+4. `docs/tasks/TASK-AIEDIT-001.md`、`TASK-CAM-026/027/029.md`：进度表的 ❌ → ✅ 并写证据
+5. `.workbuddy/memory/2026-10-XX.md`：当日日志（append-only）
+6. **仍未拍板的 CAM-029 pass2**（保护与自适应 σ 只落在 `cq_beauty_down_h`、pass2 未动）
+   —— 这条和 BeautyKernel 参数面（0.85 / 0.6×~1.4× 仍为写死常量）**必须回到传哲拍板**，
+   AI 不得自行决定。
+
 ## 已消化
 
 （集成机关闭的条目移到这里，带 ✅ + 日期 + 数字 / 结论。）

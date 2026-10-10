@@ -1,1 +1,1 @@
-../../../../../core/include/cq/cq_sdk.h
+../../../../../core/cq/cq_sdk.h

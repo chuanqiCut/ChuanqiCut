@@ -45,7 +45,7 @@ static const MTLStorageMode kCqCpuVisibleStorageMode = MTLStorageModeManaged;
 #include "cq/pal/gfx.h"
 #include "cq/base/status.h"
 #include "gfx_metal_internal.h"
-#include "media_decode.h"  // CqNativeImage / GetCvPixelBuffer：Apple 端 NativeImageHandle 的完整定义
+#include "media_decode.h"  // 由 CMake 的 Apple PAL media include dir 提供
 
 #include <cstdint>
 #include <cstring>

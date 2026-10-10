@@ -1,6 +1,6 @@
 # pal/apple — Apple 平台适配（PALA-001：Metal GFX 后端）
 #
-# 实现 core/include/cq/pal/gfx.h 冻结的 PAL GFX HAL（IGraphicsDevice 等 12 概念）。
+# 实现 core/cq/pal/gfx.h 冻结的 PAL GFX HAL（IGraphicsDevice 等 12 概念）。
 # 平台类型（Metal/ObjC）只出现在本目录的 .mm / 内部头，内核头零平台类型不受影响。
 #
 # 编译：Objective-C++（.mm）+ ARC（-fobjc-arc）。链接 Metal / CoreVideo /
@@ -10,25 +10,27 @@
 # 新增 .mm 必须同时登记到 add_library 与下面的 set_source_files_properties（ARC），
 # 否则会出现「实现已写但符号未定义」的链接错误——看不出是构建配置漏了。
 add_library(cq_pal_apple STATIC
-    gfx_metal.mm
-    gfx_metal_internal.h
-    media_demux.mm
-    media_decode.mm
-    media_encode.mm
-    media_muxer.mm
-    capabilities.mm
-    capabilities_apple.h
+    gfx/gfx_metal.mm
+    gfx/gfx_metal_internal.h
+    media/media_demux.mm
+    media/media_decode.mm
+    media/media_encode.mm
+    media/media_muxer.mm
+    base/capabilities.mm
+    base/capabilities_apple.h
     # BIND-003 子步骤 4/5：预览链路的两个 Apple 装配点。
-    # 两者都实现 **PAL 契约**（工厂声明在 core/include/cq/pal/{gfx,media}.h），
+    # 两者都实现 **PAL 契约**（工厂声明在 core/cq/pal/{gfx,media}.h），
     # 故这里没有对应的 .h —— 声明在 PAL，实现在各平台。
-    #   blit_pass.mm            —— CreateBlitPass（MSL 源在 shaders/blit_fullscreen_msl.h）
-    #   frame_provider_apple.mm —— CreateFrameProvider（PALA-010 + PALA-011 → MEDIA-020）
-    blit_pass.mm
-    frame_provider_apple.mm)
+    #   gfx/blit_pass.mm             —— CreateBlitPass（MSL 源在 gfx/shaders/）
+    #   media/frame_provider_apple.mm —— CreateFrameProvider（PALA-010 + PALA-011 → MEDIA-020）
+    gfx/blit_pass.mm
+    media/frame_provider_apple.mm)
 
 target_include_directories(cq_pal_apple PUBLIC
-    ${CMAKE_CURRENT_SOURCE_DIR}
-    ${CMAKE_SOURCE_DIR}/core/include)
+    ${CMAKE_CURRENT_SOURCE_DIR}/base
+    ${CMAKE_CURRENT_SOURCE_DIR}/gfx
+    ${CMAKE_CURRENT_SOURCE_DIR}/media
+    ${CMAKE_SOURCE_DIR}/engine/core)
 
 target_link_libraries(cq_pal_apple PUBLIC cq_core)
 
@@ -40,8 +42,9 @@ set_target_properties(cq_pal_apple PROPERTIES
     OBJCXX_EXTENSIONS OFF)
 
 # Objective-C++ 启用 ARC（与项目警告集共存：-Werror -Wconversion -Wshadow -Wold-style-cast）。
-set_source_files_properties(gfx_metal.mm media_demux.mm media_decode.mm media_encode.mm media_muxer.mm
-    capabilities.mm blit_pass.mm frame_provider_apple.mm
+set_source_files_properties(gfx/gfx_metal.mm media/media_demux.mm media/media_decode.mm
+    media/media_encode.mm media/media_muxer.mm base/capabilities.mm gfx/blit_pass.mm
+    media/frame_provider_apple.mm
     PROPERTIES COMPILE_FLAGS "-fobjc-arc")
 
 # 项目统一警告集 + -Werror（apply_cq_warnings 已含）。

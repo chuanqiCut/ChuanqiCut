@@ -466,3 +466,37 @@
   - `ChuanqiCut-AppIcon-Launch.miora` + `_assets/`（2）：图标设计源文件
   - P3（根 README / `.clang-format` / `.editorconfig` / CODEOWNERS / 最小 CI）**未开工**
   - 全量门禁 `tools/ci/run_gate.sh` **未跑**（只跑了 core 编译 + ctest）
+
+---
+
+## 2026-10-11 08:58（CST）· 发现并发写入：另一会话正在改 DEPS 线
+
+- **执行者**：WorkBuddy（对话引擎 Hy4 preview），集成机
+- **依据**：提交后 `git status` 复核时发现 `engine/CChuanqiCut.podspec` /
+  `third_party/CMakeLists.txt` 又变 M，查时间戳定位
+- **事实**（`stat -f %Sm`）：
+  - 我的提交 `2dd4edd` 时间 **08:54:47**
+  - `third_party/CMakeLists.txt` 最后修改 **08:56:29**（提交后 1分42秒）
+  - `engine/CChuanqiCut.podspec` 最后修改 **08:57:29**（提交后 2分42秒）
+  - `tools/build/make_ffmpeg_xcframework.sh` 创建于 **08:51:04**（未跟踪，我特意排除未提交）
+- **内容属 DEPS 线，非本会话写集**：FFmpeg 9.0.2 双集成
+  （`-DCQ_FFMPEG_INTEGRATION=binary|source` 同一 target `cq_ffmpeg`）、
+  xcframework 打包、LGPL-2.1-or-later 处置（podspec license 改写 + `engine/NOTICE.md` 引用、
+  注释写「ADR-0034（ARCH-002 §5.1 路径 1，负责人 2026-10-11 确认）」）
+- **决策**：**不碰这些文件**（写集不相交是 ADR-0034 硬规则），只登记事实并上报。
+  *放弃的替代选项*：顺手一起提交 —— 那会把两条线混进一个提交，且可能覆盖对方未落盘的后续改动。
+- **写集**：仅 `docs/reports/LEDGER-W42.md`（本条）
+- **验证**：
+  - `git show --name-only` 逐个核我的 4 个提交 → `third_party/` 与 `make_ffmpeg_xcframework`
+    **命中数全为 0**，确认**未误吞对方改动**
+  - `git show HEAD:engine/CChuanqiCut.podspec | grep -c NOTICE` → **0**
+    （工作区为 2）→ 确认提交的是我改名后的版本，对方的 LGPL 改动仍在**工作区未丢**
+  - 台账尾部完整性复核 → 正常（08:55:29 写入）
+- **交付物**：无
+- **拍板**：**需传哲确认** —— 是否有另一会话/另一工具在本机同一工作区并行跑 DEPS 线？
+- **遗留 / 风险**：
+  - **并发写入风险**：两条线同工作区不同写集，若对方会话执行 `git checkout` / `git stash` /
+    `git reset` 可能波及我的已提交内容（反之亦然）。建议**让 DEPS 线先提交它的改动**，
+    避免长期混在一个脏工作区里；
+  - `tools/build/make_ffmpeg_xcframework.sh`（08:51:04 创建）仍未跟踪，**不属我写集，未提交**；
+  - 我的 4 个提交**未推送**（main 领先 origin 4 个提交），推送前建议先与 DEPS 线协调。

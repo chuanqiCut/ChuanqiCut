@@ -3,13 +3,13 @@
 // 职责单一：把内核预览导出的纹理（中性句柄 reinterpret 的 MTLTexture）画到
 // 目标纹理 —— MTKView 的 drawable（呈现路径）或普通纹理（测试 / 离屏路径）。
 //
-// ⚠️ 顶点几何与 uv 映射**与 pal/apple/shaders/blit_fullscreen_msl.h 完全一致**
+// ⚠️ 顶点几何与 uv 映射**与 platform/apple/shaders/blit_fullscreen_msl.h 完全一致**
 //    （全屏三角形、uv(0,0)=图像左上、屏幕上边→v=0）：源（内核离屏 RT）与目标
 //    （drawable）都是 Metal 纹理且同向，恒等映射即保证不上下颠倒。该约定已被
-//    PAL 侧像素级断言锁定（test_native_image_importer_apple 的顶/底行断言），
+//    Platform 侧像素级断言锁定（test_native_image_importer_apple 的顶/底行断言），
 //    两侧必须同步改动，**不得单独修改任一侧**。
 //
-// 层级说明（红线 #6）：本文件是 Apple 专属 UI 胶水，MSL 内联合法 —— 它与 PAL 的
+// 层级说明（红线 #6）：本文件是 Apple 专属 UI 胶水，MSL 内联合法 —— 它与 Platform 的
 // blit 同属 Platform-Native 层，是「SPIR-V 链落地前的能力缺失降级」，不是平台
 // 特化优化。
 //
@@ -36,7 +36,7 @@ final class PreviewFrameRenderer {
     private let queue: any MTLCommandQueue
     private var libraries: [MTLPixelFormat: any MTLRenderPipelineState] = [:]
 
-    /// MSL 与 pal/apple/shaders/blit_fullscreen_msl.h 的几何/uv 逐值一致（见文件头）。
+    /// MSL 与 platform/apple/shaders/blit_fullscreen_msl.h 的几何/uv 逐值一致（见文件头）。
     private static let mslSource = """
         #include <metal_stdlib>
         using namespace metal;

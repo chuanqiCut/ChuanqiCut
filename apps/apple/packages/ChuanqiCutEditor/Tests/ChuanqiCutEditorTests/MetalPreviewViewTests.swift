@@ -4,7 +4,7 @@
 // 而是拆开验证两个可独立断言的环节：
 //
 //   1. PreviewFrameRenderer 的恒等映射：已知源纹理 → blit → 逐该厂商对比，
-//      抓「上下颠倒 / 通道错位」（与 PAL blit 几何同源的约定靠这里锁定）。
+//      抓「上下颠倒 / 通道错位」（与 Platform blit 几何同源的约定靠这里锁定）。
 //   2. 真实帧上屏链路：Preview（golden 素材）→ renderFrame → blit 到
 //      可读纹理 → 非黑。覆盖「内核离屏 RT → 显示路径」的完整 GPU 链路。
 //

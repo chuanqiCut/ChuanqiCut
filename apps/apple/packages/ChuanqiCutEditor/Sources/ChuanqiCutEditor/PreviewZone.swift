@@ -33,7 +33,7 @@ struct PreviewZone: View {
                 MetalPreviewView(preview: preview, pump: pump, pts: playhead,
                                  continuous: continuous, renderEpoch: renderEpoch)
             } else {
-                // 预览后端缺失（如该平台 PAL 未实现预览能力）：如实降级展示，不伪装可用。
+                // 预览后端缺失（如该平台 Platform 未实现预览能力）：如实降级展示，不伪装可用。
                 ZStack {
                     Theme.previewBackground
 

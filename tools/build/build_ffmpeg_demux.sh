@@ -87,8 +87,15 @@ fi
 # --- 1) configure：demux 档位裁剪（out-of-tree）---
 # 裁剪清单：只开「demux 档位」真正需要的容器/解析器/比特流过滤器，别多开。
 # 若某平台需要更多格式，在此增删即可（这是产品决策，不是治理红线）。
+#
+# ⚠️ PARSERS 不含 hevc / mpeg4video / opus（2026-10-11 DEPS-012 链接闭合实测）：
+#   FFmpeg 9.0.2 上游 libavcodec/Makefile 在这三处不闭合 ——
+#   * hevc_parser.o / opus_parser.o 不在任何 OBJS 规则里，但 parser 注册表引用其符号；
+#   * mpeg4video_parser 显式拉 mpeg4videodec/ituh263dec，其内部又被 decoder 宏
+#     裁掉关键函数（ff_set_qscale 等），静态链接必炸。
+#   容器 demux（mov/mkv/ts/ogg/flv...）不依赖这三个 parser，容器内 hevc/opus 流不受影响。
 DEMUXERS=(mov matroska avi flv h264 hevc mpegts mpegvideo wav aiff mp3 aac ogg flac asf rm m4v amr ac3 eac3 caf dts vc1)
-PARSERS=(h264 hevc aac av1 mpeg4video mpegvideo mpegaudio vc1 vp9 opus flac vorbis ac3 eac3 mlp truehd dts dca mjpeg)
+PARSERS=(h264 aac av1 mpegvideo mpegaudio vc1 flac vorbis ac3 eac3 mlp truehd dts dca mjpeg)
 BSFS=(extract_extradata aac_adtstoasc mpeg4_unpack_bframes h264_mp4toannexb hevc_mp4toannexb vp9_superframe opus eac3_core)
 
 CONF_FLAGS=(
@@ -117,7 +124,8 @@ case "$SDK" in
   iphonesimulator)
     MIN_FLAG="-mios-simulator-version-min=16.0" ;;
 esac
-CONF_FLAGS+=(--enable-cross-compile --target-os=darwin
+CONF_FLAGS+=(--arch="$ARCH"   # 不给会默认本机 arch：arm64 交叉编时 configure 误判 x86_64 去找 nasm
+             --enable-cross-compile --target-os=darwin
              --extra-cflags="-arch $ARCH -isysroot $SDKROOT_PATH $MIN_FLAG"
              --extra-ldflags="-arch $ARCH -isysroot $SDKROOT_PATH $MIN_FLAG")
 if [ "$ARCH" = "x86_64" ]; then
@@ -143,17 +151,56 @@ echo ">> make install (staging) ..."
 make install
 
 # --- 3) 合并为单个 convenience archive libffmpeg.a ---
-# ar x 分库解包 → 重命名 <lib>_<base>.o → ar rcs（baselines 已验证：libtool -static 会丢同名成员符号）
+# 逐成员提取 + 序号化重命名（baselines 两层同名坑，2026-10-12 补第二层）：
+#   * 跨库同名（utils.o 在 avutil/avformat/avcodec 各一）→ <lib>_ 前缀；
+#   * **同库同名**（libavutil.a 内 cpu.o 有两份：cpu.c 通用版 + x86/cpu.c 平台版，
+#     ar 成员允许重名）→ **不能用 bash 的 ar x 逐成员提取**：`ar x lib member` 对同名
+#     成员永远只取**第一个**，第二份（x86/cpu.c 平台版）照样丢，ff_get_cpu_flags_x86
+#     仍 undefined。故用 python 按 ar 格式逐偏移提取（同名成员天然全保留，支持 BSD
+#     `#1/` 长名与 __.SYMDEF 跳过）。
+extract_ar() {
+  python3 - "$1" "$2" "$3" << 'PYEOF'
+import sys, os
+ar_path, prefix, out_dir = sys.argv[1], sys.argv[2], sys.argv[3]
+data = open(ar_path, 'rb').read()
+if data[:8] not in (b'! <arch>\n', b'!<arch>\n'):   # 系统 ar 带空格 / FFmpeg $(AR) 不带
+    sys.exit(f'not an ar archive: {ar_path} size={len(data)} head={data[:24]!r}')
+os.makedirs(out_dir, exist_ok=True)
+off, i = 8, 0
+while off < len(data):
+    if len(data) - off < 60: break
+    hdr = data[off:off+60]
+    name = hdr[0:16].decode('ascii', 'replace').strip()
+    size = int(hdr[48:58].decode().strip())
+    body = off + 60
+    if name.startswith('__'):          # __.SYMDEF* 等符号表成员，跳过
+        off = body + size + (size & 1); continue
+    real = name
+    if name.startswith('#1/'):         # BSD 长名：真实名存于成员体前 N 字节
+        n = int(name[3:])
+        real = data[body:body+n].decode('ascii', 'replace').rstrip('\x00')
+        body += n; size -= n
+    blob = data[body:body+size]
+    out = os.path.join(out_dir, f'{prefix}_{i:05d}_{os.path.basename(real)}')
+    open(out, 'wb').write(blob)
+    i += 1
+    off = body + size + (size & 1)
+print(f'   {prefix}: {i} members')
+PYEOF
+}
 MERGE="$(mktemp -d)"
-mkdir -p "$MERGE/avutil" "$MERGE/avformat" "$MERGE/avcodec"
-( cd "$MERGE/avutil"    && ar x "$STAGE/lib/libavutil.a"    && for f in *.o; do mv "$f" "avutil_$f"; done )
-( cd "$MERGE/avformat"  && ar x "$STAGE/lib/libavformat.a"  && for f in *.o; do mv "$f" "avformat_$f"; done )
-( cd "$MERGE/avcodec"   && ar x "$STAGE/lib/libavcodec.a"   && for f in *.o; do mv "$f" "avcodec_$f"; done )
+extract_ar "$STAGE/lib/libavutil.a"   avutil   "$MERGE/avutil"
+extract_ar "$STAGE/lib/libavformat.a" avformat "$MERGE/avformat"
+extract_ar "$STAGE/lib/libavcodec.a"  avcodec  "$MERGE/avcodec"
 mkdir -p "$OUT"
+# ⚠️ 必须先删旧 archive：ar r 对已存在的 archive 是「插入或替换」而非重建，
+# 上次构建的残留成员（甚至旧裁剪清单的成员）会叠加进本次产物——2026-10-12 实测
+# arm64 闭合失败即由此起（v1 裸名 parsers.o 残留，链接器先拉入旧 config 成员）。
+rm -f "$OUT/libffmpeg.a"
 ar rcs "$OUT/libffmpeg.a" "$MERGE/avutil"/*.o "$MERGE/avformat"/*.o "$MERGE/avcodec"/*.o
 
-# 同名校验：重命名后不应存在任何重复成员（有 = 有 .o 没进库，符号丢失前兆）
-DUPES="$(cat "$MERGE/avutil"/*.o "$MERGE/avformat"/*.o "$MERGE/avcodec"/*.o >/dev/null; ar t "$OUT/libffmpeg.a" | sort | uniq -d)"
+# 同名校验：序号化后不应存在任何重复成员（有 = 合并逻辑出错，符号丢失前兆）
+DUPES="$(ar t "$OUT/libffmpeg.a" | sort | uniq -d)"
 if [ -n "$DUPES" ]; then
   echo "!! 合并产物存在重复成员（预期 0）：" >&2
   echo "$DUPES" >&2
@@ -175,6 +222,42 @@ SHA=$(shasum -a 256 "$OUT/libffmpeg.a" | awk '{print $1}')
 echo ">> 产物：$OUT/libffmpeg.a"
 echo "   size_bytes = $SIZE"
 echo "   sha256     = $SHA"
+
+# --- 6.5) 链接闭合冒烟（DEPS-012 教训：体积/符号检查不暴露依赖链缺口，只有真链接才暴露）---
+# 用 C++ 消费者（同 core 的 include 方式 + extern "C" 包裹）链接合并库，
+# 引用 demux 档的全部对外入口；失败 = 裁剪清单与上游依赖不闭合，禁止出货。
+SMOKE_CPP="$(mktemp /tmp/ffsmoke.XXXXXX.cpp)"
+SMOKE_BIN="${SMOKE_CPP%.cpp}.out"
+cat > "$SMOKE_CPP" << 'EOF'
+extern "C" {
+#include <libavformat/avformat.h>
+#include <libavcodec/avcodec.h>
+#include <libavutil/avutil.h>
+}
+int main() {
+    AVFormatContext* ctx = nullptr;
+    if (avformat_open_input(&ctx, "/dev/null", nullptr, nullptr) < 0) return 1;
+    avformat_find_stream_info(ctx, nullptr);
+    for (unsigned i = 0; i < ctx->nb_streams; ++i) {
+        const AVCodecDescriptor* d = avcodec_descriptor_get(ctx->streams[i]->codecpar->codec_id);
+        (void)d->name;
+        (void)av_get_media_type_string(ctx->streams[i]->codecpar->codec_type);
+    }
+    avformat_close_input(&ctx);
+    return 0;
+}
+EOF
+echo ">> 链接闭合冒烟 (clang++ 消费者) ..."
+if ! clang++ "$SMOKE_CPP" -o "$SMOKE_BIN" -arch "$ARCH" -isysroot "$SDKROOT_PATH" -Wno-nullability-completeness \
+     -I"$OUT/include" "$OUT/libffmpeg.a" \
+     -framework CoreFoundation -framework CoreVideo -framework CoreMedia -framework VideoToolbox; then
+  echo "!! 链接闭合失败：demux 档裁剪清单与 FFmpeg 内部依赖不闭合（见 Undefined symbols）" >&2
+  echo "   排查：PARSERS/BSFS 清单 vs libavcodec/Makefile 依赖链（DEPS-012，2026-10-11 hevc/opus/mpeg4video 案）" >&2
+  rm -f "$SMOKE_CPP" "$SMOKE_BIN"
+  exit 1
+fi
+rm -f "$SMOKE_CPP" "$SMOKE_BIN"
+echo "   (闭合通过)"
 
 # --- 7) GPL / 外部编解码符号扫描 ---
 # 模式必须用 lib<name> 前缀（baselines 教训：裸格式名会命中 FFmpeg 自身 LGPL 代码，假阳性）。

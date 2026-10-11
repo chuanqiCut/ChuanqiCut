@@ -61,28 +61,67 @@ integration = "auto"            # 本地开发走 binary，CI/发布走 source
 profile     = "demux"
 features    = ["demux", "seek", "probe", "bitstream-filter"]
 platforms   = ["apple", "android", "ohos"]
-visibility  = "private"         # 第三方符号不得出现在 core/include/cq/**
+visibility  = "private"         # 第三方符号不得出现在 engine/core/cq/**
 owner       = "media"
 strip       = true
 
-# binary 路径的预编译产物（DEPS-010：本地构建「常用子集」档位 demux only，产物目录 prebuilt/apple-x86_64-demux）
-# 说明：本地开发走 binary（auto 集成），CI/发布走 source；arm64 产物由 DEPS-011/012 在对应平台回填。
-# 本机构建档位 = 常用子集（libavformat + libavutil + avcodec 的 parser/bsf 部分），LGPL-2.1+，无 GPL 符号，
-#   启用 17 demuxers / 13 parsers / 5 bsfs（在 slim 的 16 基础上补回 image_webp_pipe，以内容方式识别 WebP；
-#   见 baselines.md「常用档位（profile=demux 的实现）」的 WebP 实测结论）。
-# 体积说明：常用子集档位实测合并产物 2,325,424 B（≈2.22MiB），见 baselines.md。
-#   **本档位不设硬性体积上限**（2026-09-25 由 team-lead 修订：原 `< 3MB` 约束已废除）；体积仅作参考基准、如实记录。
+# binary 路径的预编译产物（DEPS-010/012：demux 档，tools/build/build_ffmpeg_demux.sh 本地构建）
+# 说明：本地开发走 binary（auto 集成），CI/发布走 source；产物不入 git（P84，*.a 全局 ignore）。
+# 本档位 = libavformat + libavutil + libavcodec 的 parser/bsf 部分，LGPL-2.1+，无 GPL 符号
+#   （脚本内置扫描 0 命中；合并 = ar x 解包重命名再 ar rcs，duplicate members=0，见 baselines.md）。
+# 体积说明：**本档位不设硬性体积上限**（2026-09-25 由 team-lead 修订：原 `< 3MB` 约束已废除）；
+#   体积仅作参考基准、如实记录（baselines.md「FFmpeg demux 档位构建基线」）。
 #
 # ⚠️ url 字段说明：产物为**本地构建**（prebuilt/<dir> 下），并非托管在制品服务器。
 #   原写的 url="https://artifacts.internal/chuanqicut/ffmpeg/..." 是虚构域名（仅存在于 selfcheck.py/ARCH-002/manifest 注释示例），
 #   没有任何真实制品服务器在托管本产物，故不能照抄。保留 url 字段仅为满足 schema 必填约束，
 #   其取值 = 本地路径标记，真实来源见 `path` 与 baselines.md 的构建命令；CI/发布走 source 集成由上游 commit 审计。
+#
+# 2026-10-11（DEPS-012，ADR-0036）：新增 5 个 <sdk>-<arch> slice 产物（Pod vendored 消费），
+#   目录 third_party/prebuilt/ffmpeg/9.0.2/demux/<sdk>-<arch>/{libffmpeg.a,include/}；
+#   xcframework 汇总（macos fat / ios arm64 / simulator fat）由 make_ffmpeg_xcframework.sh 生成。
+#   旧条目 apple-x86_64（DEPS-010 历史，prebuilt/apple-x86_64-demux/）保留锚定，Pod 不再引用。
 [[dep.artifact]]
 platform = "apple-x86_64"
 url      = "local-build://prebuilt/apple-x86_64-demux"   # 本地构建产物，非托管的制品 URL（见上方说明）
 sha256   = "e1850cd2726005e80c31bf721d8392fcb7813ff5f259bb5bd9c49c536bcf110b"
 path     = "prebuilt/apple-x86_64-demux"
 size_bytes = 2325424
+
+[[dep.artifact]]
+platform   = "apple-macosx-x86_64"
+url        = "local-build://prebuilt/ffmpeg/9.0.2/demux/macosx-x86_64"
+sha256     = "e7de9128f0e00beb70d530cec021f08532dc8ab1146b8f3f7863a503b7bb74a5"
+path       = "prebuilt/ffmpeg/9.0.2/demux/macosx-x86_64"
+size_bytes = 2787960
+
+[[dep.artifact]]
+platform   = "apple-macosx-arm64"
+url        = "local-build://prebuilt/ffmpeg/9.0.2/demux/macosx-arm64"
+sha256     = "03cf9d772575d4ebcfdaa2523c53748b37380f631f6a458509266ab85b949932"
+path       = "prebuilt/ffmpeg/9.0.2/demux/macosx-arm64"
+size_bytes = 2963056
+
+[[dep.artifact]]
+platform   = "apple-iphoneos-arm64"
+url        = "local-build://prebuilt/ffmpeg/9.0.2/demux/iphoneos-arm64"
+sha256     = "40208c9ea0d70ec3c5053dc2ccc12165272bb0eb8276731bd065213c79255bf2"
+path       = "prebuilt/ffmpeg/9.0.2/demux/iphoneos-arm64"
+size_bytes = 2963088
+
+[[dep.artifact]]
+platform   = "apple-iphonesimulator-x86_64"
+url        = "local-build://prebuilt/ffmpeg/9.0.2/demux/iphonesimulator-x86_64"
+sha256     = "b372e4539f8ce2faeb0dcba34b463b08528782692bebe2804cd64e67ea981abb"
+path       = "prebuilt/ffmpeg/9.0.2/demux/iphonesimulator-x86_64"
+size_bytes = 2611312
+
+[[dep.artifact]]
+platform   = "apple-iphonesimulator-arm64"
+url        = "local-build://prebuilt/ffmpeg/9.0.2/demux/iphonesimulator-arm64"
+sha256     = "dcca3e525b3ee0517c8d2cb318e53713ee12665be407543f10fd8af3430f7134"
+path       = "prebuilt/ffmpeg/9.0.2/demux/iphonesimulator-arm64"
+size_bytes = 2962088
 
 # -----------------------------------------------------------------------------
 # 2) signalsmith-stretch —— 音频时间拉伸 / 变声（含 formant 补偿）

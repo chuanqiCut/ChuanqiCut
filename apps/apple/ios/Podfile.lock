@@ -1,10 +1,12 @@
 PODS:
+  - CChuanqiCut (0.1.0)
   - ChuanqiCutCamera (0.1.0):
     - SharedUI
   - ChuanqiCutEditor (0.1.0):
     - ChuanqiCutEngine
     - SharedUI
-  - ChuanqiCutEngine (0.1.0)
+  - ChuanqiCutEngine (0.1.0):
+    - CChuanqiCut (= 0.1.0)
   - ChuanqiCutImport (0.1.0):
     - SharedUI
   - ChuanqiCutPlayer (0.1.0)
@@ -12,6 +14,7 @@ PODS:
     - ChuanqiCutEngine
 
 DEPENDENCIES:
+  - CChuanqiCut (from `../../../engine`)
   - ChuanqiCutCamera (from `../packages/ChuanqiCutCamera`)
   - ChuanqiCutEditor (from `../packages/ChuanqiCutEditor`)
   - ChuanqiCutEngine (from `../../../engine`)
@@ -20,6 +23,8 @@ DEPENDENCIES:
   - SharedUI (from `../packages/SharedUI`)
 
 EXTERNAL SOURCES:
+  CChuanqiCut:
+    :path: "../../../engine"
   ChuanqiCutCamera:
     :path: "../packages/ChuanqiCutCamera"
   ChuanqiCutEditor:
@@ -34,13 +39,14 @@ EXTERNAL SOURCES:
     :path: "../packages/SharedUI"
 
 SPEC CHECKSUMS:
-  ChuanqiCutCamera: 1dbf6b1394e922c893b3ca5420cf3e6e055e4e09
-  ChuanqiCutEditor: 0b6916f93d794222ee8de265488107708bcf749f
-  ChuanqiCutEngine: f3c582e258cf0313e67423779789da44e94f029d
+  CChuanqiCut: cd54e9ec40d4f2e323f7314bd042eb1a4012e89f
+  ChuanqiCutCamera: 403ac93215cff8efb9a5677526333edaa655a038
+  ChuanqiCutEditor: 19d2ab19b1f068727f4059fe41e3621dd05a3e5d
+  ChuanqiCutEngine: bcf1c692dad41c7b5780f7178f2afb3e9febb41c
   ChuanqiCutImport: aa33c8eb24b733c0cdf8cf8b64df7a2e38cab8e3
   ChuanqiCutPlayer: f0dd0794e4b67626604e5764e35a7456f3593001
-  SharedUI: b6a84006d539c4ceba645aabe00f205281e2ba00
+  SharedUI: 7e3bf5c24640690f7ac2459fd6c7c6f3d043fa62
 
-PODFILE CHECKSUM: 6f492515fbd7e334fb43255be40f604f70b8953e
+PODFILE CHECKSUM: af86a7fc5d306371c54da16293e675d2364a6f18
 
 COCOAPODS: 1.17.0

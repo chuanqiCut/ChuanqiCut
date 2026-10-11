@@ -20,8 +20,11 @@ Pod::Spec.new do |s|
   s.source   = { :git => ENV.fetch('CQ_POD_SOURCE_GIT',
                                     'https://REPLACE_ME.invalid/ChuanqiCut.git'),
                  :tag => s.version.to_s }
+  # SDK 本体协议仍为 Proprietary（待定）；第三方 vendored 组件的许可见
+  # engine/NOTICE.md。FFmpeg 9.0.2 以 LGPL-2.1-or-later vendored（demux 档，
+  # 无 GPL 组件），处置结论见 ADR-0036（ARCH-002 §5.1 路径 1，负责人 2026-10-11 确认）。
   s.license  = { :type => 'Proprietary',
-                  :text => 'License not finalized. FFmpeg LGPL linking strategy pending (see ADR-0010).' }
+                  :text => 'License not finalized. See NOTICE.md for vendored third-party licenses (FFmpeg LGPL-2.1-or-later).' }
   s.author   = { 'zhuning' => 'REPLACE_ME.invalid' }
 
   s.ios.deployment_target = '16.0'
@@ -51,6 +54,40 @@ Pod::Spec.new do |s|
   s.libraries = 'c++'
 
   cq_major, cq_minor, cq_patch = s.version.to_s.split('.')
+
+  # ---- FFmpeg（DEPS-010/012，ADR-0036）----
+  # demux 档位静态库（libavformat+libavutil+libavcodec parser/bsf），LGPL-2.1-or-later，
+  # 无 GPL 组件。产物由 tools/build/build_ffmpeg_demux.sh 构建、manifest.toml 登记
+  # sha256。xcframework 三个 slice：macosx(x86_64+arm64) / iphoneos(arm64) /
+  # iphonesimulator(x86_64+arm64)。源码集成（调试/CI 审计）走
+  # third_party/CMakeLists.txt 的 cq_ffmpeg target（integration=auto 的 source 侧）。
+  #
+  # ⚠️ 产物不入 git（P84：*.a 全局 ignore，与旧 prebuilt 档一致）。首次 pod install
+  # 前必须本地构建一次（或从集成机拷贝 third_party/prebuilt/ffmpeg/）：
+  #   tools/build/build_ffmpeg_demux.sh --sdk macosx --arch x86_64
+  #   tools/build/build_ffmpeg_demux.sh --sdk macosx --arch arm64
+  #   tools/build/build_ffmpeg_demux.sh --sdk iphoneos --arch arm64
+  #   tools/build/build_ffmpeg_demux.sh --sdk iphonesimulator --arch x86_64
+  #   tools/build/build_ffmpeg_demux.sh --sdk iphonesimulator --arch arm64
+  # ⚠️ vendored_libraries 必须相对 podspec 且在 pod root 内（2026-10-12 双实测）：
+  #   绝对路径 → 直接报错（File patterns must be relative）；pod root 外的
+  #   ../third_party 相对路径 → **静默忽略**（Pods 工程无任何引用，比报错更坑）。
+  #   故 make_ffmpeg_xcframework.sh 构建后把 xcframework 同步到 engine/vendor/，
+  #   这里引用仓内副本（vendor 由 .gitignore 盖住，产物不入 git，P84）。
+  ffmpeg_xcframework = 'vendor/libffmpeg.xcframework'
+  unless File.exist?(File.expand_path(ffmpeg_xcframework, __dir__))
+    raise "FFmpeg demux 产物缺失（engine/vendor/libffmpeg.xcframework）。\n" \
+          "先构建：tools/build/build_ffmpeg_demux.sh 5 个 slice（自动同步 vendor，见 docs/BUILD.md）。"
+  end
+  # vendored_libraries 必须是相对路径（CocoaPods 校验：File patterns must be relative），
+  # 相对 podspec 目录解析；存在性检查用绝对路径（Pod 2026-10-12 实测：绝对路径直接报错）。
+  # xcframework 走 vendored_frameworks（CocoaPods 1.10+ 对 .xcframework 后缀自动
+  # 按 SDK 选 slice；vendored_libraries 只认裸 .a/.dylib 文件路径，对 xcframework
+  # 目录静默忽略——2026-10-12 三次实测：绝对路径报错 / ../ 外部路径不接 / 目录不展开）
+  s.vendored_frameworks = ffmpeg_xcframework
+  # FFmpeg 头只被 engine 私有 .cpp 引用（public 头零第三方类型，DEPS-004 扫描）。
+  # 三 slice 头文件同源（同一 commit），取 macosx-arm64 一份即可，xcframework
+  # 的 vendored headers 亦由 CocoaPods 自动接入，此路径是显式兜底。
   s.pod_target_xcconfig = {
     'CLANG_CXX_LANGUAGE_STANDARD' => 'c++20',
     'CLANG_CXX_LIBRARY' => 'libc++',
@@ -62,6 +99,7 @@ Pod::Spec.new do |s|
     'HEADER_SEARCH_PATHS' => '$(inherited) "$(PODS_TARGET_SRCROOT)/core" ' \
                              '"$(PODS_TARGET_SRCROOT)/platform/apple/base" ' \
                              '"$(PODS_TARGET_SRCROOT)/platform/apple/gfx" ' \
-                             '"$(PODS_TARGET_SRCROOT)/platform/apple/media"'
+                             '"$(PODS_TARGET_SRCROOT)/platform/apple/media" ' \
+                             '"$(PODS_TARGET_SRCROOT)/../third_party/prebuilt/ffmpeg/9.0.2/demux/macosx-arm64/include"'
   }
 end

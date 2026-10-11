@@ -71,3 +71,6 @@ apps/apple/*/build/
 
 # Python 该厂商码缓存（deps.py 等工具运行产物）
 __pycache__/
+
+# FFmpeg vendored 产物同步目录（P84：产物不入库，构建脚本覆盖拷贝）
+engine/vendor/

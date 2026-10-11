@@ -1765,3 +1765,79 @@ TASK-CAM-012 剩余风险栏其实预判了（"若真机上 CI 工作空间表�
      新条目才用新名 —— 台账的作用是复盘，不是保持一致。
 - **补救**：本次 24 处已按行号精确修复（历史条目还原 `PAL`，23:38 新条目保留旧名以描述变更），
   并在台账中登记。修复脚本用 `assert old in line` 逐行断言，避免二次误伤。
+
+
+### P104 · FFmpeg 静态库「编译过 ≠ 链接得过」：裁剪档位必须跑链接闭合冒烟（2026-10-11~12 实测踩，DEPS-012）
+
+- **现象**：demux 档（--disable-everything + parser/bsf 白名单）产物体积/符号/GPL 扫描全绿，
+  **第一次真实链接进可执行文件时连环炸**，三层问题叠加：
+  1. **上游 Makefile parser 不闭合**：FFmpeg 9.0.2 的 `libavcodec/Makefile` 里
+     `hevc_parser.o` / `opus_parser.o` **不在任何 OBJS 规则中**，但 parser 注册表
+     （avcodec_parsers.o）引用 `ff_hevc_parser` / `ff_opus_parser` ——
+     `--enable-parser=hevc,opus` 后链接必炸；`mpeg4video` parser 则显式拉
+     mpeg4videodec/ituh263dec，其引用的 `ff_set_qscale` 等又被 decoder 宏裁掉，
+     静态链接同样炸。
+  2. **同库同名 .o**：`libavutil.a` 内有**两份** `cpu.o`（通用 `cpu.c` + 平台 `x86/cpu.c`），
+     ar 成员允许重名，原始 archive 是完整的；但 `ar x` 平铺解包**静默覆盖**，
+     通用版 `av_cpu_count` 定义丢失 → `Undefined _av_cpu_count`。
+     （baselines 记录的「跨库同名」只是第一层坑，**同库同名**是第二层，2026-10-12 补录。）
+  3. **DEPS-010 产物从未被链接**：2026-09 的验收只测了体积/符号数/GPL 扫描，
+     全是 archive 级检查，链接级缺口埋了近一个月才被冒烟单测暴露。
+- **修复**（`tools/build/build_ffmpeg_demux.sh`）：
+  1. PARSERS 裁掉 hevc / mpeg4video / opus（容器 demux 不依赖，容器内 hevc/opus 流不受影响）；
+  2. 合并改**逐成员 `ar x` + 序号化重命名**（`avutil_00001_cpu.o` 式），同名成员全保留，
+     `__.SYMDEF` 符号表成员过滤；
+  3. 脚本内置**链接闭合冒烟**：clang++ C++ 消费者（extern "C" 包头，引用 demux 全部对外
+     入口）链接合并库，失败禁止出货。
+- **定则**：凡静态库裁剪档位，「体积/符号/GPL 扫描」三绿**不构成**可用证据；
+  **必须有一次真实链接**（最小消费者可执行文件）才算产物合格。
+  验证状态：✅ 2026-10-12 macosx-x86_64 闭合通过后 5 slice 全量复绿。
+
+### P105 · FFmpeg 9 Apple 集成三小坑（2026-10-11~12 实测，DEPS-012）
+
+1. **公共头无 `extern "C"`**：FFmpeg 9 的 avformat.h/avcodec.h/avutil.h 已不再自带
+   C++ 包裹（老版本有），C++ TU 必须自己 `extern "C" { #include ... }`，
+   否则 C++ mangling 链接全炸（报错 NOTE: declaration possibly missing 'extern "C"'）。
+2. **hwcontext 不受 --disable-hwaccels 控制**：产物含 `avutil_hwcontext_videotoolbox.o`
+   （avutil 级组件），链接器会递归拉入并索要 CoreVideo/CoreMedia/VideoToolbox/
+   **CoreFoundation** 框架符号。处置：cq_ffmpeg target 挂 INTERFACE_LINK_LIBRARIES
+   传递给所有消费者；App Pod 侧本就链这些框架，无感。
+3. **arm64 交叉编译必须显式 `--arch=arm64`**：缺省时 configure 按本机 arch（x86_64）
+   走，转而要求 nasm（本机无）→ configure 直接失败。报错文案会误导人去装 nasm。
+- **补（2026-10-12 上午）—— 第三层坑：`ar rcs` 对已存在 archive 是「插入或替换」**：
+  OUT 目录残留上一轮（甚至旧裁剪清单）的 libffmpeg.a 时，`ar rcs` 不重建而是把新成员
+  塞进旧 archive —— arm64 闭合失败即因 v1 旧裸名 parsers.o（16 个引用含 hevc/opus）
+  先被链接器拉入。合并前必须 `rm -f "$OUT/libffmpeg.a"`，且**验收产物必须核对
+  「成员总数 + 裸名成员 = 0」**（序号化合并下不应有任何无序号成员）。
+- **补 2（2026-10-12）—— bash `ar x lib member` 对同名成员只取第一个**：
+  序号化改名救不了同名成员（两次提取拿到的是同一份），第二份 cpu.o（平台版）仍丢，
+  `ff_get_cpu_flags_x86` 继续 undefined。**正确做法 = python 按 ar 格式逐偏移提取**
+  （同名全保留；注意两种魔数：系统 ar `! <arch>\n`（带空格）vs FFmpeg `$(AR)` 的
+  `!<arch>\n`（无空格），解析器都要认；BSD 长名 `#1/<len>` 存于成员体前 N 该厂商）。
+  最终干净产物：301 成员全保留，macosx-x86_64 demux 档 2.66MiB，闭合冒烟通过。
+
+### P106 · iOS 26 SDK 音频/媒体 API 三处与记忆不符——一处弃用、一处改名、一处返回类型收窄
+> 日期 / 来源 / 验证状态：2026-10-11 / AUDIO-002 平台层（Intel 机全量构建 + iOS arm64 slice 编译）/ **verified**
+
+1. `[AVAsset tracksWithMediaType:]` 在 macOS 15+/iOS 16+ **弃用**（-Werror 必炸）；
+   `tracks` 属性未标弃用（media_demux.mm 同款可用）→ 用 `[asset tracks]` +
+   `isEqualToString:AVMediaTypeAudio` 过滤（mediaType 是 NSString，**禁止指针比较**）。
+2. `AVAudioFormat` **没有** `initWithStandardFormatWithSampleRate:channels:interleaved:`——
+   标准格式初始化器只有不带 interleaved 的 `initStandardFormatWithSampleRate:channels:`；
+   要 interleaved 参数用 `initWithCommonFormat:sampleRate:channels:interleaved:`
+   + `AVAudioPCMFormatFloat32`（没有 `AVAudioCommonFormatPCMFloat32` 这个名字）。
+3. `CMBlockBufferGetDataLength` 返回 **size_t**（收窄成 int 会吃 -Wshorten-64-to-32 → -Werror）。
+- 防复发规则：P83/P48 同族再 +1——**平台 API 落笔前先 grep 本机 SDK 头文件**（Xcode 26.6 全有）；
+  ObjC selector 凭记忆写 = 构建机必炸，且只有 -Werror 全量才抓得住。
+
+### P107 · synchronized groups 两个格式坑：sourceTree 大小写敏感 + Info.plist 必须成员例外
+> 日期 / 来源 / 验证状态：2026-10-11 / ADR-0037 台阶 2（app target 转 buildable folders）/ **verified**
+
+1. **`sourceTree = "<Group>"`（大写 G）= 同步组解析失败**：Xcode 构建系统按大小写匹配
+   sourceTree，工程既定 casing 是小写 `"<group>"`；写错 → 组解析不到 → Sources 零文件 →
+   链接 `_main` undefined（报错完全看不出是大小写问题）。xcodeproj gem 不校验该值。
+2. **同步组会自动把目录内 Info.plist 收进资源**：与 INFOPLIST_FILE 的处理产物冲突 →
+   `Multiple commands produce .../Info.plist`。解法 = `PBXFileSystemSynchronizedBuildFileExceptionSet
+   { target, membership_exceptions = ["Info.plist"] }` 挂到同步组的 exceptions。
+- 防复发规则：动 PBXFileSystemSynchronizedRootGroup 一律先核全工程 sourceTree casing；
+  含 Info.plist 的目录转同步组时**默认**配成员例外。

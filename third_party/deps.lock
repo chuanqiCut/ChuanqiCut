@@ -4,7 +4,7 @@
 # lock_digest 为防篡改摘要，任何手改都会让 check 失败。
 schema_version = "1.0"
 generator = "tools/deps/deps.py"
-lock_digest = "2ad92f944637198eb7a224ccedf3f1b6c560fbfea2c8849a81cb8bd3cfea6cb3"
+lock_digest = "d9a49b19e1b651b42e1f979c679df8e50f86b8bbcbe6d50862ad72b923a8db2f"
 
 [[locked]]
 name = "SPIRV-Cross"
@@ -36,6 +36,11 @@ resolved_ref = "946fcce07b6dcd0331c8cc609192aeff5e1924f8"
 commit = "946fcce07b6dcd0331c8cc609192aeff5e1924f8"
 patches = []
 artifacts = [
+  {platform = "apple-iphoneos-arm64", url = "local-build://prebuilt/ffmpeg/9.0.2/demux/iphoneos-arm64", sha256 = "40208c9ea0d70ec3c5053dc2ccc12165272bb0eb8276731bd065213c79255bf2", size_bytes = 2963088},
+  {platform = "apple-iphonesimulator-arm64", url = "local-build://prebuilt/ffmpeg/9.0.2/demux/iphonesimulator-arm64", sha256 = "dcca3e525b3ee0517c8d2cb318e53713ee12665be407543f10fd8af3430f7134", size_bytes = 2962088},
+  {platform = "apple-iphonesimulator-x86_64", url = "local-build://prebuilt/ffmpeg/9.0.2/demux/iphonesimulator-x86_64", sha256 = "b372e4539f8ce2faeb0dcba34b463b08528782692bebe2804cd64e67ea981abb", size_bytes = 2611312},
+  {platform = "apple-macosx-arm64", url = "local-build://prebuilt/ffmpeg/9.0.2/demux/macosx-arm64", sha256 = "03cf9d772575d4ebcfdaa2523c53748b37380f631f6a458509266ab85b949932", size_bytes = 2963056},
+  {platform = "apple-macosx-x86_64", url = "local-build://prebuilt/ffmpeg/9.0.2/demux/macosx-x86_64", sha256 = "e7de9128f0e00beb70d530cec021f08532dc8ab1146b8f3f7863a503b7bb74a5", size_bytes = 2787960},
   {platform = "apple-x86_64", url = "local-build://prebuilt/apple-x86_64-demux", sha256 = "e1850cd2726005e80c31bf721d8392fcb7813ff5f259bb5bd9c49c536bcf110b", size_bytes = 2325424},
 ]
 lock_state = "locked"

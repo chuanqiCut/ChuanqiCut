@@ -595,13 +595,16 @@ CQ_LOG_LEVEL=debug  CQ_LOG_WORKFLOW=decode,mem,perf  CQ_LOG_WF_LEVEL=decode=trac
 | MEDIA-021/022/023/025/027 | 顺序取帧/HEVC/降采样/HDR/冻结修复 | ✅ |
 | MEDIA-024 | 播放卡顿 GOP 重解码（真因已定案） | 待实施 |
 | MEDIA-028/029 | 静图/动图帧源 · LivePhoto | 预占（§13） |
+| DEPS-012 | FFmpeg 双集成 + 本地 Pod vendored（冒烟切片） | ✅ 编码完，待门禁数字回填（2026-10-12，见 ADR-0036 / TASK-DEPS-012） |
+| MEDIA-021 后端 | FFmpegFrameProvider demux 后端（消费 DEPS-012 接缝） | 未开工（下一张卡） |
 
 ### 测试与门禁记录（阶段批）
 
 | 日期 | 阶段/范围 | 结论（数字） |
 |---|---|---|
 | 2026-10-07 | core 全量 | core-dbg 45/45、core-rel 45/45（P77 并发修复后零回归） |
+| 2026-10-12 | DEPS-012 冒烟切片 | 5 slice 链接闭合冒烟 5/5 + GPL 扫描 0 命中；FFmpegProbeFile 手动链接测试 **11 checks / 0 failures**（golden h264：5.0s/1080p/h264/无音轨 + 错误路径）；deps.py validate+lock+check ✓（7 条）；pod install ✓ vendored 接线（App OTHER_LDFLAGS -lffmpeg + FSP engine/vendor）；全量 ctest/xcodebuild 顺延阶段批（并行 audio 线写集阻断） |
 
 ### 调研 · 决策 · 池指针
 
-- ADR-0016/0017 · pitfalls P66/P70/P77 · HANDOFF-006
+- ADR-0016/0017 · **ADR-0036（FFmpeg vendored + LGPL 处置，2026-10-11 负责人确认）** · pitfalls P66/P70/P77/**P104/P105** · HANDOFF-006 · TASK-DEPS-012

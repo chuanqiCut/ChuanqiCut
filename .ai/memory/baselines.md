@@ -19,7 +19,7 @@
 | MediaCodec 关键帧 seek 开销 | — | — | | |
 | FFmpeg demux 产物体积（apple-x86_64, 全 demuxer+parser） | 参考基准（无硬阈值） | 4.9MB（全 demuxer+parser 档位实测，非超标告警）[DEPS-010] | i7-9750H / macOS 14 | 2026-09-24 |
 | FFmpeg demux 产物体积（apple-x86_64, 常用子集） | 参考基准（无硬阈值） | 2.22MB（常用子集档位实测，见下节）[DEPS-010] | i7-9750H / macOS 14 | 2026-09-25 |
-| FFmpeg demux 产物体积（arm64） | 参考基准（无硬阈值） | —（待 DEPS-011/012 在对应平台实测） | | |
+| FFmpeg demux 产物体积（5 slice，2026-10-11 档位） | 参考基准（无硬阈值） | macosx-x86_64 2.94MiB / macosx-arm64 3.13MiB / iphoneos-arm64 3.13MiB / sim-x86_64 2.76MiB / sim-arm64 3.13MiB（见「demux 档 2026-10-11 构建」节）[DEPS-012] | i7-9750H / macOS | 2026-10-11 |
 
 ### 渲染
 | 项 | 原估算值 | 实测 | 设备 | 日期 |
@@ -85,6 +85,31 @@
 ---
 
 ## FFmpeg demux 档位构建基线（DEPS-010, 2026-09-24）
+
+### demux 档 2026-10-11 构建（DEPS-012，5 slice + xcframework，ADR-0036）
+
+> 设备：i7-9750H（Intel），源码同 pin n9.0.2（946fcce）。入口 `tools/build/build_ffmpeg_demux.sh`
+> （--sdk/--arch 参数化；合并 = ar x 解包重命名 ar rcs，duplicate members=0 校验过）。
+
+| slice | size_bytes | sha256 | 备注 |
+|---|---:|---|---|
+| macosx-x86_64 | 2,787,960（2.66MiB） | `e7de9128…3b7bb74a5` | --disable-x86asm（无 nasm）；301 成员全保留 |
+| macosx-arm64 | 2,963,056（2.83MiB） | `03cf9d77…5b949932` | --arch=arm64（缺该 flag configure 误判 x86_64 找 nasm）；+NEON 对象 |
+| iphoneos-arm64 | 2,963,088（2.83MiB） | `40208c9e…5213c79255bf2` | -miphoneos-version-min=16.0 |
+| iphonesimulator-x86_64 | 2,611,312（2.49MiB） | `b372e453…67ea981abb` | --disable-x86asm |
+| iphonesimulator-arm64 | 2,962,088（2.82MiB） | `dcca3e52…f10fd8af3430f7134` | -mios-simulator-version-min=16.0 |
+
+> ⚠️ 本表为 **2026-10-12 终版数字**（manifest artifact 已回填同值）。此前（10-11 深夜）一轮
+> 3.0~3.3MiB 的数字**作废**：那批产物被 ar rcs 追加语义污染（旧成员叠加）+ ar x 平铺覆盖
+> 同名 .o（cpu.o 双份丢一份），体积虚大且符号不全，见 pitfalls P104（三层坑完整记录）。
+
+- arm64/iOS 体积参考：arm64 slice 均在 3.1MiB 上下，与 x86_64（2.94MiB）同量级；**无硬阈值**。
+- GPL 扫描（lib<name> 前缀模式）：**5 slice 全部 0 命中**；产物含 `include/`（Pod vendored 可用）。
+- xcframework：`prebuilt/ffmpeg/9.0.2/demux/libffmpeg.xcframework`（macos fat x86_64+arm64 /
+  ios-arm64 / ios-arm64_x86_64-simulator fat），Pod vendored 消费。
+- 相比 DEPS-010 常用子集（2.22MiB）偏大 ~0.7MiB：本档位 demuxer/parser/bsf 清单更全
+  （22 demuxers / 17 parsers / 8 bsfs vs 17/13/5），属裁剪口径差异，非回归。
+
 
 > 设备：Intel i7-9750H（6C/12T），macOS，AppleClang 17.0.0，无 nasm/yasm，无 brew/port。
 > 源码：`third_party/src/ffmpeg` @ `946fcce07b6dcd0331c8cc609192aeff5e1924f8`（tag n9.0.2，shallow clone）。

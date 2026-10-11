@@ -624,3 +624,16 @@ target_link_libraries(cq_tests_ai_edit_plan PRIVATE cq_core)
 cq_require_cxx20(cq_tests_ai_edit_plan)
 apply_cq_warnings(cq_tests_ai_edit_plan)
 add_test(NAME ai_edit_plan COMMAND cq_tests_ai_edit_plan)
+
+# ---- DEPS-012 冒烟切片：FFmpeg demux 探测 ----
+# 验证 vendored FFmpeg（demux 档）真实可用。cq_ffmpeg target 由 third_party/
+# CMakeLists.txt 定义（binary/source 双集成，同 target）。素材路径编译期注入，
+# 元数据见 tests/golden/manifest.toml [[sample]] gf_1080p_h264。
+add_executable(cq_tests_media_ffmpeg_probe
+    unit/test_ffmpeg_probe.cpp)
+target_compile_definitions(cq_tests_media_ffmpeg_probe PRIVATE
+    CQ_TEST_GOLDEN_H264="${CMAKE_SOURCE_DIR}/tests/golden/frames/gf_1080p_h264.mp4")
+target_link_libraries(cq_tests_media_ffmpeg_probe PRIVATE cq_core cq_ffmpeg)
+cq_require_cxx20(cq_tests_media_ffmpeg_probe)
+apply_cq_warnings(cq_tests_media_ffmpeg_probe)
+add_test(NAME media_ffmpeg_probe COMMAND cq_tests_media_ffmpeg_probe)

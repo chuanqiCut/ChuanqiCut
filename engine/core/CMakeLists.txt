@@ -89,7 +89,12 @@ add_library(cq_core STATIC
     cq/audio/cq_sdk_audio.cpp
     # AIEDIT-001：EditPlan 校验器（手写 JSON 解析 + 结构/语义校验 + golden 样例）。
     # 契约头 core/cq/ai/ 与实现同域共置，通过 cq_core 的 include root 自动可见。
-    cq/ai/plan/edit_plan_validator.cpp)
+    cq/ai/plan/edit_plan_validator.cpp
+    # DEPS-012 冒烟切片：FFmpeg demux 探测。引用 FFmpeg 符号的唯一 TU，
+    # 单独成 TU（ADR-0011 规则 1）：静态库按 archive member 拉符号，
+    # 不消费 FFmpeg 的目标链接 cq_core 不会牵出 FFmpeg 依赖；
+    # 消费方（本文件唯一 = test_ffmpeg_probe）须同时链 cq_ffmpeg。
+    cq/media/ffmpeg_probe.cpp)
 
 # 版本号由 CMake 注入，不在 cq_sdk.h 里硬编码（否则必然与 project VERSION 漂移）。
 target_compile_definitions(cq_core PRIVATE
@@ -107,3 +112,9 @@ target_include_directories(cq_core PUBLIC
 # 硬锁 C++20 + 禁 GNU 扩展；强制项目警告集合并开 -Werror。
 cq_require_cxx20(cq_core)
 apply_cq_warnings(cq_core)
+
+# FFmpeg demux 档（DEPS-012/ADR-0036）：cq_ffmpeg target 由 third_party/CMakeLists.txt
+# 定义（顶层已保证先于 core 注册）。PUBLIC 传递：ffmpeg_probe 消费方（如
+# test_ffmpeg_probe）链 cq_core 时自动获得 cq_ffmpeg 的链接与头路径；
+# 不消费 FFmpeg 的目标不受影响（静态库按 archive member 拉符号，见 ADR-0011）。
+target_link_libraries(cq_core PUBLIC cq_ffmpeg)

@@ -265,3 +265,38 @@ SPM 临时产物一律 `swift test --disable-sandbox --scratch-path "$ROOT/build
   复跑确认 CMake 注册无误）；[ ] 冲突/旧号扫描（本轮未触碰任何在飞文件）
 - 验收回填：模块册 ai.md 门禁记录行 + baselines「AIEDIT-001」段（无性能项，契约任务）
 - 备注：真机无涉（纯 C++ 契约层，无 UI/无渲染）；池[4] 全量门禁触发时本条可并入
+
+### [11] DEPS-012 FFmpeg 本地 Pod 接入——iOS 真机链接与运行验证（⏳ 待门禁 + 待真机）
+
+- 来源：集成机 / media 线 + 2026-10-11~12（本机未推送，同会话交付）
+- 改动面：media 域 + 基建（`tools/build/build_ffmpeg_demux.sh`、`third_party/CMakeLists.txt`、
+  `engine/CChuanqiCut.podspec`、`core/cq/media/ffmpeg_probe.*`，全清单见 TASK-DEPS-012；ADR-0036）
+- 待办：[ ] 门禁范围：全量（CMakeLists 顶层顺序改动 + podspec vendored 变更，属构建链）；
+  [ ] 真机项 iPhone 17 Pro：①iOS App 能链上 `libffmpeg.xcframework` ios-arm64 slice
+  （vendored `../third_party` 相对路径在 iOS 构建下生效）；②demo 页触发
+  `FFmpegProbeFile` 对 golden mp4 探测返回 1080p/h264/5.0s（与 ctest 断言同口径）。
+- 验收回填：baselines「FFmpeg demux 档位构建基线」（arm64/iOS 体积已回填）、
+  TASK-DEPS-012 子步骤 6、模块册门禁表。
+
+### [12] AUDIO-002 预览音频 + CAM 单摄前摄方向修复 —— 真机验证与构建机项（⏳ 待真机/待门禁）
+
+- 来源：集成机 2026-10-11 会话（传哲直接下令：「预览没声音彻底解决；前置摄像头又横屏」）
+- 改动面：B 线 camera（CameraManager 两 hunk）+ C 线 media/audio（AUDIO-002 全链）+ Editor 接线
+- 真机 iPhone 17 Pro（归传哲，可与池 [2]/[9] 同趟）：
+  - [ ] 相机：单摄**前摄**预览竖屏且镜像正确；前摄拍照不横躺、有镜像；切摄/旋转/双摄开合后
+    方向仍对；后摄不回归（对照 P67/P72 语义）；前摄**录制文件**方向与预览一致（WYSIWYG）
+  - [ ] 音频：导入带音轨视频 → 预览出声；暂停/恢复无残音；拖拽播放头 ≤ 半秒内收敛、无持续
+    漂移告警（`CQ_LOG_WORKFLOW=preview` 看重锚日志）；静音轨不响；无声素材不出杂音
+  - [ ] 音频 stats（`cq_audio_preview_stats`）：稳态 underruns/resyncs 应接近 0，异常增长要记录
+- 构建机/门禁（集成机）：
+  - [ ] iOS 壳工程构建（CChuanqiCut Pod 新增 2 个 .mm + cq_sdk.h 音频段；podspec glob 自动纳新，
+    无需改 spec；框架 AVFoundation/CoreMedia 已列）
+  - [ ] SPM 绑定 xcframework 重构建（tools/build/build_core_apple.sh + bindings/swift/prepare.sh）
+    —— 现 xcframework 内 .a 无 cq_audio_preview_* 符号（头已新鲜），SPM 路线**链接**会失败
+  - [ ] 全量门禁按阶段批（本次模块级：ctest 48/48 + Swift typecheck 0 错已记录）
+- 已知风险（写明）：预览音频时钟 MVP=视频主音频从（漂移护栏收敛而非无缝同步）；
+  同素材多 clip 各开一路解码会话（内存待真机观测）；AVAudioSession category=.playback
+  与相机录制屏（playAndRecord）切换时由各屏自配，跨屏切换未验
+- 验收回填：baselines 新增「预览音频」段（现为空）；关池 [12] 需真机数字；pitfalls P106 已记
+- 追加（2026-10-11 下午）：壳工程已冻结入库（ADR-0037，XcodeGen 退役）——真机趟顺带确认
+  冻结工程出包可跑（metallib 双产物 9391B/7123B 已核非空壳）；此后壳工程改动直接进 Xcode 提交。

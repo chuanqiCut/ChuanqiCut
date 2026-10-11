@@ -8,10 +8,9 @@
 # 分工（详见 docs/COCOAPODS.md）：SDK 层 + SharedUI 都走 pod，App 不使用 SPM。
 # 同一库不要既引 pod 又引 SPM（会重复符号）。
 #
-# 默认源码模式（/Source subspec）：现场编译 C++20 内核 + ObjC++ PAL + Swift
-# 绑定，便于调试内核和分析问题；无需预构建 xcframework。
-# 需要发布级二进制集成时改用：pod 'ChuanqiCutEngine/Binary', :path => '../../..'
-# （前置：tools/build/build_core_apple.sh --config=Release && bindings/swift/prepare.sh）
+# Engine 拆为两层（ADR-0033）：CChuanqiCut = C/C++20 + Apple Platform；
+# ChuanqiCutEngine = Swift adapter。两个本地 spec 必须都显式给 :path。
+source 'https://cdn.cocoapods.org'
 
 platform :ios, '16.0'
 
@@ -19,6 +18,7 @@ platform :ios, '16.0'
 use_modular_headers!
 
 target 'ChuanqiCutApp' do
+  pod 'CChuanqiCut', :path => '../../../engine'
   pod 'ChuanqiCutEngine', :path => '../../../engine'
   pod 'SharedUI', :path => '../packages/SharedUI'
   # 功能 Pod（ADR-0031 分治，2026-10-07 全域完成）：Player/Camera(仅iOS)/Import/Editor
@@ -29,10 +29,7 @@ target 'ChuanqiCutApp' do
   pod 'ChuanqiCutEditor', :path => '../packages/ChuanqiCutEditor'
 end
 
-require_relative '../pods_post_install'
-
 post_install do |installer|
-  pods_post_install(installer)
   installer.pods_project.targets.each do |target|
     target.build_configurations.each do |config|
       # 与项目门禁一致：SDK 层的编译设置以 cmake/CompileOptions.cmake 为准，

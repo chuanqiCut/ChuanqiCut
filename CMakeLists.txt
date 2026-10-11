@@ -33,9 +33,11 @@ set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 enable_testing()
 
 # ---- 聚合各层（按写集：core / platform / apps / third_party / tools / tests）----
+# ⚠️ third_party 必须在 core 之前：core 的 cq_ffmpeg 消费 TU（media/ffmpeg_probe.cpp，
+#    后续 MEDIA-021）要 target_link_libraries(cq_ffmpeg)，target 须先定义（DEPS-012/ADR-0036）。
+add_subdirectory(third_party)
 add_subdirectory(engine/core)
 add_subdirectory(engine/platform)
 add_subdirectory(apps)
-add_subdirectory(third_party)
 add_subdirectory(tools)
 add_subdirectory(tests)

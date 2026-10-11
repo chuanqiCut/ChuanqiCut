@@ -32,7 +32,7 @@ python  /Users/zhuning/.workbuddy/binaries/python/versions/3.13.12/bin/python3
 这样做的理由：产物可由 `pin_ref` + 构建档位**可复现地**重新生成，没必要把二进制塞进 git；
 同时避免把 LGPL 二进制随仓库分发（ADR-0008 / ADR-0010）。
 
-### 构建 FFmpeg（DEPS-010 档位）
+### 构建 FFmpeg（DEPS-010/012 档位，ADR-0036）
 
 ```bash
 # 源码 checkout（首次）
@@ -40,15 +40,35 @@ git clone https://github.com/FFmpeg/FFmpeg.git third_party/src/ffmpeg
 cd third_party/src/ffmpeg && git checkout 946fcce07b6dcd0331c8cc609192aeff5e1924f8   # tag n9.0.2
 ```
 
-完整 configure 命令与实测体积见 `.ai/memory/baselines.md`（「FFmpeg demux 常用子集档位」一节），
-**照抄那一节，不要凭记忆写**。
+**入口只有一个脚本，不要手写 configure**（flag 单一真源；完整命令与实测体积另见
+`.ai/memory/baselines.md` 的「FFmpeg demux 档位构建基线」一节）：
+
+```bash
+# 5 个 slice（首次全跑；单个 slice 约 3-8 分钟）
+tools/build/build_ffmpeg_demux.sh --sdk macosx --arch x86_64
+tools/build/build_ffmpeg_demux.sh --sdk macosx --arch arm64
+tools/build/build_ffmpeg_demux.sh --sdk iphoneos --arch arm64
+tools/build/build_ffmpeg_demux.sh --sdk iphonesimulator --arch x86_64
+tools/build/build_ffmpeg_demux.sh --sdk iphonesimulator --arch arm64
+# 最后一个 slice 跑完会自动汇总 xcframework；也可单独重组：
+tools/build/make_ffmpeg_xcframework.sh
+```
+
+- 产物：`third_party/prebuilt/ffmpeg/9.0.2/demux/<sdk>-<arch>/{libffmpeg.a,include/}`
+  与 `libffmpeg.xcframework`（**不入 git**，P84）；最后一个 slice 跑完会把 xcframework
+  自动同步到 `engine/vendor/`（CocoaPods vendored 沙箱只认 pod root 内路径，P104 补记）。
+- CMake 侧默认 binary 集成直接用上面产物；`-DCQ_FFMPEG_INTEGRATION=source`
+  会调同一个脚本现场重建（DEPS-012 双集成，同一 target `cq_ffmpeg`）。
+- 源码级调试 FFmpeg 内部：`build_ffmpeg_demux.sh --debug`（-O0 不 strip），
+  产物替换正常档后重建下游即可断点。
 
 关键约束（别改）：
 - 从 `--disable-everything` 起步，**只**显式开启 demux / parser / bsf
 - 禁 decoder / encoder / filter / swscale / swresample / postproc / 网络 / 外部库
-- **绝不开 `--enable-gpl`**（保持 LGPL-2.1-or-later，见 ADR-0010；这是法律边界不是性能选项）
-
-产物落到 `third_party/prebuilt/apple-x86_64-demux/`（平台目录名按实际平台）。
+- **绝不开 `--enable-gpl`**（保持 LGPL-2.1-or-later；这是法律边界不是性能选项，
+  处置结论 ADR-0036）
+- 三库合并只能 `ar x` 分库解包 → 重命名 → `ar rcs`（baselines 已验证同名 .o 坑），
+  脚本内置 duplicate members=0 校验与 GPL 符号扫描，别绕过
 
 ## 3. 构建内核
 

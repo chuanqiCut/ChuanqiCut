@@ -73,7 +73,11 @@
 - 最近一次 core 编译 + ctest（2026-10-11，PAL→Platform 改名后）：`build_core.sh --platform=apple --config=Debug --test` → **EXIT 0，46/46 通过**（113.32s），0 error / 0 warning。**全量门禁 `run_gate.sh` 尚未重跑**。
 - 编号取号前必须 `git fetch` 核远端；截至 2026-10-11 09:40：ADR 下一号 **0037**（0035 我用、0036 被 DEPS 线同日取用），INFRA 卡下一号 025（024 已用），pitfalls 下一号 **P104**（P98/P99/P100/P101/P102/P103 已占）。**并发时更要现取现核** —— 两个 agent 同日取号极易撞。
 
+- 静态库裁剪档位「体积/符号/GPL 三绿」≠ 可用：**必须链接闭合冒烟一次**（P104，脚本已内置）。
+- FFmpeg 头在 C++ TU 必须 extern "C" 包裹（FFmpeg 9 头无自带保护）；消费 libffmpeg.a 需
+  CoreFoundation/CoreVideo/CoreMedia/VideoToolbox 框架（hwcontext 拉入，P105）。
+
 ## 未决事项
-- FFmpeg LGPL v2.1+ 链接处置待法务拍板，不由 AI 代决。
+- FFmpeg LGPL v2.1+ 处置**已定**（2026-10-11 传哲拍板，ADR-0036）：ARCH-002 §5.1 路径 1（App 内声明 + 源码可获得 + 可重链接归档），义务载体 engine/NOTICE.md；SDK 本体 License 仍待定。
 - PERF-001 尚未建立正式性能基线；Intel Mac 无 ANE/ProRes 硬编，不得用其数字作产品阈值。
 - 2026-10-08 以前 baselines 中“本机实测”仍需逐条归属真实机器 A/B/C。

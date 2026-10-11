@@ -561,6 +561,11 @@ final class CameraViewModel: ObservableObject {
             withAudio: micAvailable
                 && ProcessInfo.processInfo.environment["CQ_CAM_PROBE_NOAUDIO"] == nil)
         recorderBox.set(recorder)
+        // P115 预热：竖屏 UI 下前后摄交付均竖向帧（1080p 档 = 1080×1920），
+        // 装配挪到后台队列——首帧到达只剩 startWriting + append，不再堵采集回调。
+        let t = captureQuality.targetDimensions
+        let portrait = (min(Int(t.width), Int(t.height)), max(Int(t.width), Int(t.height)))
+        recorder.warmup(width: portrait.0, height: portrait.1)
         isRecording = true
         recordingStartedAt = Date()   // 录制计时 UI（View 端 TimelineView 渲染）
     }
@@ -799,6 +804,7 @@ final class CameraViewModel: ObservableObject {
         #endif
         manager.onVideoFrame = { buffer, pts in
             #if DEBUG
+            self.renderer?.debugStats.captureTick()
             probeFrameCount += 1
             if probeFrameCount % 60 == 0 {
                 fputs("[cam-probe] frames flowing N=\(probeFrameCount)\n", stderr)

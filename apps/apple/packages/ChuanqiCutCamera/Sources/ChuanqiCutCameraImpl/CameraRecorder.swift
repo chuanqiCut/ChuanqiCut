@@ -81,6 +81,8 @@ final class CameraRecorder: @unchecked Sendable {
     private let faceBoxes: FaceBoxStore?
     private let ciContext: CIContext
     private let withAudio: Bool
+    /// 预热/装配串行队列（与 videoQueue 解耦——P115 首录卡顿修复）。
+    private let setupQueue = DispatchQueue(label: "com.chuanqi.cut.recorder.setup")
     /// CAM-018：产物 sRGB 标记（渲染后附着的色彩空间，全录制期同一实例）。
     private let sRGBColorSpace = CGColorSpace(name: CGColorSpace.sRGB)
         ?? CGColorSpaceCreateDeviceRGB()
@@ -121,15 +123,29 @@ final class CameraRecorder: @unchecked Sendable {
 
     // MARK: 内部建立（只在 videoQueue 首个视频帧上执行一次）
 
-    /// 按首个视频帧的实际尺寸建立 writer 与全部轨道（尺寸不猜，用帧事实）。
-    private func setupIfNeeded(with sourceBuffer: CVImageBuffer) -> Bool {
+    /// 建立 writer 与全部轨道。尺寸可预热传入（P115：写码器装配重——writer 创建、
+    /// startWriting、编码器 XPC 初始化原先全在**采集回调线程**的首帧上做，做不完
+    /// 帧就堵 → 首录预览卡顿；现支持 startRecording 时后台预热，appendVideo 以
+    /// 实际帧尺寸对账，不符则重建（罕见路径，诚实降级）。
+    private func setupIfNeeded(width: Int, height: Int) -> Bool {
         lock.lock()
         defer { lock.unlock() }
-        if writer != nil { return true }
+        if writer != nil {
+            // 已建：尺寸对账（预测 ≠ 实际的罕见路径——拆了重建）。
+            if bufferWidth != width || bufferHeight != height {
+                Self.logger.warning("录制预热尺寸与实际不符（\(self.bufferWidth, privacy: .public)x\(self.bufferHeight, privacy: .public) → \(width, privacy: .public)x\(height, privacy: .public)），重建 writer")
+                writer = nil
+                videoInput = nil
+                audioInput = nil
+                adaptor = nil
+                pixelBufferPool = nil
+                sessionStarted = false
+            } else {
+                return true
+            }
+        }
         if isFinished { return false }
 
-        let width = CVPixelBufferGetWidth(sourceBuffer)
-        let height = CVPixelBufferGetHeight(sourceBuffer)
 
         // 产物路径重建（语义同 IMediaMuxer.Open：存在即删后重建）。
         try? FileManager.default.removeItem(at: outputURL)
@@ -487,6 +503,16 @@ final class CameraRecorder: @unchecked Sendable {
                         : (error ?? RecordingError.writerCreationFailed)))
                 }
             }
+        }
+    }
+
+    /// 录制预热（P115）：startRecording 时在后台队列预建 writer/轨道/adaptor，
+    /// 首帧到达即只做 startWriting + append——采集回调线程不再被装配堵住
+    ///（首录预览卡顿的真因）。尺寸 = 预测值（竖屏 UI 下前后摄均交付竖向帧）。
+    func warmup(width: Int, height: Int) {
+        setupQueue.async { [weak self] in
+            _ = self?.setupIfNeeded(width: width, height: height)
+            Self.logger.info("录制预热 \(width, privacy: .public)x\(height, privacy: .public)")
         }
     }
 

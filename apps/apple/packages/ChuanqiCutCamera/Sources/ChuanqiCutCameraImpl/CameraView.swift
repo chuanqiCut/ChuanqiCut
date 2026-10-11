@@ -40,6 +40,12 @@ public struct CameraView: View {
             }
         }
         .onAppear {
+            UIApplication.shared.isIdleTimerDisabled = true   // 相机页禁息屏（拍摄中被锁屏=采集中断）
+        }
+        .onDisappear {
+            UIApplication.shared.isIdleTimerDisabled = false
+        }
+        .onAppear {
             // 先注入当前方向再启动会话：configure 在 sessionQueue 取用的就是它
             // （避免「先竖屏启动、后补转」的首帧方向抖动）。
             model.updateInterfaceOrientation(CameraViewModel.currentInterfaceOrientation())
@@ -87,6 +93,14 @@ public struct CameraView: View {
             if let renderer = model.renderer {
                 CameraVideoView(renderer: renderer)
                     .ignoresSafeArea()
+                    #if DEBUG
+                    .overlay(alignment: .topLeading) {
+                        if model.debugOverlayVisible,
+                           let snapshot = model.debugSnapshot {
+                            CameraDebugOverlayView(snapshot: snapshot)
+                        }
+                    }
+                    #endif
                     // 捏合变焦（2026-10-07 用户反馈轮）：请求值粗限 1...16，
                     // 设备实际范围由 manager 按 activeFormat 夹取。
                     .gesture(
@@ -100,7 +114,22 @@ public struct CameraView: View {
                     )
             }
             VStack {
+                #if DEBUG
                 topBar
+                    .overlay(alignment: .trailing) {
+                        Button {
+                            model.toggleDebugOverlay()
+                        } label: {
+                            Image(systemName: model.debugOverlayVisible
+                                  ? "antenna.radiowaves.left.and.right" : "antenna.radiowaves.left.and.right.slash")
+                                .font(.body)
+                                .foregroundStyle(model.debugOverlayVisible ? .green : .secondary)
+                                .padding(8)
+                        }
+                    }
+                #else
+                topBar
+                #endif
                 Spacer()
                 modePicker
                 stickerStrip

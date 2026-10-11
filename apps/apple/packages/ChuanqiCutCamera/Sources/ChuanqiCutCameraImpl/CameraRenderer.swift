@@ -270,6 +270,10 @@ final class CameraPreviewRenderer: NSObject, MTKViewDelegate {
 
     let frameSlot = CameraFrameSlot()
     let faceBoxes = FaceBoxStore()
+    /// DEBUG 诊断统计（B-02：采集/渲染 fps、处理耗时——相机页浮层数据源）。
+    #if DEBUG
+    let debugStats = CameraDebugStats()
+    #endif
     /// 前摄帧槽/锚点仓（CAM-021 双摄；单一真源纪律同 faceBoxes，VM 前检测桥写入）。
     let frontFrameSlot = CameraFrameSlot()
     let frontFaceBoxes = FaceBoxStore()
@@ -717,6 +721,10 @@ final class CameraPreviewRenderer: NSObject, MTKViewDelegate {
         //    CAM-018：显式 sRGB 输出（与录制侧同一色彩空间，替代语义含糊的 DeviceRGB）。
         ciContext.render(image, to: scratch, commandBuffer: commandBuffer,
                          bounds: extent, colorSpace: Self.outputColorSpace)
+        #if DEBUG
+        debugStats.drawTick(processMs: Double(DispatchTime.now().uptimeNanoseconds
+            &- debugStart.uptimeNanoseconds) / 1_000_000)
+        #endif
 
         // 1.5) MetalFX 空间升采样（CAM-022）：开关开启且屏 > 帧时把 CI 出图升到
         //      屏幕级别（帧宽比，取景不变）。关闭或不适用 = presentTexture 仍为

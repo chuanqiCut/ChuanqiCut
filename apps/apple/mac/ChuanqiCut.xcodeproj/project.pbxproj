@@ -1,0 +1,251 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 77;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		4A78B46358AB241493161F66 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = D4B9027F907D598C7FA4F5EF /* Assets.xcassets */; };
+		657D85FE8338F846F18D4669 /* libPods-ChuanqiCutMacApp.a in Frameworks */ = {isa = PBXBuildFile; fileRef = 8DDE717370DA38B374DC9CD0 /* libPods-ChuanqiCutMacApp.a */; };
+		F6CC0472993EA3F98E9DF6ED /* ChuanqiCutMacApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 784EE51B69DC37D19B53FB38 /* ChuanqiCutMacApp.swift */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXFileReference section */
+		2E8F40D756447B6D2FA2AB64 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
+		784EE51B69DC37D19B53FB38 /* ChuanqiCutMacApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChuanqiCutMacApp.swift; sourceTree = "<group>"; };
+		8DDE717370DA38B374DC9CD0 /* libPods-ChuanqiCutMacApp.a */ = {isa = PBXFileReference; explicitFileType = archive.ar; includeInIndex = 0; path = "libPods-ChuanqiCutMacApp.a"; sourceTree = BUILT_PRODUCTS_DIR; };
+		A343DEBDA728E3EC2AE58C73 /* ChuanqiCutMacApp.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = ChuanqiCutMacApp.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		AA71849CD5A138493F5DC61F /* Pods-ChuanqiCutMacApp.release.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-ChuanqiCutMacApp.release.xcconfig"; path = "Target Support Files/Pods-ChuanqiCutMacApp/Pods-ChuanqiCutMacApp.release.xcconfig"; sourceTree = "<group>"; };
+		D4B9027F907D598C7FA4F5EF /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		F3E31B9F46F384E07DF59113 /* Pods-ChuanqiCutMacApp.debug.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-ChuanqiCutMacApp.debug.xcconfig"; path = "Target Support Files/Pods-ChuanqiCutMacApp/Pods-ChuanqiCutMacApp.debug.xcconfig"; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		042B6CC6882162F03B376455 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				657D85FE8338F846F18D4669 /* libPods-ChuanqiCutMacApp.a in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		3C3DC9990C03603BD84BF591 /* MacApp */ = {
+			isa = PBXGroup;
+			children = (
+				D4B9027F907D598C7FA4F5EF /* Assets.xcassets */,
+				784EE51B69DC37D19B53FB38 /* ChuanqiCutMacApp.swift */,
+				2E8F40D756447B6D2FA2AB64 /* Info.plist */,
+			);
+			path = MacApp;
+			sourceTree = "<group>";
+		};
+		79243A68495F8D12D83A7A74 /* Frameworks */ = {
+			isa = PBXGroup;
+			children = (
+				8DDE717370DA38B374DC9CD0 /* libPods-ChuanqiCutMacApp.a */,
+			);
+			name = Frameworks;
+			sourceTree = "<group>";
+		};
+		A14DC97E43002BC639B89E3B /* Pods */ = {
+			isa = PBXGroup;
+			children = (
+				F3E31B9F46F384E07DF59113 /* Pods-ChuanqiCutMacApp.debug.xcconfig */,
+				AA71849CD5A138493F5DC61F /* Pods-ChuanqiCutMacApp.release.xcconfig */,
+			);
+			name = Pods;
+			path = Pods;
+			sourceTree = "<group>";
+		};
+		E1D9F5250D1B55B927054886 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				A343DEBDA728E3EC2AE58C73 /* ChuanqiCutMacApp.app */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		EAEC68A8E85CFF938C709BFA = {
+			isa = PBXGroup;
+			children = (
+				3C3DC9990C03603BD84BF591 /* MacApp */,
+				E1D9F5250D1B55B927054886 /* Products */,
+				A14DC97E43002BC639B89E3B /* Pods */,
+				79243A68495F8D12D83A7A74 /* Frameworks */,
+			);
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		DC4A700407F99C734469BD36 /* ChuanqiCutMacApp */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 5CD902C3EE1008DBFDACA14F /* Build configuration list for PBXNativeTarget "ChuanqiCutMacApp" */;
+			buildPhases = (
+				2B39766E8716E5326E1E6BC2 /* [CP] Check Pods Manifest.lock */,
+				A85F27E768DAC054232CBD63 /* Sources */,
+				DD14901DC8C0BDC99C022587 /* Resources */,
+				042B6CC6882162F03B376455 /* Frameworks */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = ChuanqiCutMacApp;
+			productName = ChuanqiCutMacApp;
+			productReference = A343DEBDA728E3EC2AE58C73 /* ChuanqiCutMacApp.app */;
+			productType = "com.apple.product-type.application";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		1D363D99822B47E129D18D29 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = YES;
+				LastUpgradeCheck = 1430;
+				TargetAttributes = {
+				};
+			};
+			buildConfigurationList = 740461B14340E41ED1F1399E /* Build configuration list for PBXProject "ChuanqiCut" */;
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				Base,
+				en,
+			);
+			mainGroup = EAEC68A8E85CFF938C709BFA;
+			minimizedProjectReferenceProxies = 1;
+			preferredProjectObjectVersion = 77;
+			productRefGroup = E1D9F5250D1B55B927054886 /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				DC4A700407F99C734469BD36 /* ChuanqiCutMacApp */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		DD14901DC8C0BDC99C022587 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				4A78B46358AB241493161F66 /* Assets.xcassets in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXShellScriptBuildPhase section */
+		2B39766E8716E5326E1E6BC2 /* [CP] Check Pods Manifest.lock */ = {
+			isa = PBXShellScriptBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+				"${PODS_PODFILE_DIR_PATH}/Podfile.lock",
+				"${PODS_ROOT}/Manifest.lock",
+			);
+			name = "[CP] Check Pods Manifest.lock";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+				"$(DERIVED_FILE_DIR)/Pods-ChuanqiCutMacApp-checkManifestLockResult.txt",
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "diff \"${PODS_PODFILE_DIR_PATH}/Podfile.lock\" \"${PODS_ROOT}/Manifest.lock\" > /dev/null\nif [ $? != 0 ] ; then\n    # print error to STDERR\n    echo \"error: The sandbox is not in sync with the Podfile.lock. Run 'pod install' or update your CocoaPods installation.\" >&2\n    exit 1\nfi\n# This output is used by Xcode 'outputs' to avoid re-running this script phase.\necho \"SUCCESS\" > \"${SCRIPT_OUTPUT_FILE_0}\"\n";
+			showEnvVarsInLog = 0;
+		};
+/* End PBXShellScriptBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		A85F27E768DAC054232CBD63 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				F6CC0472993EA3F98E9DF6ED /* ChuanqiCutMacApp.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin XCBuildConfiguration section */
+		0CEE0B440E00D326BC47A264 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			baseConfigurationReference = F3E31B9F46F384E07DF59113 /* Pods-ChuanqiCutMacApp.debug.xcconfig */;
+			buildSettings = {
+				CODE_SIGN_IDENTITY = "-";
+				INFOPLIST_FILE = MacApp/Info.plist;
+				PRODUCT_BUNDLE_IDENTIFIER = com.chuanqi.cutmac;
+			};
+			name = Debug;
+		};
+		9D5FC7542896393DF0B4F22A /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CURRENT_PROJECT_VERSION = 1;
+				MACOSX_DEPLOYMENT_TARGET = 15.4;
+				MARKETING_VERSION = 0.1.0;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = macosx;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				SWIFT_VERSION = 6.1;
+			};
+			name = Debug;
+		};
+		F89E539DDC92A54CA0417605 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CURRENT_PROJECT_VERSION = 1;
+				MACOSX_DEPLOYMENT_TARGET = 15.4;
+				MARKETING_VERSION = 0.1.0;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = macosx;
+				SWIFT_VERSION = 6.1;
+			};
+			name = Release;
+		};
+		FBF8BBF4ABB5EE5CB8C8ECBD /* Release */ = {
+			isa = XCBuildConfiguration;
+			baseConfigurationReference = AA71849CD5A138493F5DC61F /* Pods-ChuanqiCutMacApp.release.xcconfig */;
+			buildSettings = {
+				CODE_SIGN_IDENTITY = "-";
+				INFOPLIST_FILE = MacApp/Info.plist;
+				PRODUCT_BUNDLE_IDENTIFIER = com.chuanqi.cutmac;
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		5CD902C3EE1008DBFDACA14F /* Build configuration list for PBXNativeTarget "ChuanqiCutMacApp" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				0CEE0B440E00D326BC47A264 /* Debug */,
+				FBF8BBF4ABB5EE5CB8C8ECBD /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		740461B14340E41ED1F1399E /* Build configuration list for PBXProject "ChuanqiCut" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				9D5FC7542896393DF0B4F22A /* Debug */,
+				F89E539DDC92A54CA0417605 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+/* End XCConfigurationList section */
+	};
+	rootObject = 1D363D99822B47E129D18D29 /* Project object */;
+}

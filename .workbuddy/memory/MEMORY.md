@@ -29,7 +29,7 @@
 - 热点文件（`cq_sdk.h`、CMake、podspec、Podfile、project.yml、构建脚本、真源、CI）及 ABI/依赖变更须由集成机处理。
 - 收工同步顺序：模块册 → 必要 ADR → TASK → HANDOFF → pitfalls → baselines → 当日日志 → 本文件（仅新增长期规则时）。
 - 构建产物不得入库；临时编译统一放根 `/build/`。SPM 必须指定 `--scratch-path "$ROOT/build/spm/<包>"`。
-- CocoaPods/壳工程变更顺序：`project.yml` → `xcodegen generate` → `bundle exec pod install`；podspec 新文件不会自动进入旧 Pods.xcodeproj。**顺序不可颠倒**：`xcodegen generate` 会覆盖 CocoaPods 注入到 `.xcodeproj` 的集成（xcconfig / [CP] build phases），先 pod install 再 xcodegen = 集成被抹掉（2026-10-09 实测踩过）。
+- **壳工程已冻结入库（ADR-0037，2026-10-11，XcodeGen 退役）**：`ChuanqiCut.xcodeproj`/`.xcworkspace` 是手工源文件——Xcode 可视化改动即真源、直接提交，禁止任何工具重新生成。依赖变更只跑 `bundle exec pod install`；**podspec 增删文件后必须重跑**（Pods.xcodeproj 是文件清单快照，旧清单会编已改名/已删除的文件——2026-10-11 实踩：旧清单编已不存在的 pal_frame_provider.cpp）。
 - iOS App 构建只认 `ChuanqiCutApp` scheme + `iphoneos` generic device；模拟器 MetalFX 解析失败是 SDK 限制，不改代码规避。
 - macOS App 构建只认 `ChuanqiCutMacApp` scheme，命令行必须带 `-arch x86_64 ONLY_ACTIVE_ARCH=YES`（本机 Intel；默认 universal 会编 arm64，而 SDK 26.5 无该 slice 的预编译 Swift 模块 → 一片 `Unable to resolve module dependency`，P96）。报双壳结论时写明架构。
 - 分发静态库默认关闭 LTO，打包后必须消费者侧链接冒烟；Swift 绑定验收含 `swift test` 与 `run_smoke.sh`。

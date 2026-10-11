@@ -63,14 +63,21 @@ engine/bindings/swift/prepare.sh
 
 ## 4. 环境与日常工作流
 
+**壳工程已冻结入库（ADR-0037，2026-10-11，XcodeGen 退役）**：`ChuanqiCut.xcodeproj` /
+`.xcworkspace` 是手工源文件——Xcode 里可视化改的一切（target 配置、Info.plist、scheme、
+build phase）**直接保存、直接提交**，不再有任何生成步骤会冲掉它。
+
 ```bash
-cd apps/apple/ios
-xcodegen generate
-bundle install
-bundle exec pod install      # 变更 podspec/Podfile 后必须跑：Pods.xcodeproj 是文件清单快照
-open ChuanqiCut.xcworkspace
+cd apps/apple/ios            # 或 apps/apple/mac
+bundle install               # 仅首次（Gemfile.lock 已入库钉住工具链）
+bundle exec pod install      # clone 后 + 每次变更 podspec/Podfile 后必须跑
+open ChuanqiCut.xcworkspace  # 注意开 workspace，不是 xcodeproj
 ```
 
+- **podspec 增删源文件后必须重跑 pod install**：Pods.xcodeproj 是文件清单快照，
+  旧清单会编已改名/已删除的文件（2026-10-11 实踩：旧清单编已不存在的
+  `pal_frame_provider.cpp`，iOS 壳构建红；pod install 刷新即愈）。
+- 禁止任何工具重新生成/覆盖 `ChuanqiCut.xcodeproj`——它不是产物，是真源。
 - Ruby 工具链：本机 `~/.rubies/ruby-3.4.11`；**Gemfile.lock 必须入库**（无 lock 会解析到
   不兼容的 CFPropertyList 3.0.9，P12）。gem 源用清华镜像（直连 rubygems.org 502）。
 
@@ -87,6 +94,8 @@ open ChuanqiCut.xcworkspace
 
 | 项 | 现状 | 谁拍板 |
 |---|---|---|
-| License | 两份 spec 均为 `Proprietary` 占位；FFmpeg LGPL 静态链接处置未定 | owner + 法务（ADR-0010） |
+| License | 两份 spec 均为 `Proprietary` 占位；~~FFmpeg LGPL 静态链接处置未定~~ → 已定：ADR-0036（ARCH-002 §5.1 路径 1，App 内声明 + 源码可获得 + 可重链接归档，负责人 2026-10-11 确认）；vendored 义务载体 = `engine/NOTICE.md` | SDK 本体 License 仍待定 |
 | `s.homepage` / `s.source` | 无 git remote，`REPLACE_ME.invalid` 占位（`CQ_POD_SOURCE_GIT` lint 逃生口） | owner |
 | XCFramework 分发 | 产物不入库，需 CI 生成后随 pod 发布 | 依赖治理（ADR-0008） |
+| FFmpeg 产物本地构建 | **首次 pod install 前必须跑** `tools/build/build_ffmpeg_demux.sh` 5 个 slice（产物 `*.a` 不入 git，P84；缺失时 podspec 直接报错并给出指引） | —— |
+| SBOM / 公共头第三方符号扫描工具 | ARCH-002 §5.2 规划的 `tools/compliance/gen_sbom.py` / `scan_headers.py` **尚未实现**，现以 `tools/deps/deps.py check` + 手工 grep 代替（ADR-0036 登记） | 依赖治理 |

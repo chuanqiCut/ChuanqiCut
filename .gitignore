@@ -42,14 +42,11 @@ tmp*/
 engine/bindings/swift/Frameworks/
 
 # Apple App 工程（UIA-002 建，INFRA-009 拆为 ios/ 与 mac/ 两个独立工程）
-# Xcode 工程与 workspace 均为生成产物，不入库：
-#   cd apps/apple/ios && xcodegen generate && bundle install && bundle exec pod install
-#   cd apps/apple/mac && xcodegen generate && bundle install && bundle exec pod install
-# 注意：两个目录的 Gemfile.lock **必须入库**（钉住工具链，见 pitfalls P12）。
-apps/apple/ios/ChuanqiCut.xcodeproj/
-apps/apple/ios/ChuanqiCut.xcworkspace/
-apps/apple/mac/ChuanqiCut.xcodeproj/
-apps/apple/mac/ChuanqiCut.xcworkspace/
+# 壳工程已冻结入库（ADR-0037，2026-10-11）：ChuanqiCut.xcodeproj / .xcworkspace 是
+# **手工源文件**（Xcode 可视化改动即真源，直接提交）；XcodeGen 退役，project.yml 已删。
+# 依赖变更只跑 `bundle exec pod install`（podspec 增删文件后必须重跑——Pods.xcodeproj
+# 是文件清单快照）。注意：两个目录的 Gemfile.lock **必须入库**（钉住工具链，P12）；
+# Pods/ 由 pod install 生成，不入库；xcuserdata/ 由全局规则排除。
 # SPM 构建目录（包内 swift test 测试宿主的 .build 一律不入库；P84 规则：
 # 新建任何包目录由通配规则覆盖，不再逐包登记；临时编译产物统一目录 = /build/，
 # SPM 用 `swift test --scratch-path "$ROOT/build/spm/<包名>"` 重定向）

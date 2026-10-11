@@ -55,14 +55,8 @@ Pod::Spec.new do |s|
   # 但 MetalKit 属显式 import，声明出来不依赖自动链接行为）。
   s.frameworks = 'Metal', 'MetalKit'
 
-  # ⚠️ ChuanqiCut 的 Swift 公开 API 引用了 CChuanqiCut（C module）里的类型，
-  #    SharedUI `import ChuanqiCut` 时 Swift 要求该 module 可见。App target 由
-  #    ChuanqiCut.podspec 的 user_target_xcconfig 提供路径；pod 形态的消费方
-  #    （本 spec）不受其影响，必须自行声明（2026-10-02 实测）。
-  #    路径：本目录向上四级到仓库根。
-  s.pod_target_xcconfig = {
-    'SWIFT_INCLUDE_PATHS' => '$(inherited) "$(PODS_TARGET_SRCROOT)/../../../../engine/bindings/swift/Sources/CChuanqiCut/include"'
-  }
+  # Engine Swift adapter 通过正常 Pod 依赖拿到 CChuanqiCut module；不再传播仓库相对
+  # SWIFT_INCLUDE_PATHS（ADR-0033）。
 
   # 不锁版本：仓库内本地 :path 集成，与 App 用同一份仓库。
   s.dependency 'ChuanqiCutEngine'

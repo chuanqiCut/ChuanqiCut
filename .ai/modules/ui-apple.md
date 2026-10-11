@@ -743,6 +743,24 @@ RESEARCH-004/005 结论全部维持，本文补**操作层**，关键增量：
 | 2026-10-07 | UIA-037/038 编码轮 | **未执行**（用户指示跳过）：Editor 包 swift test（新增 22 用例）与 iOS 模拟器构建挂池 [6]；既有基线 Editor 36 用例 / 守恒 140 未复核 |
 | 2026-10-07 | Pod 拆分阶段 0/1 阶段批 | SharedUI swift test **88/88**；ChuanqiCutPlayer swift test **52/52**；合计 140 对齐迁移前 HEAD（守恒核过）；iOS 模拟器 + macOS 双壳 BUILD SUCCEEDED；全量门禁数字见当日日志 |
 | 2026-10-07 | SharedUI 测试套 + iOS 构建（迁移前基线） | 128→140 用例（美颜合并轮 +12）；iOS BUILD SUCCEEDED 项目代码 0 告警 |
+| 2026-10-11 | 壳工程图标/启动图修复（actool 独立验证，全量构建按阶段批） | actool `--app-icon AppIcon` 编 Assets.xcassets → Assets.car 1.0MB + partial.plist 含 `CFBundleIcons/CFBundlePrimaryIcon=AppIcon`（iPhone/iPad），0 warning；`showBuildSettings` 确认 APPICON setting 生效；真机验收（删重装）挂真机批 |
+
+#### 壳工程图标/启动图修复（2026-10-11，随 B-02 真机批）
+
+- **AppIcon 不生效根因 = 双壳 pbxproj 缺 `ASSETCATALOG_COMPILER_APPICON_NAME`**（P110）：
+  synchronized groups 自动把 xcassets 编进 Resources，但无此 setting 时 actool 收不到
+  `--app-icon`，产物 Info.plist 无 CFBundleIcons → 桌面默认白图标。已用
+  `edit_project.rb set-setting … AppIcon base` 补 iOS `ChuanqiCutApp` + macOS
+  `ChuanqiCutMacApp`；顺带修 edit_project.rb `set-setting base` 模式 ArgumentError
+  （xcodeproj gem 的 `target.build_settings` 需配置名参数 → 改为遍历 build_configurations）。
+- **启动图改"一整张图片"**：miora 生成物只有图标（1024）与启动图标（720 透明底），无整图——
+  Swift+CoreGraphics 将已入库 v17 CQCut 图标居中合成到 LaunchBackground 深青底，出
+  `LaunchImage.imageset/LaunchImage@3x.png`（1290×2796 = 430×932pt@3x，四周纯色、
+  任意设备 fit/crop 视觉一致）；`UILaunchScreen.UIImageName` → `LaunchImage`，
+  旧 `LaunchIcon.imageset` 删除（构图已并入整图）。miora v2 场记板为旧版设计未采用，
+  图标主图维持 353d1e0 的 v17。
+- **遗留**：根目录 `ChuanqiCut-AppIcon-Launch.miora` + `_assets/` 为 workbuddy 工具产物
+  （违反 ADR-0019 根目录纪律），待传哲拍板删除或挪 `.workbuddy/assets/`。
 
 ### 调研 · 决策 · 池指针
 
@@ -755,4 +773,7 @@ RESEARCH-004/005 结论全部维持，本文补**操作层**，关键增量：
   无复制片段**，其开源 UI 是「录制+单层编辑+裁剪+上传」，**不是多轨重编辑器** —— 我们有 ADR-0012
   命令栈，**撤销重做是现成优势，别反过来对齐它**；③ 云剪辑 Web SDK 是另一条产品线（云端渲染，
   编辑器本体为 CDN 闭源 JS），只看布局。
+- **RESEARCH-013（2026-10-11，开源轨道 UI 盘点 + 本项目轨道操作/面板优化路线）** —— 主要增量：① 纠正前提——阿里云 UGSV 开源 UI 是**单层编辑（无多轨/无 split/无 undo/无草稿）**，传哲印象的"还行"是单层裁剪手感，不能当多轨范式，且**别反向对齐**（我们有 ADR-0012 命令栈优势）；② 横向盘点（阿里云/该厂商/UIKit 原型/Shotcut/Flowblade…），**最大 gap = 面板代码写死，应抄字节 其创作 SDK 的 `Panel_configs/*.json` 配置驱动**；③ 现状核对——两套时间轴实现的真问题是**手势/commit 逻辑两份**（踩 ADR-0034 双渲染路径红线），须收敛为"一个 `TrackInteraction` 纯逻辑 + 两薄展示层"；④ 轨道操作缺口表（删/分割/锁静音/多选/吸附缺，remove clip/track 的 core 命令已写但**未接 ABI**）；⑤ 优化方案 P0→P2 分批，与 UIA-030/028/029/031、RENDER-011、PROJ-001 对齐。全文见 `docs/research/RESEARCH-013-开源轨道UI与本项目轨道操作面板优化调研.md`。
+  - **修订（2026-10-11 本机复核）**：① §2 仓库名勘误——`codewithhera/VideoEditTimeline` 实为 `codewithhera/VideoEditTimeline-and-TrimView`（404 核出后经 GitHub API 确认，功能描述 ripple/snapping 属实），三仓库存在性已逐一验证；② §5.2 事实修正——`Track.enabled/muted` **已在** core（timeline.h:65-66）且 `CQTrackInfo` 已回读（cq_sdk.h:202-203），新命令仅需 `locked` 字段 + set 命令，`hidden` 建议并入 `enabled`；③ §5.3 补对齐 **SPEC-UIA-019**（已定 PanelRoute/PanelHost/PanelKit），`PanelDescriptor`/`PanelRegistry` 定位为其数据声明层扩展，UIA-019 立项时合并设计防撞车。
+  - **增量（2026-10-11 第二轮，应传哲指示深挖 其轨道 UI 组件库）**：重新下载 `其轨道 UI 组件库@0.3.3`（CDN 直链 200），**读交互核心头文件内容**（RESEARCH-012 只做了文件名分类），新增 RESEARCH-013 **§2.5**：① 装配形状——TimelineView 是 UIScrollView、8 个按片段类型划分的 ViewModel + 10 枚举、编辑态集中在 EditingContext 协议且 `notifyEditorChangedWithCommit:` 显式带 commit（与 ADR-0012 同构）；② **轨道区交互机制 8 条实证**——长按拿起/四向拖拽（跨轨）/边缘自动滚动（3 个 CADisplayLink+速度曲线，**§5 原方案遗漏**）/吸附三要素（点集+方向+阈值）/双击/触觉/尾部插入提示/**分割不在轨道区**（头文件无 split 手势语义，印证底部编辑条方案）；③ 关键帧 UI 形态（帧点画在片段内、随 trim 联动收缩，记 UIA-030 后设计池）；④ 缩略图管线对照——TimelineThumbnailStore 缺「变速按 speed/scale 重取」「最近邻缓存命中」两条能力；⑤ 实战坑——该厂商注释自证「UI 时间与引擎时间存在 1 帧差」，timescale=60000 的取整纪律要进 TimelineLayout（pitfalls 候选）。§5.1/§5.4/§7/§8 已联动更新。合规：只读头文件，未链接未运行未反汇编（边界同 RESEARCH-012 §1.5.6）。
 - pitfalls P78/P79（Player 编译与行为修复案底）/ **P101**（商用 SDK 文档抓取技巧坑）/ **P102**（公开 podspec 仓库 + CDN 直链这条取数路径）

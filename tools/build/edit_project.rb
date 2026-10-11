@@ -68,7 +68,9 @@ when 'set-setting'
   value = ARGV.shift or abort 'ERROR: 缺 <value>'
   config_name = ARGV.shift || 'base'
   if config_name == 'base'
-    target.build_settings[key] = value
+    # xcodeproj gem 的 build_settings 需要配置名参数（target 级无 base 存储）——
+    # base 语义 = 落到该 target 的每个 configuration（2026-10-11 修复：原写法 ArgumentError）
+    target.build_configurations.each { |c| c.build_settings[key] = value }
   else
     cfg = target.build_configurations.find { |c| c.name == config_name }
     abort "ERROR: configuration '#{config_name}' 不存在" unless cfg

@@ -1874,6 +1874,24 @@ TASK-CAM-012 剩余风险栏其实预判了（"若真机上 CI 工作空间表�
 - **处置惯例**：撞号方（后入库）让位改号并全文替换引用（本次 015→019，TASK 卡同步），
   与 P63/P67/P70「先入库保留、后入库让位」一致。
 
+## P117（2026-10-11，CAM-033 真机批，集成机）AVCaptureMetadataOutput 装配三坑 + outputRectConverted 语义陷阱
+
+- 来源：CAM-033 metadata 人脸框接入，真机远程验证批（SOP 见 tools/probe/README.md）。
+- **坑①（P0 崩溃）**：`setMetadataObjectTypes` 必须在 `addOutput` **之后**——未连接
+  会话时 available 集合为空，直接设 [.face] 抛 NSInvalidArgumentException（模拟器/
+  单测抓不到，真机 launch 即崩，探针日志 30 秒定位）。
+- **坑②（时序）**：`availableMetadataObjectTypes` 在 **startRunning 之前仍为空**
+  （addOutput 后立即读也是空）→ types 设置延后到 startRunning 之后
+  （activateMetadataFacesIfNeededLocked，幂等）。
+- **坑③（坐标语义）**：`outputRectConverted(fromMetadataOutputRect:)` 实测输出与
+  文档"归一化"语义不符（像素级 + 旋转错位，height≈1248）。**跨输出坐标转换结果
+  未对照验证不得消费**——映射未定标前 metadata 框不进蒙版（标定闸门
+  metadataFacesCalibrated=false，回退 Vision faceRectangles 兜底）。
+- **方法论沉淀**：真机远程验证（tools/probe/ SOP）30 秒内抓出①，且性能快照
+  （cam-stats 2Hz）直接给出健康基线——"自己加日志跑起来回传分析"是真机验证的
+  默认路径，人工项（脸框标定受控数据/手点复现）才找传哲。
+- 验证状态：**verified**（iPhone 17 Pro 真机三轮）。
+
 ## P116（2026-10-11，壳工程图标/启动图，集成机）synchronized groups 自动编 xcassets ≠ 图标生效——ASSETCATALOG_COMPILER_APPICON_NAME 必须显式写
 
 > ⚠️ 原误记 **P110**，与录制死锁 P110 撞号；按 P109 惯例后入库方让位，2026-10-11

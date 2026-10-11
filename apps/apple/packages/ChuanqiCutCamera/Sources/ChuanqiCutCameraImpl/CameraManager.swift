@@ -224,6 +224,10 @@ final class CameraManager: NSObject, @unchecked Sendable {
 
     /// 配置并启动（幂等）。完成后主线程回调 isRunning。
     func configureAndStart(onReady: @escaping @MainActor (_ isRunning: Bool) -> Void) {
+        if Self.faceCalib {
+            fputs("[cam-lifecycle] configureAndStart requested\n", stderr)
+            fflush(stderr)
+        }
         sessionQueue.async { [weak self] in
             guard let self else { return }
             if !self.configured {
@@ -233,6 +237,7 @@ final class CameraManager: NSObject, @unchecked Sendable {
             if !self.session.isRunning {
                 self.session.startRunning()
             }
+            self.activateMetadataFacesIfNeededLocked()
             let running = self.session.isRunning
             Task { @MainActor in
                 onReady(running)
@@ -364,9 +369,57 @@ final class CameraManager: NSObject, @unchecked Sendable {
         }
     }
 
+    /// 启用 metadata 人脸框（sessionQueue 内、startRunning **之后**调用）：
+    /// availableMetadataObjectTypes 只有在会话配置提交后才填充（真机实证）。
+    /// 幂等：重复调用安全（configureAndStart 每次都会走）。
+    private func activateMetadataFacesIfNeededLocked() {
+        guard session.outputs.contains(metadataOutput) else {
+            isMetadataFacesActive = false
+            return
+        }
+        guard metadataOutput.metadataObjectTypes.isEmpty else {
+            isMetadataFacesActive = true   // 已启用
+            return
+        }
+        if metadataOutput.availableMetadataObjectTypes.contains(.face) {
+            metadataOutput.metadataObjectTypes = [.face]
+            // 标定闸门：映射未定标（metadataFacesCalibrated=false）时框不消费，
+            // 数据通路保持（faceCalib 模式照常采集标定数据）。
+            isMetadataFacesActive = Self.metadataFacesCalibrated
+            if !Self.metadataFacesCalibrated, Self.faceCalib {
+                fputs("[face-calib] metadata alive but gate closed (not calibrated)\n", stderr)
+                fflush(stderr)
+            }
+        } else {
+            isMetadataFacesActive = false   // 设备不支持：诚实降级，plan 回退 Vision
+            if Self.faceCalib {
+                fputs("[face-calib] metadata .face unavailable after startRunning\n", stderr)
+                fflush(stderr)
+            }
+        }
+    }
+
+    /// 真机标定/取证模式（CAM-033：脸框标定 + 会话生命周期取证，stderr 探针口径）。
+    static let faceCalib = ProcessInfo.processInfo.environment["CQ_CAM_FACE_CALIB"] == "1"
+
+    /// metadata 脸框是否已标定可消费（CAM-033 标定闸门）。
+    /// 真机二轮实证（2026-10-11，池 [15]）：`outputRectConverted(fromMetadataOutputRect:)`
+    /// 输出与文档语义不符（实测像素级 + 旋转错位，height≈1248/1 归一化空间），
+    /// **映射常数未定标前 metadata 框不得进蒙版**（坏框比慢更糟）——闸门关闭 =
+    /// isMetadataFacesActive 强制 false，plan 自动回退 Vision faceRectangles 兜底
+    /// （单阶段，坐标已验证正确）。定标 SOP：受控条件下（人脸对相机、画面中央）
+    /// 跑 CQ_CAM_FACE_CALIB=1 采集 meta raw/vision box 对照数据 → 反解映射 →
+    /// 修 MetadataFaceGeometry → 本闸门翻 true。标定数据采集不受闸门影响
+    ///（faceCalib 模式照常打日志）。
+    static let metadataFacesCalibrated = false
+
     func stop() {
         sessionQueue.async { [weak self] in
             guard let self else { return }
+            if Self.faceCalib {
+                fputs("[cam-lifecycle] stop requested running=\(self.session.isRunning)\n", stderr)
+                fflush(stderr)
+            }
             if self.session.isRunning {
                 self.session.stopRunning()
             }
@@ -701,10 +754,14 @@ final class CameraManager: NSObject, @unchecked Sendable {
         // commitConfiguration 前；metadata 无帧方向语义，rect 转换在回调里经
         // outputRectConverted 对齐视频帧坐标系（镜像补偿在契约层纯函数）。
         if session.canAddOutput(metadataOutput) {
-            metadataOutput.metadataObjectTypes = [.face]
-            metadataOutput.setMetadataObjectsDelegate(self, queue: metadataQueue)
+            // ⚠️ 顺序硬约束（真机 P0/P107' 实证 2026-10-11）：
+            // ① setMetadataObjectTypes 必须在 addOutput **之后**（此前抛
+            //    NSInvalidArgumentException 崩溃）；
+            // ② availableMetadataObjectTypes 在 commitConfiguration/startRunning
+            //    **之前仍为空**（真机二轮实证）→ types 设置延后到
+            //    activateMetadataFacesIfNeededLocked（startRunning 后调用）。
             session.addOutput(metadataOutput)
-            isMetadataFacesActive = true
+            metadataOutput.setMetadataObjectsDelegate(self, queue: metadataQueue)
         } else {
             isMetadataFacesActive = false
         }
@@ -1014,12 +1071,25 @@ extension CameraManager: AVCaptureMetadataOutputObjectsDelegate {
         // 走 VisionDetector 桥）。镜像读主 connection —— metadataQueue 读 connection
         // 状态是 AVFoundation 允许的轻量操作（属性快照）。
         let mirrored = videoOutput.connection(with: .video)?.isVideoMirrored ?? false
+        // 标定模式同时打 metadata 原始 bounds（0...1，sensor 坐标）：converted 输出
+        // 语义与文档不符（真机实证非归一化），映射关系以 vision box 对照数据反解。
+        let rawBounds: [CGRect] = Self.faceCalib
+            ? metadataObjects.compactMap { ($0 as? AVMetadataObject)?.bounds }
+            : []
         let rects = metadataObjects.compactMap { metadata -> CGRect? in
             guard metadata.type == .face else { return nil }
             let converted = videoOutput.outputRectConverted(fromMetadataOutputRect: metadata.bounds)
             return MetadataFaceGeometry.contractRect(fromConvertedRect: converted, mirrored: mirrored)
         }
         // 空数组也回调：目标离开画面 → FaceBoxStore 清空语义（与 Vision 快照对齐）。
+        if Self.faceCalib {
+            let desc = rects.map { String(format: "(%.1f,%.1f,%.1f,%.1f)", $0.minX, $0.minY, $0.width, $0.height) }
+                .joined(separator: " ")
+            let raw = rawBounds.map { String(format: "(%.4f,%.4f,%.4f,%.4f)", $0.minX, $0.minY, $0.width, $0.height) }
+                .joined(separator: " ")
+            fputs("[face-calib] meta n=\(rects.count) mirrored=\(mirrored) raw=[\(raw)] conv=[\(desc)]\n", stderr)
+            fflush(stderr)
+        }
         callback(rects, mirrored)
     }
 }

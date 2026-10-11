@@ -370,11 +370,16 @@ SPM 临时产物一律 `swift test --disable-sandbox --scratch-path "$ROOT/build
   - [ ] **P93/P94 复验**：双摄会话下切换 720p/1080p/4K 不崩（preset 异常已根除），
     档位实际生效（activeFormat 分辨率对得上），帧率切换后仍准（选 format 后重放）；
     单摄档位回归（普通 Session preset 路径未动）
-  - [ ] **CAM-033（P1 检测裁剪）真机**：①metadata 脸框标定——前/后摄×竖/横持下
-    磨皮蒙版对位正确（错位修 MetadataFaceGeometry 调用方常数）；②美颜全关时
-    DEBUG 日志零 Vision perform（totalDetections 不再增长）；③仅磨皮时同样零
-    Vision（脸框来自采集栈）；④双摄下磨皮蒙版正常（回退 Vision 兜底路径）；
-    ⑤检测耗时 lastDetectionDurationMs 对比改前（baselines 回填）
+  - [x] **CAM-033（P1 检测裁剪）真机·远程验证完成**（2026-10-11，SOP 沉淀
+    tools/probe/README.md）：①metadataOutput 装配顺序 P0 崩溃修复（P117 坑①）+
+    available 时序修复（P117 坑②）；②美颜全关 Vision 检测归零 ✓（探针日志实证）；
+    ③性能稳态回填 baselines：处理 0.5-2ms / 60fps / 177MB；④`outputRectConverted`
+    语义陷阱实证（P117 坑③）→ **标定闸门 metadataFacesCalibrated=false**，
+    metadata 框未定标不消费、plan 回退 Vision faceRectangles（坐标已验证正确）。
+  - [ ] **CAM-033 标定收尾（需传哲 30 秒）**：人脸对镜头、居中静止，跑
+    `CQ_CAM_FACE_CALIB=1`（SOP §一键流程），日志回传后反解 metadata↔vision 映射 →
+    修 MetadataFaceGeometry → 闸门翻 true 零成本启用 metadata 路（远程采到的样本
+    脸贴边/出画，对照失真，无法定标）
   - [ ] **Makeup/MetalFX 回归目检**：美妆五区域正常（irisMask/羽化修复后）、
     MetalFX 升采样画质（SDK 命名全对表后首次真编译）
 

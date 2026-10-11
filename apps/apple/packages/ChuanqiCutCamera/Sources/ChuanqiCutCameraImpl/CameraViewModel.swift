@@ -267,6 +267,11 @@ final class CameraViewModel: ObservableObject {
                 faceBoxes.update(with: rects.max(by: { $0.width * $0.height < $1.width * $1.height }))
             }
             detector.onResult = { [faceBoxes, weak detector] snapshot in
+                if CameraManager.faceCalib, let box = snapshot.face?.box {
+                    fputs(String(format: "[face-calib] vision box=(%.4f,%.4f,%.4f,%.4f)\n",
+                                 box.minX, box.minY, box.width, box.height), stderr)
+                    fflush(stderr)
+                }
                 faceBoxes.update(with: snapshot.face?.box)
                 faceBoxes.updateAnchors(snapshot.face.flatMap(CameraReshapeAnchors.init(face:)))
                 faceBoxes.updateAnimalEyes(snapshot.animals.first.flatMap(StickerEyeAnchor.init(animal:)))
@@ -443,6 +448,17 @@ final class CameraViewModel: ObservableObject {
             recordedFrames: UInt64(recorderBox.get()?.currentAppendedFrameCount() ?? 0),
             footprintMB: Self.cameraMemoryFootprintMB(),
             positionFront: position == .front)
+        // 远程取证快照（CAM-033 真机批）：2Hz 一条，与浮层同源数字落 stderr 日志
+        //（processing ms / 双路 fps / 内存足迹 / 录制帧数）——性能基线回填的数据源。
+        if CameraManager.faceCalib
+            || ProcessInfo.processInfo.environment["CQ_DEBUG_PROFILE"] == "1" {
+            fputs(String(format: "[cam-stats] cap=%.1f draw=%.1f ms=%.1f/%.1f mem=%.0fMB rec=%d front=%d\n",
+                         captureFps, drawFps, msLast, msMax,
+                         debugSnapshot?.footprintMB ?? 0,
+                         Int(debugSnapshot?.recordedFrames ?? 0),
+                         position == .front ? 1 : 0), stderr)
+            fflush(stderr)
+        }
     }
     #endif
 
@@ -964,6 +980,15 @@ final class CameraViewModel: ObservableObject {
             faceAnchors: !reshape.isOff || sticker,
             bodyAnchors: !bodyReshape.isOff,
             animalSticker: sticker)
+        // 脸框标定模式（CQ_CAM_FACE_CALIB=1）：强制走 Vision faceRectangles，
+        // 与 metadata 路同帧双路对照（CameraManager 侧打 meta rects，此处打 vision box）。
+        let calib = CameraManager.faceCalib
+        if calib {
+            detector.requests = [.faceRectangles]
+            fputs("[face-calib] plan forced [.faceRectangles] (dualCam=\(dualCamEnabled))\n", stderr)
+            fflush(stderr)
+            return
+        }
         let metadataOK = manager.isMetadataFacesActive && !dualCamEnabled
         detector.requests = BeautyDetectionPlan.requests(
             for: flags,

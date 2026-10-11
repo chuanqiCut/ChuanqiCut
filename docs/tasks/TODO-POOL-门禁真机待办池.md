@@ -386,6 +386,14 @@ SPM 临时产物一律 `swift test --disable-sandbox --scratch-path "$ROOT/build
     处理 1.6-3.0ms / 60fps 满帧 / noface 停止增长（不闪）/ 磨皮引擎确认工作**。
     检测耗时实证 **11.6-20.3ms/次**（baselines 已回填）→ **美颜脸框检测降频
     （10-15Hz）列 P1 收尾优化**。
+  - [x] **「美白边缘闪/磨皮30%也闪」修复**（2026-10-11 深夜三）：根因 = 仅框模式
+    框无帧间平滑（landmarks 点平滑对框路径不生效），Vision 框逐帧抖动直进蒙版 →
+    边缘亮暗跳变（美白对比强所以边缘最显眼）。修 = FaceMask.smoothedBox 框级 EMA
+    （与 landmarks 同参数源）。73/73 + 壳绿。
+  - [x] **「磨皮开最大人脸涂抹过重」短期缓解**：mix 上限 1.0→0.85（保留 15% 原图
+    高频细节，单调性保持）——正解是 P2 引导滤波 k 纹理保留系数（RESEARCH-015）。
+  - [ ] **磨皮最大强度引擎状态验证（需设备解锁+人脸对镜头）**：远程 D15 因锁屏
+    未跑成；待验证 mix 上限后的观感（传哲目检）。
   - [ ] **P1 收尾·检测降频**（本轮实证驱动）：美颜脸框（faceRectangles/metadata）
     detectionHz 从 30Hz 降 10-15Hz（单次 12-20ms × 30Hz ≈ 半核，蒙版有 EMA 兜着
     无需 30Hz）；仅美型/贴纸锚点保持 30Hz（跟手）。改 VisionDetector plan 分档。

@@ -108,6 +108,9 @@ final class VisionDetector: @unchecked Sendable {
     // 仅框模式 dropout 保持（CAM-033 闪帧修复）：检测队列独占，无锁
     private var lastRectBox: CGRect?
     private var lastRectBoxPtsSeconds: Double?
+    // 仅框模式帧间平滑的 previous（同队列独占；与 lastRectBox 分工：前者管
+    // 平滑链输入，后者管 dropout 保持窗口）
+    private var lastRawRectBox: CGRect?
     private var prevBodyFlat: [CGPoint?]?
     private var prevAnimalPoseFlat: [CGPoint?]?
 
@@ -206,13 +209,21 @@ final class VisionDetector: @unchecked Sendable {
         // CAM-033 闪帧根因之二：仅框模式检出失败帧直接 update(nil) → FaceBoxStore
         // 清空 → 该渲染帧磨皮直通 → 与前后帧「磨/不磨」交替 = 用户感知闪。
         // 修：dropout 保持（500ms [E] 内沿用上帧框），超时才如实清空。
+        let params = KeypointSmoothingParams(strength: smoothingStrength)
         var face: FaceObservation?
         if plan.contains(.faceLandmarks) {
             face = convertFace(faceRequest?.results as? [VNFaceObservation])
         } else if plan.contains(.faceRectangles) {
             if let converted = convertFaceBox(faceRequest?.results as? [VNFaceObservation]) {
-                face = converted
-                lastRectBox = converted.box
+                // 框级帧间平滑（CAM-033「美白边缘闪/磨皮 30% 闪」修复）：landmarks
+                // 模式的点平滑对仅框模式不生效，Vision 框逐帧抖动直接进蒙版 =
+                // 蒙版边缘亮暗跳变（美白对比强所以边缘闪最显眼）。smoothedBox 与
+                // landmarks 共用同一平滑参数源（滑杆 strength）。
+                let smoothed = FaceMask.smoothedBox(
+                    previous: lastRawRectBox, current: converted.box, params: params)
+                face = Self.boxOnlyObservation(box: smoothed)
+                lastRawRectBox = smoothed
+                lastRectBox = smoothed
                 lastRectBoxPtsSeconds = ptsSeconds
             } else if let box = lastRectBox,
                       let lastPts = lastRectBoxPtsSeconds,
@@ -228,8 +239,6 @@ final class VisionDetector: @unchecked Sendable {
                                      poseResults: animalPoseRequestRef?.results ?? [])
 
         // 帧间平滑（SharedUI 纯函数；状态在检测队列独占）。
-        let params = KeypointSmoothingParams(strength: smoothingStrength)
-
         if let currentFace = face {
             let flat = smoothKeypoints(previous: prevFaceFlat,
                                        current: currentFace.flattenedPoints(), params: params)

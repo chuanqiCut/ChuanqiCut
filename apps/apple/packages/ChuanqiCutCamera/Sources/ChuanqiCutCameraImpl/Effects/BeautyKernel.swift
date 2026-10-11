@@ -47,9 +47,13 @@ enum BeautyKernelProfile {
         Float(0.03 + 0.08 * min(max(strength, 0), 1))
     }
 
-    /// 与原图的混合系数（0...1）：1 = 完全采用双边结果。
+    /// 与原图的混合系数：0.2 + 0.65×强度（0.2...0.85，**封顶 0.85**）。
+    /// 传哲真机反馈（2026-10-11）：磨皮最大时人脸涂抹感过重（"人脸区域看不出来了"）
+    /// ——mix=1 全采用双边结果 = 零原图细节，塑料脸。封顶 0.85 保 15% 原图高频
+    /// （细节回注的短期替代，P2 引导滤波 k 系数是正解，参数 harness 真机再定标）。
+    /// 单调性保持（验收前提）。
     static func mix(strength: Double) -> Float {
-        Float(min(max(strength, 0), 1))
+        Float(0.2 + 0.65 * min(max(strength, 0), 1))
     }
 
     /// 半分辨率 extent（向上取整，不丢末行末列；Swift 侧与 kernel 的

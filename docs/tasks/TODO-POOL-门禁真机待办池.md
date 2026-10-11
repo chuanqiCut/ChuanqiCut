@@ -413,6 +413,18 @@ SPM 临时产物一律 `swift test --disable-sandbox --scratch-path "$ROOT/build
   - [ ] **P1 收尾·检测降频**（本轮实证驱动）：美颜脸框（faceRectangles/metadata）
     detectionHz 从 30Hz 降 10-15Hz（单次 12-20ms × 30Hz ≈ 半核，蒙版有 EMA 兜着
     无需 30Hz）；仅美型/贴纸锚点保持 30Hz（跟手）。改 VisionDetector plan 分档。
+  - [x] **P1 收尾·检测降频落地**（494756a）：仅框档（faceRectangles）15Hz（rectHz）
+    + metadata 供框 15Hz 节流；锚点档（landmarks）保持 30Hz 跟手。
+  - [x] **P2（CAM-034）guided 高通法引擎落地（CQ_CAM_GUIDED=1 启用）**（494756a）：
+    beauty_guided.metal（两 pass box blur 结构层 + k 纹理保留回注，无 exp——
+    「程度脉动」类问题的算法级免疫）+ GuidedBeautyKernel 装配（失败回落双边）+
+    guidedRadius(2...6)/guidedKeep(0.9...0.1) 单调映射 + 壳脚本编译段（独立
+    beauty_guided.metallib）。E8/E11 真机处理 0.8-2.1ms（显著低于双边基线
+    1.6-3.0）。**观感对比（传哲）定稿后翻默认**。
+  - [x] **美颜开间歇 SIGTRAP 治本（P118 归因二次修正）**（494756a）：真凶 =
+    @MainActor 类闭包隐式隔离（onMetadataFaces max(by:) 二次栈实证；print 归因
+    是冤案修正）→ 7 个队列回调属性标 @Sendable + renderer/store @unchecked
+    Sendable → **E11 60s 长跑零崩溃**（此前 30-40s 必崩）。
   - [ ] **后摄+美颜验证**（探针 back 分支未切摄待查 + 需真人对镜头）：后摄磨皮
     目检 + 档位回归；同时跑 metadata 标定（见下）。
   - [x] **CAM-033 标定收尾完成**（2026-10-11 深夜，传哲人脸对镜头 30 秒

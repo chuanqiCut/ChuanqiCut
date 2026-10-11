@@ -597,3 +597,16 @@
   零失败——P110/P112/P114 修复链在人工操作流下通过；此前弹窗为中间态构建残留。
 - **新增功能**：录制成功自动存相册（PHPhotoLibrary add-only）。
 - **待办**：warp/pool kernel、横持方向、B 组人工项（池 [15]）。
+
+## 2026-10-11 19:50 · 相机右侧边栏（对标平台式）+ 全局 DebugCenter + 浮层拖拽滚动
+- **指令**：传哲四条——操作按钮右侧边栏 / debugview 左侧可滚动 / 位置可拖动 /
+  DEBUG 全局存在（内存/CPU 实时）。
+- **实现**（59aa2b6）：相机页操作按钮（美颜/设置/双摄/翻转）收进右缘纵向边栏；
+  DEBUG 浮层左侧默认、Grabber 手柄拖动（偏移 UserDefaults 按屏持久化、双击回位）、
+  内容可滚动；SharedUI 新增 DebugCenter（全局开关持久化跨屏共享 + 2Hz 系统采样：
+  phys_footprint 内存 + TASK_THREADS_INFO 差分 CPU%）。
+- **坑**：Mach 的 TASK_THREADS_INFO 不在 iOS SDK 用户态头（编译错）→ 换
+  task_threads() 枚举 + 逐线程 THREAD_BASIC_INFO；SharedUI pod 的 swiftmodule
+  曾整模块丢失（CocoaPods 无 DEBUG 宏注入 + 条件编译包裹 → 已去条件编译）。
+- **验证**：iOS 全量构建 SUCCEEDED；探针 smoke PASS；浮层拖拽/滚动/全局开关为
+  视觉组件待传哲目检。

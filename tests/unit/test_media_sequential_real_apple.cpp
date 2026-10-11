@@ -20,11 +20,11 @@
 #include <string>
 #include <vector>
 
-#include "cq/base/concurrency.h"
-#include "cq/base/status.h"
-#include "cq/base/rational_time.h"
-#include "cq/media/system_frame_provider.h"
-#include "cq/platform/media.h"
+#include "cq/base/chq_concurrency.h"
+#include "cq/base/chq_status.h"
+#include "cq/base/chq_rational_time.h"
+#include "cq/media/chq_system_frame_provider.h"
+#include "cq/platform/chq_media.h"
 #include "media_decode.h"  // PALA-011 VideoToolboxDecoder（仅 Apple TU 可见）
 
 #ifndef CQ_SOURCE_DIR
@@ -46,9 +46,9 @@ void Check(bool cond, const char* msg) {
     }
 }
 
-bool Contains(const cq::MediaFrame& f, const cq::RationalTime& t) {
-    if (f.type != cq::MediaType::kVideo) return false;
-    cq::RationalTime end{0, 1};
+bool Contains(const cq::ChqMediaFrame& f, const cq::ChqRationalTime& t) {
+    if (f.type != cq::ChqMediaType::kVideo) return false;
+    cq::ChqRationalTime end{0, 1};
     if (!cq::AddRational(f.video.pts, f.video.duration, end).IsOk()) return false;
     return cq::CompareRational(f.video.pts, t) <= 0 && cq::CompareRational(t, end) < 0;
 }
@@ -75,13 +75,13 @@ struct RunStats {
 
 // 组装真实链路：PALA-010 demuxer + PALA-011 硬解 + MEDIA-020 编排。
 // 每个实例独立（对照实验不能共享解码器状态）。
-std::unique_ptr<cq::FrameProvider> MakeProvider(const cq::MediaSource& src,
+std::unique_ptr<cq::ChqFrameProvider> MakeProvider(const cq::ChqMediaSource& src,
                                                 cq::VideoToolboxDecoder** out_decoder) {
-    cq::PlatformPtr<cq::IMediaDemuxer> demuxer;
+    cq::ChqPlatformPtr<cq::ChqIMediaDemuxer> demuxer;
     if (!cq::CreateMediaDemuxer(src, demuxer).IsOk() || !demuxer) return nullptr;
     auto* decoder = new cq::VideoToolboxDecoder(src.path);
     auto provider = cq::CreateSystemFrameProvider(
-        std::move(demuxer), std::unique_ptr<cq::IFrameDecoder>(decoder));
+        std::move(demuxer), std::unique_ptr<cq::ChqIFrameDecoder>(decoder));
     if (!provider->Open(src).IsOk()) return nullptr;
     if (out_decoder != nullptr) *out_decoder = decoder;
     return provider;
@@ -97,7 +97,7 @@ int main() {
         std::string(CQ_SOURCE_DIR) + "/tests/golden/frames/gf_1080p_h264_long_gop_bframes.mp4";
     std::printf("样本: %s（30fps / GOP 60 / B帧3 / 300 帧）\n", path.c_str());
 
-    cq::MediaSource src;
+    cq::ChqMediaSource src;
     src.path = path.c_str();
     src.path_len = path.size();
 
@@ -105,13 +105,13 @@ int main() {
     // ticks，见 kStepTicks 注释）。起点避开首 GOP 的 2 帧起始偏移（首 IDR 在
     // 0.0667s），让区间归属判定稳定。
     constexpr int kFrames = 120;
-    std::vector<cq::RationalTime> reqs;
+    std::vector<cq::ChqRationalTime> reqs;
     reqs.reserve(kFrames);
     for (int i = 0; i < kFrames; ++i) {
-        reqs.push_back(cq::RationalTime{kStartTicks + i * kStepTicks, cq::kProjectTimeScale});
+        reqs.push_back(cq::ChqRationalTime{kStartTicks + i * kStepTicks, cq::kProjectTimeScale});
     }
 
-    cq::CancelToken no_cancel;
+    cq::ChqCancelToken no_cancel;
 
     // ---- 1. 被测实例：纯顺序请求（快路径应逐步接管）----
     std::printf("\n[快路径] 顺序请求 %d 帧（每步 +1/30s）\n", kFrames);
@@ -130,14 +130,14 @@ int main() {
     int failed = 0;
     std::vector<int64_t> fast_pts;
     for (int i = 0; i < kFrames; ++i) {
-        cq::FrameRequest req;
+        cq::ChqFrameRequest req;
         req.at = reqs[static_cast<size_t>(i)];
-        req.policy = cq::SeekPolicy::kExact;
-        cq::MediaFrame f;
+        req.policy = cq::ChqSeekPolicy::kExact;
+        cq::ChqMediaFrame f;
         const Clock::time_point t0 = Clock::now();
-        cq::Status s = fast->AcquireFrame(req, f, no_cancel);
+        cq::ChqStatus s = fast->AcquireFrame(req, f, no_cancel);
         const double ms = std::chrono::duration<double, std::milli>(Clock::now() - t0).count();
-        if (!s.IsOk() || f.type != cq::MediaType::kVideo) {
+        if (!s.IsOk() || f.type != cq::ChqMediaType::kVideo) {
             ++failed;
             std::printf("  FAIL: 第 %d 帧取帧失败 code=%d\n", i, static_cast<int>(s.code));
             continue;
@@ -166,15 +166,15 @@ int main() {
     RunStats slow_stats;
     std::vector<int64_t> slow_pts;
     for (int i = 0; i < kFrames; ++i) {
-        cq::FrameRequest req;
+        cq::ChqFrameRequest req;
         req.at = reqs[static_cast<size_t>(i)];
-        req.policy = cq::SeekPolicy::kExact;
+        req.policy = cq::ChqSeekPolicy::kExact;
         if (!slow->Seek(req.at, req.policy, no_cancel).IsOk()) continue;
-        cq::MediaFrame f;
+        cq::ChqMediaFrame f;
         const Clock::time_point t0 = Clock::now();
-        cq::Status s = slow->AcquireFrame(req, f, no_cancel);
+        cq::ChqStatus s = slow->AcquireFrame(req, f, no_cancel);
         const double ms = std::chrono::duration<double, std::milli>(Clock::now() - t0).count();
-        if (s.IsOk() && f.type == cq::MediaType::kVideo) {
+        if (s.IsOk() && f.type == cq::ChqMediaType::kVideo) {
             slow_stats.Add(ms);
             slow_pts.push_back(f.video.pts.value);
         }

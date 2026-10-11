@@ -1,4 +1,4 @@
-// ChuanqiCut — EditPlan 校验器单测（AIEDIT-001）
+// ChuanqiCut — ChqEditPlan 校验器单测（AIEDIT-001）
 //
 // 遍历 golden 样例集（manifest 驱动），逐例断言校验器结果与预期一致；
 // 补充静态检查：错误码值稳定、op 名往返、红线 4 timescale 机器检查。
@@ -10,10 +10,10 @@
 #include <string>
 #include <vector>
 
-#include "cq/ai/edit_plan.h"
-#include "ai/plan/edit_plan_validator.h"  // core/src 私有头（tests CMake 注入 src 目录）
-#include "cq/base/rational_time.h"
-#include "cq/base/status.h"
+#include "cq/ai/chq_edit_plan.h"
+#include "ai/plan/chq_edit_plan_validator.h"  // core/src 私有头（tests CMake 注入 src 目录）
+#include "cq/base/chq_rational_time.h"
+#include "cq/base/chq_status.h"
 
 #ifndef CQ_EDIT_PLAN_GOLDEN_DIR
 #define CQ_EDIT_PLAN_GOLDEN_DIR "."
@@ -32,11 +32,11 @@ void Check(bool cond, const char* msg) {
     }
 }
 
-cq::EditPlanAssetTable DefaultAssets() {
-    cq::EditPlanAssetTable assets;
-    assets.push_back({"a1", cq::RationalTime{1200000, cq::kProjectTimeScale}, 3});
-    assets.push_back({"a2", cq::RationalTime{2400000, cq::kProjectTimeScale}, 4});
-    assets.push_back({"a3", cq::RationalTime{600000, cq::kProjectTimeScale}, 2});
+cq::ChqEditPlanAssetTable DefaultAssets() {
+    cq::ChqEditPlanAssetTable assets;
+    assets.push_back({"a1", cq::ChqRationalTime{1200000, cq::kProjectTimeScale}, 3});
+    assets.push_back({"a2", cq::ChqRationalTime{2400000, cq::kProjectTimeScale}, 4});
+    assets.push_back({"a3", cq::ChqRationalTime{600000, cq::kProjectTimeScale}, 2});
     return assets;
 }
 
@@ -97,9 +97,9 @@ void TestGoldenCases() {
         if (c.expect_valid) {
             Check(!json.empty(), ("读取 " + c.filename + " 非空").c_str());
         }
-        cq::EditPlan plan;
-        cq::ai::EditPlanError err;
-        const cq::Status s = cq::ai::ValidateEditPlanJson(json, assets, plan, err);
+        cq::ChqEditPlan plan;
+        cq::ai::ChqEditPlanError err;
+        const cq::ChqStatus s = cq::ai::ValidateEditPlanJson(json, assets, plan, err);
         if (c.expect_valid) {
             const bool ok = s.IsOk();
             if (ok) ++valid_pass;
@@ -127,45 +127,45 @@ void TestGoldenCases() {
 
 void TestStableErrorCodes() {
     std::printf("[test] AI 决策错误码值稳定\n");
-    static_assert(static_cast<int32_t>(cq::StatusCode::kAiPlanJsonMalformed) == 9500);
-    static_assert(static_cast<int32_t>(cq::StatusCode::kAiPlanSchemaUnknown) == 9501);
-    static_assert(static_cast<int32_t>(cq::StatusCode::kAiPlanFieldMissing) == 9502);
-    static_assert(static_cast<int32_t>(cq::StatusCode::kAiPlanFieldType) == 9503);
-    static_assert(static_cast<int32_t>(cq::StatusCode::kAiPlanFloatTime) == 9504);
-    static_assert(static_cast<int32_t>(cq::StatusCode::kAiPlanTimescaleMismatch) == 9505);
-    static_assert(static_cast<int32_t>(cq::StatusCode::kAiPlanTimeNonPositive) == 9506);
-    static_assert(static_cast<int32_t>(cq::StatusCode::kAiPlanUnknownOp) == 9507);
-    static_assert(static_cast<int32_t>(cq::StatusCode::kAiPlanAssetUnknown) == 9508);
-    static_assert(static_cast<int32_t>(cq::StatusCode::kAiPlanShotOutOfRange) == 9509);
-    static_assert(static_cast<int32_t>(cq::StatusCode::kAiPlanSourceRange) == 9510);
-    static_assert(static_cast<int32_t>(cq::StatusCode::kAiPlanTimelineOverlap) == 9511);
-    static_assert(static_cast<int32_t>(cq::StatusCode::kAiPlanReorderNotPermutation) == 9512);
-    static_assert(static_cast<int32_t>(cq::StatusCode::kAiPlanTransitionKindUnknown) == 9513);
+    static_assert(static_cast<int32_t>(cq::ChqStatusCode::kAiPlanJsonMalformed) == 9500);
+    static_assert(static_cast<int32_t>(cq::ChqStatusCode::kAiPlanSchemaUnknown) == 9501);
+    static_assert(static_cast<int32_t>(cq::ChqStatusCode::kAiPlanFieldMissing) == 9502);
+    static_assert(static_cast<int32_t>(cq::ChqStatusCode::kAiPlanFieldType) == 9503);
+    static_assert(static_cast<int32_t>(cq::ChqStatusCode::kAiPlanFloatTime) == 9504);
+    static_assert(static_cast<int32_t>(cq::ChqStatusCode::kAiPlanTimescaleMismatch) == 9505);
+    static_assert(static_cast<int32_t>(cq::ChqStatusCode::kAiPlanTimeNonPositive) == 9506);
+    static_assert(static_cast<int32_t>(cq::ChqStatusCode::kAiPlanUnknownOp) == 9507);
+    static_assert(static_cast<int32_t>(cq::ChqStatusCode::kAiPlanAssetUnknown) == 9508);
+    static_assert(static_cast<int32_t>(cq::ChqStatusCode::kAiPlanShotOutOfRange) == 9509);
+    static_assert(static_cast<int32_t>(cq::ChqStatusCode::kAiPlanSourceRange) == 9510);
+    static_assert(static_cast<int32_t>(cq::ChqStatusCode::kAiPlanTimelineOverlap) == 9511);
+    static_assert(static_cast<int32_t>(cq::ChqStatusCode::kAiPlanReorderNotPermutation) == 9512);
+    static_assert(static_cast<int32_t>(cq::ChqStatusCode::kAiPlanTransitionKindUnknown) == 9513);
     Check(true, "AI 决策段 static_assert 全过");
 }
 
 void TestOpNameRoundTrip() {
     std::printf("[test] op 名往返\n");
-    for (int32_t i = 0; i <= static_cast<int32_t>(cq::EditPlanOp::kSetBgmPlaceholder); ++i) {
-        const auto op = static_cast<cq::EditPlanOp>(i);
+    for (int32_t i = 0; i <= static_cast<int32_t>(cq::ChqEditPlanOp::kSetBgmPlaceholder); ++i) {
+        const auto op = static_cast<cq::ChqEditPlanOp>(i);
         const char* name = cq::EditPlanOpName(op);
         Check(name != nullptr, "op 名非空");
-        cq::EditPlanOp roundtrip = cq::EditPlanOp::kUnknown;
+        cq::ChqEditPlanOp roundtrip = cq::ChqEditPlanOp::kUnknown;
         Check(cq::EditPlanOpFromName(name, roundtrip), "op 往返查找成功");
         Check(roundtrip == op, "op 往返一致");
     }
-    cq::EditPlanOp dummy = cq::EditPlanOp::kUnknown;
+    cq::ChqEditPlanOp dummy = cq::ChqEditPlanOp::kUnknown;
     Check(!cq::EditPlanOpFromName("no_such_op", dummy), "未知 op 名拒绝");
 }
 
 void TestTransitionKindRoundTrip() {
     std::printf("[test] 转场类型名往返\n");
     for (int32_t i = 0;
-         i <= static_cast<int32_t>(cq::EditPlanTransitionKind::kDipToBlack); ++i) {
-        const auto kind = static_cast<cq::EditPlanTransitionKind>(i);
+         i <= static_cast<int32_t>(cq::ChqEditPlanTransitionKind::kDipToBlack); ++i) {
+        const auto kind = static_cast<cq::ChqEditPlanTransitionKind>(i);
         const char* name = cq::EditPlanTransitionKindName(kind);
         Check(name != nullptr, "kind 名非空");
-        cq::EditPlanTransitionKind roundtrip = cq::EditPlanTransitionKind::kUnknown;
+        cq::ChqEditPlanTransitionKind roundtrip = cq::ChqEditPlanTransitionKind::kUnknown;
         Check(cq::EditPlanTransitionKindFromName(name, roundtrip), "kind 往返成功");
         Check(roundtrip == kind, "kind 往返一致");
     }
@@ -180,12 +180,12 @@ void TestTimescaleMachineCheck() {
         "\"timeline_start\":{\"value\":0,\"timescale\":60000},"
         "\"source_in\":{\"value\":0,\"timescale\":120000},"
         "\"duration\":{\"value\":1000,\"timescale\":120000}}]}";
-    cq::EditPlan plan;
-    cq::ai::EditPlanError err;
+    cq::ChqEditPlan plan;
+    cq::ai::ChqEditPlanError err;
     const auto assets = DefaultAssets();
-    cq::Status s = cq::ai::ValidateEditPlanJson(json, assets, plan, err);
+    cq::ChqStatus s = cq::ai::ValidateEditPlanJson(json, assets, plan, err);
     Check(s.IsError(), "timescale 60000 被拒绝");
-    Check(err.code == cq::StatusCode::kAiPlanTimescaleMismatch,
+    Check(err.code == cq::ChqStatusCode::kAiPlanTimescaleMismatch,
           "错误码为 kAiPlanTimescaleMismatch");
 }
 

@@ -1,8 +1,8 @@
 // ChuanqiCut — 内存池 / Arena / 纹理预算记账 单测（CORE-004）
 //
-// 覆盖：MemoryBudget 可查询当前分配量、超预算返回 kResourceExhausted(5000)；
-//       TextureBudget 重点——已用/上限查询、超预算实测数字、注销恢复；
-//       LinearArena bump 分配与 Reset；FixedPool 借出/回收。
+// 覆盖：ChqMemoryBudget 可查询当前分配量、超预算返回 kResourceExhausted(5000)；
+//       ChqTextureBudget 重点——已用/上限查询、超预算实测数字、注销恢复；
+//       ChqLinearArena bump 分配与 Reset；ChqFixedPool 借出/回收。
 // 所有数字为可复现实测输出（见各用例打印）。
 
 #include <atomic>
@@ -12,8 +12,8 @@
 #include <thread>
 #include <vector>
 
-#include "cq/base/alloc.h"
-#include "cq/base/status.h"
+#include "cq/base/chq_alloc.h"
+#include "cq/base/chq_status.h"
 
 namespace {
 
@@ -29,14 +29,14 @@ void Check(bool cond, const char* msg) {
 }
 
 // 编译期守卫：超预算错误码必须是稳定的 5000（CORE-002）。
-static_assert(static_cast<int32_t>(cq::StatusCode::kResourceExhausted) == 5000,
+static_assert(static_cast<int32_t>(cq::ChqStatusCode::kResourceExhausted) == 5000,
               "kResourceExhausted must be 5000 (CORE-002 stable code)");
 
 void TestMemoryBudget() {
-    std::printf("[test] MemoryBudget：可查询当前分配量 + 超预算实测\n");
+    std::printf("[test] ChqMemoryBudget：可查询当前分配量 + 超预算实测\n");
     constexpr int64_t kMB = 1024 * 1024;
     constexpr int64_t kLimit = 100 * kMB;  // 100 MiB
-    cq::MemoryBudget mb(kLimit);
+    cq::ChqMemoryBudget mb(kLimit);
 
     Check(mb.Used() == 0, "初始已用 = 0");
     Check(mb.Limit() == kLimit, "上限 = 100 MiB");
@@ -45,7 +45,7 @@ void TestMemoryBudget() {
     // 分配 100 次 1 MiB，应全部成功，Used 精确为 100 MiB。
     int64_t total = 0;
     for (int i = 0; i < 100; ++i) {
-        cq::Status s = mb.TryAllocate(kMB);
+        cq::ChqStatus s = mb.TryAllocate(kMB);
         Check(s.IsOk(), "第 1..100 次 1MiB 分配成功");
         total += kMB;
     }
@@ -58,8 +58,8 @@ void TestMemoryBudget() {
                 static_cast<long long>(mb.Remaining()));
 
     // 第 101 次超预算：必须返回 kResourceExhausted(5000)，且不改变计数。
-    cq::Status over = mb.TryAllocate(kMB);
-    Check(over.code == cq::StatusCode::kResourceExhausted,
+    cq::ChqStatus over = mb.TryAllocate(kMB);
+    Check(over.code == cq::ChqStatusCode::kResourceExhausted,
           "第 101 次超预算返回 kResourceExhausted(5000)");
     Check(mb.Used() == 100 * kMB, "超预算后 Used 不变（无副作用）");
     std::printf("  第101次 TryAllocate -> code=%d (期望 5000), Used 仍=%lld\n",
@@ -75,12 +75,12 @@ void TestMemoryBudget() {
 }
 
 void TestTextureBudget() {
-    std::printf("[test] TextureBudget（重点）：已用/上限查询 + 超预算实测数字\n");
+    std::printf("[test] ChqTextureBudget（重点）：已用/上限查询 + 超预算实测数字\n");
     constexpr int64_t kMB = 1024 * 1024;
     // 上限：100 MiB，10 张（典型移动端纹理预算基线，见报告 baselines.md）。
     constexpr int64_t kByteLimit = 100 * kMB;
     constexpr int32_t kCountLimit = 10;
-    cq::TextureBudget tb(kByteLimit, kCountLimit);
+    cq::ChqTextureBudget tb(kByteLimit, kCountLimit);
 
     Check(tb.UsedBytes() == 0 && tb.UsedCount() == 0, "初始已用 0 字节 / 0 张");
     Check(tb.LimitBytes() == kByteLimit && tb.LimitCount() == kCountLimit, "上限 100MiB/10张");
@@ -88,7 +88,7 @@ void TestTextureBudget() {
 
     // 登记 10 张各 10 MiB：全部成功，Used = 100 MiB / 10 张。
     for (int i = 1; i <= 10; ++i) {
-        cq::Status s = tb.Register(i, 10 * kMB);
+        cq::ChqStatus s = tb.Register(i, 10 * kMB);
         Check(s.IsOk(), "登记第 1..10 张成功");
     }
     Check(tb.UsedBytes() == 100 * kMB, "UsedBytes = 100 MiB (实测数字)");
@@ -103,8 +103,8 @@ void TestTextureBudget() {
                 static_cast<int>(tb.RemainingCount()));
 
     // 第 11 张超预算：kResourceExhausted(5000)，且不登记（Used 不变）。
-    cq::Status over = tb.Register(11, 10 * kMB);
-    Check(over.code == cq::StatusCode::kResourceExhausted,
+    cq::ChqStatus over = tb.Register(11, 10 * kMB);
+    Check(over.code == cq::ChqStatusCode::kResourceExhausted,
           "第 11 张超预算返回 kResourceExhausted(5000)");
     Check(tb.UsedBytes() == 100 * kMB && tb.UsedCount() == 10,
           "超预算后 Used 不变（无副作用）");
@@ -112,16 +112,16 @@ void TestTextureBudget() {
                 static_cast<int>(over.code), static_cast<long long>(tb.UsedBytes()));
 
     // 张数维度也能触发超预算：把该厂商上限放宽、张数收紧到 1，再登记应失败。
-    cq::TextureBudget tb2(1000 * kMB, 1);
+    cq::ChqTextureBudget tb2(1000 * kMB, 1);
     Check(tb2.Register(1, 1 * kMB).IsOk(), "tb2 第 1 张成功");
-    cq::Status over2 = tb2.Register(2, 1 * kMB);
-    Check(over2.code == cq::StatusCode::kResourceExhausted,
+    cq::ChqStatus over2 = tb2.Register(2, 1 * kMB);
+    Check(over2.code == cq::ChqStatusCode::kResourceExhausted,
           "张数维度超预算返回 5000");
     tb2.Unregister(1);
     Check(tb2.UsedCount() == 0 && tb2.UsedBytes() == 0, "tb2 注销后归零");
 
     // 注销第 5 张：Used 回到 90 MiB / 9 张，剩余恢复。
-    cq::Status un = tb.Unregister(5);
+    cq::ChqStatus un = tb.Unregister(5);
     Check(un.IsOk(), "注销已存在 id=5 成功");
     Check(tb.UsedBytes() == 90 * kMB, "注销后 UsedBytes=90MiB");
     Check(tb.UsedCount() == 9, "注销后 UsedCount=9");
@@ -133,14 +133,14 @@ void TestTextureBudget() {
                 static_cast<int>(tb.RemainingCount()));
 
     // 重复注销未知 id：应返回 kInvalidArgument（不是崩溃）。
-    cq::Status bad = tb.Unregister(999);
-    Check(bad.code == cq::StatusCode::kInvalidArgument,
+    cq::ChqStatus bad = tb.Unregister(999);
+    Check(bad.code == cq::ChqStatusCode::kInvalidArgument,
           "注销未知 id 返回 kInvalidArgument");
 }
 
 void TestArena() {
-    std::printf("[test] LinearArena：bump 分配 + Reset\n");
-    cq::LinearArena arena(4096);
+    std::printf("[test] ChqLinearArena：bump 分配 + Reset\n");
+    cq::ChqLinearArena arena(4096);
     Check(arena.Capacity() == 4096, "容量 4096");
     Check(arena.Used() == 0, "初始已用 0");
 
@@ -164,8 +164,8 @@ void TestArena() {
 }
 
 void TestPool() {
-    std::printf("[test] FixedPool：定长块借出/回收\n");
-    cq::FixedPool pool(64, 4);
+    std::printf("[test] ChqFixedPool：定长块借出/回收\n");
+    cq::ChqFixedPool pool(64, 4);
     Check(pool.BlockSize() == 64, "块大小 64");
     Check(pool.Capacity() == 4, "容量 4");
     Check(pool.FreeCount() == 4 && pool.LiveCount() == 0, "初始空闲 4");
@@ -194,9 +194,9 @@ void TestPool() {
 
 // 线程安全实测：多线程并发 Register，计数最终一致、无重复 id 冲突。
 void TestTextureBudgetThreadSafe() {
-    std::printf("[test] TextureBudget 线程安全：8 线程各登记 10 张 1MiB\n");
+    std::printf("[test] ChqTextureBudget 线程安全：8 线程各登记 10 张 1MiB\n");
     constexpr int64_t kMB = 1024 * 1024;
-    cq::TextureBudget tb(1000 * kMB, 1000);  // 上限足够大，重点测并发一致性
+    cq::ChqTextureBudget tb(1000 * kMB, 1000);  // 上限足够大，重点测并发一致性
 
     constexpr int kThreads = 8;
     constexpr int kPerThread = 10;
@@ -207,7 +207,7 @@ void TestTextureBudgetThreadSafe() {
             int base = t * kPerThread + 1;
             for (int i = 0; i < kPerThread; ++i) {
                 int64_t id = base + i;
-                cq::Status s = tb.Register(id, 1 * kMB);
+                cq::ChqStatus s = tb.Register(id, 1 * kMB);
                 if (s.IsOk()) ok_count.fetch_add(1, std::memory_order_relaxed);
             }
         });

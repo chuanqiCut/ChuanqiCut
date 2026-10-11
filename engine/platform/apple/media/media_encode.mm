@@ -4,11 +4,11 @@
 //   * H.264 编码 + MP4 封装用 AVAssetWriter + AVAssetWriterInputPixelBufferAdaptor。
 //   * 输入 CVPixelBuffer（BGRA / NV12）按源格式 1:1 拷入 encoder 自管 buffer 后 append，
 //     不做色彩转换，规避通道交换类 bug（PALA-002 教训）。
-//   * 每帧 PTS = RationalTime 直接转 CMTime（timescale 同构）；movieTimeScale = 120000，
+//   * 每帧 PTS = ChqRationalTime 直接转 CMTime（timescale 同构）；movieTimeScale = 120000，
 //     杜绝累积漂移（ADR-0009）。
 //   * Finish 阻塞等待 finishWriting；Cancel 调 cancelWriting 并删半成品文件。
 //
-// 红线：零 FFmpeg 类型；平台类型只在本 .mm（经 pImpl）；错误一律 Status；内核禁用异常。
+// 红线：零 FFmpeg 类型；平台类型只在本 .mm（经 pImpl）；错误一律 ChqStatus；内核禁用异常。
 
 #import <AVFoundation/AVFoundation.h>
 #import <AudioToolbox/AudioToolbox.h>
@@ -24,9 +24,9 @@
 #include <string>
 #include <thread>
 
-#include "cq/base/perf.h"
-#include "cq/base/status.h"
-#include "cq/base/rational_time.h"
+#include "cq/base/chq_perf.h"
+#include "cq/base/chq_status.h"
+#include "cq/base/chq_rational_time.h"
 #include "media_encode.h"
 
 namespace cq {
@@ -77,13 +77,13 @@ bool CopyPixelBuffer(CVPixelBufferRef src, CVPixelBufferRef dst) {
 }  // namespace
 
 // 把音频码率档位映射到本机默认 AAC 码率（bps）。0 = 交给 AVAssetWriter 默认。
-static int64_t AudioBitrateForTier(BitrateTier tier) {
+static int64_t AudioBitrateForTier(ChqBitrateTier tier) {
     switch (tier) {
-        case BitrateTier::kLow:      return 64'000;
-        case BitrateTier::kMedium:   return 128'000;
-        case BitrateTier::kHigh:     return 192'000;
-        case BitrateTier::kLossless: return 256'000;  // AAC 无真正无损，取最高可达质量
-        case BitrateTier::kUnknown:
+        case ChqBitrateTier::kLow:      return 64'000;
+        case ChqBitrateTier::kMedium:   return 128'000;
+        case ChqBitrateTier::kHigh:     return 192'000;
+        case ChqBitrateTier::kLossless: return 256'000;  // AAC 无真正无损，取最高可达质量
+        case ChqBitrateTier::kUnknown:
         default:                     return 0;  // 交平台默认
     }
 }
@@ -94,10 +94,10 @@ static int64_t AudioBitrateForTier(BitrateTier tier) {
 //    这里显式使用其数值（-50），避免平台头差异。
 static const OSStatus kCqParamErr = -50;
 
-// 依据 PcmBuffer 的实际格式构造线性 PCM 的 CMFormatDescription + CMBlockBuffer，
+// 依据 ChqPcmBuffer 的实际格式构造线性 PCM 的 CMFormatDescription + CMBlockBuffer，
 // 产出可供 AAC `AVAssetWriterInput` 吞入的 CMSampleBuffer。
 // 支持 kFloat32 / kInt16；其它格式返回 OSStatus 参数错误（调用方应转成 kEncodeUnsupported）。
-static OSStatus CreatePcmSampleBuffer(const cq::PcmBuffer& pcm, CMTime presentation_time,
+static OSStatus CreatePcmSampleBuffer(const cq::ChqPcmBuffer& pcm, CMTime presentation_time,
                                       CMSampleBufferRef* out_sbuf) {
     if (out_sbuf == nullptr) return kCqParamErr;
     *out_sbuf = nullptr;
@@ -106,11 +106,11 @@ static OSStatus CreatePcmSampleBuffer(const cq::PcmBuffer& pcm, CMTime presentat
     uint32_t sample_bytes = 0;
     AudioFormatFlags flags = 0;
     switch (pcm.format) {
-        case cq::SampleFormat::kFloat32:
+        case cq::ChqSampleFormat::kFloat32:
             sample_bytes = 4;
             flags = kAudioFormatFlagIsFloat | kAudioFormatFlagIsPacked;
             break;
-        case cq::SampleFormat::kInt16:
+        case cq::ChqSampleFormat::kInt16:
             sample_bytes = 2;
             flags = kAudioFormatFlagIsSignedInteger | kAudioFormatFlagIsPacked;
             break;
@@ -208,16 +208,16 @@ AppleVideoEncoder::~AppleVideoEncoder() {
 
 // 惰性启动 writer：AVAssetWriter 要求所有 input 都 addInput 之后、首个样本 append 之前
 // 调用 startWriting 一次。故在首个 WriteVideoFrame / WriteAudioFrame 时调用。
-Status AppleVideoEncoder::EnsureStarted(AppleVideoEncoder::State* state) {
-    if (state == nullptr || state->writer == nil) return Status{StatusCode::kEncodeError};
-    if (state->writer.status == AVAssetWriterStatusWriting) return Status::Ok();
+ChqStatus AppleVideoEncoder::EnsureStarted(AppleVideoEncoder::State* state) {
+    if (state == nullptr || state->writer == nil) return ChqStatus{ChqStatusCode::kEncodeError};
+    if (state->writer.status == AVAssetWriterStatusWriting) return ChqStatus::Ok();
     if (state->writer.status == AVAssetWriterStatusFailed) {
         NSError* werr = state->writer.error;
         if (werr != nil) {
             std::printf("[AppleVideoEncoder] EnsureStarted 时 writer 已 Failed: %s\n",
                         [werr.localizedDescription UTF8String]);
         }
-        return Status{StatusCode::kEncodeError};
+        return ChqStatus{ChqStatusCode::kEncodeError};
     }
     if (![state->writer startWriting]) {
         NSError* werr = state->writer.error;
@@ -225,16 +225,16 @@ Status AppleVideoEncoder::EnsureStarted(AppleVideoEncoder::State* state) {
             std::printf("[AppleVideoEncoder] startWriting 失败: %s\n",
                         [werr.localizedDescription UTF8String]);
         }
-        return Status{StatusCode::kEncodeError};
+        return ChqStatus{ChqStatusCode::kEncodeError};
     }
     state->started = true;
-    return Status::Ok();
+    return ChqStatus::Ok();
 }
 
-Status AppleVideoEncoder::Open(const char* output_path, const EncodeConfig& cfg) {
-    if (output_path == nullptr) return Status{StatusCode::kInvalidArgument};
-    if (cfg.width == 0 || cfg.height == 0) return Status{StatusCode::kInvalidArgument};
-    if (cfg.timescale <= 0) return Status{StatusCode::kInvalidArgument};
+ChqStatus AppleVideoEncoder::Open(const char* output_path, const EncodeConfig& cfg) {
+    if (output_path == nullptr) return ChqStatus{ChqStatusCode::kInvalidArgument};
+    if (cfg.width == 0 || cfg.height == 0) return ChqStatus{ChqStatusCode::kInvalidArgument};
+    if (cfg.timescale <= 0) return ChqStatus{ChqStatusCode::kInvalidArgument};
 
     // 幂等：若已开，先中止旧 writer。
     if (state_->writer != nil && state_->writer.status == AVAssetWriterStatusWriting) {
@@ -291,9 +291,9 @@ Status AppleVideoEncoder::Open(const char* output_path, const EncodeConfig& cfg)
 #endif  // !TARGET_OS_IPHONE
 
     NSString* ns_path = [NSString stringWithUTF8String:output_path];
-    if (ns_path == nil) return Status{StatusCode::kInvalidArgument};
+    if (ns_path == nil) return ChqStatus{ChqStatusCode::kInvalidArgument};
     NSURL* url = [NSURL fileURLWithPath:ns_path];
-    if (url == nil) return Status{StatusCode::kInvalidArgument};
+    if (url == nil) return ChqStatus{ChqStatusCode::kInvalidArgument};
 
     NSError* err = nil;
     AVAssetWriter* writer = [AVAssetWriter assetWriterWithURL:url
@@ -304,7 +304,7 @@ Status AppleVideoEncoder::Open(const char* output_path, const EncodeConfig& cfg)
             std::printf("[AppleVideoEncoder] AVAssetWriter 创建失败: %s\n",
                         [err.localizedDescription UTF8String]);
         }
-        return Status{StatusCode::kEncodeError};
+        return ChqStatus{ChqStatusCode::kEncodeError};
     }
     // 项目时间轴网格（120000），样本 PTS 同构，杜绝累积漂移。
     writer.movieTimeScale = cfg.timescale;
@@ -329,7 +329,7 @@ Status AppleVideoEncoder::Open(const char* output_path, const EncodeConfig& cfg)
         [AVAssetWriterInput assetWriterInputWithMediaType:AVMediaTypeVideo
                                          outputSettings:out_settings];
     if (input == nil) {
-        return Status{StatusCode::kEncodeError};
+        return ChqStatus{ChqStatusCode::kEncodeError};
     }
     input.expectsMediaDataInRealTime = NO;  // 离线编码，允许缓冲
 
@@ -344,12 +344,12 @@ Status AppleVideoEncoder::Open(const char* output_path, const EncodeConfig& cfg)
             assetWriterInputPixelBufferAdaptorWithAssetWriterInput:input
                                    sourcePixelBufferAttributes:attrs];
     if (adaptor == nil) {
-        return Status{StatusCode::kEncodeError};
+        return ChqStatus{ChqStatusCode::kEncodeError};
     }
 
     if (![writer canAddInput:input]) {
         std::printf("[AppleVideoEncoder] canAddInput 失败\n");
-        return Status{StatusCode::kEncodeError};
+        return ChqStatus{ChqStatusCode::kEncodeError};
     }
     [writer addInput:input];
     // 注意：startWriting 必须等「所有 input（含音频轨）都 addInput 之后」才能调用，
@@ -358,19 +358,19 @@ Status AppleVideoEncoder::Open(const char* output_path, const EncodeConfig& cfg)
     state_->writer = writer;
     state_->input = input;
     state_->adaptor = adaptor;
-    return Status::Ok();
+    return ChqStatus::Ok();
 }
 
-Status AppleVideoEncoder::EncodeFrame(CVPixelBufferRef pb, const RationalTime& pts,
-                                     const CancelToken& token) {
+ChqStatus AppleVideoEncoder::EncodeFrame(CVPixelBufferRef pb, const ChqRationalTime& pts,
+                                     const ChqCancelToken& token) {
     if (state_ == nullptr || state_->writer == nil || state_->input == nil ||
         state_->adaptor == nil) {
-        return Status{StatusCode::kEncodeError};
+        return ChqStatus{ChqStatusCode::kEncodeError};
     }
-    if (pb == nullptr) return Status{StatusCode::kInvalidArgument};
+    if (pb == nullptr) return ChqStatus{ChqStatusCode::kInvalidArgument};
 
     // 惰性启动 writer（所有 input 已 addInput，首个样本 append 前调用 startWriting）。
-    Status ss = EnsureStarted(state_);
+    ChqStatus ss = EnsureStarted(state_);
     if (!ss.IsOk()) return ss;
 
     // 背压：encoder 队列满时等待；期间响应取消。
@@ -380,7 +380,7 @@ Status AppleVideoEncoder::EncodeFrame(CVPixelBufferRef pb, const RationalTime& p
     }
     if (token.IsCancelled()) return token.Cancelled();
     if (state_->writer.status != AVAssetWriterStatusWriting) {
-        return Status{StatusCode::kEncodeError};
+        return ChqStatus{ChqStatusCode::kEncodeError};
     }
 
     uint32_t w = static_cast<uint32_t>(CVPixelBufferGetWidth(pb));
@@ -390,12 +390,12 @@ Status AppleVideoEncoder::EncodeFrame(CVPixelBufferRef pb, const RationalTime& p
     CVPixelBufferRef dst = nullptr;
     CVReturn cr = CVPixelBufferCreate(kCFAllocatorDefault, w, h, fmt, nullptr, &dst);
     if (cr != kCVReturnSuccess || dst == nullptr) {
-        return Status{StatusCode::kResourceExhausted};
+        return ChqStatus{ChqStatusCode::kResourceExhausted};
     }
 
     if (!CopyPixelBuffer(pb, dst)) {
         CFRelease(dst);
-        return Status{StatusCode::kEncodeError};
+        return ChqStatus{ChqStatusCode::kEncodeError};
     }
 
     CMTime cmt = CMTimeMake(pts.value, pts.timescale);
@@ -414,19 +414,19 @@ Status AppleVideoEncoder::EncodeFrame(CVPixelBufferRef pb, const RationalTime& p
                 std::printf("[AppleVideoEncoder] append 失败: %s\n",
                             [werr.localizedDescription UTF8String]);
             }
-            return Status{StatusCode::kEncodeError};
+            return ChqStatus{ChqStatusCode::kEncodeError};
         }
         // 偶发背压未就绪但 writer 仍 Writing：重试一次。
         std::printf("[AppleVideoEncoder] append 返回 NO（writer 仍 Writing），视为背压重试失败\n");
-        return Status{StatusCode::kEncodeError};
+        return ChqStatus{ChqStatusCode::kEncodeError};
     }
     ++frame_count_;
-    return Status::Ok();
+    return ChqStatus::Ok();
 }
 
-Status AppleVideoEncoder::Finish() {
+ChqStatus AppleVideoEncoder::Finish() {
     if (state_ == nullptr || state_->writer == nil) {
-        return Status{StatusCode::kEncodeError};
+        return ChqStatus{ChqStatusCode::kEncodeError};
     }
     if (state_->writer.status != AVAssetWriterStatusWriting) {
         // 已失败/已结束：如实返回错误而非假装成功。
@@ -436,9 +436,9 @@ Status AppleVideoEncoder::Finish() {
                 std::printf("[AppleVideoEncoder] Finish 时 writer 已 Failed: %s\n",
                             [werr.localizedDescription UTF8String]);
             }
-            return Status{StatusCode::kEncodeError};
+            return ChqStatus{ChqStatusCode::kEncodeError};
         }
-        return Status::Ok();  // 已 Completed/Cancelled
+        return ChqStatus::Ok();  // 已 Completed/Cancelled
     }
 
     [state_->input markAsFinished];
@@ -458,25 +458,25 @@ Status AppleVideoEncoder::Finish() {
             std::printf("[AppleVideoEncoder] finishWriting 失败: %s\n",
                         [werr.localizedDescription UTF8String]);
         }
-        return Status{StatusCode::kEncodeError};
+        return ChqStatus{ChqStatusCode::kEncodeError};
     }
-    return Status::Ok();
+    return ChqStatus::Ok();
 }
 
-Status AppleVideoEncoder::AddAudioTrack(const AudioTrackConfig& cfg) {
+ChqStatus AppleVideoEncoder::AddAudioTrack(const ChqAudioTrackConfig& cfg) {
     if (state_ == nullptr || state_->writer == nil) {
         // 必须在 AddVideoTrack（建立 writer）之后调用。诚实返回参数错误，不伪造。
-        return Status{StatusCode::kInvalidArgument};
+        return ChqStatus{ChqStatusCode::kInvalidArgument};
     }
-    if (cfg.codec != CodecId::kAac) {
+    if (cfg.codec != ChqCodecId::kAac) {
         // 当前仅支持 AAC 封装；其它 codec 如实返回不支持。
-        return Status{StatusCode::kEncodeUnsupported};
+        return ChqStatus{ChqStatusCode::kEncodeUnsupported};
     }
     // 必须在 startWriting 之前 addInput（writer 此时仍 Unknown 态），故此处可安全添加。
     if (state_->writer.status == AVAssetWriterStatusWriting) {
         // 防御：startWriting 已被调用（说明已有样本写入），此时再加 input 无效。
         std::printf("[AppleVideoEncoder] AddAudioTrack 在 startWriting 之后调用，无效\n");
-        return Status{StatusCode::kInvalidArgument};
+        return ChqStatus{ChqStatusCode::kInvalidArgument};
     }
 
     double sample_rate = static_cast<double>(cfg.sample_rate > 0 ? cfg.sample_rate : 48000);
@@ -495,32 +495,32 @@ Status AppleVideoEncoder::AddAudioTrack(const AudioTrackConfig& cfg) {
         [AVAssetWriterInput assetWriterInputWithMediaType:AVMediaTypeAudio
                                          outputSettings:audio_settings];
     if (audio_input == nil) {
-        return Status{StatusCode::kEncodeError};
+        return ChqStatus{ChqStatusCode::kEncodeError};
     }
     audio_input.expectsMediaDataInRealTime = NO;  // 离线编码，允许缓冲
 
     if (![state_->writer canAddInput:audio_input]) {
         std::printf("[AppleVideoEncoder] 音频 canAddInput 失败\n");
-        return Status{StatusCode::kEncodeError};
+        return ChqStatus{ChqStatusCode::kEncodeError};
     }
     [state_->writer addInput:audio_input];
     state_->audio_input = audio_input;
-    return Status::Ok();
+    return ChqStatus::Ok();
 }
 
-Status AppleVideoEncoder::WriteAudioFrame(const PcmBuffer& pcm, const RationalTime& pts,
-                                         const CancelToken& token) {
+ChqStatus AppleVideoEncoder::WriteAudioFrame(const ChqPcmBuffer& pcm, const ChqRationalTime& pts,
+                                         const ChqCancelToken& token) {
     if (state_ == nullptr || state_->writer == nil || state_->audio_input == nil) {
-        return Status{StatusCode::kEncodeError};
+        return ChqStatus{ChqStatusCode::kEncodeError};
     }
     if (pcm.data == nullptr || pcm.frame_count == 0) {
-        return Status{StatusCode::kInvalidArgument};
+        return ChqStatus{ChqStatusCode::kInvalidArgument};
     }
 
-    CQ_PERF_SCOPE(cq::PerfStage::kMux, pts);
+    CQ_PERF_SCOPE(cq::ChqPerfStage::kMux, pts);
 
     // 惰性启动 writer（首个样本 append 前 startWriting）。
-    Status ss = EnsureStarted(state_);
+    ChqStatus ss = EnsureStarted(state_);
     if (!ss.IsOk()) return ss;
 
     // 背压：音频输入队列满时等待；期间响应取消。
@@ -530,7 +530,7 @@ Status AppleVideoEncoder::WriteAudioFrame(const PcmBuffer& pcm, const RationalTi
     }
     if (token.IsCancelled()) return token.Cancelled();
     if (state_->writer.status != AVAssetWriterStatusWriting) {
-        return Status{StatusCode::kEncodeError};
+        return ChqStatus{ChqStatusCode::kEncodeError};
     }
 
     CMTime cmt = CMTimeMake(pts.value, pts.timescale);
@@ -545,7 +545,7 @@ Status AppleVideoEncoder::WriteAudioFrame(const PcmBuffer& pcm, const RationalTi
     if (st != noErr || sbuf == nullptr) {
         std::printf("[AppleVideoEncoder] PCM 样本缓冲构造失败 (osstatus=%d)\n",
                     static_cast<int>(st));
-        return Status{StatusCode::kEncodeError};
+        return ChqStatus{ChqStatusCode::kEncodeError};
     }
 
     BOOL ok = [state_->audio_input appendSampleBuffer:sbuf];
@@ -557,16 +557,16 @@ Status AppleVideoEncoder::WriteAudioFrame(const PcmBuffer& pcm, const RationalTi
                 std::printf("[AppleVideoEncoder] 音频 append 失败: %s\n",
                             [werr.localizedDescription UTF8String]);
             }
-            return Status{StatusCode::kEncodeError};
+            return ChqStatus{ChqStatusCode::kEncodeError};
         }
         std::printf("[AppleVideoEncoder] 音频 append 返回 NO（writer 仍 Writing），视为背压重试失败\n");
-        return Status{StatusCode::kEncodeError};
+        return ChqStatus{ChqStatusCode::kEncodeError};
     }
-    return Status::Ok();
+    return ChqStatus::Ok();
 }
 
-Status AppleVideoEncoder::Cancel() {
-    if (state_ == nullptr) return Status::Ok();
+ChqStatus AppleVideoEncoder::Cancel() {
+    if (state_ == nullptr) return ChqStatus::Ok();
     if (state_->writer != nil && state_->writer.status == AVAssetWriterStatusWriting) {
         [state_->writer cancelWriting];
     }
@@ -574,7 +574,7 @@ Status AppleVideoEncoder::Cancel() {
     if (!state_->output_path.empty()) {
         std::remove(state_->output_path.c_str());
     }
-    return Status::Ok();
+    return ChqStatus::Ok();
 }
 
 }  // namespace cq

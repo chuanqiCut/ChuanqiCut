@@ -11,7 +11,7 @@
 #include <cstdio>
 
 #include "capabilities_apple.h"
-#include "cq/platform/capabilities.h"
+#include "cq/platform/chq_capabilities.h"
 
 namespace {
 
@@ -26,102 +26,102 @@ void Check(bool cond, const char* msg) {
     }
 }
 
-const char* ValueName(cq::CapabilityValue v) {
+const char* ValueName(cq::ChqCapabilityValue v) {
     switch (v) {
-        case cq::CapabilityValue::kNo:
+        case cq::ChqCapabilityValue::kNo:
             return "no";
-        case cq::CapabilityValue::kYes:
+        case cq::ChqCapabilityValue::kYes:
             return "yes";
-        case cq::CapabilityValue::kDegraded:
+        case cq::ChqCapabilityValue::kDegraded:
             return "degraded";
     }
     return "?";
 }
 
-const char* CapName(cq::Capability c) {
+const char* CapName(cq::ChqCapability c) {
     switch (c) {
-        case cq::Capability::kHwDecodeH264:
+        case cq::ChqCapability::kHwDecodeH264:
             return "hw_decode_h264";
-        case cq::Capability::kHwDecodeHevc:
+        case cq::ChqCapability::kHwDecodeHevc:
             return "hw_decode_hevc";
-        case cq::Capability::kHwDecodeAv1:
+        case cq::ChqCapability::kHwDecodeAv1:
             return "hw_decode_av1";
-        case cq::Capability::kHwDecodeProres:
+        case cq::ChqCapability::kHwDecodeProres:
             return "hw_decode_prores";
-        case cq::Capability::kHwEncodeH264:
+        case cq::ChqCapability::kHwEncodeH264:
             return "hw_encode_h264";
-        case cq::Capability::kHwEncodeHevc:
+        case cq::ChqCapability::kHwEncodeHevc:
             return "hw_encode_hevc";
-        case cq::Capability::kHwEncodeProres:
+        case cq::ChqCapability::kHwEncodeProres:
             return "hw_encode_prores";
-        case cq::Capability::k10BitPipeline:
+        case cq::ChqCapability::k10BitPipeline:
             return "10bit_pipeline";
-        case cq::Capability::kHdrDisplay:
+        case cq::ChqCapability::kHdrDisplay:
             return "hdr_display";
-        case cq::Capability::kComputeShader:
+        case cq::ChqCapability::kComputeShader:
             return "compute_shader";
-        case cq::Capability::kFloatTexture:
+        case cq::ChqCapability::kFloatTexture:
             return "float_texture";
-        case cq::Capability::kExternalMemoryImport:
+        case cq::ChqCapability::kExternalMemoryImport:
             return "external_memory_import";
-        case cq::Capability::kNpuInference:
+        case cq::ChqCapability::kNpuInference:
             return "npu_inference";
-        case cq::Capability::kGpuMetal:
+        case cq::ChqCapability::kGpuMetal:
             return "gpu_metal";
-        case cq::Capability::kGpuGles:
+        case cq::ChqCapability::kGpuGles:
             return "gpu_gles";
-        case cq::Capability::kGpuVulkan:
+        case cq::ChqCapability::kGpuVulkan:
             return "gpu_vulkan";
     }
     return "?";
 }
 
-const cq::Capability kAllCapabilities[] = {
-    cq::Capability::kHwDecodeH264,   cq::Capability::kHwDecodeHevc,
-    cq::Capability::kHwDecodeAv1,    cq::Capability::kHwDecodeProres,
-    cq::Capability::kHwEncodeH264,   cq::Capability::kHwEncodeHevc,
-    cq::Capability::kHwEncodeProres, cq::Capability::k10BitPipeline,
-    cq::Capability::kHdrDisplay,     cq::Capability::kComputeShader,
-    cq::Capability::kFloatTexture,   cq::Capability::kExternalMemoryImport,
-    cq::Capability::kNpuInference,   cq::Capability::kGpuMetal,
-    cq::Capability::kGpuGles,        cq::Capability::kGpuVulkan,
+const cq::ChqCapability kAllCapabilities[] = {
+    cq::ChqCapability::kHwDecodeH264,   cq::ChqCapability::kHwDecodeHevc,
+    cq::ChqCapability::kHwDecodeAv1,    cq::ChqCapability::kHwDecodeProres,
+    cq::ChqCapability::kHwEncodeH264,   cq::ChqCapability::kHwEncodeHevc,
+    cq::ChqCapability::kHwEncodeProres, cq::ChqCapability::k10BitPipeline,
+    cq::ChqCapability::kHdrDisplay,     cq::ChqCapability::kComputeShader,
+    cq::ChqCapability::kFloatTexture,   cq::ChqCapability::kExternalMemoryImport,
+    cq::ChqCapability::kNpuInference,   cq::ChqCapability::kGpuMetal,
+    cq::ChqCapability::kGpuGles,        cq::ChqCapability::kGpuVulkan,
 };
 
 void TestInstall() {
     std::printf("[test] Apple 后端安装与查询\n");
-    cq::Status st = cq::apple::InstallCapabilities();
+    cq::ChqStatus st = cq::apple::InstallCapabilities();
     Check(st.IsOk(), "InstallCapabilities() 返回 Ok");
 
     // 安装后必须能查到非 kNo 的某些项 —— 否则说明后端没真正生效。
     // 取 kNpuInference（CoreML 可用）作为探针：它在 Apple 上恒为 kYes。
-    Check(cq::QueryCapability(cq::Capability::kNpuInference) == cq::CapabilityValue::kYes,
+    Check(cq::QueryCapability(cq::ChqCapability::kNpuInference) == cq::ChqCapabilityValue::kYes,
           "安装后 kNpuInference = kYes（证明后端真的生效）");
 }
 
 // 有**确定依据**的项，按依据断言（不依赖本机具体硬件）。
 void TestDeterministicValues() {
     std::printf("[test] 有确定依据的能力项\n");
-    Check(cq::QueryCapability(cq::Capability::kGpuMetal) == cq::CapabilityValue::kYes,
+    Check(cq::QueryCapability(cq::ChqCapability::kGpuMetal) == cq::ChqCapabilityValue::kYes,
           "gpu_metal = yes（本机有 Metal 设备）");
-    Check(cq::QueryCapability(cq::Capability::kGpuGles) == cq::CapabilityValue::kNo,
+    Check(cq::QueryCapability(cq::ChqCapability::kGpuGles) == cq::ChqCapabilityValue::kNo,
           "gpu_gles = no（Apple 平台 GLES 已废弃，本项目不提供）");
-    Check(cq::QueryCapability(cq::Capability::kGpuVulkan) == cq::CapabilityValue::kNo,
+    Check(cq::QueryCapability(cq::ChqCapability::kGpuVulkan) == cq::ChqCapabilityValue::kNo,
           "gpu_vulkan = no（Apple 无原生 Vulkan）");
-    Check(cq::QueryCapability(cq::Capability::kHdrDisplay) == cq::CapabilityValue::kNo,
+    Check(cq::QueryCapability(cq::ChqCapability::kHdrDisplay) == cq::ChqCapabilityValue::kNo,
           "hdr_display = no（SDK 未接入 HDR 色彩管理，如实上报）");
-    Check(cq::QueryCapability(cq::Capability::k10BitPipeline) == cq::CapabilityValue::kDegraded,
+    Check(cq::QueryCapability(cq::ChqCapability::k10BitPipeline) == cq::ChqCapabilityValue::kDegraded,
           "10bit_pipeline = degraded（无可靠公开 API，不猜）");
-    Check(cq::QueryCapability(cq::Capability::kNpuInference) == cq::CapabilityValue::kYes,
+    Check(cq::QueryCapability(cq::ChqCapability::kNpuInference) == cq::ChqCapabilityValue::kYes,
           "npu_inference = yes（CoreML 可用；不代表实际跑在 ANE）");
 }
 
 // 其余项：值必须合法，但不断言具体是什么（依赖设备）。
 void TestAllLegalAndPrint() {
     std::printf("[test] 全部能力项（值供真机核对，见 baselines.md）\n");
-    for (cq::Capability cap : kAllCapabilities) {
-        cq::CapabilityValue v = cq::QueryCapability(cap);
-        bool legal = (v == cq::CapabilityValue::kNo || v == cq::CapabilityValue::kYes ||
-                      v == cq::CapabilityValue::kDegraded);
+    for (cq::ChqCapability cap : kAllCapabilities) {
+        cq::ChqCapabilityValue v = cq::QueryCapability(cap);
+        bool legal = (v == cq::ChqCapabilityValue::kNo || v == cq::ChqCapabilityValue::kYes ||
+                      v == cq::ChqCapabilityValue::kDegraded);
         Check(legal, CapName(cap));
         std::printf("    %-24s = %s\n", CapName(cap), ValueName(v));
     }

@@ -1,16 +1,16 @@
 // ChuanqiCut — 素材表单测（BIND-003 子步骤 1）
 //
-// 重点验证**指针稳定性**：MediaSource 只存 `const char*` 裸指针，
+// 重点验证**指针稳定性**：ChqMediaSource 只存 `const char*` 裸指针，
 // 若实现把路径放在 Entry 内部（而非堆上），unordered_map 重哈希搬家时
-// 短字符串的 SSO 缓冲区会换地址 → 之前发出去的 MediaSource.path 全部悬垂。
+// 短字符串的 SSO 缓冲区会换地址 → 之前发出去的 ChqMediaSource.path 全部悬垂。
 // 这个 bug 在只注册两三条时不会暴露，必须**插入足够多触发重哈希**才能测出来。
 
 #include <cstdio>
 #include <string>
 #include <vector>
 
-#include "cq/base/status.h"
-#include "cq/media/asset_registry.h"
+#include "cq/base/chq_status.h"
+#include "cq/media/chq_asset_registry.h"
 
 namespace {
 
@@ -30,14 +30,14 @@ void Check(bool cond, const char* msg) {
 }  // namespace
 
 int main() {
-    std::printf("=== 素材表 AssetRegistry ===\n");
-    cq::AssetRegistry reg;
+    std::printf("=== 素材表 ChqAssetRegistry ===\n");
+    cq::ChqAssetRegistry reg;
 
     // ---- 基本注册 / 查询 ----
     Check(reg.Register(1, "/tmp/a.mp4").IsOk(), "注册 asset 1");
     Check(reg.Count() == 1, "表中一条");
 
-    const cq::MediaSource* src = reg.Find(1);
+    const cq::ChqMediaSource* src = reg.Find(1);
     Check(src != nullptr, "可按 id 取回");
     Check(src != nullptr && std::string(src->path, src->path_len) == "/tmp/a.mp4",
           "路径内容正确");
@@ -75,7 +75,7 @@ int main() {
     }
     bool all_stable = true;
     for (int i = 0; i < kShortCount; ++i) {
-        const cq::MediaSource* s = reg.Find(kept_ids[static_cast<std::size_t>(i)]);
+        const cq::ChqMediaSource* s = reg.Find(kept_ids[static_cast<std::size_t>(i)]);
         if (s == nullptr || std::string(s->path, s->path_len) != expected[static_cast<std::size_t>(i)]) {
             all_stable = false;
             std::printf("    条目 %d 内容已损坏\n", i);

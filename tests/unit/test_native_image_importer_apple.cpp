@@ -25,11 +25,11 @@
 #include <string>
 #include <vector>
 
-#include "cq/base/status.h"
-#include "cq/base/rational_time.h"
-#include "cq/platform/gfx.h"
-#include "cq/platform/media.h"
-#include "cq/media/system_frame_provider.h"
+#include "cq/base/chq_status.h"
+#include "cq/base/chq_rational_time.h"
+#include "cq/platform/chq_gfx.h"
+#include "cq/platform/chq_media.h"
+#include "cq/media/chq_system_frame_provider.h"
 #include "media_decode.h"  // cq::VideoToolboxDecoder / cq::CqNativeImage / cq::GetCvPixelBuffer
 #include "gfx_metal_internal.h"  // cq::apple::* 辅助（零平台类型签名，纯 C++ 可调用）
 
@@ -139,65 +139,65 @@ fragment float4 fs_main(VOut in [[stage_in]],
 const uint32_t kRT = 256;
 
 // 把已导入的纹理全屏渲染到 kRT×kRT 离屏 RenderTarget 并读回像素。
-bool RenderImported(cq::IGraphicsDevice* dev, cq::TextureHandle tex,
+bool RenderImported(cq::ChqIGraphicsDevice* dev, cq::TextureHandle tex,
                     std::vector<uint8_t>& out_px) {
     out_px.assign(static_cast<size_t>(kRT) * kRT * 4, 0);
     if (dev == nullptr || tex == nullptr) return false;
 
-    cq::RenderTargetDesc rd;
+    cq::ChqRenderTargetDesc rd;
     rd.width = kRT;
     rd.height = kRT;
-    rd.color_format = cq::TextureFormat::kRGBA8;
-    cq::PlatformPtr<cq::IRenderTarget> rt;
+    rd.color_format = cq::ChqTextureFormat::kRGBA8;
+    cq::ChqPlatformPtr<cq::ChqIRenderTarget> rt;
     if (!dev->CreateRenderTarget(rd, rt).IsOk() || !rt) return false;
 
-    cq::BufferDesc bd;
-    bd.usage = cq::BufferUsage::kVertex;
+    cq::ChqBufferDesc bd;
+    bd.usage = cq::ChqBufferUsage::kVertex;
     bd.size_bytes = sizeof(kVerts);
-    cq::PlatformPtr<cq::IBuffer> vbuf;
+    cq::ChqPlatformPtr<cq::ChqIBuffer> vbuf;
     if (!dev->CreateBuffer(bd, vbuf).IsOk() || !vbuf) return false;
     void* mapped = nullptr;
     if (!vbuf->Map(mapped).IsOk()) return false;
     std::memcpy(mapped, kVerts, sizeof(kVerts));
     vbuf->Unmap();
 
-    cq::ShaderModuleDesc vmd;
-    vmd.stage = cq::ShaderStage::kVertex;
+    cq::ChqShaderModuleDesc vmd;
+    vmd.stage = cq::ChqShaderStage::kVertex;
     vmd.code = static_cast<const void*>(kVertMSL);
     vmd.code_size = std::strlen(kVertMSL);
     vmd.is_platform_native = true;
-    cq::PlatformPtr<cq::IShaderModule> vs;
+    cq::ChqPlatformPtr<cq::ChqIShaderModule> vs;
     if (!dev->CreateShaderModule(vmd, vs).IsOk() || !vs) return false;
 
-    cq::ShaderModuleDesc fmd = vmd;
-    fmd.stage = cq::ShaderStage::kFragment;
+    cq::ChqShaderModuleDesc fmd = vmd;
+    fmd.stage = cq::ChqShaderStage::kFragment;
     fmd.code = static_cast<const void*>(kFragMSL);
     fmd.code_size = std::strlen(kFragMSL);
-    cq::PlatformPtr<cq::IShaderModule> fs;
+    cq::ChqPlatformPtr<cq::ChqIShaderModule> fs;
     if (!dev->CreateShaderModule(fmd, fs).IsOk() || !fs) return false;
 
-    cq::PipelineDesc pd;
+    cq::ChqPipelineDesc pd;
     pd.vertex_shader = cq::apple::ToShaderHandle(vs.get());
     pd.fragment_shader = cq::apple::ToShaderHandle(fs.get());
-    pd.target_format = cq::TextureFormat::kRGBA8;
+    pd.target_format = cq::ChqTextureFormat::kRGBA8;
     pd.vertex_layout.stride = 16;
     pd.vertex_layout.attr_count = 2;
-    pd.vertex_layout.attrs[0] = cq::VertexAttribute{0, 0, cq::VertexFormat::kFloat32x2};
-    pd.vertex_layout.attrs[1] = cq::VertexAttribute{1, 8, cq::VertexFormat::kFloat32x2};
-    cq::PlatformPtr<cq::IPipeline> pipe;
+    pd.vertex_layout.attrs[0] = cq::ChqVertexAttribute{0, 0, cq::ChqVertexFormat::kFloat32x2};
+    pd.vertex_layout.attrs[1] = cq::ChqVertexAttribute{1, 8, cq::ChqVertexFormat::kFloat32x2};
+    cq::ChqPlatformPtr<cq::ChqIPipeline> pipe;
     if (!dev->CreatePipeline(pd, pipe).IsOk() || !pipe) return false;
 
-    cq::SamplerDesc sd;
+    cq::ChqSamplerDesc sd;
     sd.linear_filter = false;  // 最近邻，读回命中精确 texel
     sd.clamp_to_edge = true;
-    cq::PlatformPtr<cq::ISampler> samp;
+    cq::ChqPlatformPtr<cq::ChqISampler> samp;
     if (!dev->CreateSampler(sd, samp).IsOk() || !samp) return false;
 
-    cq::PlatformPtr<cq::ICommandQueue> q;
+    cq::ChqPlatformPtr<cq::ChqICommandQueue> q;
     if (!dev->CreateCommandQueue(q).IsOk()) return false;
-    cq::PlatformPtr<cq::ICommandBuffer> cb;
+    cq::ChqPlatformPtr<cq::ChqICommandBuffer> cb;
     if (!q->CreateCommandBuffer(cb).IsOk()) return false;
-    cq::PlatformPtr<cq::ICommandEncoder> enc;
+    cq::ChqPlatformPtr<cq::ChqICommandEncoder> enc;
     if (!cb->CreateEncoder(enc).IsOk()) return false;
     const float clear[4] = {0.0f, 0.0f, 0.0f, 1.0f};
     if (!enc->BeginRenderPass(cq::apple::ToRenderTargetHandle(rt.get()), clear).IsOk()) return false;
@@ -247,16 +247,16 @@ int main() {
     std::setvbuf(stdout, nullptr, _IONBF, 0);
     std::printf("== ChuanqiCut PALA-002 Apple 零拷贝导入验收 ==\n");
 
-    cq::GraphicsDeviceDesc dd;
+    cq::ChqGraphicsDeviceDesc dd;
     dd.prefer_low_power = false;
-    cq::PlatformPtr<cq::IGraphicsDevice> dev;
+    cq::ChqPlatformPtr<cq::ChqIGraphicsDevice> dev;
     Check(cq::CreateGraphicsDevice(dd, dev).IsOk(), "CreateGraphicsDevice(Metal)");
     if (!dev) {
         std::printf("\n无法创建 Metal 设备，用例终止。\n");
         return 1;
     }
 
-    cq::PlatformPtr<cq::INativeImageImporter> importer;
+    cq::ChqPlatformPtr<cq::ChqINativeImageImporter> importer;
     Check(dev->CreateNativeImageImporter(importer).IsOk() && importer,
           "CreateNativeImageImporter 返回可用导入器");
     if (!importer) {
@@ -282,7 +282,7 @@ int main() {
 
     cq::TextureHandle texZero = nullptr;
     bool fbZero = false;
-    Check(importer->Import(hZero, cq::TextureUsage::kSampled, texZero, fbZero).IsOk(),
+    Check(importer->Import(hZero, cq::ChqTextureUsage::kSampled, texZero, fbZero).IsOk(),
           "Import(兼容帧) 成功");
     Check(texZero != nullptr, "Import(兼容帧) 产出非空纹理");
     Check(fbZero == false, "Import(兼容帧) 走零拷贝（out_cpu_fallback=false）");
@@ -315,7 +315,7 @@ int main() {
     std::printf("\n[2] 合成帧非兼容：CPU 退化路径（out_cpu_fallback=true 仍可用）\n");
     cq::TextureHandle texCpu = nullptr;
     bool fbCpu = false;
-    Check(importer->Import(hCpu, cq::TextureUsage::kSampled, texCpu, fbCpu).IsOk(),
+    Check(importer->Import(hCpu, cq::ChqTextureUsage::kSampled, texCpu, fbCpu).IsOk(),
           "Import(非兼容帧) 成功（退化不崩溃）");
     Check(texCpu != nullptr, "Import(非兼容帧) 产出非空纹理");
     Check(fbCpu == true, "Import(非兼容帧) 标记 out_cpu_fallback=true");
@@ -334,7 +334,7 @@ int main() {
     // ===========================================================================
     std::printf("\n[3] 零拷贝 vs CPU 退化 耗时实测（各 50 次导入）\n");
     double zero_ms = 0.0, cpu_ms = 0.0;
-    cq::Status bs = cq::apple::BenchmarkNativeImageImport(dev.get(), hZero, hCpu, 50, zero_ms, cpu_ms);
+    cq::ChqStatus bs = cq::apple::BenchmarkNativeImageImport(dev.get(), hZero, hCpu, 50, zero_ms, cpu_ms);
     Check(bs.IsOk(), "BenchmarkNativeImageImport 执行成功");
     if (bs.IsOk()) {
         const double perZero = zero_ms / 50.0;
@@ -361,18 +361,18 @@ int main() {
         std::string(CQ_SOURCE_DIR) + "/tests/golden/frames/gf_1080p_h264.mp4";
     std::printf("样本: %s\n", path.c_str());
 
-    cq::MediaSource src;
+    cq::ChqMediaSource src;
     src.path = path.c_str();
     src.path_len = path.size();
 
-    cq::PlatformPtr<cq::IMediaDemuxer> demuxer;
+    cq::ChqPlatformPtr<cq::ChqIMediaDemuxer> demuxer;
     Check(cq::CreateMediaDemuxer(src, demuxer).IsOk() && demuxer, "CreateMediaDemuxer 打开成功");
     if (!demuxer) {
         std::printf("\n真实解封装打开失败，跳过真实链路（合成验证仍有效）。\n");
     } else {
-        cq::StreamInfo info{};
+        cq::ChqStreamInfo info{};
         Check(demuxer->GetStreamInfo(0, info).IsOk() &&
-                  info.type == cq::MediaType::kVideo && info.codec == cq::CodecId::kH264,
+                  info.type == cq::ChqMediaType::kVideo && info.codec == cq::ChqCodecId::kH264,
               "真实流：视频 / H.264");
         Check(info.width == 1920 && info.height == 1080, "真实尺寸 = 1920x1080");
 
@@ -383,18 +383,18 @@ int main() {
 
         // 喂入全部包（按 demux 顺序），再排空解码器取首帧。
         for (;;) {
-            cq::MediaPacket pkt{};
-            cq::Status rs = demuxer->ReadPacket(pkt);
-            if (rs.code == cq::StatusCode::kIoNotFound) break;
+            cq::ChqMediaPacket pkt{};
+            cq::ChqStatus rs = demuxer->ReadPacket(pkt);
+            if (rs.code == cq::ChqStatusCode::kIoNotFound) break;
             if (!rs.IsOk()) break;
-            if (pkt.codec == cq::CodecId::kH264) {
-                cq::Status fs = decoder.Feed(pkt);
+            if (pkt.codec == cq::ChqCodecId::kH264) {
+                cq::ChqStatus fs = decoder.Feed(pkt);
                 (void)fs;
             }
         }
-        cq::MediaFrame f{};
-        cq::Status ps = decoder.PopFrame(f);
-        Check(ps.IsOk() && f.type == cq::MediaType::kVideo && f.video.image != nullptr,
+        cq::ChqMediaFrame f{};
+        cq::ChqStatus ps = decoder.PopFrame(f);
+        Check(ps.IsOk() && f.type == cq::ChqMediaType::kVideo && f.video.image != nullptr,
               "PopFrame 取出真实首帧");
 
         if (ps.IsOk() && f.video.image != nullptr) {
@@ -408,7 +408,7 @@ int main() {
 
                 cq::TextureHandle texReal = nullptr;
                 bool fbReal = false;
-                Check(importer->Import(f.video.image, cq::TextureUsage::kSampled, texReal, fbReal).IsOk(),
+                Check(importer->Import(f.video.image, cq::ChqTextureUsage::kSampled, texReal, fbReal).IsOk(),
                       "Import(真实首帧) 成功");
                 Check(texReal != nullptr, "Import(真实首帧) 产出非空纹理");
                 if (fbReal) {

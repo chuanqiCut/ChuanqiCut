@@ -1,8 +1,8 @@
-// ChuanqiCut — Apple 端 AAC 音轨封装验收（IMediaMuxer::WriteAudioFrame / AddAudioTrack）
+// ChuanqiCut — Apple 端 AAC 音轨封装验收（ChqIMediaMuxer::WriteAudioFrame / AddAudioTrack）
 //
 // 重点验证：导出 MP4 真的带一条 AAC 音轨，且 codec=aac、采样率/声道正确。
 //   * 视频轨：合成 BGRA CVPixelBuffer（不依赖 PALA-010/011 解码，聚焦音频能力），
-//     经 IMediaMuxer 写入；证明音频与视频共用同一 writer。
+//     经 ChqIMediaMuxer 写入；证明音频与视频共用同一 writer。
 //   * 音频轨：合成 float32 立体声正弦 PCM，按 PTS 非递减喂入 WriteAudioFrame。
 //     音频 PTS 用项目网格 120000（chunk=1024 样本 @48000 → 2560 tick，整除，无需舍入）。
 //   * ffprobe 验证：audio stream codec=aac / sample_rate=48000 / channels=2；
@@ -23,10 +23,10 @@
 #include <string>
 #include <vector>
 
-#include "cq/base/status.h"
-#include "cq/base/rational_time.h"
-#include "cq/platform/media.h"   // IMediaMuxer / CreateMediaMuxer / AudioTrackConfig / PcmBuffer
-#include "cq/platform/common.h"
+#include "cq/base/chq_status.h"
+#include "cq/base/chq_rational_time.h"
+#include "cq/platform/chq_media.h"   // ChqIMediaMuxer / CreateMediaMuxer / ChqAudioTrackConfig / ChqPcmBuffer
+#include "cq/platform/chq_common.h"
 #include "media_decode.h"   // CqNativeImage（仅帧源包装，Apple TU）
 
 #ifndef CQ_SOURCE_DIR
@@ -48,7 +48,7 @@ void Check(bool cond, const char* msg) {
     }
 }
 
-const char* Rt(const cq::RationalTime& t) {
+const char* Rt(const cq::ChqRationalTime& t) {
     static char buf[64];
     std::snprintf(buf, sizeof(buf), "%lld/%d (%.4fs)", static_cast<long long>(t.value),
                   static_cast<int>(t.timescale), t.ToSeconds());
@@ -71,7 +71,7 @@ bool RunCapture(const char* cmd, std::string& out) {
 
 int main() {
     std::setvbuf(stdout, nullptr, _IONBF, 0);
-    std::printf("== ChuanqiCut AAC 音轨封装验收（IMediaMuxer 平台无关调用 / Apple 后端）==\n");
+    std::printf("== ChuanqiCut AAC 音轨封装验收（ChqIMediaMuxer 平台无关调用 / Apple 后端）==\n");
 
     // ---- 合成视频帧（BGRA CVPixelBuffer，绿色，640x360）----
     const uint32_t kW = 640;
@@ -103,9 +103,9 @@ int main() {
     cq::NativeImageHandle video_handle = &img;
 
     // ---- 平台无关拿到 muxer ----
-    cq::PlatformPtr<cq::IMediaMuxer> muxer;
-    cq::Status s = cq::CreateMediaMuxer(muxer);
-    Check(s.IsOk() && muxer, "CreateMediaMuxer 拿到平台无关 IMediaMuxer");
+    cq::ChqPlatformPtr<cq::ChqIMediaMuxer> muxer;
+    cq::ChqStatus s = cq::CreateMediaMuxer(muxer);
+    Check(s.IsOk() && muxer, "CreateMediaMuxer 拿到平台无关 ChqIMediaMuxer");
     if (!muxer) {
         std::printf("\nMuxer 工厂失败，用例终止。\n");
         return 1;
@@ -113,85 +113,85 @@ int main() {
 
     const std::string out_path = "/tmp/cq_muxer_audio_out.mp4";
     std::remove(out_path.c_str());
-    s = muxer->Open(out_path.c_str(), cq::ContainerFormat::kMp4);
-    Check(s.IsOk(), "IMediaMuxer::Open 成功（MP4 容器）");
+    s = muxer->Open(out_path.c_str(), cq::ChqContainerFormat::kMp4);
+    Check(s.IsOk(), "ChqIMediaMuxer::Open 成功（MP4 容器）");
     if (!s.IsOk()) {
         std::printf("\nMuxer Open 失败，用例终止。\n");
         return 1;
     }
 
     // ---- 视频轨（建立 writer，AAC 音频轨要求其后添加）----
-    cq::VideoTrackConfig vcfg{};
-    vcfg.codec = cq::CodecId::kH264;
+    cq::ChqVideoTrackConfig vcfg{};
+    vcfg.codec = cq::ChqCodecId::kH264;
     vcfg.width = kW;
     vcfg.height = kH;
-    vcfg.frame_rate = cq::RationalTime{30, 1};
-    vcfg.bitrate = cq::BitrateTier::kHigh;
+    vcfg.frame_rate = cq::ChqRationalTime{30, 1};
+    vcfg.bitrate = cq::ChqBitrateTier::kHigh;
     vcfg.max_keyframe_interval = 1;
     vcfg.allow_hardware = true;
     s = muxer->AddVideoTrack(vcfg);
-    Check(s.IsOk(), "IMediaMuxer::AddVideoTrack 成功（建立 H.264 视频轨 / writer）");
+    Check(s.IsOk(), "ChqIMediaMuxer::AddVideoTrack 成功（建立 H.264 视频轨 / writer）");
 
     // ---- 契约验证：AddVideoTrack 之前 AddAudioTrack 应失败（writer 未建立）----
     {
-        cq::AudioTrackConfig early{};
-        cq::PlatformPtr<cq::IMediaMuxer> m2;
-        cq::Status s2 = cq::CreateMediaMuxer(m2);
+        cq::ChqAudioTrackConfig early{};
+        cq::ChqPlatformPtr<cq::ChqIMediaMuxer> m2;
+        cq::ChqStatus s2 = cq::CreateMediaMuxer(m2);
         Check(s2.IsOk() && m2, "早期 muxer 创建成功（用于验证 AddVideoTrack 前置约束）");
         std::string p2 = "/tmp/cq_muxer_audio_early.mp4";
         std::remove(p2.c_str());
-        m2->Open(p2.c_str(), cq::ContainerFormat::kMp4);
-        cq::Status sa = m2->AddAudioTrack(early);  // 未 AddVideoTrack
+        m2->Open(p2.c_str(), cq::ChqContainerFormat::kMp4);
+        cq::ChqStatus sa = m2->AddAudioTrack(early);  // 未 AddVideoTrack
         Check(!sa.IsOk(), "AddVideoTrack 之前 AddAudioTrack 返回错误（writer 未建立，诚实）");
         std::remove(p2.c_str());
     }
 
     // ---- 契约验证：非 AAC codec 返回 kEncodeUnsupported（诚实，不伪造）----
     {
-        cq::AudioTrackConfig mp3{};
-        mp3.codec = cq::CodecId::kMp3;
-        cq::Status sm = muxer->AddAudioTrack(mp3);
-        Check(sm.code == cq::StatusCode::kEncodeUnsupported,
+        cq::ChqAudioTrackConfig mp3{};
+        mp3.codec = cq::ChqCodecId::kMp3;
+        cq::ChqStatus sm = muxer->AddAudioTrack(mp3);
+        Check(sm.code == cq::ChqStatusCode::kEncodeUnsupported,
               "AddAudioTrack(kMp3) 返回 kEncodeUnsupported（本期仅 AAC）");
     }
 
     // ---- 契约验证：AddAudioTrack 之前 WriteAudioFrame 应失败 ----
     {
         std::vector<float> silent(8, 0.0f);
-        cq::PcmBuffer p{};
-        p.format = cq::SampleFormat::kFloat32;
+        cq::ChqPcmBuffer p{};
+        p.format = cq::ChqSampleFormat::kFloat32;
         p.channels = 2;
         p.sample_rate = 48000;
         p.frame_count = 4;
         p.data = silent.data();
         p.data_bytes = silent.size() * sizeof(float);
-        p.pts = cq::RationalTime{0, cq::kProjectTimeScale};
-        cq::CancelToken no_cancel;
-        cq::Status sw = muxer->WriteAudioFrame(p, p.pts, no_cancel);
+        p.pts = cq::ChqRationalTime{0, cq::kProjectTimeScale};
+        cq::ChqCancelToken no_cancel;
+        cq::ChqStatus sw = muxer->WriteAudioFrame(p, p.pts, no_cancel);
         Check(!sw.IsOk(), "AddAudioTrack 之前 WriteAudioFrame 返回错误");
     }
 
     // ---- 添加真实的 AAC 音频轨 ----
-    cq::AudioTrackConfig acfg{};
-    acfg.codec = cq::CodecId::kAac;
+    cq::ChqAudioTrackConfig acfg{};
+    acfg.codec = cq::ChqCodecId::kAac;
     acfg.sample_rate = 48000;
     acfg.channels = 2;
-    acfg.bitrate = cq::BitrateTier::kMedium;  // 128 kbps
+    acfg.bitrate = cq::ChqBitrateTier::kMedium;  // 128 kbps
     s = muxer->AddAudioTrack(acfg);
-    Check(s.IsOk(), "IMediaMuxer::AddAudioTrack 成功（建立 AAC 音频轨）");
+    Check(s.IsOk(), "ChqIMediaMuxer::AddAudioTrack 成功（建立 AAC 音频轨）");
     if (!s.IsOk()) {
         std::printf("\nAddAudioTrack 失败，用例终止。\n");
         return 1;
     }
 
     // ---- 写视频帧（30 帧 @30fps，PTS = i*4000 tick @120000 网格）----
-    cq::CancelToken no_cancel;
+    cq::ChqCancelToken no_cancel;
     int vid_n = 30;
     int vid_written = 0;
     bool vid_ok = true;
     for (int i = 0; i < vid_n; ++i) {
-        cq::RationalTime pts{static_cast<int64_t>(i) * 4000, cq::kProjectTimeScale};
-        cq::Status ws = muxer->WriteVideoFrame(video_handle, pts, no_cancel);
+        cq::ChqRationalTime pts{static_cast<int64_t>(i) * 4000, cq::kProjectTimeScale};
+        cq::ChqStatus ws = muxer->WriteVideoFrame(video_handle, pts, no_cancel);
         if (!ws.IsOk()) {
             std::printf("  WriteVideoFrame 失败 @pts=%s: %s\n", Rt(pts),
                         cq::StatusToString(ws.code));
@@ -224,16 +224,16 @@ int main() {
             pcm_buf[static_cast<size_t>(f) * kChannels + 0] = sample;
             pcm_buf[static_cast<size_t>(f) * kChannels + 1] = sample;
         }
-        cq::PcmBuffer p{};
-        p.format = cq::SampleFormat::kFloat32;
+        cq::ChqPcmBuffer p{};
+        p.format = cq::ChqSampleFormat::kFloat32;
         p.channels = kChannels;
         p.sample_rate = kSampleRate;
         p.frame_count = kChunk;
         p.data = pcm_buf.data();
         p.data_bytes = pcm_buf.size() * sizeof(float);
-        p.pts = cq::RationalTime{pts_value, cq::kProjectTimeScale};
+        p.pts = cq::ChqRationalTime{pts_value, cq::kProjectTimeScale};
 
-        cq::Status ws = muxer->WriteAudioFrame(p, p.pts, no_cancel);
+        cq::ChqStatus ws = muxer->WriteAudioFrame(p, p.pts, no_cancel);
         if (!ws.IsOk()) {
             std::printf("  WriteAudioFrame 失败 @pts=%s: %s\n", Rt(p.pts),
                         cq::StatusToString(ws.code));
@@ -249,7 +249,7 @@ int main() {
                 kChunk, kSampleRate);
 
     s = muxer->Finish(no_cancel);
-    Check(s.IsOk(), "IMediaMuxer::Finish 成功（封装完成，含音视频双轨）");
+    Check(s.IsOk(), "ChqIMediaMuxer::Finish 成功（封装完成，含音视频双轨）");
     if (!s.IsOk()) {
         std::printf("\n封装收尾失败，用例终止。\n");
         return 1;
@@ -281,8 +281,8 @@ int main() {
 
         bool rate_ok = probe_out.find("sample_rate=48000") != std::string::npos;
         bool ch_ok = probe_out.find("channels=2") != std::string::npos;
-        Check(rate_ok, "ffprobe: 音频采样率 = 48000（与 AudioTrackConfig 一致）");
-        Check(ch_ok, "ffprobe: 音频声道 = 2（立体声，与 AudioTrackConfig 一致）");
+        Check(rate_ok, "ffprobe: 音频采样率 = 48000（与 ChqAudioTrackConfig 一致）");
+        Check(ch_ok, "ffprobe: 音频声道 = 2（立体声，与 ChqAudioTrackConfig 一致）");
 
         // 音频时长核对。
         std::string dcmd = std::string(ffprobe_bin) +
@@ -304,7 +304,7 @@ int main() {
     }
 
     std::printf(
-        "\n[结论] AAC 音轨封装验收：经平台无关 IMediaMuxer 写 %d 视频帧 + %d 块 PCM；"
+        "\n[结论] AAC 音轨封装验收：经平台无关 ChqIMediaMuxer 写 %d 视频帧 + %d 块 PCM；"
         "ffprobe 验证 audio codec=aac / sample_rate=48000 / channels=2。\n",
         vid_written, audio_chunks_written);
     std::printf("== 结果：%d 项检查，%d 项失败 ==\n", g_checks, g_failures);

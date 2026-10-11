@@ -20,9 +20,9 @@
 #include <string>
 #include <vector>
 
-#include "cq/base/status.h"
-#include "cq/base/rational_time.h"
-#include "cq/platform/media.h"
+#include "cq/base/chq_status.h"
+#include "cq/base/chq_rational_time.h"
+#include "cq/platform/chq_media.h"
 #include "media_decode.h"
 #include "media_encode.h"
 
@@ -45,7 +45,7 @@ void Check(bool cond, const char* msg) {
     }
 }
 
-const char* Rt(const cq::RationalTime& t) {
+const char* Rt(const cq::ChqRationalTime& t) {
     static char buf[64];
     std::snprintf(buf, sizeof(buf), "%lld/%d (%.4fs)", static_cast<long long>(t.value),
                   static_cast<int>(t.timescale), t.ToSeconds());
@@ -91,21 +91,21 @@ int main() {
         std::string(CQ_SOURCE_DIR) + "/tests/golden/frames/gf_1080p_h264.mp4";
     std::printf("样本: %s\n", src_path.c_str());
 
-    cq::MediaSource src;
+    cq::ChqMediaSource src;
     src.path = src_path.c_str();
     src.path_len = src_path.size();
 
     // ---- 真实 PALA-010 解封装 + PALA-011 硬解 ----
-    cq::PlatformPtr<cq::IMediaDemuxer> demuxer;
-    cq::Status s = cq::CreateMediaDemuxer(src, demuxer);
+    cq::ChqPlatformPtr<cq::ChqIMediaDemuxer> demuxer;
+    cq::ChqStatus s = cq::CreateMediaDemuxer(src, demuxer);
     Check(s.IsOk() && demuxer, "PALA-010 CreateMediaDemuxer 打开成功");
     if (!demuxer) {
         std::printf("\n解封装打开失败，用例终止。\n");
         return 1;
     }
-    cq::StreamInfo info{};
+    cq::ChqStreamInfo info{};
     s = demuxer->GetStreamInfo(0, info);
-    Check(s.IsOk() && info.type == cq::MediaType::kVideo && info.codec == cq::CodecId::kH264,
+    Check(s.IsOk() && info.type == cq::ChqMediaType::kVideo && info.codec == cq::ChqCodecId::kH264,
           "真实流：视频 / H.264");
     Check(info.width == 1920 && info.height == 1080, "真实尺寸 = 1920x1080");
 
@@ -143,12 +143,12 @@ int main() {
 
     // ---- 喂入全部包，再按显示序逐帧编码 ----
     for (;;) {
-        cq::MediaPacket pkt{};
-        cq::Status rs = demuxer->ReadPacket(pkt);
-        if (rs.code == cq::StatusCode::kIoNotFound) break;
+        cq::ChqMediaPacket pkt{};
+        cq::ChqStatus rs = demuxer->ReadPacket(pkt);
+        if (rs.code == cq::ChqStatusCode::kIoNotFound) break;
         if (!rs.IsOk()) break;
-        if (pkt.codec == cq::CodecId::kH264) {
-            cq::Status fs = decoder.Feed(pkt);
+        if (pkt.codec == cq::ChqCodecId::kH264) {
+            cq::ChqStatus fs = decoder.Feed(pkt);
             if (!fs.IsOk()) {
                 std::printf("  Feed error at pts=%s: %s\n", Rt(pkt.pts),
                             cq::StatusToString(fs.code));
@@ -156,17 +156,17 @@ int main() {
         }
     }
 
-    cq::CancelToken no_cancel;
+    cq::ChqCancelToken no_cancel;
     int encoded = 0;
     bool encode_ok = true;
     for (;;) {
-        cq::MediaFrame f{};
-        cq::Status ps = decoder.PopFrame(f);
+        cq::ChqMediaFrame f{};
+        cq::ChqStatus ps = decoder.PopFrame(f);
         if (!ps.IsOk()) break;  // 已 drain
-        if (f.type == cq::MediaType::kVideo && f.video.image != nullptr) {
+        if (f.type == cq::ChqMediaType::kVideo && f.video.image != nullptr) {
             CVPixelBufferRef pb = cq::GetCvPixelBuffer(f.video.image);
             if (pb != nullptr) {
-                cq::Status es = encoder.EncodeFrame(pb, f.video.pts, no_cancel);
+                cq::ChqStatus es = encoder.EncodeFrame(pb, f.video.pts, no_cancel);
                 if (!es.IsOk()) {
                     std::printf("  EncodeFrame 失败 @pts=%s: %s\n", Rt(f.video.pts),
                                 cq::StatusToString(es.code));
@@ -237,31 +237,31 @@ int main() {
     // ---- 像素正确性：重解码输出首帧中心像素 ----
     std::printf("\n[像素正确性] 重解码输出首帧，中心像素对照 (0,188,0,255)\n");
     {
-        cq::MediaSource o_src;
+        cq::ChqMediaSource o_src;
         o_src.path = out_path.c_str();
         o_src.path_len = out_path.size();
-        cq::PlatformPtr<cq::IMediaDemuxer> o_demux;
-        cq::Status os = cq::CreateMediaDemuxer(o_src, o_demux);
-        cq::StreamInfo o_info{};
+        cq::ChqPlatformPtr<cq::ChqIMediaDemuxer> o_demux;
+        cq::ChqStatus os = cq::CreateMediaDemuxer(o_src, o_demux);
+        cq::ChqStreamInfo o_info{};
         if (os.IsOk()) o_demux->GetStreamInfo(0, o_info);
 
         cq::VideoToolboxDecoder o_dec(out_path.c_str());
-        cq::Status oos = o_dec.Open(o_info);
+        cq::ChqStatus oos = o_dec.Open(o_info);
         bool pix_ok = false;
         if (oos.IsOk()) {
             // 喂入输出文件全部包，取首帧。
             for (;;) {
-                cq::MediaPacket pkt{};
-                cq::Status rs = o_demux->ReadPacket(pkt);
-                if (rs.code == cq::StatusCode::kIoNotFound) break;
+                cq::ChqMediaPacket pkt{};
+                cq::ChqStatus rs = o_demux->ReadPacket(pkt);
+                if (rs.code == cq::ChqStatusCode::kIoNotFound) break;
                 if (!rs.IsOk()) break;
-                if (pkt.codec == cq::CodecId::kH264) o_dec.Feed(pkt);
+                if (pkt.codec == cq::ChqCodecId::kH264) o_dec.Feed(pkt);
             }
             for (;;) {
-                cq::MediaFrame f{};
-                cq::Status ps = o_dec.PopFrame(f);
+                cq::ChqMediaFrame f{};
+                cq::ChqStatus ps = o_dec.PopFrame(f);
                 if (!ps.IsOk()) break;
-                if (f.type == cq::MediaType::kVideo && f.video.image != nullptr) {
+                if (f.type == cq::ChqMediaType::kVideo && f.video.image != nullptr) {
                     CVPixelBufferRef pb = cq::GetCvPixelBuffer(f.video.image);
                     if (pb != nullptr) {
                         uint32_t w = static_cast<uint32_t>(CVPixelBufferGetWidth(pb));
@@ -292,12 +292,12 @@ int main() {
         std::remove(cancel_path.c_str());
         cq::EncodeConfig ccfg = cfg;
         cq::AppleVideoEncoder cenc;
-        cq::Status cs = cenc.Open(cancel_path.c_str(), ccfg);
+        cq::ChqStatus cs = cenc.Open(cancel_path.c_str(), ccfg);
         bool cancel_ok = false;
         if (cs.IsOk()) {
             // 写一帧再取消。
             // 用源首帧：重新取一帧用于取消测试较繁琐，这里直接验证 Cancel 清理文件。
-            cq::Status xs = cenc.Cancel();
+            cq::ChqStatus xs = cenc.Cancel();
             bool file_gone = (std::remove(cancel_path.c_str()) != 0);  // 已被 Cancel 删除 → 返回 -1
             cancel_ok = xs.IsOk() && file_gone;
         }

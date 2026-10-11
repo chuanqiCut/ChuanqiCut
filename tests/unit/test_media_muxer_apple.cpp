@@ -1,14 +1,14 @@
-// ChuanqiCut — 平台无关 muxer 接缝验收（IMediaMuxer 经工厂调用，全程不碰 AppleVideoEncoder）
+// ChuanqiCut — 平台无关 muxer 接缝验收（ChqIMediaMuxer 经工厂调用，全程不碰 AppleVideoEncoder）
 //
 // 验收硬要求：导出能力可被上层「平台无关」调用。
-//   * 全程只通过 core 冻结接口 `IMediaMuxer` + 工厂 `CreateMediaMuxer` 完成一次导出；
+//   * 全程只通过 core 冻结接口 `ChqIMediaMuxer` + 工厂 `CreateMediaMuxer` 完成一次导出；
 //     测试 TU 不 include `media_encode.h`、不出现 `AppleVideoEncoder` 类型——
 //     证明上层（EXPORT-001 导出控制器）无需触碰任何 Apple 内部编码器即可导出 H.264 MP4。
 //   * 帧源用真实 PALA-010 demux + PALA-011 硬解（VideoToolboxDecoder）产出 NativeImageHandle，
-//     经 `IMediaMuxer::WriteVideoFrame(NativeImageHandle, RationalTime, CancelToken)` 写入。
+//     经 `ChqIMediaMuxer::WriteVideoFrame(NativeImageHandle, ChqRationalTime, ChqCancelToken)` 写入。
 //   * ffprobe 验证：codec=H.264 / 1920x1080 / 帧数==N / 时长≈N/30；
 //     首帧中心像素 ≈ (0,188,0,255) 且绿主导（通道顺序未颠倒）。
-//   * 取消路径：经 `IMediaMuxer::Cancel()` 中止并删除半成品文件。
+//   * 取消路径：经 `ChqIMediaMuxer::Cancel()` 中止并删除半成品文件。
 //
 // 无缓冲输出（崩溃/挂起时能看到进度）。仅 Apple 平台。
 
@@ -21,9 +21,9 @@
 #include <string>
 #include <vector>
 
-#include "cq/base/status.h"
-#include "cq/base/rational_time.h"
-#include "cq/platform/media.h"     // IMediaMuxer / CreateMediaMuxer（平台无关接缝）
+#include "cq/base/chq_status.h"
+#include "cq/base/chq_rational_time.h"
+#include "cq/platform/chq_media.h"     // ChqIMediaMuxer / CreateMediaMuxer（平台无关接缝）
 #include "media_decode.h"     // VideoToolboxDecoder / GetCvPixelBuffer（仅帧源，Apple TU）
 
 #ifndef CQ_SOURCE_DIR
@@ -45,7 +45,7 @@ void Check(bool cond, const char* msg) {
     }
 }
 
-const char* Rt(const cq::RationalTime& t) {
+const char* Rt(const cq::ChqRationalTime& t) {
     static char buf[64];
     std::snprintf(buf, sizeof(buf), "%lld/%d (%.4fs)", static_cast<long long>(t.value),
                   static_cast<int>(t.timescale), t.ToSeconds());
@@ -82,7 +82,7 @@ bool RunCapture(const char* cmd, std::string& out) {
 
 int main() {
     std::setvbuf(stdout, nullptr, _IONBF, 0);
-    std::printf("== ChuanqiCut muxer 接缝验收（IMediaMuxer 平台无关调用 / Apple 后端）==\n");
+    std::printf("== ChuanqiCut muxer 接缝验收（ChqIMediaMuxer 平台无关调用 / Apple 后端）==\n");
 
     const int N = 60;  // 写前 60 帧（2s @30fps）
 
@@ -90,21 +90,21 @@ int main() {
         std::string(CQ_SOURCE_DIR) + "/tests/golden/frames/gf_1080p_h264.mp4";
     std::printf("样本: %s\n", src_path.c_str());
 
-    cq::MediaSource src;
+    cq::ChqMediaSource src;
     src.path = src_path.c_str();
     src.path_len = src_path.size();
 
     // ---- 真实 PALA-010 解封装 ----
-    cq::PlatformPtr<cq::IMediaDemuxer> demuxer;
-    cq::Status s = cq::CreateMediaDemuxer(src, demuxer);
+    cq::ChqPlatformPtr<cq::ChqIMediaDemuxer> demuxer;
+    cq::ChqStatus s = cq::CreateMediaDemuxer(src, demuxer);
     Check(s.IsOk() && demuxer, "PALA-010 CreateMediaDemuxer 打开成功");
     if (!demuxer) {
         std::printf("\n解封装打开失败，用例终止。\n");
         return 1;
     }
-    cq::StreamInfo info{};
+    cq::ChqStreamInfo info{};
     s = demuxer->GetStreamInfo(0, info);
-    Check(s.IsOk() && info.type == cq::MediaType::kVideo && info.codec == cq::CodecId::kH264,
+    Check(s.IsOk() && info.type == cq::ChqMediaType::kVideo && info.codec == cq::ChqCodecId::kH264,
           "真实流：视频 / H.264");
     Check(info.width == 1920 && info.height == 1080, "真实尺寸 = 1920x1080");
 
@@ -118,10 +118,10 @@ int main() {
     std::printf("  PALA-011 硬解是否真走硬件: %s\n",
                 decoder.IsHardwareAccelerated() ? "YES" : "NO(软解回退)");
 
-    // ---- 平台无关地拿到 muxer（IMediaMuxer，不碰 AppleVideoEncoder）----
-    cq::PlatformPtr<cq::IMediaMuxer> muxer;
+    // ---- 平台无关地拿到 muxer（ChqIMediaMuxer，不碰 AppleVideoEncoder）----
+    cq::ChqPlatformPtr<cq::ChqIMediaMuxer> muxer;
     s = cq::CreateMediaMuxer(muxer);
-    Check(s.IsOk() && muxer, "CreateMediaMuxer 拿到平台无关 IMediaMuxer");
+    Check(s.IsOk() && muxer, "CreateMediaMuxer 拿到平台无关 ChqIMediaMuxer");
     if (!muxer) {
         std::printf("\nMuxer 工厂失败，用例终止。\n");
         return 1;
@@ -129,23 +129,23 @@ int main() {
 
     const std::string out_path = "/tmp/cq_muxer_out.mp4";
     std::remove(out_path.c_str());
-    s = muxer->Open(out_path.c_str(), cq::ContainerFormat::kMp4);
-    Check(s.IsOk(), "IMediaMuxer::Open 成功（MP4 容器）");
+    s = muxer->Open(out_path.c_str(), cq::ChqContainerFormat::kMp4);
+    Check(s.IsOk(), "ChqIMediaMuxer::Open 成功（MP4 容器）");
     if (!s.IsOk()) {
         std::printf("\nMuxer Open 失败，用例终止。\n");
         return 1;
     }
 
-    cq::VideoTrackConfig vcfg{};
-    vcfg.codec = cq::CodecId::kH264;
+    cq::ChqVideoTrackConfig vcfg{};
+    vcfg.codec = cq::ChqCodecId::kH264;
     vcfg.width = info.width;
     vcfg.height = info.height;
-    vcfg.frame_rate = cq::RationalTime{30, 1};
-    vcfg.bitrate = cq::BitrateTier::kHigh;       // 20 Mbps，与原始导出一致
+    vcfg.frame_rate = cq::ChqRationalTime{30, 1};
+    vcfg.bitrate = cq::ChqBitrateTier::kHigh;       // 20 Mbps，与原始导出一致
     vcfg.max_keyframe_interval = 1;              // all-intra，最大化像素还原度
     vcfg.allow_hardware = true;
     s = muxer->AddVideoTrack(vcfg);
-    Check(s.IsOk(), "IMediaMuxer::AddVideoTrack 成功（设置 H.264 视频轨）");
+    Check(s.IsOk(), "ChqIMediaMuxer::AddVideoTrack 成功（设置 H.264 视频轨）");
     if (!s.IsOk()) {
         std::printf("\nAddVideoTrack 失败，用例终止。\n");
         return 1;
@@ -155,12 +155,12 @@ int main() {
 
     // ---- 喂入全部包，再按显示序解码出帧 ----
     for (;;) {
-        cq::MediaPacket pkt{};
-        cq::Status rs = demuxer->ReadPacket(pkt);
-        if (rs.code == cq::StatusCode::kIoNotFound) break;
+        cq::ChqMediaPacket pkt{};
+        cq::ChqStatus rs = demuxer->ReadPacket(pkt);
+        if (rs.code == cq::ChqStatusCode::kIoNotFound) break;
         if (!rs.IsOk()) break;
-        if (pkt.codec == cq::CodecId::kH264) {
-            cq::Status fs = decoder.Feed(pkt);
+        if (pkt.codec == cq::ChqCodecId::kH264) {
+            cq::ChqStatus fs = decoder.Feed(pkt);
             if (!fs.IsOk()) {
                 std::printf("  Feed error at pts=%s: %s\n", Rt(pkt.pts),
                             cq::StatusToString(fs.code));
@@ -168,16 +168,16 @@ int main() {
         }
     }
 
-    // ---- 经平台无关接口逐帧写入（关键：全程只碰 IMediaMuxer + NativeImageHandle）----
-    cq::CancelToken no_cancel;
+    // ---- 经平台无关接口逐帧写入（关键：全程只碰 ChqIMediaMuxer + NativeImageHandle）----
+    cq::ChqCancelToken no_cancel;
     int written = 0;
     bool write_ok = true;
     for (;;) {
-        cq::MediaFrame f{};
-        cq::Status ps = decoder.PopFrame(f);
+        cq::ChqMediaFrame f{};
+        cq::ChqStatus ps = decoder.PopFrame(f);
         if (!ps.IsOk()) break;  // 已 drain
-        if (f.type == cq::MediaType::kVideo && f.video.image != nullptr) {
-            cq::Status ws = muxer->WriteVideoFrame(f.video.image, f.video.pts, no_cancel);
+        if (f.type == cq::ChqMediaType::kVideo && f.video.image != nullptr) {
+            cq::ChqStatus ws = muxer->WriteVideoFrame(f.video.image, f.video.pts, no_cancel);
             if (!ws.IsOk()) {
                 std::printf("  WriteVideoFrame 失败 @pts=%s: %s\n", Rt(f.video.pts),
                             cq::StatusToString(ws.code));
@@ -189,17 +189,17 @@ int main() {
         if (written >= N) break;  // 只写前 N 帧
     }
     std::printf("  写入帧数 = %d（目标 N=%d）\n", written, N);
-    Check(write_ok && written == N, "经 IMediaMuxer 成功写 N 帧且全部 Ok");
+    Check(write_ok && written == N, "经 ChqIMediaMuxer 成功写 N 帧且全部 Ok");
 
     s = muxer->Finish(no_cancel);
-    Check(s.IsOk(), "IMediaMuxer::Finish 成功（封装完成）");
+    Check(s.IsOk(), "ChqIMediaMuxer::Finish 成功（封装完成）");
     Check(muxer->FrameCount() == N, "FrameCount() == N");
     if (!s.IsOk()) {
         std::printf("\n封装收尾失败，用例终止。\n");
         return 1;
     }
 
-    // muxer 句柄离开作用域即经 PlatformPtr 析构 Destroy()（不泄漏）。下面用独立 muxer 验证释放。
+    // muxer 句柄离开作用域即经 ChqPlatformPtr 析构 Destroy()（不泄漏）。下面用独立 muxer 验证释放。
 
     // ---- ffprobe 验证产出文件 ----
     const char* ffprobe = std::getenv("CQ_FFPROBE_BIN");
@@ -247,30 +247,30 @@ int main() {
     // ---- 像素正确性：重解码输出首帧中心像素 ----
     std::printf("\n[像素正确性] 重解码输出首帧，中心像素对照 (0,188,0,255)\n");
     {
-        cq::MediaSource o_src;
+        cq::ChqMediaSource o_src;
         o_src.path = out_path.c_str();
         o_src.path_len = out_path.size();
-        cq::PlatformPtr<cq::IMediaDemuxer> o_demux;
-        cq::Status os = cq::CreateMediaDemuxer(o_src, o_demux);
-        cq::StreamInfo o_info{};
+        cq::ChqPlatformPtr<cq::ChqIMediaDemuxer> o_demux;
+        cq::ChqStatus os = cq::CreateMediaDemuxer(o_src, o_demux);
+        cq::ChqStreamInfo o_info{};
         if (os.IsOk()) o_demux->GetStreamInfo(0, o_info);
 
         cq::VideoToolboxDecoder o_dec(out_path.c_str());
-        cq::Status oos = o_dec.Open(o_info);
+        cq::ChqStatus oos = o_dec.Open(o_info);
         bool pix_ok = false;
         if (oos.IsOk()) {
             for (;;) {
-                cq::MediaPacket pkt{};
-                cq::Status rs = o_demux->ReadPacket(pkt);
-                if (rs.code == cq::StatusCode::kIoNotFound) break;
+                cq::ChqMediaPacket pkt{};
+                cq::ChqStatus rs = o_demux->ReadPacket(pkt);
+                if (rs.code == cq::ChqStatusCode::kIoNotFound) break;
                 if (!rs.IsOk()) break;
-                if (pkt.codec == cq::CodecId::kH264) o_dec.Feed(pkt);
+                if (pkt.codec == cq::ChqCodecId::kH264) o_dec.Feed(pkt);
             }
             for (;;) {
-                cq::MediaFrame f{};
-                cq::Status ps = o_dec.PopFrame(f);
+                cq::ChqMediaFrame f{};
+                cq::ChqStatus ps = o_dec.PopFrame(f);
                 if (!ps.IsOk()) break;
-                if (f.type == cq::MediaType::kVideo && f.video.image != nullptr) {
+                if (f.type == cq::ChqMediaType::kVideo && f.video.image != nullptr) {
                     CVPixelBufferRef pb = cq::GetCvPixelBuffer(f.video.image);
                     if (pb != nullptr) {
                         uint32_t w = static_cast<uint32_t>(CVPixelBufferGetWidth(pb));
@@ -292,34 +292,34 @@ int main() {
         Check(pix_ok, "输出首帧中心像素 ≈ (0,188,0,255) 且绿主导（通道顺序未颠倒）");
     }
 
-    // ---- 取消路径冒烟：经 IMediaMuxer::Cancel 应删除半成品文件 ----
+    // ---- 取消路径冒烟：经 ChqIMediaMuxer::Cancel 应删除半成品文件 ----
     std::printf("\n[取消路径] Open 后 Cancel 应安全中止并删除半成品文件\n");
     {
         const std::string cancel_path = "/tmp/cq_muxer_cancel.mp4";
         std::remove(cancel_path.c_str());
-        cq::PlatformPtr<cq::IMediaMuxer> cmuxer;
-        cq::Status cs = cq::CreateMediaMuxer(cmuxer);
+        cq::ChqPlatformPtr<cq::ChqIMediaMuxer> cmuxer;
+        cq::ChqStatus cs = cq::CreateMediaMuxer(cmuxer);
         bool cancel_ok = false;
         if (cs.IsOk() && cmuxer) {
-            cq::Status os = cmuxer->Open(cancel_path.c_str(), cq::ContainerFormat::kMp4);
-            cq::VideoTrackConfig cc{};
-            cc.codec = cq::CodecId::kH264;
+            cq::ChqStatus os = cmuxer->Open(cancel_path.c_str(), cq::ChqContainerFormat::kMp4);
+            cq::ChqVideoTrackConfig cc{};
+            cc.codec = cq::ChqCodecId::kH264;
             cc.width = info.width;
             cc.height = info.height;
-            cc.frame_rate = cq::RationalTime{30, 1};
-            cc.bitrate = cq::BitrateTier::kMedium;
-            cq::Status as = cmuxer->AddVideoTrack(cc);
+            cc.frame_rate = cq::ChqRationalTime{30, 1};
+            cc.bitrate = cq::ChqBitrateTier::kMedium;
+            cq::ChqStatus as = cmuxer->AddVideoTrack(cc);
             if (os.IsOk() && as.IsOk()) {
-                cq::Status xs = cmuxer->Cancel();
+                cq::ChqStatus xs = cmuxer->Cancel();
                 bool file_gone = (std::remove(cancel_path.c_str()) != 0);  // 已被 Cancel 删除 → 返回 -1
                 cancel_ok = xs.IsOk() && file_gone;
             }
         }
-        Check(cancel_ok, "Cancel：经 IMediaMuxer 中止写入并删除半成品文件（文件不存在）");
+        Check(cancel_ok, "Cancel：经 ChqIMediaMuxer 中止写入并删除半成品文件（文件不存在）");
     }
 
     std::printf(
-        "\n[结论] muxer 接缝验收：经平台无关 IMediaMuxer 写 N 帧成功；ffprobe 验证 "
+        "\n[结论] muxer 接缝验收：经平台无关 ChqIMediaMuxer 写 N 帧成功；ffprobe 验证 "
         "codec/分辨率/帧数/时长；首帧中心像素对照真值；硬编能力（本机探针）=%s。\n",
         muxer->IsHardwareAccelerated() ? "YES" : "NO");
     std::printf("== 结果：%d 项检查，%d 项失败 ==\n", g_checks, g_failures);

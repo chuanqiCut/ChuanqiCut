@@ -2,10 +2,10 @@
 //
 // 验收硬要求：不是「RenderFrame 返回 kOk」，而是「画面真的是时间线在该时刻的内容」。
 // 本用例覆盖：
-//   1. IBlitPass 方向约定：合成帧上半红 / 下半蓝 → RT 顶红底蓝（uv(0,0)=图像左上）。
+//   1. ChqIBlitPass 方向约定：合成帧上半红 / 下半蓝 → RT 顶红底蓝（uv(0,0)=图像左上）。
 //      ⚠️ 这条**必须**由本用例覆盖：blit pass 的 MSL 是独立的 Platform-Native 实现，
 //      PALA-002 的用例用的是它自己内联的那份 shader，管不到这里。
-//   2. 端到端：Timeline + AssetRegistry → 取帧 → 零拷贝导入 → 离屏 RT，
+//   2. 端到端：ChqTimeline + ChqAssetRegistry → 取帧 → 零拷贝导入 → 离屏 RT，
 //      读回中心像素对照 smptebars 真值 (0,188,0,255)。
 //   3. 零拷贝成立：LastImportCpuFallback() == false（持续为 true 说明链路断了）。
 //   4. 空隙帧：返回 kIoNotFound（**不**伪造成功）+ 画面为黑。
@@ -25,15 +25,15 @@
 #include <string>
 #include <vector>
 
-#include "cq/base/concurrency.h"
-#include "cq/base/status.h"
-#include "cq/base/rational_time.h"
-#include "cq/gfx/gfx_device.h"
-#include "cq/media/asset_registry.h"
-#include "cq/model/timeline.h"
-#include "cq/media/platform_frame_provider.h"  // PlatformFrameProviderFactory（经 Platform 工厂取帧）
-#include "cq/platform/gfx.h"                   // IBlitPass / CreateBlitPass
-#include "cq/preview/preview_renderer.h"
+#include "cq/base/chq_concurrency.h"
+#include "cq/base/chq_status.h"
+#include "cq/base/chq_rational_time.h"
+#include "cq/gfx/chq_gfx_device.h"
+#include "cq/media/chq_asset_registry.h"
+#include "cq/model/chq_timeline.h"
+#include "cq/media/chq_platform_frame_provider.h"  // ChqPlatformFrameProviderFactory（经 Platform 工厂取帧）
+#include "cq/platform/chq_gfx.h"                   // ChqIBlitPass / CreateBlitPass
+#include "cq/preview/chq_preview_renderer.h"
 #include "gfx_metal_internal.h"  // ReadRenderTargetPixels
 #include "media_decode.h"        // cq::CqNativeImage（合成帧包装，仅 Apple TU 可见）
 
@@ -57,8 +57,8 @@ void Check(bool cond, const char* msg) {
     }
 }
 
-cq::RationalTime Ms(int64_t ms) {
-    return cq::RationalTime(ms * 120, cq::kProjectTimeScale);
+cq::ChqRationalTime Ms(int64_t ms) {
+    return cq::ChqRationalTime(ms * 120, cq::kProjectTimeScale);
 }
 
 bool Near(uint8_t a, uint8_t b, int tol) {
@@ -104,21 +104,21 @@ CVPixelBufferRef MakeHalfRedHalfBlue(uint32_t w, uint32_t h) {
 }
 
 // 建一条「单视频轨 + 单个片段」的时间线。
-void BuildSingleClipTimeline(cq::Timeline& tl, uint64_t asset_id, int64_t duration_ms) {
+void BuildSingleClipTimeline(cq::ChqTimeline& tl, uint64_t asset_id, int64_t duration_ms) {
     uint64_t track_id = 0;
-    tl.AddTrack(cq::TrackKind::kVideo, track_id);
-    cq::Clip clip;
-    clip.kind = cq::ClipKind::kVideo;
+    tl.AddTrack(cq::ChqTrackKind::kVideo, track_id);
+    cq::ChqClip clip;
+    clip.kind = cq::ChqClipKind::kVideo;
     clip.source.asset_id = asset_id;
-    clip.source.source_in = cq::RationalTime(0, cq::kProjectTimeScale);
+    clip.source.source_in = cq::ChqRationalTime(0, cq::kProjectTimeScale);
     clip.source.source_duration = Ms(duration_ms);
-    clip.start = cq::RationalTime(0, cq::kProjectTimeScale);
+    clip.start = cq::ChqRationalTime(0, cq::kProjectTimeScale);
     clip.duration = Ms(duration_ms);
     uint64_t clip_id = 0;
     tl.InsertClip(track_id, clip, clip_id);
 }
 
-bool ReadPixels(cq::IRenderTarget* rt, uint32_t w, uint32_t h, std::vector<uint8_t>& out) {
+bool ReadPixels(cq::ChqIRenderTarget* rt, uint32_t w, uint32_t h, std::vector<uint8_t>& out) {
     out.assign(static_cast<size_t>(w) * static_cast<size_t>(h) * 4, 0);
     if (rt == nullptr) return false;
     return cq::apple::ReadRenderTargetPixels(rt, 0, 0, w, h, out.data(), out.size()).IsOk();
@@ -126,18 +126,18 @@ bool ReadPixels(cq::IRenderTarget* rt, uint32_t w, uint32_t h, std::vector<uint8
 
 // ---- UIA-009 子步骤 2：渲染输入改为模型快照提供者 ----
 // 测试用固定快照：把本地构造的 timeline/assets 拷进一份不可变快照。
-class FixedSnapshotProvider final : public cq::IModelSnapshotProvider {
+class FixedSnapshotProvider final : public cq::ChqIModelSnapshotProvider {
 public:
-    FixedSnapshotProvider(const cq::Timeline& tl, const cq::AssetRegistry& assets)
-        : snap_(std::make_shared<const cq::ModelSnapshot>(cq::ModelSnapshot{
-              std::make_shared<const cq::Timeline>(tl),
-              std::make_shared<const cq::AssetRegistry>(assets)})) {}
-    std::shared_ptr<const cq::ModelSnapshot> CurrentSnapshot() const override {
+    FixedSnapshotProvider(const cq::ChqTimeline& tl, const cq::ChqAssetRegistry& assets)
+        : snap_(std::make_shared<const cq::ChqModelSnapshot>(cq::ChqModelSnapshot{
+              std::make_shared<const cq::ChqTimeline>(tl),
+              std::make_shared<const cq::ChqAssetRegistry>(assets)})) {}
+    std::shared_ptr<const cq::ChqModelSnapshot> CurrentSnapshot() const override {
         return snap_;
     }
 
 private:
-    std::shared_ptr<const cq::ModelSnapshot> snap_;
+    std::shared_ptr<const cq::ChqModelSnapshot> snap_;
 };
 
 }  // namespace
@@ -148,72 +148,72 @@ int main() {
     std::printf("== ChuanqiCut 预览渲染器验收（BIND-003 子步骤 4）==\n");
 
     // ---- 装配：Platform 设备 → GFX 设备 → blit pass / provider 工厂 ----
-    cq::GraphicsDeviceDesc dd;
+    cq::ChqGraphicsDeviceDesc dd;
     dd.prefer_low_power = false;
-    cq::PlatformPtr<cq::IGraphicsDevice> platform_device;
+    cq::ChqPlatformPtr<cq::ChqIGraphicsDevice> platform_device;
     Check(cq::CreateGraphicsDevice(dd, platform_device).IsOk(), "CreateGraphicsDevice(Metal)");
     if (!platform_device) return 1;
 
-    cq::IGfxDevice* gfx = nullptr;
+    cq::ChqIGfxDevice* gfx = nullptr;
     Check(cq::CreateGfxDevice(platform_device, gfx).IsOk() && gfx != nullptr,
           "CreateGfxDevice（GFX-002 门面）");
     if (gfx == nullptr) return 1;
 
     // blit pass 走 **Platform 工厂**：它必然由平台原生 shader 实现，属于平台能力。
-    cq::PlatformPtr<cq::IBlitPass> blit;
-    Check(cq::CreateBlitPass(gfx->PlatformDevice(), cq::TextureFormat::kRGBA8, blit).IsOk() && blit,
+    cq::ChqPlatformPtr<cq::ChqIBlitPass> blit;
+    Check(cq::CreateBlitPass(gfx->PlatformDevice(), cq::ChqTextureFormat::kRGBA8, blit).IsOk() && blit,
           "CreateBlitPass（Platform 工厂 → Apple MSL 全屏拷贝）");
     // 取帧工厂走 core 默认实现：内部经 Platform 的 CreateFrameProvider，
-    // 再适配成 core 的 FrameProvider（不引用任何 Apple 符号）。
-    cq::PlatformFrameProviderFactory factory;
+    // 再适配成 core 的 ChqFrameProvider（不引用任何 Apple 符号）。
+    cq::ChqPlatformFrameProviderFactory factory;
     if (!blit) return 1;
 
     // =========================================================================
     // 1. blit pass 方向约定（合成帧：上半红 / 下半蓝）
     // =========================================================================
-    std::printf("\n[1] IBlitPass 方向：uv(0,0)=图像左上（RT 顶红 / 底蓝）\n");
+    std::printf("\n[1] ChqIBlitPass 方向：uv(0,0)=图像左上（RT 顶红 / 底蓝）\n");
     {
         const uint32_t S = 64;
         CVPixelBufferRef pb = MakeHalfRedHalfBlue(S, S);
         Check(pb != nullptr, "合成 64x64 半红半蓝帧");
         if (pb != nullptr) {
-            cq::PlatformPtr<cq::INativeImageImporter> importer;
+            cq::ChqPlatformPtr<cq::ChqINativeImageImporter> importer;
             Check(gfx->CreateNativeImageImporter(importer).IsOk() && importer,
                   "CreateNativeImageImporter");
             if (importer) {
                 auto* img = new cq::CqNativeImage(pb);
                 cq::TextureHandle tex = nullptr;
                 bool fb = false;
-                Check(importer->Import(img, cq::TextureUsage::kSampled, tex, fb).IsOk() &&
+                Check(importer->Import(img, cq::ChqTextureUsage::kSampled, tex, fb).IsOk() &&
                           tex != nullptr && !fb,
                       "导入合成帧（零拷贝）");
 
-                cq::RenderTargetDesc rd;
+                cq::ChqRenderTargetDesc rd;
                 rd.width = S;
                 rd.height = S;
-                rd.color_format = cq::TextureFormat::kRGBA8;
-                cq::PlatformPtr<cq::IRenderTarget> rt;
+                rd.color_format = cq::ChqTextureFormat::kRGBA8;
+                cq::ChqPlatformPtr<cq::ChqIRenderTarget> rt;
                 Check(gfx->CreateRenderTarget(rd, rt).IsOk() && rt, "创建 64x64 离屏 RT");
 
                 if (rt && tex != nullptr) {
                     // 用与预览渲染器相同的调用形状（RenderFrame + 编码器客户端）驱动 blit pass。
-                    struct Client final : public cq::IFrameEncoderClient {
-                        cq::IBlitPass* blit_pass = nullptr;
+                    struct Client final : public cq::ChqIFrameEncoderClient {
+                        cq::ChqIBlitPass* blit_pass = nullptr;
                         cq::TextureHandle src = nullptr;
-                        cq::Status Encode(cq::IGfxEncoder& enc, const cq::FrameContext&,
-                                          const cq::CancelToken&) override {
-                            // IBlitPass 在 Platform 层，收 Platform 的 ICommandEncoder。
-                            cq::ICommandEncoder* platform_enc = enc.PlatformEncoder();
-                            if (platform_enc == nullptr) return cq::Status(cq::StatusCode::kInternal);
+                        cq::ChqStatus Encode(cq::ChqIGfxEncoder& enc, const cq::ChqFrameContext&,
+                                          const cq::ChqCancelToken&) override {
+                            // ChqIBlitPass 在 Platform 层，收 Platform 的 ChqICommandEncoder。
+                            cq::ChqICommandEncoder* platform_enc = enc.PlatformEncoder();
+                            if (platform_enc == nullptr) return cq::ChqStatus(cq::ChqStatusCode::kInternal);
                             return blit_pass->Encode(*platform_enc, src);
                         }
                     } client;
                     client.blit_pass = blit.get();
                     client.src = tex;
 
-                    cq::FrameContext ctx;
+                    cq::ChqFrameContext ctx;
                     ctx.target = rt->Handle();
-                    cq::CancelToken token;
+                    cq::ChqCancelToken token;
                     Check(gfx->RenderFrame(ctx, rt.get(), client, token).IsOk(),
                           "RenderFrame（经 blit pass）");
 
@@ -239,28 +239,28 @@ int main() {
     // =========================================================================
     // 2. 端到端：时间线 + 素材表 → 真实取帧 → 离屏 RT
     // =========================================================================
-    std::printf("\n[2] 端到端：Timeline+AssetRegistry → 取帧 → 零拷贝导入 → 离屏 RT\n");
+    std::printf("\n[2] 端到端：ChqTimeline+ChqAssetRegistry → 取帧 → 零拷贝导入 → 离屏 RT\n");
     const std::string path =
         std::string(CQ_SOURCE_DIR) + "/tests/golden/frames/gf_1080p_h264.mp4";
     std::printf("样本: %s\n", path.c_str());
 
-    cq::AssetRegistry assets;
-    Check(assets.Register(1, path).IsOk(), "AssetRegistry.Register(asset_id=1)");
+    cq::ChqAssetRegistry assets;
+    Check(assets.Register(1, path).IsOk(), "ChqAssetRegistry.Register(asset_id=1)");
 
-    cq::Timeline timeline;
+    cq::ChqTimeline timeline;
     BuildSingleClipTimeline(timeline, 1, 3000);  // 0 ~ 3s 单片段
     Check(timeline.Tracks().size() == 1, "时间线：单视频轨 + 单片段");
 
-    cq::PreviewRenderer::Config cfg;
+    cq::ChqPreviewRenderer::Config cfg;
     cfg.width = 256;
     cfg.height = 256;
-    cfg.format = cq::TextureFormat::kRGBA8;
+    cfg.format = cq::ChqTextureFormat::kRGBA8;
     FixedSnapshotProvider snapshot_provider(timeline, assets);
-    cq::PreviewRenderer renderer(gfx, blit.get(), &factory, &snapshot_provider, cfg);
+    cq::ChqPreviewRenderer renderer(gfx, blit.get(), &factory, &snapshot_provider, cfg);
 
-    cq::CancelToken token;
+    cq::ChqCancelToken token;
     cq::TextureHandle out = nullptr;
-    cq::Status s = renderer.RenderFrame(Ms(500), out, token);
+    cq::ChqStatus s = renderer.RenderFrame(Ms(500), out, token);
     std::printf("  RenderFrame(t=0.5s) code=%d\n", static_cast<int>(s.code));
     Check(s.IsOk(), "RenderFrame(t=0.5s) 成功");
     Check(out != nullptr, "导出非空纹理句柄（中性句柄，Swift 侧 reinterpret）");
@@ -296,7 +296,7 @@ int main() {
     cq::TextureHandle out_gap = nullptr;
     s = renderer.RenderFrame(Ms(5000), out_gap, token);
     std::printf("  RenderFrame(t=5.0s) code=%d\n", static_cast<int>(s.code));
-    Check(s.code == cq::StatusCode::kIoNotFound, "空隙返回 kIoNotFound（不伪造成功）");
+    Check(s.code == cq::ChqStatusCode::kIoNotFound, "空隙返回 kIoNotFound（不伪造成功）");
     Check(!renderer.LastHitClip(), "LastHitClip=false");
     std::vector<uint8_t> px_gap;
     Check(ReadPixels(renderer.Target(), 256, 256, px_gap), "读回空隙帧像素");
@@ -311,14 +311,14 @@ int main() {
     // =========================================================================
     std::printf("\n[4] 片段引用未注册素材：kInvalidArgument\n");
     {
-        cq::Timeline tl_unknown;
+        cq::ChqTimeline tl_unknown;
         BuildSingleClipTimeline(tl_unknown, 999, 3000);
         FixedSnapshotProvider snap_unknown(tl_unknown, assets);
-        cq::PreviewRenderer r_unknown(gfx, blit.get(), &factory, &snap_unknown, cfg);
+        cq::ChqPreviewRenderer r_unknown(gfx, blit.get(), &factory, &snap_unknown, cfg);
         cq::TextureHandle out_u = nullptr;
-        cq::Status su = r_unknown.RenderFrame(Ms(500), out_u, token);
+        cq::ChqStatus su = r_unknown.RenderFrame(Ms(500), out_u, token);
         std::printf("  RenderFrame(asset_id=999) code=%d\n", static_cast<int>(su.code));
-        Check(su.code == cq::StatusCode::kInvalidArgument, "未注册素材返回 kInvalidArgument");
+        Check(su.code == cq::ChqStatusCode::kInvalidArgument, "未注册素材返回 kInvalidArgument");
     }
 
     // =========================================================================
@@ -331,7 +331,7 @@ int main() {
         for (int i = 0; i < 12; ++i) {
             const int64_t t = 300 + static_cast<int64_t>(i) * 135;  // 300 ~ 1785 ms
             cq::TextureHandle o = nullptr;
-            cq::Status rs = renderer.RenderFrame(Ms(t), o, token);
+            cq::ChqStatus rs = renderer.RenderFrame(Ms(t), o, token);
             if (!rs.IsOk()) {
                 std::printf("  FAIL: t=%lldms code=%d\n", static_cast<long long>(t),
                             static_cast<int>(rs.code));
@@ -391,7 +391,7 @@ int main() {
         for (int i = 0; i < kTotal; ++i) {
             const int64_t t = 300 + static_cast<int64_t>(i) * 40;  // 300 ~ 1580 ms
             cq::TextureHandle o = nullptr;
-            const cq::Status rs = renderer.RenderFrame(Ms(t), o, token);
+            const cq::ChqStatus rs = renderer.RenderFrame(Ms(t), o, token);
             if (!rs.IsOk()) {
                 std::printf("  FAIL: t=%lldms code=%d\n", static_cast<long long>(t),
                             static_cast<int>(rs.code));
@@ -399,7 +399,7 @@ int main() {
             }
             ++ok_count;
             if (i < kWarmup) continue;
-            const cq::PreviewRenderer::Timings& tm = renderer.LastTimings();
+            const cq::ChqPreviewRenderer::Timings& tm = renderer.LastTimings();
             sum_acq += tm.acquire_ns;
             sum_imp += tm.import_ns;
             sum_drw += tm.draw_ns;
@@ -435,29 +435,29 @@ int main() {
     //   cover   → 无 bar，整幅被内容裁剪铺满；
     //   stretch（默认）→ 既有段 [2]（256x256 画布中心 = 绿）即回归。
     // =========================================================================
-    std::printf("\n[8] FitMode：contain letterbox / cover 裁剪铺满\n");
+    std::printf("\n[8] ChqFitMode：contain letterbox / cover 裁剪铺满\n");
     {
         const std::string fit_path =
             std::string(CQ_SOURCE_DIR) + "/tests/golden/frames/gf_1080p_h264.mp4";
-        cq::AssetRegistry fit_assets;
-        Check(fit_assets.Register(1, fit_path).IsOk(), "AssetRegistry.Register(FitMode)");
-        cq::Timeline fit_timeline;
+        cq::ChqAssetRegistry fit_assets;
+        Check(fit_assets.Register(1, fit_path).IsOk(), "ChqAssetRegistry.Register(ChqFitMode)");
+        cq::ChqTimeline fit_timeline;
         BuildSingleClipTimeline(fit_timeline, 1, 3000);
         FixedSnapshotProvider fit_snapshots(fit_timeline, fit_assets);
 
         // ---- 8a. contain：bar 区 = 清屏黑，内容带 = smptebars ----
         {
-            cq::PreviewRenderer::Config fit_cfg;
+            cq::ChqPreviewRenderer::Config fit_cfg;
             fit_cfg.width = 256;
             fit_cfg.height = 256;
-            fit_cfg.format = cq::TextureFormat::kRGBA8;
-            fit_cfg.fit_mode = cq::FitMode::kContain;  // 构造路径
-            cq::PreviewRenderer fit_renderer(gfx, blit.get(), &factory, &fit_snapshots,
+            fit_cfg.format = cq::ChqTextureFormat::kRGBA8;
+            fit_cfg.fit_mode = cq::ChqFitMode::kContain;  // 构造路径
+            cq::ChqPreviewRenderer fit_renderer(gfx, blit.get(), &factory, &fit_snapshots,
                                              fit_cfg);
-            fit_renderer.SetFitMode(cq::FitMode::kContain);  // setter 路径同样覆盖
-            Check(fit_renderer.GetFitMode() == cq::FitMode::kContain, "GetFitMode 回读 contain");
+            fit_renderer.SetFitMode(cq::ChqFitMode::kContain);  // setter 路径同样覆盖
+            Check(fit_renderer.GetFitMode() == cq::ChqFitMode::kContain, "GetFitMode 回读 contain");
 
-            cq::CancelToken fit_token;
+            cq::ChqCancelToken fit_token;
             cq::TextureHandle fit_out = nullptr;
             Check(fit_renderer.RenderFrame(Ms(500), fit_out, fit_token).IsOk(),
                   "RenderFrame(contain)");
@@ -481,16 +481,16 @@ int main() {
 
         // ---- 8b. cover：无 bar（上下边缘也是内容），裁剪铺满 ----
         {
-            cq::PreviewRenderer::Config fit_cfg;
+            cq::ChqPreviewRenderer::Config fit_cfg;
             fit_cfg.width = 256;
             fit_cfg.height = 256;
-            fit_cfg.format = cq::TextureFormat::kRGBA8;
-            cq::PreviewRenderer fit_renderer(gfx, blit.get(), &factory, &fit_snapshots,
+            fit_cfg.format = cq::ChqTextureFormat::kRGBA8;
+            cq::ChqPreviewRenderer fit_renderer(gfx, blit.get(), &factory, &fit_snapshots,
                                              fit_cfg);
-            fit_renderer.SetFitMode(cq::FitMode::kCover);
-            Check(fit_renderer.GetFitMode() == cq::FitMode::kCover, "GetFitMode 回读 cover");
+            fit_renderer.SetFitMode(cq::ChqFitMode::kCover);
+            Check(fit_renderer.GetFitMode() == cq::ChqFitMode::kCover, "GetFitMode 回读 cover");
 
-            cq::CancelToken fit_token;
+            cq::ChqCancelToken fit_token;
             cq::TextureHandle fit_out = nullptr;
             Check(fit_renderer.RenderFrame(Ms(500), fit_out, fit_token).IsOk(),
                   "RenderFrame(cover)");

@@ -10,7 +10,7 @@
 #include <cstdlib>
 #include <string>
 
-#include "cq/media/ffmpeg_probe.h"
+#include "cq/media/chq_ffmpeg_probe.h"
 
 namespace {
 
@@ -41,8 +41,8 @@ int main() {
     const char* path = CQ_TEST_GOLDEN_H264;
     std::printf(">> probe: %s\n", path);
 
-    cq::FFmpegProbeResult result;
-    const cq::Status s = cq::FFmpegProbeFile(path, &result);
+    cq::ChqFFmpegProbeResult result;
+    const cq::ChqStatus s = cq::FFmpegProbeFile(path, &result);
     Check(s.IsOk(), "FFmpegProbeFile 应成功（demux 档可打开 golden H.264）");
 
     if (s.IsOk()) {
@@ -51,7 +51,7 @@ int main() {
         CheckNear(result.duration_us, 5.0, 0.5, "容器时长应 ≈ 5.0s（名义 150帧/30fps）");
         Check(result.streams.size() == 1, "应恰好 1 条流（无音轨样本）");
         if (result.streams.size() == 1) {
-            const cq::FFmpegStreamInfo& v = result.streams[0];
+            const cq::ChqFFmpegStreamInfo& v = result.streams[0];
             Check(v.codec_name == "h264", "视频流 codec 应为 h264");
             Check(v.media_type == "video", "流类型应为 video");
             Check(v.width == 1920 && v.height == 1080, "分辨率应为 1920x1080");
@@ -59,17 +59,17 @@ int main() {
     }
 
     // 错误路径：不存在的文件必须 kIoNotFound，而不是崩溃或 kFormat。
-    cq::FFmpegProbeResult miss;
-    const cq::Status s_miss = cq::FFmpegProbeFile("/nonexistent/no_such_file.mp4", &miss);
-    Check(s_miss.code == cq::StatusCode::kIoNotFound,
+    cq::ChqFFmpegProbeResult miss;
+    const cq::ChqStatus s_miss = cq::FFmpegProbeFile("/nonexistent/no_such_file.mp4", &miss);
+    Check(s_miss.code == cq::ChqStatusCode::kIoNotFound,
           "不存在的文件应返回 kIoNotFound");
 
     // 参数校验。
-    Check(cq::FFmpegProbeFile(nullptr, &miss).code == cq::StatusCode::kInvalidArgument,
+    Check(cq::FFmpegProbeFile(nullptr, &miss).code == cq::ChqStatusCode::kInvalidArgument,
           "nullptr 路径应 kInvalidArgument");
-    Check(cq::FFmpegProbeFile("", &miss).code == cq::StatusCode::kInvalidArgument,
+    Check(cq::FFmpegProbeFile("", &miss).code == cq::ChqStatusCode::kInvalidArgument,
           "空路径应 kInvalidArgument");
-    Check(cq::FFmpegProbeFile(path, nullptr).code == cq::StatusCode::kInvalidArgument,
+    Check(cq::FFmpegProbeFile(path, nullptr).code == cq::ChqStatusCode::kInvalidArgument,
           "nullptr out 应 kInvalidArgument");
 
     std::printf("%d checks, %d failures\n", g_checks, g_failures);

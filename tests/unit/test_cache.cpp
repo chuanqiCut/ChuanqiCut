@@ -1,10 +1,10 @@
-// ChuanqiCut — MEDIA-011 LruFrameCache 单测（跨平台，无平台后端）
+// ChuanqiCut — MEDIA-011 ChqLruFrameCache 单测（跨平台，无平台后端）
 //
 // 验收（实测证据）：
 //   1. 内存上界可控：插入 N 帧（每帧已知大小）超过上界后，UsedBytes() <= 上界。
 //   2. LRU 确实淘汰最久未用（访问序列验证命中/未命中）。
 //   3. 被 lease 的帧不被淘汰（move-out：借出后物理移出缓存，淘汰循环碰不到）。
-//   4. 接入 SystemFrameProvider：AcquireFrame 命中缓存时跳过解码（feed/pop 不增长）。
+//   4. 接入 ChqSystemFrameProvider：AcquireFrame 命中缓存时跳过解码（feed/pop 不增长）。
 //
 // 无缓冲输出：崩溃/挂起时仍能看到进度。
 
@@ -14,12 +14,12 @@
 #include <set>
 #include <vector>
 
-#include "cq/base/status.h"
-#include "cq/base/rational_time.h"
-#include "cq/media/media_cache.h"
-#include "cq/media/system_frame_provider.h"
-#include "cq/platform/common.h"
-#include "cq/platform/media.h"
+#include "cq/base/chq_status.h"
+#include "cq/base/chq_rational_time.h"
+#include "cq/media/chq_media_cache.h"
+#include "cq/media/chq_system_frame_provider.h"
+#include "cq/platform/chq_common.h"
+#include "cq/platform/chq_media.h"
 
 namespace {
 
@@ -38,12 +38,12 @@ void Check(bool cond, const char* msg) {
 
 constexpr int32_t kTs = 4;  // 单测时间网格（与项目 120000 逻辑等价）
 
-cq::MediaFrame MakeVideoFrame(int64_t pts, uint32_t w, uint32_t h,
-                              cq::PixelFormat fmt) {
-    cq::MediaFrame f{};
-    f.type = cq::MediaType::kVideo;
-    f.video.pts = cq::RationalTime{pts, kTs};
-    f.video.duration = cq::RationalTime{1, kTs};
+cq::ChqMediaFrame MakeVideoFrame(int64_t pts, uint32_t w, uint32_t h,
+                              cq::ChqPixelFormat fmt) {
+    cq::ChqMediaFrame f{};
+    f.type = cq::ChqMediaType::kVideo;
+    f.video.pts = cq::ChqRationalTime{pts, kTs};
+    f.video.duration = cq::ChqRationalTime{1, kTs};
     f.video.width = w;
     f.video.height = h;
     f.video.pixel_format = fmt;
@@ -58,13 +58,13 @@ void TestBound() {
     // 每帧 RGBA8，w=100 h=1 → 400 该厂商。上界 1000。
     constexpr int64_t kFrameBytes = 100 * 1 * 4;  // 400
     constexpr int64_t kMax = 1000;
-    cq::LruFrameCache cache(kMax);
+    cq::ChqLruFrameCache cache(kMax);
     Check(cache.MaxBytes() == kMax, "MaxBytes() == 1000");
     Check(cache.UsedBytes() == 0, "初始 UsedBytes == 0");
 
     for (int i = 0; i < 10; ++i) {
-        cache.Insert(cq::RationalTime{static_cast<int64_t>(i), kTs},
-                     MakeVideoFrame(i, 100, 1, cq::PixelFormat::kRGBA8));
+        cache.Insert(cq::ChqRationalTime{static_cast<int64_t>(i), kTs},
+                     MakeVideoFrame(i, 100, 1, cq::ChqPixelFormat::kRGBA8));
         if (cache.UsedBytes() > kMax) {
             std::printf("    UsedBytes=%lld 超过上界 %lld（i=%d）\n",
                         static_cast<long long>(cache.UsedBytes()),
@@ -91,32 +91,32 @@ void TestBound() {
 void TestLruOrder() {
     std::printf("\n[2] LRU 淘汰顺序（最久未用先淘汰）\n");
     constexpr int64_t kMax = 1200;  // 容 3 帧（3*400）
-    cq::LruFrameCache cache(kMax);
+    cq::ChqLruFrameCache cache(kMax);
     // 插入 t0,t1,t2（各 400）→ 1200，恰好不淘汰
-    cache.Insert(cq::RationalTime{0, kTs}, MakeVideoFrame(0, 100, 1, cq::PixelFormat::kRGBA8));
-    cache.Insert(cq::RationalTime{1, kTs}, MakeVideoFrame(1, 100, 1, cq::PixelFormat::kRGBA8));
-    cache.Insert(cq::RationalTime{2, kTs}, MakeVideoFrame(2, 100, 1, cq::PixelFormat::kRGBA8));
+    cache.Insert(cq::ChqRationalTime{0, kTs}, MakeVideoFrame(0, 100, 1, cq::ChqPixelFormat::kRGBA8));
+    cache.Insert(cq::ChqRationalTime{1, kTs}, MakeVideoFrame(1, 100, 1, cq::ChqPixelFormat::kRGBA8));
+    cache.Insert(cq::ChqRationalTime{2, kTs}, MakeVideoFrame(2, 100, 1, cq::ChqPixelFormat::kRGBA8));
     Check(cache.Size() == 3, "插入 3 帧后 Size == 3（未触发淘汰）");
 
     // 借出 t0（move-out，t0 离开缓存）→ 物理不在 LRU 中
-    cq::MediaFrame loaned0{};
-    bool hit0 = cache.Find(cq::RationalTime{0, kTs}, loaned0);
+    cq::ChqMediaFrame loaned0{};
+    bool hit0 = cache.Find(cq::ChqRationalTime{0, kTs}, loaned0);
     Check(hit0 && loaned0.video.pts.value == 0, "Find(t0) 命中并借出");
-    Check(!cache.Contains(cq::RationalTime{0, kTs}), "借出后 t0 不在缓存内");
+    Check(!cache.Contains(cq::ChqRationalTime{0, kTs}), "借出后 t0 不在缓存内");
 
     // 插入 t3,t4（各 400）。t3: 800+400=1200 不淘汰；t4: 1200+400>1200 淘汰 LRU 尾部
     // （缓存内仅 {t1,t2,t3}，LRU 尾部=t1）→ 淘汰 t1。
-    cache.Insert(cq::RationalTime{3, kTs}, MakeVideoFrame(3, 100, 1, cq::PixelFormat::kRGBA8));
-    cache.Insert(cq::RationalTime{4, kTs}, MakeVideoFrame(4, 100, 1, cq::PixelFormat::kRGBA8));
-    Check(cache.Contains(cq::RationalTime{1, kTs}) == false, "LRU 淘汰了最久未用的 t1");
-    Check(cache.Contains(cq::RationalTime{2, kTs}), "t2 仍在缓存");
-    Check(cache.Contains(cq::RationalTime{3, kTs}), "t3 仍在缓存");
-    Check(cache.Contains(cq::RationalTime{4, kTs}), "t4 仍在缓存");
+    cache.Insert(cq::ChqRationalTime{3, kTs}, MakeVideoFrame(3, 100, 1, cq::ChqPixelFormat::kRGBA8));
+    cache.Insert(cq::ChqRationalTime{4, kTs}, MakeVideoFrame(4, 100, 1, cq::ChqPixelFormat::kRGBA8));
+    Check(cache.Contains(cq::ChqRationalTime{1, kTs}) == false, "LRU 淘汰了最久未用的 t1");
+    Check(cache.Contains(cq::ChqRationalTime{2, kTs}), "t2 仍在缓存");
+    Check(cache.Contains(cq::ChqRationalTime{3, kTs}), "t3 仍在缓存");
+    Check(cache.Contains(cq::ChqRationalTime{4, kTs}), "t4 仍在缓存");
     Check(cache.UsedBytes() == 1200, "UsedBytes == 1200（t2,t3,t4）");
 
     // t2 命中返回正确帧
-    cq::MediaFrame f2{};
-    Check(cache.Find(cq::RationalTime{2, kTs}, f2) && f2.video.pts.value == 2,
+    cq::ChqMediaFrame f2{};
+    Check(cache.Find(cq::ChqRationalTime{2, kTs}, f2) && f2.video.pts.value == 2,
           "Find(t2) 命中返回 pts=2");
 }
 
@@ -126,65 +126,65 @@ void TestLruOrder() {
 void TestLeaseProtection() {
     std::printf("\n[3] 被 lease 的帧不被淘汰（move-out 模型）\n");
     constexpr int64_t kMax = 1000;
-    cq::LruFrameCache cache(kMax);
+    cq::ChqLruFrameCache cache(kMax);
     // 插入 A（t0, width=100 作为哨兵标识），借出
-    cq::MediaFrame a = MakeVideoFrame(0, 100, 1, cq::PixelFormat::kRGBA8);
-    cache.Insert(cq::RationalTime{0, kTs}, a);
-    cq::MediaFrame loaned_a{};
-    bool hit = cache.Find(cq::RationalTime{0, kTs}, loaned_a);
+    cq::ChqMediaFrame a = MakeVideoFrame(0, 100, 1, cq::ChqPixelFormat::kRGBA8);
+    cache.Insert(cq::ChqRationalTime{0, kTs}, a);
+    cq::ChqMediaFrame loaned_a{};
+    bool hit = cache.Find(cq::ChqRationalTime{0, kTs}, loaned_a);
     Check(hit && loaned_a.video.pts.value == 0 && loaned_a.video.width == 100,
           "A 借出：pts=0, width=100（哨兵）");
     Check(cache.UsedBytes() == 0, "借出后 UsedBytes == 0（A 已离开缓存）");
 
     // 疯狂插入 t1..t9（各 400，上界 1000）→ 反复淘汰，但 A 不在缓存内，永不被碰。
     for (int i = 1; i <= 9; ++i) {
-        cache.Insert(cq::RationalTime{static_cast<int64_t>(i), kTs},
-                     MakeVideoFrame(i, 100, 1, cq::PixelFormat::kRGBA8));
+        cache.Insert(cq::ChqRationalTime{static_cast<int64_t>(i), kTs},
+                     MakeVideoFrame(i, 100, 1, cq::ChqPixelFormat::kRGBA8));
         Check(cache.UsedBytes() <= kMax, "插入过程中 UsedBytes <= 上界");
     }
     // 借出的 A 在调用方手中，内容必须完好（未被任何淘汰破坏）。
     Check(loaned_a.video.pts.value == 0 && loaned_a.video.width == 100,
           "借出的 A 在大量淘汰后仍完好（pts=0, width=100）");
-    Check(!cache.Contains(cq::RationalTime{0, kTs}),
+    Check(!cache.Contains(cq::ChqRationalTime{0, kTs}),
           "A 未因淘汰被悄悄改写/重新入缓存（仍属调用方独占）");
 }
 
 // ---------------------------------------------------------------------------
-// 4. 接入 SystemFrameProvider：缓存命中跳过解码
+// 4. 接入 ChqSystemFrameProvider：缓存命中跳过解码
 // ---------------------------------------------------------------------------
-class MockDemuxer : public cq::IMediaDemuxer {
+class MockDemuxer : public cq::ChqIMediaDemuxer {
 public:
     struct GP { int64_t dts, pts; bool kf; };
     explicit MockDemuxer(std::vector<GP> gop) : gop_(std::move(gop)) {}
     void Destroy() override { delete this; }
-    cq::Status Open(const cq::MediaSource&) override { idx_ = 0; return cq::Status::Ok(); }
-    cq::Status GetDuration(cq::RationalTime& d) const override {
-        d = cq::RationalTime{static_cast<int64_t>(gop_.size()), kTs};
-        return cq::Status::Ok();
+    cq::ChqStatus Open(const cq::ChqMediaSource&) override { idx_ = 0; return cq::ChqStatus::Ok(); }
+    cq::ChqStatus GetDuration(cq::ChqRationalTime& d) const override {
+        d = cq::ChqRationalTime{static_cast<int64_t>(gop_.size()), kTs};
+        return cq::ChqStatus::Ok();
     }
     int32_t GetStreamCount() const override { return 1; }
-    cq::Status GetStreamInfo(int32_t, cq::StreamInfo& o) const override {
-        o = cq::StreamInfo{};
-        o.type = cq::MediaType::kVideo;
-        o.codec = cq::CodecId::kH264;
+    cq::ChqStatus GetStreamInfo(int32_t, cq::ChqStreamInfo& o) const override {
+        o = cq::ChqStreamInfo{};
+        o.type = cq::ChqMediaType::kVideo;
+        o.codec = cq::ChqCodecId::kH264;
         o.width = 64; o.height = 36;
-        o.time_base = cq::RationalTime{1, kTs};
-        return cq::Status::Ok();
+        o.time_base = cq::ChqRationalTime{1, kTs};
+        return cq::ChqStatus::Ok();
     }
-    cq::Status Seek(const cq::RationalTime&, const cq::CancelToken&) override {
-        idx_ = 0; return cq::Status::Ok();
+    cq::ChqStatus Seek(const cq::ChqRationalTime&, const cq::ChqCancelToken&) override {
+        idx_ = 0; return cq::ChqStatus::Ok();
     }
-    cq::Status ReadPacket(cq::MediaPacket& out) override {
-        out = cq::MediaPacket{};
-        if (idx_ >= gop_.size()) return cq::Status{cq::StatusCode::kIoNotFound};
+    cq::ChqStatus ReadPacket(cq::ChqMediaPacket& out) override {
+        out = cq::ChqMediaPacket{};
+        if (idx_ >= gop_.size()) return cq::ChqStatus{cq::ChqStatusCode::kIoNotFound};
         const GP& g = gop_[static_cast<size_t>(idx_++)];
-        out.pts = cq::RationalTime{g.pts, kTs};
-        out.dts = cq::RationalTime{g.dts, kTs};
-        out.codec = cq::CodecId::kH264;
+        out.pts = cq::ChqRationalTime{g.pts, kTs};
+        out.dts = cq::ChqRationalTime{g.dts, kTs};
+        out.codec = cq::ChqCodecId::kH264;
         out.is_keyframe = g.kf;
         out.data = buf_.data();
         out.size = buf_.size();
-        return cq::Status::Ok();
+        return cq::ChqStatus::Ok();
     }
 private:
     std::vector<GP> gop_;
@@ -192,14 +192,14 @@ private:
     std::vector<uint8_t> buf_ = std::vector<uint8_t>(16, 0xAB);
 };
 
-class MockDecoder : public cq::IFrameDecoder {
+class MockDecoder : public cq::ChqIFrameDecoder {
 public:
     struct Spec { int64_t dts, pts, release; };
     explicit MockDecoder(std::vector<Spec> specs) : specs_(std::move(specs)) {
         for (const Spec& s : specs_) all_pts_.insert(s.pts);
     }
-    cq::Status Open(const cq::StreamInfo&) override { return cq::Status::Ok(); }
-    cq::Status Feed(const cq::MediaPacket& pkt) override {
+    cq::ChqStatus Open(const cq::ChqStreamInfo&) override { return cq::ChqStatus::Ok(); }
+    cq::ChqStatus Feed(const cq::ChqMediaPacket& pkt) override {
         ++feed_calls;
         last_fed_dts_ = pkt.dts.value;
         for (const Spec& s : specs_) {
@@ -209,9 +209,9 @@ public:
                 break;
             }
         }
-        return cq::Status::Ok();
+        return cq::ChqStatus::Ok();
     }
-    cq::Status PopFrame(cq::MediaFrame& out) override {
+    cq::ChqStatus PopFrame(cq::ChqMediaFrame& out) override {
         ++pop_calls;
         size_t best_i = pending_.size();
         int64_t best_pts = 0;
@@ -226,15 +226,15 @@ public:
             if (blocked) continue;
             if (!found || fp.pts < best_pts) { found = true; best_pts = fp.pts; best_i = i; }
         }
-        if (!found) return cq::Status{cq::StatusCode::kIoNotFound};
-        out = cq::MediaFrame{};
-        out.type = cq::MediaType::kVideo;
-        out.video.pts = cq::RationalTime{best_pts, kTs};
-        out.video.duration = cq::RationalTime{1, kTs};
+        if (!found) return cq::ChqStatus{cq::ChqStatusCode::kIoNotFound};
+        out = cq::ChqMediaFrame{};
+        out.type = cq::ChqMediaType::kVideo;
+        out.video.pts = cq::ChqRationalTime{best_pts, kTs};
+        out.video.duration = cq::ChqRationalTime{1, kTs};
         out.video.width = 64; out.video.height = 36;
-        out.video.pixel_format = cq::PixelFormat::kYUV420SemiPlanar;
+        out.video.pixel_format = cq::ChqPixelFormat::kYUV420SemiPlanar;
         pending_.erase(pending_.begin() + static_cast<long>(best_i));
-        return cq::Status::Ok();
+        return cq::ChqStatus::Ok();
     }
     void Flush() override { pending_.clear(); fed_pts_.clear(); last_fed_dts_ = -1; }
 
@@ -257,23 +257,23 @@ std::vector<MockDecoder::Spec> MakeSpec() {
 }
 
 void TestProviderIntegration() {
-    std::printf("\n[4] 接入 SystemFrameProvider：缓存命中跳过解码\n");
+    std::printf("\n[4] 接入 ChqSystemFrameProvider：缓存命中跳过解码\n");
     auto demuxer = std::make_unique<MockDemuxer>(MakeGop());
     MockDecoder decoder(MakeSpec());
-    cq::LruFrameCache cache(1024 * 1024 * 64);  // 大上界，不淘汰
-    cq::MediaSource src{};
+    cq::ChqLruFrameCache cache(1024 * 1024 * 64);  // 大上界，不淘汰
+    cq::ChqMediaSource src{};
     auto provider = cq::CreateSystemFrameProvider(
-        cq::PlatformPtr<cq::IMediaDemuxer>(demuxer.release()), &decoder);
+        cq::ChqPlatformPtr<cq::ChqIMediaDemuxer>(demuxer.release()), &decoder);
     provider->SetFrameCache(&cache);
-    cq::Status s = provider->Open(src);
+    cq::ChqStatus s = provider->Open(src);
     Check(s.IsOk(), "Open 成功");
 
-    cq::CancelToken no_cancel;
-    cq::FrameRequest req;
-    req.at = cq::RationalTime{0, kTs};
-    req.policy = cq::SeekPolicy::kExact;
+    cq::ChqCancelToken no_cancel;
+    cq::ChqFrameRequest req;
+    req.at = cq::ChqRationalTime{0, kTs};
+    req.policy = cq::ChqSeekPolicy::kExact;
 
-    cq::MediaFrame f1{};
+    cq::ChqMediaFrame f1{};
     int64_t feed_after_first = 0, pop_after_first = 0;
     s = provider->AcquireFrame(req, f1, no_cancel);
     feed_after_first = decoder.feed_calls;
@@ -285,7 +285,7 @@ void TestProviderIntegration() {
     provider->ReleaseFrame(f1);
 
     // 第二次请求同一 t=0：应命中缓存，跳过解码
-    cq::MediaFrame f2{};
+    cq::ChqMediaFrame f2{};
     s = provider->AcquireFrame(req, f2, no_cancel);
     Check(s.IsOk() && f2.video.pts.value == 0, "二次 AcquireFrame(t=0) 命中缓存 pts=0");
     Check(decoder.feed_calls == feed_after_first && decoder.pop_calls == pop_after_first,
@@ -296,7 +296,7 @@ void TestProviderIntegration() {
 
 int main() {
     std::setvbuf(stdout, nullptr, _IONBF, 0);
-    std::printf("== ChuanqiCut MEDIA-011 LruFrameCache 单测 ==\n");
+    std::printf("== ChuanqiCut MEDIA-011 ChqLruFrameCache 单测 ==\n");
     TestBound();
     TestLruOrder();
     TestLeaseProtection();

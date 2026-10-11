@@ -19,10 +19,10 @@
 #include <string>
 #include <vector>
 
-#include "cq/base/status.h"
-#include "cq/base/rational_time.h"
-#include "cq/media/system_frame_provider.h"
-#include "cq/platform/media.h"
+#include "cq/base/chq_status.h"
+#include "cq/base/chq_rational_time.h"
+#include "cq/media/chq_system_frame_provider.h"
+#include "cq/platform/chq_media.h"
 #include "media_decode.h"
 
 #ifndef CQ_SOURCE_DIR
@@ -44,7 +44,7 @@ void Check(bool cond, const char* msg) {
     }
 }
 
-const char* Rt(const cq::RationalTime& t) {
+const char* Rt(const cq::ChqRationalTime& t) {
     static char buf[64];
     std::snprintf(buf, sizeof(buf), "%lld/%d (%.4fs)",
                   static_cast<long long>(t.value), static_cast<int>(t.timescale), t.ToSeconds());
@@ -127,26 +127,26 @@ bool VerifySmpteBars(CVPixelBufferRef pb, uint32_t w, uint32_t h) {
 // 单个 codec 的完整验收流（H.264 与 HEVC 共用，MEDIA-022 参数化）：
 // demux 打开 → 解码器 Open → 喂入全部包 → 排空 → 帧数/pts 集合/显示序/像素断言。
 // 返回本节失败数（复用全局 g_failures 记账，返回值便于双节独立终止）。
-static int RunCodecAcceptance(const std::string& path, cq::CodecId expect_codec,
+static int RunCodecAcceptance(const std::string& path, cq::ChqCodecId expect_codec,
                               const char* label) {
     const int failures_at_entry = g_failures;
     std::printf("\n---- %s（%s）----\n", label, path.c_str());
 
-    cq::MediaSource src;
+    cq::ChqMediaSource src;
     src.path = path.c_str();
     src.path_len = path.size();
 
     // 真实 PALA-010 解封装后端。
-    cq::PlatformPtr<cq::IMediaDemuxer> demuxer;
-    cq::Status s = cq::CreateMediaDemuxer(src, demuxer);
+    cq::ChqPlatformPtr<cq::ChqIMediaDemuxer> demuxer;
+    cq::ChqStatus s = cq::CreateMediaDemuxer(src, demuxer);
     Check(s.IsOk() && demuxer, "CreateMediaDemuxer（真实 Apple 后端）打开成功");
     if (!demuxer) {
         std::printf("\n真实解封装打开失败，本节终止。\n");
         return g_failures - failures_at_entry;
     }
-    cq::StreamInfo info{};
+    cq::ChqStreamInfo info{};
     s = demuxer->GetStreamInfo(0, info);
-    Check(s.IsOk() && info.type == cq::MediaType::kVideo && info.codec == expect_codec,
+    Check(s.IsOk() && info.type == cq::ChqMediaType::kVideo && info.codec == expect_codec,
           "真实流：视频 / 期望编码");
     Check(info.width == 1920 && info.height == 1080, "真实尺寸 = 1920x1080");
     std::printf("  流 codec=%d  尺寸=%ux%u\n", static_cast<int>(info.codec), info.width,
@@ -169,19 +169,19 @@ static int RunCodecAcceptance(const std::string& path, cq::CodecId expect_codec,
     Check(decoder.OutputWidth() % 2 == 0 && decoder.OutputHeight() % 2 == 0,
           "输出尺寸取偶");
 
-    std::vector<cq::RationalTime> demux_pts;
+    std::vector<cq::ChqRationalTime> demux_pts;
     demux_pts.reserve(256);
     // 喂入全部包（按 demux 顺序）。
     for (;;) {
-        cq::MediaPacket pkt{};
-        cq::Status rs = demuxer->ReadPacket(pkt);
-        if (rs.code == cq::StatusCode::kIoNotFound) break;  // 流末尾
+        cq::ChqMediaPacket pkt{};
+        cq::ChqStatus rs = demuxer->ReadPacket(pkt);
+        if (rs.code == cq::ChqStatusCode::kIoNotFound) break;  // 流末尾
         if (!rs.IsOk()) {
             std::printf("  ReadPacket error: %s\n", cq::StatusToString(rs.code));
             break;
         }
         if (pkt.codec == expect_codec) demux_pts.push_back(pkt.pts);
-        cq::Status fs = decoder.Feed(pkt);
+        cq::ChqStatus fs = decoder.Feed(pkt);
         if (!fs.IsOk()) {
             std::printf("  Feed error at pts=%s: %s\n", Rt(pkt.pts), cq::StatusToString(fs.code));
             // 继续，尽可能解出更多帧
@@ -190,18 +190,18 @@ static int RunCodecAcceptance(const std::string& path, cq::CodecId expect_codec,
     std::printf("  喂入视频包数 = %zu\n", demux_pts.size());
 
     // 排空解码器输出（显示序）。
-    std::vector<cq::RationalTime> decoded_pts;
+    std::vector<cq::ChqRationalTime> decoded_pts;
     decoded_pts.reserve(256);
     int non_black_sampled = 0;
     int pixel_checked = 0;
     int bars_ok = 0;
     uint32_t w = 0, h = 0;
     for (;;) {
-        cq::MediaFrame f{};
-        cq::Status ps = decoder.PopFrame(f);
+        cq::ChqMediaFrame f{};
+        cq::ChqStatus ps = decoder.PopFrame(f);
         if (!ps.IsOk()) break;  // 已 drain
         decoded_pts.push_back(f.video.pts);
-        if (f.type == cq::MediaType::kVideo && f.video.image != nullptr) {
+        if (f.type == cq::ChqMediaType::kVideo && f.video.image != nullptr) {
             CVPixelBufferRef pb = cq::GetCvPixelBuffer(f.video.image);
             if (pb != nullptr) {
                 w = static_cast<uint32_t>(CVPixelBufferGetWidth(pb));
@@ -233,8 +233,8 @@ static int RunCodecAcceptance(const std::string& path, cq::CodecId expect_codec,
 
     // pts 集合一致（解码序 demux_pts 与显示序 decoded_pts 应覆盖同一组 pts）。
     {
-        std::set<cq::RationalTime> a(demux_pts.begin(), demux_pts.end());
-        std::set<cq::RationalTime> b(decoded_pts.begin(), decoded_pts.end());
+        std::set<cq::ChqRationalTime> a(demux_pts.begin(), demux_pts.end());
+        std::set<cq::ChqRationalTime> b(decoded_pts.begin(), decoded_pts.end());
         Check(a == b, "解码 pts 集合 == demux pts 集合（重排无损）");
     }
 
@@ -257,28 +257,28 @@ static int RunCodecAcceptance(const std::string& path, cq::CodecId expect_codec,
     Check(pixel_checked > 0 && non_black_sampled == pixel_checked, "抽样帧均非全黑");
     Check(bars_ok >= 1, "至少首/中/尾帧通过 smptebars 彩条结构校验");
 
-    // ---- 端到端冒烟：demux + 解码器 + SystemFrameProvider ----
+    // ---- 端到端冒烟：demux + 解码器 + ChqSystemFrameProvider ----
     std::printf("\n[端到端冒烟] PALA-010 demux + VideoToolboxDecoder + MEDIA-020 provider\n");
     cq::VideoToolboxDecoder e2e_decoder(path.c_str());
     auto provider = cq::CreateSystemFrameProvider(std::move(demuxer), &e2e_decoder);
     s = provider->Open(src);
-    Check(s.IsOk(), "SystemFrameProvider.Open 成功（demux + 硬解后端均通）");
+    Check(s.IsOk(), "ChqSystemFrameProvider.Open 成功（demux + 硬解后端均通）");
 
     int e2e_ok = 0;
-    const cq::RationalTime targets[] = {
-        cq::RationalTime{0, 120000},
-        cq::RationalTime{120000, 120000},   // 1.0s
-        cq::RationalTime{300000, 120000},   // 2.5s
-        cq::RationalTime{599000, 120000},   // 4.99s
+    const cq::ChqRationalTime targets[] = {
+        cq::ChqRationalTime{0, 120000},
+        cq::ChqRationalTime{120000, 120000},   // 1.0s
+        cq::ChqRationalTime{300000, 120000},   // 2.5s
+        cq::ChqRationalTime{599000, 120000},   // 4.99s
     };
-    cq::CancelToken no_cancel;
-    for (const cq::RationalTime& t : targets) {
-        cq::FrameRequest req;
+    cq::ChqCancelToken no_cancel;
+    for (const cq::ChqRationalTime& t : targets) {
+        cq::ChqFrameRequest req;
         req.at = t;
-        req.policy = cq::SeekPolicy::kExact;
-        cq::MediaFrame f{};
-        cq::Status as = provider->AcquireFrame(req, f, no_cancel);
-        bool good = as.IsOk() && f.type == cq::MediaType::kVideo && f.video.image != nullptr;
+        req.policy = cq::ChqSeekPolicy::kExact;
+        cq::ChqMediaFrame f{};
+        cq::ChqStatus as = provider->AcquireFrame(req, f, no_cancel);
+        bool good = as.IsOk() && f.type == cq::ChqMediaType::kVideo && f.video.image != nullptr;
         std::printf("  AcquireFrame(t=%s) -> %s  frame=%s\n", Rt(t),
                     cq::StatusToString(as.code), good ? "real" : "none");
         if (good) {
@@ -355,10 +355,10 @@ int main() {
     // 返回 kDecodeUnsupported，导入链路在探测步即挂）。
     RunCodecAcceptance(
         std::string(CQ_SOURCE_DIR) + "/tests/golden/frames/gf_1080p_h264.mp4",
-        cq::CodecId::kH264, "H.264 基线");
+        cq::ChqCodecId::kH264, "H.264 基线");
     RunCodecAcceptance(
         std::string(CQ_SOURCE_DIR) + "/tests/golden/frames/gf_1080p_hevc.mp4",
-        cq::CodecId::kHevc, "HEVC（MEDIA-022）");
+        cq::ChqCodecId::kHevc, "HEVC（MEDIA-022）");
 
     std::printf("\n[结论] H.264 + HEVC 解码结果正确：帧数/pts/像素/端到端均验证通过。\n");
     std::printf("== 结果：%d 项检查，%d 项失败 ==\n", g_checks, g_failures);

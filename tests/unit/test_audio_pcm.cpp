@@ -18,9 +18,9 @@
 #include <cstring>
 #include <thread>
 
-#include "cq/audio/pcm_pool.h"
-#include "cq/audio/spsc_ring.h"
-#include "cq/base/status.h"
+#include "cq/audio/chq_pcm_pool.h"
+#include "cq/audio/chq_spsc_ring.h"
+#include "cq/base/chq_status.h"
 
 namespace {
 
@@ -36,9 +36,9 @@ void Check(bool cond, const char* msg) {
     std::fflush(stdout);
 }
 
-cq::AudioGraphSpec TestSpec() {
-    cq::AudioGraphSpec spec;
-    spec.format = cq::SampleFormat::kFloat32;
+cq::ChqAudioGraphSpec TestSpec() {
+    cq::ChqAudioGraphSpec spec;
+    spec.format = cq::ChqSampleFormat::kFloat32;
     spec.channels = 2;
     spec.sample_rate = 48000;
     spec.frames_per_block = 512;  // 单块 = 512*2*4 = 4096 字节
@@ -50,28 +50,28 @@ constexpr uint64_t kMaxChunk = 4;           // 压测变长块上限（uint64 �
 
 void TestPoolInitValidation() {
     std::printf("[1] Pool Init 校验\n");
-    cq::AudioBlockPool pool;
-    Check(pool.Init(0, TestSpec()).code == cq::StatusCode::kInvalidArgument,
+    cq::ChqAudioBlockPool pool;
+    Check(pool.Init(0, TestSpec()).code == cq::ChqStatusCode::kInvalidArgument,
           "0 槽位应拒绝");
-    cq::AudioGraphSpec bad = TestSpec();
-    bad.format = cq::SampleFormat::kUnknown;
-    Check(pool.Init(4, bad).code == cq::StatusCode::kInvalidArgument,
+    cq::ChqAudioGraphSpec bad = TestSpec();
+    bad.format = cq::ChqSampleFormat::kUnknown;
+    Check(pool.Init(4, bad).code == cq::ChqStatusCode::kInvalidArgument,
           "未知格式应拒绝");
     Check(pool.Init(4, TestSpec()).IsOk(), "合法规格应成功");
-    Check(pool.Init(4, TestSpec()).code == cq::StatusCode::kInvalidArgument,
+    Check(pool.Init(4, TestSpec()).code == cq::ChqStatusCode::kInvalidArgument,
           "重复 Init 应拒绝");
 }
 
 void TestPoolRoundtrip() {
     std::printf("[2] Pool Acquire/Release 往返与耗尽\n");
-    cq::AudioBlockPool pool;
+    cq::ChqAudioBlockPool pool;
     Check(pool.Init(3, TestSpec()).IsOk(), "Init 3 槽");
-    cq::AudioBuffer a, b, c;
+    cq::ChqAudioBuffer a, b, c;
     Check(pool.Acquire(a).IsOk(), "Acquire #1");
     Check(pool.Acquire(b).IsOk(), "Acquire #2");
     Check(a.data != nullptr && b.data != nullptr && a.data != b.data,
           "槽位互不重叠");
-    const bool same_meta = a.format == cq::SampleFormat::kFloat32 &&
+    const bool same_meta = a.format == cq::ChqSampleFormat::kFloat32 &&
                            a.channels == 2 && a.sample_rate == 48000 &&
                            a.frame_count == 512 && a.data_bytes == 4096;
     Check(same_meta, "Acquire 元数据来自规格模板");
@@ -83,8 +83,8 @@ void TestPoolRoundtrip() {
     Check(samples[100] == 25.0f, "写入后可读回");
 
     Check(pool.Acquire(c).IsOk(), "Acquire #3（取空）");
-    cq::AudioBuffer d;
-    Check(pool.Acquire(d).code == cq::StatusCode::kResourceExhausted,
+    cq::ChqAudioBuffer d;
+    Check(pool.Acquire(d).code == cq::ChqStatusCode::kResourceExhausted,
           "第 4 次 Acquire 应耗尽拒绝（不回退堆）");
     Check(pool.Release(a).IsOk() && pool.Release(b).IsOk() && pool.Release(c).IsOk(),
           "逐块 Release 成功");
@@ -95,29 +95,29 @@ void TestPoolRoundtrip() {
 
 void TestPoolGuards() {
     std::printf("[3] Pool 重复归还 / 外来指针防护\n");
-    cq::AudioBlockPool pool;
+    cq::ChqAudioBlockPool pool;
     Check(pool.Init(2, TestSpec()).IsOk(), "Init");
-    cq::AudioBuffer a;
+    cq::ChqAudioBuffer a;
     Check(pool.Acquire(a).IsOk(), "Acquire");
     Check(pool.Release(a).IsOk(), "第一次 Release");
-    Check(pool.Release(a).code == cq::StatusCode::kInvalidArgument, "重复 Release 拒绝");
+    Check(pool.Release(a).code == cq::ChqStatusCode::kInvalidArgument, "重复 Release 拒绝");
 
-    cq::AudioBuffer foreign{};
-    foreign.format = cq::SampleFormat::kFloat32;
+    cq::ChqAudioBuffer foreign{};
+    foreign.format = cq::ChqSampleFormat::kFloat32;
     foreign.channels = 2;
     float stack_bytes[64];
     foreign.data = stack_bytes;
-    Check(pool.Release(foreign).code == cq::StatusCode::kInvalidArgument,
+    Check(pool.Release(foreign).code == cq::ChqStatusCode::kInvalidArgument,
           "外来指针拒绝");
 
-    cq::AudioBuffer nul{};
+    cq::ChqAudioBuffer nul{};
     nul.data = nullptr;
-    Check(pool.Release(nul).code == cq::StatusCode::kInvalidArgument, "null 拒绝");
+    Check(pool.Release(nul).code == cq::ChqStatusCode::kInvalidArgument, "null 拒绝");
 }
 
 void TestPoolConcurrent() {
     std::printf("[4] Pool 多线程并发 Acquire/Release（4 线程 × 2 万次）\n");
-    cq::AudioBlockPool pool;
+    cq::ChqAudioBlockPool pool;
     Check(pool.Init(4, TestSpec()).IsOk(), "Init 4 槽");
     constexpr int kThreads = 4;
     constexpr int kIters = 20000;
@@ -128,8 +128,8 @@ void TestPoolConcurrent() {
     for (int t = 0; t < kThreads; ++t) {
         threads[t] = std::thread([t, &pool, &bad_rw, &bad_status]() {
             for (int i = 0; i < kIters; ++i) {
-                cq::AudioBuffer buf;
-                const cq::Status st = pool.Acquire(buf);
+                cq::ChqAudioBuffer buf;
+                const cq::ChqStatus st = pool.Acquire(buf);
                 if (!st.IsOk()) {
                     bad_status.fetch_add(1);
                     continue;
@@ -149,38 +149,38 @@ void TestPoolConcurrent() {
         });
     }
     for (int t = 0; t < kThreads; ++t) threads[t].join();
-    Check(bad_status.load() == 0, "并发期间无异常 Status");
+    Check(bad_status.load() == 0, "并发期间无异常 ChqStatus");
     Check(bad_rw.load() == 0, "并发期间无槽位交叉污染");
     Check(pool.InUse() == 0, "并发结束 InUse 清零");
     // 末态不变量：整池可再次取空再全还。
-    cq::AudioBuffer all[4];
+    cq::ChqAudioBuffer all[4];
     bool all_ok = true;
     for (int i = 0; i < 4; ++i) all_ok = all_ok && pool.Acquire(all[i]).IsOk();
     Check(all_ok, "末态整池可取空");
-    Check(pool.Acquire(all[0]).code == cq::StatusCode::kResourceExhausted,
+    Check(pool.Acquire(all[0]).code == cq::ChqStatusCode::kResourceExhausted,
           "末态确认耗尽");
     for (int i = 0; i < 4; ++i) pool.Release(all[i]);
 }
 
 void TestRingInitValidation() {
     std::printf("[5] Ring Init 校验与 2 的幂取整\n");
-    cq::SpscSampleRing ring;
-    Check(ring.Init(0).code == cq::StatusCode::kInvalidArgument, "0 容量拒绝");
+    cq::ChqSpscSampleRing ring;
+    Check(ring.Init(0).code == cq::ChqStatusCode::kInvalidArgument, "0 容量拒绝");
     Check(ring.Init(1000).IsOk(), "合法 Init");
     Check(ring.CapacityBytes() == 1024, "容量向上取整到 2 的幂");
-    Check(ring.Init(1024).code == cq::StatusCode::kInvalidArgument, "重复 Init 拒绝");
+    Check(ring.Init(1024).code == cq::ChqStatusCode::kInvalidArgument, "重复 Init 拒绝");
 }
 
 void TestRingSingleThread() {
     std::printf("[6] Ring 单线程读写/回绕/满空\n");
-    cq::SpscSampleRing ring;
+    cq::ChqSpscSampleRing ring;
     Check(ring.Init(16).IsOk(), "Init 16 字节");
     uint8_t buf[32];
 
     Check(ring.Write(buf, 0).IsOk(), "0 该厂商写为 no-op");
     Check(ring.Read(buf, 0).IsOk(), "0 该厂商读为 no-op");
-    Check(ring.Read(buf, 1).code == cq::StatusCode::kResourceExhausted, "空读拒绝");
-    Check(ring.Write(buf, 17).code == cq::StatusCode::kInvalidArgument,
+    Check(ring.Read(buf, 1).code == cq::ChqStatusCode::kResourceExhausted, "空读拒绝");
+    Check(ring.Write(buf, 17).code == cq::ChqStatusCode::kInvalidArgument,
           "单块超容量拒绝");
 
     // 回绕完整性：三轮「写 10 读 10」，第 2、3 轮跨越环形边界。
@@ -198,12 +198,12 @@ void TestRingSingleThread() {
     Check(ring.ReadableBytes() == 0, "读尽");
     Check(ring.WritableBytes() == 16, "写满可用空间恢复");
     Check(ring.Write(buf, 16).IsOk(), "恰好写满");
-    Check(ring.Write(buf, 1).code == cq::StatusCode::kResourceExhausted, "满写拒绝");
+    Check(ring.Write(buf, 1).code == cq::ChqStatusCode::kResourceExhausted, "满写拒绝");
 }
 
 void TestRingSpscStress() {
     std::printf("[7] Ring SPSC 跨线程压测（20 万序号，变长块）\n");
-    cq::SpscSampleRing ring;
+    cq::ChqSpscSampleRing ring;
     Check(ring.Init(4096).IsOk(), "Init 4KB");
     constexpr uint64_t kTotalValues = 200000;  // uint64 序号流
     // 变长块调度：第 k 块写 1+(k%4) 个 uint64。生产/消费两侧同构，保证确定性。

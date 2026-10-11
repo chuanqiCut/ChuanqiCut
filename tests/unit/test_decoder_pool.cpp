@@ -1,11 +1,11 @@
-// ChuanqiCut — MEDIA-012 DecoderPool 单测（跨平台，无平台后端）
+// ChuanqiCut — MEDIA-012 ChqDecoderPool 单测（跨平台，无平台后端）
 //
 // 验收（实测证据）：
-//   1. 超路数请求不崩溃、返回可预期 Status（kResourceExhausted，非 crash、非挂起）。
+//   1. 超路数请求不崩溃、返回可预期 ChqStatus（kResourceExhausted，非 crash、非挂起）。
 //   2. 释放后能重新 Acquire（池确实复用，复用同一 handle）。
 //   3. ActiveCount() / MaxHardwarePaths() 返回值符合预期；SetMaxHardwarePaths 可覆盖。
 //   4. 并发借/还无挂起（10s 超时上界，CORE-005 教训）。
-//   5. 接入 SystemFrameProvider：Open 从池借路解码；池满时 Open 如实返回 kResourceExhausted。
+//   5. 接入 ChqSystemFrameProvider：Open 从池借路解码；池满时 Open 如实返回 kResourceExhausted。
 //
 // 无缓冲输出：崩溃/挂起时仍能看到进度。
 
@@ -18,12 +18,12 @@
 #include <set>
 #include <vector>
 
-#include "cq/base/status.h"
-#include "cq/base/rational_time.h"
-#include "cq/media/decoder_pool.h"
-#include "cq/media/system_frame_provider.h"
-#include "cq/platform/common.h"
-#include "cq/platform/media.h"
+#include "cq/base/chq_status.h"
+#include "cq/base/chq_rational_time.h"
+#include "cq/media/chq_decoder_pool.h"
+#include "cq/media/chq_system_frame_provider.h"
+#include "cq/platform/chq_common.h"
+#include "cq/platform/chq_media.h"
 
 namespace {
 
@@ -43,36 +43,36 @@ void Check(bool cond, const char* msg) {
 constexpr int32_t kTs = 4;
 
 // ---- Mock 解码器（供 provider 集成解码用）----
-class MockDecoder : public cq::IFrameDecoder {
+class MockDecoder : public cq::ChqIFrameDecoder {
 public:
     struct Spec { int64_t dts, pts, release; };
     explicit MockDecoder(std::vector<Spec> specs) : specs_(std::move(specs)) {
         for (const Spec& s : specs_) all_pts_.insert(s.pts);
     }
-    cq::Status Open(const cq::StreamInfo&) override { return cq::Status::Ok(); }
-    cq::Status Feed(const cq::MediaPacket& pkt) override {
+    cq::ChqStatus Open(const cq::ChqStreamInfo&) override { return cq::ChqStatus::Ok(); }
+    cq::ChqStatus Feed(const cq::ChqMediaPacket& pkt) override {
         last_fed_dts_ = pkt.dts.value;
         for (const Spec& s : specs_) {
             if (s.dts == pkt.dts.value) { pending_.push_back(P{s.pts, s.release}); break; }
         }
-        return cq::Status::Ok();
+        return cq::ChqStatus::Ok();
     }
-    cq::Status PopFrame(cq::MediaFrame& out) override {
+    cq::ChqStatus PopFrame(cq::ChqMediaFrame& out) override {
         size_t best_i = pending_.size(); int64_t best_pts = 0; bool found = false;
         for (size_t i = 0; i < pending_.size(); ++i) {
             const P& fp = pending_[static_cast<size_t>(i)];
             if (fp.release > last_fed_dts_) continue;  // 参考帧未齐备
             if (!found || fp.pts < best_pts) { found = true; best_pts = fp.pts; best_i = i; }
         }
-        if (!found) return cq::Status{cq::StatusCode::kIoNotFound};
-        out = cq::MediaFrame{};
-        out.type = cq::MediaType::kVideo;
-        out.video.pts = cq::RationalTime{best_pts, kTs};
-        out.video.duration = cq::RationalTime{1, kTs};
+        if (!found) return cq::ChqStatus{cq::ChqStatusCode::kIoNotFound};
+        out = cq::ChqMediaFrame{};
+        out.type = cq::ChqMediaType::kVideo;
+        out.video.pts = cq::ChqRationalTime{best_pts, kTs};
+        out.video.duration = cq::ChqRationalTime{1, kTs};
         out.video.width = 64; out.video.height = 36;
-        out.video.pixel_format = cq::PixelFormat::kYUV420SemiPlanar;
+        out.video.pixel_format = cq::ChqPixelFormat::kYUV420SemiPlanar;
         pending_.erase(pending_.begin() + static_cast<long>(best_i));
-        return cq::Status::Ok();
+        return cq::ChqStatus::Ok();
     }
     void Flush() override { pending_.clear(); last_fed_dts_ = -1; }
 private:
@@ -83,47 +83,47 @@ private:
     int64_t last_fed_dts_ = -1;
 };
 
-// ---- Mock 解码器工厂（创建 CqDecoder 包装一个 MockDecoder）----
-class MockDecoderFactory : public cq::IDecoderFactory {
+// ---- Mock 解码器工厂（创建 ChqDecoder 包装一个 MockDecoder）----
+class MockDecoderFactory : public cq::ChqIDecoderFactory {
 public:
     MockDecoderFactory()
         : dec_(std::vector<MockDecoder::Spec>{
               {0, 0, 0}, {1, 3, 1}, {2, 1, 1}, {3, 2, 1}}) {}
-    cq::Status Create(cq::CodecId, cq::DecoderHandle& out) override {
-        auto* d = new cq::CqDecoder();
+    cq::ChqStatus Create(cq::ChqCodecId, cq::ChqDecoderHandle& out) override {
+        auto* d = new cq::ChqDecoder();
         d->decoder = &dec_;
         d->id = ++id_;
         out = d;
-        return cq::Status::Ok();
+        return cq::ChqStatus::Ok();
     }
-    void Destroy(cq::DecoderHandle d) override { delete d; }
-    MockDecoder dec_;          // 池内所有 CqDecoder 共享此 MockDecoder（仅测试用）
+    void Destroy(cq::ChqDecoderHandle d) override { delete d; }
+    MockDecoder dec_;          // 池内所有 ChqDecoder 共享此 MockDecoder（仅测试用）
     int id_ = 0;
 };
 
 // ---- Mock demuxer（供 provider 集成用）----
-class MockDemuxer : public cq::IMediaDemuxer {
+class MockDemuxer : public cq::ChqIMediaDemuxer {
 public:
     struct GP { int64_t dts, pts; bool kf; };
     explicit MockDemuxer(std::vector<GP> gop) : gop_(std::move(gop)) {}
     void Destroy() override { delete this; }
-    cq::Status Open(const cq::MediaSource&) override { idx_ = 0; return cq::Status::Ok(); }
-    cq::Status GetDuration(cq::RationalTime& d) const override {
-        d = cq::RationalTime{static_cast<int64_t>(gop_.size()), kTs}; return cq::Status::Ok();
+    cq::ChqStatus Open(const cq::ChqMediaSource&) override { idx_ = 0; return cq::ChqStatus::Ok(); }
+    cq::ChqStatus GetDuration(cq::ChqRationalTime& d) const override {
+        d = cq::ChqRationalTime{static_cast<int64_t>(gop_.size()), kTs}; return cq::ChqStatus::Ok();
     }
     int32_t GetStreamCount() const override { return 1; }
-    cq::Status GetStreamInfo(int32_t, cq::StreamInfo& o) const override {
-        o = cq::StreamInfo{}; o.type = cq::MediaType::kVideo; o.codec = cq::CodecId::kH264;
-        o.width = 64; o.height = 36; o.time_base = cq::RationalTime{1, kTs}; return cq::Status::Ok();
+    cq::ChqStatus GetStreamInfo(int32_t, cq::ChqStreamInfo& o) const override {
+        o = cq::ChqStreamInfo{}; o.type = cq::ChqMediaType::kVideo; o.codec = cq::ChqCodecId::kH264;
+        o.width = 64; o.height = 36; o.time_base = cq::ChqRationalTime{1, kTs}; return cq::ChqStatus::Ok();
     }
-    cq::Status Seek(const cq::RationalTime&, const cq::CancelToken&) override { idx_ = 0; return cq::Status::Ok(); }
-    cq::Status ReadPacket(cq::MediaPacket& out) override {
-        out = cq::MediaPacket{};
-        if (idx_ >= gop_.size()) return cq::Status{cq::StatusCode::kIoNotFound};
+    cq::ChqStatus Seek(const cq::ChqRationalTime&, const cq::ChqCancelToken&) override { idx_ = 0; return cq::ChqStatus::Ok(); }
+    cq::ChqStatus ReadPacket(cq::ChqMediaPacket& out) override {
+        out = cq::ChqMediaPacket{};
+        if (idx_ >= gop_.size()) return cq::ChqStatus{cq::ChqStatusCode::kIoNotFound};
         const GP& g = gop_[static_cast<size_t>(idx_++)];
-        out.pts = cq::RationalTime{g.pts, kTs}; out.dts = cq::RationalTime{g.dts, kTs};
-        out.codec = cq::CodecId::kH264; out.is_keyframe = g.kf; out.data = buf_.data(); out.size = buf_.size();
-        return cq::Status::Ok();
+        out.pts = cq::ChqRationalTime{g.pts, kTs}; out.dts = cq::ChqRationalTime{g.dts, kTs};
+        out.codec = cq::ChqCodecId::kH264; out.is_keyframe = g.kf; out.data = buf_.data(); out.size = buf_.size();
+        return cq::ChqStatus::Ok();
     }
 private:
     std::vector<GP> gop_;
@@ -136,24 +136,24 @@ std::vector<MockDemuxer::GP> MakeGop() {
 }
 
 // ---------------------------------------------------------------------------
-// 1. 超路数不崩溃 + 返回可预期 Status + 复用 + 计数
+// 1. 超路数不崩溃 + 返回可预期 ChqStatus + 复用 + 计数
 // ---------------------------------------------------------------------------
 void TestOverLimitAndReuse() {
     std::printf("\n[1] 超路数降级：不崩溃、返回 kResourceExhausted、释放后复用\n");
     auto factory = std::make_unique<MockDecoderFactory>();
-    cq::DecoderPool pool(1, std::move(factory));
+    cq::ChqDecoderPool pool(1, std::move(factory));
     Check(pool.MaxHardwarePaths() == 1, "默认 MaxHardwarePaths == 1");
     Check(pool.ActiveCount() == 0, "初始 ActiveCount == 0");
 
-    cq::DecoderHandle h1 = nullptr;
-    cq::Status s1 = pool.AcquireDecoder(cq::CodecId::kH264, h1);
+    cq::ChqDecoderHandle h1 = nullptr;
+    cq::ChqStatus s1 = pool.AcquireDecoder(cq::ChqCodecId::kH264, h1);
     Check(s1.IsOk() && h1 != nullptr, "第一路借到（Ok，handle 非空）");
     Check(pool.ActiveCount() == 1, "借出 1 路后 ActiveCount == 1");
 
     // 第二路：满且无空闲 → kResourceExhausted（不崩溃、不挂起）
-    cq::DecoderHandle h2 = nullptr;
-    cq::Status s2 = pool.AcquireDecoder(cq::CodecId::kH264, h2);
-    Check(s2.code == cq::StatusCode::kResourceExhausted,
+    cq::ChqDecoderHandle h2 = nullptr;
+    cq::ChqStatus s2 = pool.AcquireDecoder(cq::ChqCodecId::kH264, h2);
+    Check(s2.code == cq::ChqStatusCode::kResourceExhausted,
           "第二路超上限返回 kResourceExhausted（非 crash / 非挂起）");
     Check(h2 == nullptr, "超上限 out_decoder == nullptr");
     Check(pool.ActiveCount() == 1, "超上限时 ActiveCount 仍为 1（未偷偷多开）");
@@ -161,23 +161,23 @@ void TestOverLimitAndReuse() {
     // 释放后复用（池生效：同一个 handle 被复用）
     pool.ReleaseDecoder(h1);
     Check(pool.ActiveCount() == 0, "释放后 ActiveCount == 0");
-    cq::DecoderHandle h3 = nullptr;
-    cq::Status s3 = pool.AcquireDecoder(cq::CodecId::kH264, h3);
+    cq::ChqDecoderHandle h3 = nullptr;
+    cq::ChqStatus s3 = pool.AcquireDecoder(cq::ChqCodecId::kH264, h3);
     Check(s3.IsOk() && h3 == h1, "释放后重新 Acquire 复用同一 handle（池化生效）");
 
     // SetMaxHardwarePaths 覆盖
     pool.SetMaxHardwarePaths(3);
     Check(pool.MaxHardwarePaths() == 3, "SetMaxHardwarePaths 覆盖为 3");
     // 现在可借到 2 路（共 3）
-    cq::DecoderHandle h4 = nullptr, h5 = nullptr;
-    cq::Status s4 = pool.AcquireDecoder(cq::CodecId::kH264, h4);
-    cq::Status s5 = pool.AcquireDecoder(cq::CodecId::kH264, h5);
+    cq::ChqDecoderHandle h4 = nullptr, h5 = nullptr;
+    cq::ChqStatus s4 = pool.AcquireDecoder(cq::ChqCodecId::kH264, h4);
+    cq::ChqStatus s5 = pool.AcquireDecoder(cq::ChqCodecId::kH264, h5);
     Check(s4.IsOk() && s5.IsOk(), "上界放宽到 3 后可借到 2 路");
     Check(pool.ActiveCount() == 3, "ActiveCount == 3");
     // 第 4 路再次超上限
-    cq::DecoderHandle h6 = nullptr;
-    cq::Status s6 = pool.AcquireDecoder(cq::CodecId::kH264, h6);
-    Check(s6.code == cq::StatusCode::kResourceExhausted, "第 4 路再次超上限返回 kResourceExhausted");
+    cq::ChqDecoderHandle h6 = nullptr;
+    cq::ChqStatus s6 = pool.AcquireDecoder(cq::ChqCodecId::kH264, h6);
+    Check(s6.code == cq::ChqStatusCode::kResourceExhausted, "第 4 路再次超上限返回 kResourceExhausted");
     pool.ReleaseDecoder(h3); pool.ReleaseDecoder(h4); pool.ReleaseDecoder(h5);
 }
 
@@ -188,12 +188,12 @@ void TestConcurrentNoHang() {
     std::printf("\n[2] 并发借/还无挂起（8 线程 x 500 次，10s 超时）\n");
     constexpr int32_t kMax = 2;
     auto factory = std::make_unique<MockDecoderFactory>();
-    cq::DecoderPool pool(kMax, std::move(factory));
+    cq::ChqDecoderPool pool(kMax, std::move(factory));
 
     auto worker = [&]() {
         for (int i = 0; i < 500; ++i) {
-            cq::DecoderHandle h = nullptr;
-            cq::Status s = pool.AcquireDecoder(cq::CodecId::kH264, h);
+            cq::ChqDecoderHandle h = nullptr;
+            cq::ChqStatus s = pool.AcquireDecoder(cq::ChqCodecId::kH264, h);
             if (s.IsOk()) pool.ReleaseDecoder(h);  // 立即归还
         }
     };
@@ -215,37 +215,37 @@ void TestConcurrentNoHang() {
 }
 
 // ---------------------------------------------------------------------------
-// 3. 接入 SystemFrameProvider
+// 3. 接入 ChqSystemFrameProvider
 // ---------------------------------------------------------------------------
 void TestProviderIntegration() {
-    std::printf("\n[3] 接入 SystemFrameProvider：从池借路解码；池满 Open 返回 kResourceExhausted\n");
+    std::printf("\n[3] 接入 ChqSystemFrameProvider：从池借路解码；池满 Open 返回 kResourceExhausted\n");
     auto factory = std::make_unique<MockDecoderFactory>();
-    cq::DecoderPool pool(1, std::move(factory));  // 上限 1 路
+    cq::ChqDecoderPool pool(1, std::move(factory));  // 上限 1 路
 
     // provider1：Open 从池借 1 路并解码
     auto demuxer1 = std::make_unique<MockDemuxer>(MakeGop());
     auto provider1 = cq::CreateSystemFrameProvider(
-        cq::PlatformPtr<cq::IMediaDemuxer>(demuxer1.release()), nullptr);
+        cq::ChqPlatformPtr<cq::ChqIMediaDemuxer>(demuxer1.release()), nullptr);
     provider1->SetDecoderPool(&pool);
-    cq::MediaSource src{};
-    cq::Status so1 = provider1->Open(src);
+    cq::ChqMediaSource src{};
+    cq::ChqStatus so1 = provider1->Open(src);
     Check(so1.IsOk(), "provider1 Open 从池借到 1 路并成功");
     Check(pool.ActiveCount() == 1, "provider1 持有期间 ActiveCount == 1");
 
-    cq::CancelToken no_cancel;
-    cq::FrameRequest req; req.at = cq::RationalTime{0, kTs}; req.policy = cq::SeekPolicy::kExact;
-    cq::MediaFrame f{};
-    cq::Status sa = provider1->AcquireFrame(req, f, no_cancel);
+    cq::ChqCancelToken no_cancel;
+    cq::ChqFrameRequest req; req.at = cq::ChqRationalTime{0, kTs}; req.policy = cq::ChqSeekPolicy::kExact;
+    cq::ChqMediaFrame f{};
+    cq::ChqStatus sa = provider1->AcquireFrame(req, f, no_cancel);
     Check(sa.IsOk() && f.video.pts.value == 0, "provider1 经池解码得到 pts=0");
     provider1->ReleaseFrame(f);
 
     // provider2：池已满 → Open 如实返回 kResourceExhausted（不崩溃）
     auto demuxer2 = std::make_unique<MockDemuxer>(MakeGop());
     auto provider2 = cq::CreateSystemFrameProvider(
-        cq::PlatformPtr<cq::IMediaDemuxer>(demuxer2.release()), nullptr);
+        cq::ChqPlatformPtr<cq::ChqIMediaDemuxer>(demuxer2.release()), nullptr);
     provider2->SetDecoderPool(&pool);
-    cq::Status so2 = provider2->Open(src);
-    Check(so2.code == cq::StatusCode::kResourceExhausted,
+    cq::ChqStatus so2 = provider2->Open(src);
+    Check(so2.code == cq::ChqStatusCode::kResourceExhausted,
           "provider2 Open 池满 → kResourceExhausted（解码能力降级，非崩溃）");
     Check(so2.IsError(), "kResourceExhausted 是错误（调用方据此背压）");
 
@@ -258,7 +258,7 @@ void TestProviderIntegration() {
 
 int main() {
     std::setvbuf(stdout, nullptr, _IONBF, 0);
-    std::printf("== ChuanqiCut MEDIA-012 DecoderPool 单测 ==\n");
+    std::printf("== ChuanqiCut MEDIA-012 ChqDecoderPool 单测 ==\n");
     TestOverLimitAndReuse();
     TestConcurrentNoHang();
     TestProviderIntegration();

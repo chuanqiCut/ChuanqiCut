@@ -13,7 +13,7 @@
 
 #include <cstdio>
 
-#include "cq/platform/capabilities.h"
+#include "cq/platform/chq_capabilities.h"
 
 namespace {
 
@@ -28,65 +28,65 @@ void Check(bool cond, const char* msg) {
     }
 }
 
-const char* CapName(cq::Capability c) {
+const char* CapName(cq::ChqCapability c) {
     switch (c) {
-        case cq::Capability::kHwDecodeH264:
+        case cq::ChqCapability::kHwDecodeH264:
             return "hw_decode_h264";
-        case cq::Capability::kHwDecodeHevc:
+        case cq::ChqCapability::kHwDecodeHevc:
             return "hw_decode_hevc";
-        case cq::Capability::kHwDecodeAv1:
+        case cq::ChqCapability::kHwDecodeAv1:
             return "hw_decode_av1";
-        case cq::Capability::kHwDecodeProres:
+        case cq::ChqCapability::kHwDecodeProres:
             return "hw_decode_prores";
-        case cq::Capability::kHwEncodeH264:
+        case cq::ChqCapability::kHwEncodeH264:
             return "hw_encode_h264";
-        case cq::Capability::kHwEncodeHevc:
+        case cq::ChqCapability::kHwEncodeHevc:
             return "hw_encode_hevc";
-        case cq::Capability::kHwEncodeProres:
+        case cq::ChqCapability::kHwEncodeProres:
             return "hw_encode_prores";
-        case cq::Capability::k10BitPipeline:
+        case cq::ChqCapability::k10BitPipeline:
             return "10bit_pipeline";
-        case cq::Capability::kHdrDisplay:
+        case cq::ChqCapability::kHdrDisplay:
             return "hdr_display";
-        case cq::Capability::kComputeShader:
+        case cq::ChqCapability::kComputeShader:
             return "compute_shader";
-        case cq::Capability::kFloatTexture:
+        case cq::ChqCapability::kFloatTexture:
             return "float_texture";
-        case cq::Capability::kExternalMemoryImport:
+        case cq::ChqCapability::kExternalMemoryImport:
             return "external_memory_import";
-        case cq::Capability::kNpuInference:
+        case cq::ChqCapability::kNpuInference:
             return "npu_inference";
-        case cq::Capability::kGpuMetal:
+        case cq::ChqCapability::kGpuMetal:
             return "gpu_metal";
-        case cq::Capability::kGpuGles:
+        case cq::ChqCapability::kGpuGles:
             return "gpu_gles";
-        case cq::Capability::kGpuVulkan:
+        case cq::ChqCapability::kGpuVulkan:
             return "gpu_vulkan";
     }
     return "?";
 }
 
-// 新增 Capability 枚举项时必须同步此数组。
+// 新增 ChqCapability 枚举项时必须同步此数组。
 // （capabilities.mm 的 switch 刻意不写 default，新增项会先触发 -Wswitch 编译失败。）
-const cq::Capability kAllCapabilities[] = {
-    cq::Capability::kHwDecodeH264,   cq::Capability::kHwDecodeHevc,
-    cq::Capability::kHwDecodeAv1,    cq::Capability::kHwDecodeProres,
-    cq::Capability::kHwEncodeH264,   cq::Capability::kHwEncodeHevc,
-    cq::Capability::kHwEncodeProres, cq::Capability::k10BitPipeline,
-    cq::Capability::kHdrDisplay,     cq::Capability::kComputeShader,
-    cq::Capability::kFloatTexture,   cq::Capability::kExternalMemoryImport,
-    cq::Capability::kNpuInference,   cq::Capability::kGpuMetal,
-    cq::Capability::kGpuGles,        cq::Capability::kGpuVulkan,
+const cq::ChqCapability kAllCapabilities[] = {
+    cq::ChqCapability::kHwDecodeH264,   cq::ChqCapability::kHwDecodeHevc,
+    cq::ChqCapability::kHwDecodeAv1,    cq::ChqCapability::kHwDecodeProres,
+    cq::ChqCapability::kHwEncodeH264,   cq::ChqCapability::kHwEncodeHevc,
+    cq::ChqCapability::kHwEncodeProres, cq::ChqCapability::k10BitPipeline,
+    cq::ChqCapability::kHdrDisplay,     cq::ChqCapability::kComputeShader,
+    cq::ChqCapability::kFloatTexture,   cq::ChqCapability::kExternalMemoryImport,
+    cq::ChqCapability::kNpuInference,   cq::ChqCapability::kGpuMetal,
+    cq::ChqCapability::kGpuGles,        cq::ChqCapability::kGpuVulkan,
 };
 
 // 固定返回同一值的测试后端。
-class FixedBackend final : public cq::ICapabilities {
+class FixedBackend final : public cq::ChqICapabilities {
 public:
-    explicit FixedBackend(cq::CapabilityValue v) : value_(v) {}
-    cq::CapabilityValue Query(cq::Capability) const override { return value_; }
+    explicit FixedBackend(cq::ChqCapabilityValue v) : value_(v) {}
+    cq::ChqCapabilityValue Query(cq::ChqCapability) const override { return value_; }
 
 private:
-    cq::CapabilityValue value_;
+    cq::ChqCapabilityValue value_;
 };
 
 // ---- 1. 未注入后端：一律 kNo ----
@@ -94,37 +94,37 @@ void TestNoBackend() {
     std::printf("[test] 未注入后端 -> 一律 kNo（安全默认）\n");
     // 显式清除，使本用例与执行顺序无关。
     Check(cq::SetCapabilitiesBackend(nullptr).IsOk(), "SetCapabilitiesBackend(nullptr) 返回 Ok");
-    for (cq::Capability cap : kAllCapabilities) {
-        cq::CapabilityValue v = cq::QueryCapability(cap);
-        Check(v == cq::CapabilityValue::kNo, CapName(cap));
+    for (cq::ChqCapability cap : kAllCapabilities) {
+        cq::ChqCapabilityValue v = cq::QueryCapability(cap);
+        Check(v == cq::ChqCapabilityValue::kNo, CapName(cap));
     }
 }
 
 // ---- 2. 注入后端后如实返回 ----
 void TestInjected() {
     std::printf("[test] 注入后端 -> 按后端如实返回\n");
-    FixedBackend yes_backend{cq::CapabilityValue::kYes};
+    FixedBackend yes_backend{cq::ChqCapabilityValue::kYes};
     Check(cq::SetCapabilitiesBackend(&yes_backend).IsOk(), "注入后端返回 Ok");
-    for (cq::Capability cap : kAllCapabilities) {
-        Check(cq::QueryCapability(cap) == cq::CapabilityValue::kYes, CapName(cap));
+    for (cq::ChqCapability cap : kAllCapabilities) {
+        Check(cq::QueryCapability(cap) == cq::ChqCapabilityValue::kYes, CapName(cap));
     }
 
-    FixedBackend degraded_backend{cq::CapabilityValue::kDegraded};
+    FixedBackend degraded_backend{cq::ChqCapabilityValue::kDegraded};
     cq::SetCapabilitiesBackend(&degraded_backend);
-    for (cq::Capability cap : kAllCapabilities) {
-        Check(cq::QueryCapability(cap) == cq::CapabilityValue::kDegraded, CapName(cap));
+    for (cq::ChqCapability cap : kAllCapabilities) {
+        Check(cq::QueryCapability(cap) == cq::ChqCapabilityValue::kDegraded, CapName(cap));
     }
 }
 
 // ---- 3. 清除后端 -> 回到 kNo ----
 void TestClear() {
     std::printf("[test] 清除后端 -> 回到 kNo\n");
-    FixedBackend yes_backend{cq::CapabilityValue::kYes};
+    FixedBackend yes_backend{cq::ChqCapabilityValue::kYes};
     cq::SetCapabilitiesBackend(&yes_backend);
-    Check(cq::QueryCapability(cq::Capability::kHwDecodeH264) == cq::CapabilityValue::kYes,
+    Check(cq::QueryCapability(cq::ChqCapability::kHwDecodeH264) == cq::ChqCapabilityValue::kYes,
           "注入后可查询到 kYes");
     cq::SetCapabilitiesBackend(nullptr);
-    Check(cq::QueryCapability(cq::Capability::kHwDecodeH264) == cq::CapabilityValue::kNo,
+    Check(cq::QueryCapability(cq::ChqCapability::kHwDecodeH264) == cq::ChqCapabilityValue::kNo,
           "清除后回到 kNo");
 }
 

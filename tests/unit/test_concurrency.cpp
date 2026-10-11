@@ -1,7 +1,7 @@
-// ChuanqiCut — 并发原语 / 有界队列 / CancelToken 单测（CORE-005）
+// ChuanqiCut — 并发原语 / 有界队列 / ChqCancelToken 单测（CORE-005）
 //
 // 覆盖（验收要求：取消语义可测）：
-//   1. CancelToken 基础：初始未取消；RequestCancel 后 IsCancelled 为真。
+//   1. ChqCancelToken 基础：初始未取消；RequestCancel 后 IsCancelled 为真。
 //   2. 取消语义闭合：kCancelled 的 IsError()==false；CancelledStatus()/Cancelled() 返回 6000。
 //   3. 取消及时性：阻塞 Pop 被取消后在 ~1ms 级返回（实测，远小于 16ms 预算）。
 //   4. 正常路径不受影响：未取消时阻塞 Pop 拿到正确值；阻塞 Push 在腾出空间后成功。
@@ -21,8 +21,8 @@
 #include <thread>
 #include <vector>
 
-#include "cq/base/concurrency.h"
-#include "cq/base/status.h"
+#include "cq/base/chq_concurrency.h"
+#include "cq/base/chq_status.h"
 
 namespace {
 
@@ -41,7 +41,7 @@ void Check(bool cond, const char* msg) {
 // 阻塞操作超时护栏：在 deadline_ms 内运行 fn；若超时仍未结束，请求取消（tok）以解除
 // 可能的 condition_variable 阻塞，使下方既有 Check 判失败（超时=失败，而非 CI 挂死）。
 template <typename Fn>
-void WithTimeout(cq::CancelToken& tok, double deadline_ms, const char* label, Fn&& fn) {
+void WithTimeout(cq::ChqCancelToken& tok, double deadline_ms, const char* label, Fn&& fn) {
     std::atomic<bool> finished{false};
     std::thread watchdog([&finished, &tok, deadline_ms, label]() {
         auto end = std::chrono::steady_clock::now() +
@@ -63,16 +63,16 @@ void WithTimeout(cq::CancelToken& tok, double deadline_ms, const char* label, Fn
 }
 
 // 编译期守卫：取消码值稳定为 6000 且「不是错误」的语义闭合。
-static_assert(static_cast<int32_t>(cq::StatusCode::kCancelled) == 6000,
+static_assert(static_cast<int32_t>(cq::ChqStatusCode::kCancelled) == 6000,
               "kCancelled must be 6000 (CORE-002 stable code)");
-static_assert(!cq::Status{cq::StatusCode::kCancelled}.IsError(),
+static_assert(!cq::ChqStatus{cq::ChqStatusCode::kCancelled}.IsError(),
               "kCancelled must NOT be an error (CORE-002 / CORE-005 contract)");
-static_assert(cq::Status{cq::StatusCode::kCancelled}.IsCancelled(),
+static_assert(cq::ChqStatus{cq::ChqStatusCode::kCancelled}.IsCancelled(),
               "IsCancelled() must be true for kCancelled");
 
 void TestCancelTokenBasic() {
-    std::printf("[test] CancelToken 基础：初始未取消，请求后取消\n");
-    cq::CancelToken token;
+    std::printf("[test] ChqCancelToken 基础：初始未取消，请求后取消\n");
+    cq::ChqCancelToken token;
     Check(!token.IsCancelled(), "初始未取消");
     token.RequestCancel();
     Check(token.IsCancelled(), "请求取消后 IsCancelled()==true");
@@ -82,10 +82,10 @@ void TestCancelTokenBasic() {
 }
 
 void TestCancelTokenSharedState() {
-    std::printf("[test] CancelToken 共享状态：拷贝后一方取消，另一方感知\n");
-    cq::CancelToken a;
-    cq::CancelToken b = a;  // 值拷贝，共享同一 State
-    cq::CancelToken c = b;
+    std::printf("[test] ChqCancelToken 共享状态：拷贝后一方取消，另一方感知\n");
+    cq::ChqCancelToken a;
+    cq::ChqCancelToken b = a;  // 值拷贝，共享同一 State
+    cq::ChqCancelToken c = b;
     Check(!a.IsCancelled() && !b.IsCancelled() && !c.IsCancelled(), "拷贝后初始都未取消");
     b.RequestCancel();  // 通过 b 请求
     Check(a.IsCancelled(), "a 感知到 b 的取消（共享状态）");
@@ -96,17 +96,17 @@ void TestCancelTokenSharedState() {
 void TestCancelSemanticsClosure() {
     std::printf("[test] 取消语义闭合：kCancelled 不是错误，路径返回 6000\n");
     // 未取消时 Cancelled() 返回 Ok。
-    cq::CancelToken live;
+    cq::ChqCancelToken live;
     Check(live.Cancelled().IsOk(), "未取消时 Cancelled()==Ok");
     // 取消后 Cancelled() 返回 kCancelled，且 IsError()==false。
-    cq::CancelToken dead;
+    cq::ChqCancelToken dead;
     dead.RequestCancel();
-    cq::Status s = dead.Cancelled();
+    cq::ChqStatus s = dead.Cancelled();
     Check(s.IsCancelled(), "取消后 Cancelled().IsCancelled()==true");
     Check(!s.IsError(), "kCancelled 不是错误（IsError()==false）");
     Check(static_cast<int>(s.code) == 6000, "取消路径返回码值 6000");
     // 便捷函数等价。
-    cq::Status s2 = cq::CancelledStatus();
+    cq::ChqStatus s2 = cq::CancelledStatus();
     Check(s2.IsCancelled() && !s2.IsError() && static_cast<int>(s2.code) == 6000,
           "CancelledStatus() 同样返回 6000 且非错误");
     std::fflush(stdout);
@@ -114,9 +114,9 @@ void TestCancelSemanticsClosure() {
 
 void TestCancelTimeliness() {
     std::printf("[test] 取消及时性：阻塞 Pop 被取消后应在 ~1ms 级返回\n");
-    cq::BoundedQueue<int> q(4);
-    cq::CancelToken token;
-    cq::Status result = cq::Status::Ok();
+    cq::ChqBoundedQueue<int> q(4);
+    cq::ChqCancelToken token;
+    cq::ChqStatus result = cq::ChqStatus::Ok();
     std::thread consumer([&]() {
         int v = 0;
         result = q.Pop(v, token);  // 阻塞在空队列
@@ -136,15 +136,15 @@ void TestCancelTimeliness() {
 
 void TestQueueNormalPath() {
     std::printf("[test] 正常路径（未取消）：阻塞 Pop 拿到正确值；阻塞 Push 等空间后成功\n");
-    cq::BoundedQueue<int> q(2);
-    cq::CancelToken token;
+    cq::ChqBoundedQueue<int> q(2);
+    cq::ChqCancelToken token;
     std::thread producer([&]() {
         std::this_thread::sleep_for(std::chrono::milliseconds(10));
-        cq::Status s = q.Push(42, token);
+        cq::ChqStatus s = q.Push(42, token);
         Check(s.IsOk(), "未取消的阻塞 Push 成功");
     });
     int v = 0;
-    cq::Status s = q.Pop(v, token);  // 阻塞直到 producer 放入
+    cq::ChqStatus s = q.Pop(v, token);  // 阻塞直到 producer 放入
     Check(s.IsOk(), "未取消的阻塞 Pop 成功");
     Check(v == 42, "Pop 拿到正确值 42");
     producer.join();
@@ -154,7 +154,7 @@ void TestQueueNormalPath() {
 void TestQueueFullBehavior() {
     std::printf("[test] 有界队列满时行为：容量 + 入队结果 + 返回码\n");
     constexpr size_t kCap = 3;
-    cq::BoundedQueue<int> q(kCap);
+    cq::ChqBoundedQueue<int> q(kCap);
     Check(q.Capacity() == kCap, "容量 = 3");
     Check(q.Empty(), "初始空");
 
@@ -164,20 +164,20 @@ void TestQueueFullBehavior() {
     Check(q.Full(), "队列满（Full()==true）");
     Check(q.Size() == kCap, "Size == 3");
 
-    // 满队列再 TryPush 必须返回 false（调用方据此「丢弃」或映射为本域 Status）。
+    // 满队列再 TryPush 必须返回 false（调用方据此「丢弃」或映射为本域 ChqStatus）。
     bool rejected = q.TryPush(4);
     Check(!rejected, "满队列 TryPush 返回 false（期望丢弃/报错路径）");
     std::printf("  容量=%zu，填满 3 个后第 4 次 TryPush 返回 %s（期望 false）\n",
                 q.Capacity(), rejected ? "true" : "false");
 
     // 阻塞 Push 在满且未取消时应保持阻塞，待腾出空间后成功（不立即失败）。
-    cq::CancelToken token;
+    cq::ChqCancelToken token;
     std::thread consumer([&]() {
         std::this_thread::sleep_for(std::chrono::milliseconds(10));
         int tmp;
         q.TryPop(tmp);  // 腾出 1 个空间
     });
-    cq::Status s = q.Push(4, token);
+    cq::ChqStatus s = q.Push(4, token);
     Check(s.IsOk(), "阻塞 Push 在腾出空间后成功（未取消不失败）");
     consumer.join();
     std::fflush(stdout);
@@ -185,8 +185,8 @@ void TestQueueFullBehavior() {
 
 void TestQueueCancelInterrupt() {
     std::printf("[test] 队列取消中断：满队列的阻塞 Push 被取消返回 kCancelled\n");
-    cq::BoundedQueue<int> q(1);
-    cq::CancelToken token;
+    cq::ChqBoundedQueue<int> q(1);
+    cq::ChqCancelToken token;
     Check(q.TryPush(99), "先填满队列（容量 1）");
     Check(q.Full(), "队列满");
 
@@ -195,7 +195,7 @@ void TestQueueCancelInterrupt() {
         token.RequestCancel();
     });
     auto t0 = std::chrono::steady_clock::now();
-    cq::Status s = q.Push(100, token);  // 满且被取消 → kCancelled
+    cq::ChqStatus s = q.Push(100, token);  // 满且被取消 → kCancelled
     auto t1 = std::chrono::steady_clock::now();
     double ms = std::chrono::duration<double, std::milli>(t1 - t0).count();
 
@@ -210,8 +210,8 @@ void TestQueueCancelInterrupt() {
 void TestQueueConcurrent() {
     std::printf("[test] 有界队列并发一致性：4 生产者 × 1000 / 4 消费者计数与总和一致\n");
     constexpr size_t kCap = 16;
-    cq::BoundedQueue<int> q(kCap);
-    cq::CancelToken token;  // 本测试全程不取消；仅用于 WithTimeout 护栏
+    cq::ChqBoundedQueue<int> q(kCap);
+    cq::ChqCancelToken token;  // 本测试全程不取消；仅用于 WithTimeout 护栏
     constexpr int kProducers = 4;
     constexpr int kPerProducer = 1000;
     constexpr int kTotal = kProducers * kPerProducer;
@@ -234,7 +234,7 @@ void TestQueueConcurrent() {
         consumers.emplace_back([&]() {
             while (consumed.load(std::memory_order_relaxed) < kTotal) {
                 int v = 0;
-                cq::Status s = q.Pop(v, token);
+                cq::ChqStatus s = q.Pop(v, token);
                 if (s.IsOk()) {
                     sum.fetch_add(static_cast<int64_t>(v), std::memory_order_relaxed);
                     consumed.fetch_add(1, std::memory_order_relaxed);

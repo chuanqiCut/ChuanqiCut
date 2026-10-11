@@ -9,7 +9,7 @@
 //   * dts→pts 重排：VideoToolbox 内部 DPB 已在显示序回调，PopFrame 按显示序出队。
 //   * seek 后 flush：Flush 清空待出队帧并复位时长跟踪；新 GOP 以 IDR/IRAP 起，VT 内部复位。
 //
-// 红线：零 FFmpeg 类型；平台类型只在本 .mm / media_decode.h；错误一律 Status；内核禁用异常。
+// 红线：零 FFmpeg 类型；平台类型只在本 .mm / media_decode.h；错误一律 ChqStatus；内核禁用异常。
 
 #import <AVFoundation/AVFoundation.h>
 #import <Foundation/Foundation.h>
@@ -25,10 +25,10 @@
 #include <thread>
 #include <vector>
 
-#include "cq/base/logging.h"
-#include "cq/base/perf.h"
-#include "cq/base/status.h"
-#include "cq/base/rational_time.h"
+#include "cq/base/chq_logging.h"
+#include "cq/base/chq_perf.h"
+#include "cq/base/chq_status.h"
+#include "cq/base/chq_rational_time.h"
 #include "media_decode.h"
 
 namespace cq {
@@ -74,15 +74,15 @@ void VideoToolboxDecoder::ReleaseOutputQueue() {
 }
 
 // ---------------------------------------------------------------------------
-// CMTime -> RationalTime（项目网格 120000，非整除显式 kRound）
+// CMTime -> ChqRationalTime（项目网格 120000，非整除显式 kRound）
 // ---------------------------------------------------------------------------
-RationalTime VideoToolboxDecoder::ToRational(CMTime t) const {
+ChqRationalTime VideoToolboxDecoder::ToRational(CMTime t) const {
     if (CMTIME_IS_INVALID(t) || CMTIME_IS_INDEFINITE(t)) {
-        return RationalTime{0, kProjectTimeScale};
+        return ChqRationalTime{0, kProjectTimeScale};
     }
-    RationalTime src{static_cast<int64_t>(t.value), static_cast<int32_t>(t.timescale)};
-    RationalTime out = src;
-    Status s = Rescale(src, kProjectTimeScale, RoundMode::kRound, out);
+    ChqRationalTime src{static_cast<int64_t>(t.value), static_cast<int32_t>(t.timescale)};
+    ChqRationalTime out = src;
+    ChqStatus s = Rescale(src, kProjectTimeScale, ChqRoundMode::kRound, out);
     if (!s.IsOk()) out = src;
     return out;
 }
@@ -98,7 +98,7 @@ void VideoToolboxDecoder::OutputCallback(void* ref_con, void* source_ref_con, OS
     (void)duration;
     auto* self = static_cast<VideoToolboxDecoder*>(ref_con);
     // source_ref_con = DecodeFrame 传入的源 CMSampleBuffer（已 CFRetain）：取 dts 后释放。
-    RationalTime dts{0, 0};  // timescale=0 = 无效（无 dts 可用时不得登记/参与重排）
+    ChqRationalTime dts{0, 0};  // timescale=0 = 无效（无 dts 可用时不得登记/参与重排）
     CMSampleBufferRef sbuf = static_cast<CMSampleBufferRef>(source_ref_con);
     if (sbuf != nullptr) {
         CMTime dts_cm = CMSampleBufferGetDecodeTimeStamp(sbuf);
@@ -130,8 +130,8 @@ void VideoToolboxDecoder::OutputCallback(void* ref_con, void* source_ref_con, OS
     }
 }
 
-void VideoToolboxDecoder::Enqueue(CVPixelBufferRef pb, const RationalTime& pts,
-                                  const RationalTime& dts) {
+void VideoToolboxDecoder::Enqueue(CVPixelBufferRef pb, const ChqRationalTime& pts,
+                                  const ChqRationalTime& dts) {
     if (pb == nullptr) return;
     CFRetain(pb);  // 取所有权（回调的 imageBuffer 由 VT 持有，须保留）
     std::lock_guard<std::mutex> lk(queue_mutex_);
@@ -140,11 +140,11 @@ void VideoToolboxDecoder::Enqueue(CVPixelBufferRef pb, const RationalTime& pts,
     // MEDIA-027：队列深度是「解码出的帧有没有被消费掉」的直接观测量 —— 播放期
     // 间它应当稳定在个位数（喂一包弹一帧），持续单调增长即队列只进不出。
     if (output_queue_.size() % 50 == 0) {
-        CQ_LOG_TRACE_WF(Workflow::kDecode, "output_queue_ 深度=%zu", output_queue_.size());
+        CQ_LOG_TRACE_WF(ChqWorkflow::kDecode, "output_queue_ 深度=%zu", output_queue_.size());
     }
     if (debug_enqueue_logs_ < 3) {
         ++debug_enqueue_logs_;
-        CQ_LOG_TRACE_WF(Workflow::kDecode, "enqueue pts=%lld/%d dts=%lld/%d (q=%zu)",
+        CQ_LOG_TRACE_WF(ChqWorkflow::kDecode, "enqueue pts=%lld/%d dts=%lld/%d (q=%zu)",
                         static_cast<long long>(pts.value), static_cast<int>(pts.timescale),
                         static_cast<long long>(dts.value), static_cast<int>(dts.timescale),
                         output_queue_.size());
@@ -152,7 +152,7 @@ void VideoToolboxDecoder::Enqueue(CVPixelBufferRef pb, const RationalTime& pts,
 #endif
 }
 
-void VideoToolboxDecoder::MarkDecoded(const RationalTime& dts) {
+void VideoToolboxDecoder::MarkDecoded(const ChqRationalTime& dts) {
     std::lock_guard<std::mutex> lk(queue_mutex_);
     pending_dts_pts_.erase(dts.value);
     pending_submit_nanos_.erase(dts.value);
@@ -174,7 +174,7 @@ void VideoToolboxDecoder::DebugRecordLatency(int64_t dts_value, uint64_t now_nan
         std::vector<uint64_t> sorted = debug_latency_nanos_;
         std::sort(sorted.begin(), sorted.end());
         auto ms = [](uint64_t n) { return n / 1'000'000; };
-        CQ_LOG_TRACE_WF(Workflow::kDecode,
+        CQ_LOG_TRACE_WF(ChqWorkflow::kDecode,
                         "decode latency (n=%zu) min=%llums p50=%llums p95=%llums max=%llums",
                         sorted.size(), ms(sorted.front()), ms(sorted[sorted.size() / 2]),
                         ms(sorted[sorted.size() * 95 / 100]), ms(sorted.back()));
@@ -205,9 +205,9 @@ bool VideoToolboxDecoder::IsHdrColorSource(CFStringRef primaries, CFStringRef tr
 // ---------------------------------------------------------------------------
 // Open：取得 codec 描述并建立 VT 会话
 // ---------------------------------------------------------------------------
-Status VideoToolboxDecoder::Open(const StreamInfo& info) {
+ChqStatus VideoToolboxDecoder::Open(const ChqStreamInfo& info) {
     // CORE-010：Release 也要看见（旧版被 #ifndef NDEBUG 挡住，Release 包零告警）。
-    CQ_SLOW_CALL_WF(Workflow::kDecode, "decoder Open(VT 会话)");
+    CQ_SLOW_CALL_WF(ChqWorkflow::kDecode, "decoder Open(VT 会话)");
     // 幂等：先清旧会话（若存在），避免重复 Open 累积。
     TeardownSession();
     ReleaseOutputQueue();
@@ -217,7 +217,7 @@ Status VideoToolboxDecoder::Open(const StreamInfo& info) {
     }
     has_prev_ = false;
     order_mismatch_streak_ = 0;  // MEDIA-027
-    prev_popped_pts_ = RationalTime{0, 0};
+    prev_popped_pts_ = ChqRationalTime{0, 0};
     {
         std::lock_guard<std::mutex> lk(queue_mutex_);
         pending_dts_pts_.clear();
@@ -236,25 +236,25 @@ Status VideoToolboxDecoder::Open(const StreamInfo& info) {
     // 不支持 = 相册导入几乎全挂。实现路径与 H.264 完全同构：格式描述（hvcC）
     // 直接取自视频轨 CMFormatDescription 建 VT 会话 —— 旧注释里「parameter-set
     // 构造 API 已废弃」的顾虑不适用（我们从不手解 parameter set）。
-    const bool want_hevc = (bound_codec_ == CodecId::kHevc);
-    if (bound_codec_ != CodecId::kH264 && !want_hevc) {
+    const bool want_hevc = (bound_codec_ == ChqCodecId::kHevc);
+    if (bound_codec_ != ChqCodecId::kH264 && !want_hevc) {
         // ProRes/MJPEG 等其它编码诚实返回不支持，绝不伪造。
-        return Status{StatusCode::kDecodeUnsupported};
+        return ChqStatus{ChqStatusCode::kDecodeUnsupported};
     }
     if (source_path_.empty()) {
         // 无 source path 无法取得 avcC/hvcC；诚实报告缺 codec 描述。
-        return Status{StatusCode::kDecodeUnsupported};
+        return ChqStatus{ChqStatusCode::kDecodeUnsupported};
     }
 
     // 经 AVAsset 取得视频轨 CMFormatDescription（内嵌 avcC/hvcC，含参数集）。
     @autoreleasepool {
         NSString* ns_path = [NSString stringWithUTF8String:source_path_.c_str()];
-        if (ns_path == nil) return Status{StatusCode::kInvalidArgument};
+        if (ns_path == nil) return ChqStatus{ChqStatusCode::kInvalidArgument};
         NSURL* url = [NSURL fileURLWithPath:ns_path];
-        if (url == nil) return Status{StatusCode::kInvalidArgument};
+        if (url == nil) return ChqStatus{ChqStatusCode::kInvalidArgument};
 
         AVURLAsset* asset = [AVURLAsset URLAssetWithURL:url options:nil];
-        if (asset == nil) return Status{StatusCode::kIoError};
+        if (asset == nil) return ChqStatus{ChqStatusCode::kIoError};
 
         dispatch_semaphore_t sem = dispatch_semaphore_create(0);
         __block BOOL loaded = NO;
@@ -264,7 +264,7 @@ Status VideoToolboxDecoder::Open(const StreamInfo& info) {
                                 dispatch_semaphore_signal(sem);
                             }];
         dispatch_semaphore_wait(sem, DISPATCH_TIME_FOREVER);
-        if (!loaded) return Status{StatusCode::kIoError};
+        if (!loaded) return ChqStatus{ChqStatusCode::kIoError};
 
         // macOS 15.0 起 `tracksWithMediaType:` 已弃用，改用异步
         // `loadTracksWithMediaType:completionHandler:` + semaphore 同步等待。
@@ -278,14 +278,14 @@ Status VideoToolboxDecoder::Open(const StreamInfo& info) {
             dispatch_semaphore_signal(track_sem);
         }];
         dispatch_semaphore_wait(track_sem, DISPATCH_TIME_FOREVER);
-        if (tracks.count == 0) return Status{StatusCode::kDecodeUnsupported};
+        if (tracks.count == 0) return ChqStatus{ChqStatusCode::kDecodeUnsupported};
         AVAssetTrack* track = tracks[0];
         NSArray* fds = track.formatDescriptions;
-        if (fds.count == 0) return Status{StatusCode::kDecodeUnsupported};
+        if (fds.count == 0) return ChqStatus{ChqStatusCode::kDecodeUnsupported};
 
         CMFormatDescriptionRef fd = (__bridge CMFormatDescriptionRef)fds[0];
         if (CMFormatDescriptionGetMediaType(fd) != kCMMediaType_Video) {
-            return Status{StatusCode::kDecodeUnsupported};
+            return ChqStatus{ChqStatusCode::kDecodeUnsupported};
         }
         // MEDIA-025：读源色彩标签（重建 'hvc1' 格式描述会丢扩展，必须在此处读；
         // CFString 由 fd 持有，先拷成 std::string 防 fd 释放后悬空）。
@@ -321,7 +321,7 @@ Status VideoToolboxDecoder::Open(const StreamInfo& info) {
                          codec == kDolbyHvc1 || codec == kDolbyHevc)
                       : (codec == kCMVideoCodecType_H264);
         if (!codec_ok) {
-            return Status{StatusCode::kDecodeUnsupported};
+            return ChqStatus{ChqStatusCode::kDecodeUnsupported};
         }
         CFRetain(fd);
         format_desc_ = fd;
@@ -342,7 +342,7 @@ Status VideoToolboxDecoder::Open(const StreamInfo& info) {
             if (hvcc == nullptr) {
                 CFRelease(fd);
                 format_desc_ = nullptr;
-                return Status{StatusCode::kDecodeUnsupported};  // 无 hvcC 无法重建
+                return ChqStatus{ChqStatusCode::kDecodeUnsupported};  // 无 hvcC 无法重建
             }
             CFStringRef atom_keys[] = {CFSTR("hvcC")};
             CFTypeRef atom_values[] = {hvcc};
@@ -366,9 +366,9 @@ Status VideoToolboxDecoder::Open(const StreamInfo& info) {
                 CFRelease(fd);
                 format_desc_ = nullptr;
                 // Error：这是**失败返回路径**，Release 必须留痕。
-                CQ_LOG_ERROR_WF(Workflow::kDecode, "hvc1 重建失败 osstatus=%d",
+                CQ_LOG_ERROR_WF(ChqWorkflow::kDecode, "hvc1 重建失败 osstatus=%d",
                                 static_cast<int>(rst));
-                return Status{StatusCode::kDecodeError};
+                return ChqStatus{ChqStatusCode::kDecodeError};
             }
             CFRelease(fd);      // 换用重建后的格式描述（原 fd 仅为 hvcC 来源）
             format_desc_ = rebuilt;
@@ -395,7 +395,7 @@ Status VideoToolboxDecoder::Open(const StreamInfo& info) {
         attrs[(__bridge id)kCVPixelBufferWidthKey] = @(output_width_);
         attrs[(__bridge id)kCVPixelBufferHeightKey] = @(output_height_);
         // Info：降采样是**用户可见的行为变化**（画质下来了），值得留到 Release。
-        CQ_LOG_INFO_WF(Workflow::kDecode, "输出降采样 %ux%u -> %ux%u（MEDIA-023）",
+        CQ_LOG_INFO_WF(ChqWorkflow::kDecode, "输出降采样 %ux%u -> %ux%u（MEDIA-023）",
                        static_cast<unsigned>(src_dims.width),
                        static_cast<unsigned>(src_dims.height), output_width_, output_height_);
     }
@@ -441,7 +441,7 @@ Status VideoToolboxDecoder::Open(const StreamInfo& info) {
             static_cast<int>(fcc & 0xFF), static_cast<unsigned>(dims.width),
             static_cast<unsigned>(dims.height), chroma, depth_luma, depth_chroma);
         fflush(stderr);
-        return Status{StatusCode::kDecodeError};
+        return ChqStatus{ChqStatusCode::kDecodeError};
     }
 
     // MEDIA-023 备注：输出尺寸经 destinationImageBufferAttributes 声明（会话创建时
@@ -467,7 +467,7 @@ Status VideoToolboxDecoder::Open(const StreamInfo& info) {
             (__bridge CFDictionaryRef)xfer);
         const bool ok = ps == noErr;
         color_converted_ = ok;
-        CQ_LOG_INFO_WF(Workflow::kDecode,
+        CQ_LOG_INFO_WF(ChqWorkflow::kDecode,
                        "色彩管理: src(prim=%s transfer=%s matrix=%s) hdr=%d -> 709/SDR %s (status=%d)",
                        src_primaries_.c_str(), src_transfer_.c_str(), src_matrix_.c_str(),
                        hdr_source_ ? 1 : 0, ok ? "已应用" : "被拒（保持旧行为）",
@@ -486,29 +486,29 @@ Status VideoToolboxDecoder::Open(const StreamInfo& info) {
             CFRelease(hw);
         }
     }
-    CQ_LOG_INFO_WF(Workflow::kDecode, "Open 完成 hw=%s out=%ux%u 色彩(源=%s/%s%s)",
+    CQ_LOG_INFO_WF(ChqWorkflow::kDecode, "Open 完成 hw=%s out=%ux%u 色彩(源=%s/%s%s)",
                    session_hw_ ? "YES" : "NO/unknown", output_width_, output_height_,
                    src_primaries_.c_str(), src_transfer_.c_str(),
                    color_converted_ ? " →已转709" : (hdr_source_ ? " →转换失败" : ""));
     fflush(stderr);
 
-    return Status::Ok();
+    return ChqStatus::Ok();
 }
 
 // ---------------------------------------------------------------------------
 // Feed：把 AVCC/HVCC 压缩包拷成 CMSampleBuffer 喂入解码器
 // ---------------------------------------------------------------------------
-Status VideoToolboxDecoder::Feed(const MediaPacket& pkt) {
+ChqStatus VideoToolboxDecoder::Feed(const ChqMediaPacket& pkt) {
     // MEDIA-027：泵线程无 autorelease pool（同 demuxer 侧），逐包调用自带池。
     @autoreleasepool {
     if (session_ == nullptr || format_desc_ == nullptr) {
-        return Status{StatusCode::kDecodeError};
+        return ChqStatus{ChqStatusCode::kDecodeError};
     }
     if (pkt.codec != bound_codec_) {
-        return Status::Ok();  // 跳过非本路（如音频）包，demuxer 可能交错吐多路
+        return ChqStatus::Ok();  // 跳过非本路（如音频）包，demuxer 可能交错吐多路
     }
     if (pkt.data == nullptr || pkt.size == 0) {
-        return Status::Ok();  // 跳过空包（参数集/priming，PALA-010 已在 demux 侧过滤，双保险）
+        return ChqStatus::Ok();  // 跳过空包（参数集/priming，PALA-010 已在 demux 侧过滤，双保险）
     }
 
     // 记录前两个喂入包的 dts 差，作为首帧时长兜底（假定恒定帧率）。
@@ -520,7 +520,7 @@ Status VideoToolboxDecoder::Feed(const MediaPacket& pkt) {
         first_fed_dts_ = pkt.dts;
         fed_first_ = true;
     } else if (!fed_second_) {
-        RationalTime d{0, kProjectTimeScale};
+        ChqRationalTime d{0, kProjectTimeScale};
         if (SubRational(pkt.dts, first_fed_dts_, d).IsOk() && d.value > 0) {
             nominal_duration_ = d;
         }
@@ -532,11 +532,11 @@ Status VideoToolboxDecoder::Feed(const MediaPacket& pkt) {
     OSStatus st = CMBlockBufferCreateWithMemoryBlock(kCFAllocatorDefault, nullptr, pkt.size,
                                                     kCFAllocatorDefault, nullptr, 0, pkt.size,
                                                     kCMBlockBufferAssureMemoryNowFlag, &block);
-    if (st != noErr || block == nullptr) return Status{StatusCode::kDecodeError};
+    if (st != noErr || block == nullptr) return ChqStatus{ChqStatusCode::kDecodeError};
     st = CMBlockBufferReplaceDataBytes(pkt.data, block, 0, pkt.size);
     if (st != noErr) {
         CFRelease(block);
-        return Status{StatusCode::kDecodeError};
+        return ChqStatus{ChqStatusCode::kDecodeError};
     }
 
     CMSampleTimingInfo timing;
@@ -550,18 +550,18 @@ Status VideoToolboxDecoder::Feed(const MediaPacket& pkt) {
     st = CMSampleBufferCreateReady(kCFAllocatorDefault, block, format_desc_, 1, 1, &timing, 0,
                                    nullptr, &sbuf);
     CFRelease(block);  // sbuf 已 retain block
-    if (st != noErr || sbuf == nullptr) return Status{StatusCode::kDecodeError};
-    // CORE-010：Release 也要看见（旧版 SlowCallAlarm 被 NDEBUG 挡住，Release 包零告警）。
-    CQ_SLOW_CALL_WF(Workflow::kDecode, "decoder Feed(VT 提交)");
+    if (st != noErr || sbuf == nullptr) return ChqStatus{ChqStatusCode::kDecodeError};
+    // CORE-010：Release 也要看见（旧版 ChqSlowCallAlarm 被 NDEBUG 挡住，Release 包零告警）。
+    CQ_SLOW_CALL_WF(ChqWorkflow::kDecode, "decoder Feed(VT 提交)");
 #ifndef NDEBUG
     // 成对 enter/exit：**用于定位「进去了没出来」** —— Watchdog 只能报「当前卡在
     // 哪」，但一次性的永久阻塞要靠这一对才能指认到函数。Release 下整段消失。
     static std::atomic<int> feed_seq{0};
     const int my_feed_seq = feed_seq.fetch_add(1);
-    CQ_LOG_TRACE_WF(Workflow::kDecode, "Feed enter #%d", my_feed_seq);
+    CQ_LOG_TRACE_WF(ChqWorkflow::kDecode, "Feed enter #%d", my_feed_seq);
     struct FeedExitLog {
         int seq;
-        ~FeedExitLog() { CQ_LOG_TRACE_WF(Workflow::kDecode, "Feed exit #%d", seq); }
+        ~FeedExitLog() { CQ_LOG_TRACE_WF(ChqWorkflow::kDecode, "Feed exit #%d", seq); }
     } feed_exit{my_feed_seq};
 #endif
 
@@ -602,9 +602,9 @@ Status VideoToolboxDecoder::Feed(const MediaPacket& pkt) {
             std::lock_guard<std::mutex> lk(queue_mutex_);
             pending_dts_pts_.erase(pkt.dts.value);
         }
-        return Status{StatusCode::kDecodeError};
+        return ChqStatus{ChqStatusCode::kDecodeError};
     }
-    return Status::Ok();
+    return ChqStatus::Ok();
     }  // @autoreleasepool（MEDIA-027）
 }
 
@@ -620,21 +620,21 @@ Status VideoToolboxDecoder::Feed(const MediaPacket& pkt) {
 //   由 provider 继续喂包（「B 未喂入」正是靠这个揭示的）。
 // 流尾丢帧（demux 尽后仍缺帧）时 provider 走 drain 分支交付 before，会话不挂死。
 // ---------------------------------------------------------------------------
-Status VideoToolboxDecoder::PopFrame(MediaFrame& out) {
+ChqStatus VideoToolboxDecoder::PopFrame(ChqMediaFrame& out) {
     // CORE-010：PopFrame 是 MEDIA-026/027 两次冻结的现场，告警必须 Release 可见。
-    CQ_SLOW_CALL_WF(Workflow::kDecode, "decoder PopFrame(VT wait)");
+    CQ_SLOW_CALL_WF(ChqWorkflow::kDecode, "decoder PopFrame(VT wait)");
 #ifndef NDEBUG
     static std::atomic<int> pop_seq{0};
     const int my_pop_seq = pop_seq.fetch_add(1);
-    CQ_LOG_TRACE_WF(Workflow::kDecode, "PopFrame enter #%d", my_pop_seq);
+    CQ_LOG_TRACE_WF(ChqWorkflow::kDecode, "PopFrame enter #%d", my_pop_seq);
     struct PopExitLog {
         int seq;
-        ~PopExitLog() { CQ_LOG_TRACE_WF(Workflow::kDecode, "PopFrame exit #%d", seq); }
+        ~PopExitLog() { CQ_LOG_TRACE_WF(ChqWorkflow::kDecode, "PopFrame exit #%d", seq); }
     } pop_exit{my_pop_seq};
 #endif
-    out = MediaFrame{};
+    out = ChqMediaFrame{};
     CVPixelBufferRef pb = nullptr;
-    RationalTime pts{0, kProjectTimeScale};
+    ChqRationalTime pts{0, kProjectTimeScale};
     {
         std::unique_lock<std::mutex> lk(queue_mutex_);
         size_t best = 0;
@@ -651,7 +651,7 @@ Status VideoToolboxDecoder::PopFrame(MediaFrame& out) {
                     for (const auto& [dts_value, submit] : pending_submit_nanos_) {
                         if (now_nanos - submit > 1'000'000'000ull) {
                             // Warn：本帧被放弃，媒体已不完整。Release 必须可见。
-                            CQ_LOG_WARN_WF(Workflow::kDecode,
+                            CQ_LOG_WARN_WF(ChqWorkflow::kDecode,
                                            "丢帧超时：dts=%lld 等 %llums 未完成，放弃等待（重新 seek 恢复）",
                                            static_cast<long long>(dts_value),
                                            static_cast<long long>((now_nanos - submit) / 1'000'000));
@@ -663,11 +663,11 @@ Status VideoToolboxDecoder::PopFrame(MediaFrame& out) {
                         pending_dts_pts_.clear();
                         pending_submit_nanos_.clear();
                         has_prev_ = false;  // 显示序锚点失效，下一帧重新锚定
-                        return Status{StatusCode::kIoNotFound};
+                        return ChqStatus{ChqStatusCode::kIoNotFound};
                     }
                     if (pending_dts_pts_.empty()) {
                         // 无在途帧且队列空：需继续 Feed / 已 drain（不丢帧）。
-                        return Status{StatusCode::kIoNotFound};
+                        return ChqStatus{ChqStatusCode::kIoNotFound};
                     }
                     lk.unlock();
                     std::this_thread::sleep_for(std::chrono::milliseconds(2));
@@ -688,7 +688,7 @@ Status VideoToolboxDecoder::PopFrame(MediaFrame& out) {
                     // Warn **且 Release 可见**：闸门被触发意味着「重排判据没能正常消化
                     // 队列」，是 MEDIA-027 那种病的最早信号。#ifndef NDEBUG 挡住它
                     // 等于把这个信号从所有真机 Release 包里抹掉。
-                    CQ_LOG_WARN_WF(Workflow::kMem,
+                    CQ_LOG_WARN_WF(ChqWorkflow::kMem,
                                    "队列超上界(%zu)：跳过重排判据强制交付 pts=%lld/%d（第 %d 次）",
                                    kMaxQueuedFrames,
                                    static_cast<long long>(output_queue_[best].pts.value),
@@ -700,7 +700,7 @@ Status VideoToolboxDecoder::PopFrame(MediaFrame& out) {
             }
             if (!has_prev_) break;  // 流首 / Flush 后：无显示序连续性约束，队列最小帧即首帧
             // 显示序连续性检查。
-            RationalTime expected{0, 1};
+            ChqRationalTime expected{0, 1};
             if (!AddRational(prev_popped_pts_, prev_duration_, expected).IsOk()) {
                 break;  // 期望算不出（溢出）：放弃约束，宁弹不错
             }
@@ -716,13 +716,13 @@ Status VideoToolboxDecoder::PopFrame(MediaFrame& out) {
                     std::chrono::steady_clock::now().time_since_epoch().count());
                 for (const auto& [dts_value, submit] : pending_submit_nanos_) {
                     if (now_nanos - submit > 1'000'000'000ull) {
-                        CQ_LOG_WARN_WF(Workflow::kDecode,
+                        CQ_LOG_WARN_WF(ChqWorkflow::kDecode,
                                        "显示序等待超时：pending=%zu 有帧超 1s 未完成，放弃（重新 seek 恢复）",
                                        pending_submit_nanos_.size());
                         pending_dts_pts_.clear();
                         pending_submit_nanos_.clear();
                         has_prev_ = false;
-                        return Status{StatusCode::kIoNotFound};
+                        return ChqStatus{ChqStatusCode::kIoNotFound};
                     }
                 }
                 continue;
@@ -746,14 +746,14 @@ Status VideoToolboxDecoder::PopFrame(MediaFrame& out) {
             //    的几次是正常的，超过上界即判定为缺口。
             ++order_mismatch_streak_;
             if (order_mismatch_streak_ < kMaxMismatchStreak) {
-                return Status{StatusCode::kIoNotFound};
+                return ChqStatus{ChqStatusCode::kIoNotFound};
             }
             ++debug_order_stall_;
             if (debug_order_stall_logs_ < 5 || debug_order_stall_ % 100 == 0) {
                 ++debug_order_stall_logs_;
                 // Warn **且 Release 可见**：这一行就是 MEDIA-027 指认真因（VFR 导致
                 // 期望值与队列最小帧永不匹配）的直接证据。限流保留，等级提升。
-                CQ_LOG_WARN_WF(Workflow::kDecode,
+                CQ_LOG_WARN_WF(ChqWorkflow::kDecode,
                                "显示序缺口 #%d：连续 %d 次未等到期望=%lld/%d，按缺口交付 pts=%lld/%d（q=%zu）",
                                debug_order_stall_, order_mismatch_streak_,
                                static_cast<long long>(expected.value),
@@ -771,20 +771,20 @@ Status VideoToolboxDecoder::PopFrame(MediaFrame& out) {
         pb = of.pb;
         pts = of.pts;
 
-        RationalTime dur = nominal_duration_;
+        ChqRationalTime dur = nominal_duration_;
         if (has_prev_) {
-            RationalTime d{0, kProjectTimeScale};
+            ChqRationalTime d{0, kProjectTimeScale};
             if (SubRational(pts, prev_popped_pts_, d).IsOk()) dur = d;
         }
         prev_duration_ = dur;  // 下一帧的显示序期望 = pts + dur
         prev_popped_pts_ = pts;
         has_prev_ = true;
 
-        out.type = MediaType::kVideo;
+        out.type = ChqMediaType::kVideo;
         out.video.image = new CqNativeImage(pb);  // refcount=1，持有 pb（构造已 CFRetain）
         CFRelease(pb);  // 释放队列对 pb 的所有权，交由 CqNativeImage 独占
-        out.video.pixel_format = PixelFormat::kBGRA8;
-        out.video.color_space = ColorSpace::kRec709;
+        out.video.pixel_format = ChqPixelFormat::kBGRA8;
+        out.video.color_space = ChqColorSpace::kRec709;
         // MEDIA-023：实际输出尺寸（降采样后）—— 调用方（视口计算/复用判据）
         // 依赖它与真实 CVPixelBuffer 一致；源尺寸见 width_/height_。
         out.video.width = output_width_;
@@ -794,7 +794,7 @@ Status VideoToolboxDecoder::PopFrame(MediaFrame& out) {
 #ifndef NDEBUG
         if (debug_pop_logs_ < 3) {
             ++debug_pop_logs_;
-            CQ_LOG_TRACE_WF(Workflow::kDecode, "pop pts=%lld/%d dur=%lld/%d",
+            CQ_LOG_TRACE_WF(ChqWorkflow::kDecode, "pop pts=%lld/%d dur=%lld/%d",
                             static_cast<long long>(out.video.pts.value),
                             static_cast<int>(out.video.pts.timescale),
                             static_cast<long long>(out.video.duration.value),
@@ -809,7 +809,7 @@ Status VideoToolboxDecoder::PopFrame(MediaFrame& out) {
         last_returned_ = static_cast<CqNativeImage*>(out.video.image);
     }
     ++popped_count_;
-    return Status::Ok();
+    return ChqStatus::Ok();
 }
 
 // ---------------------------------------------------------------------------
@@ -837,7 +837,7 @@ void VideoToolboxDecoder::Flush() {
             if (now - t0 > 1'000'000'000ull) {
                 // Warn **且 Release 可见**：Flush 超时意味着上一区间的残余帧可能漏进
                 // 下一区间（MEDIA-021 的「Seek 后首弹弹出旧 GOP」就是这个形态）。
-                CQ_LOG_WARN_WF(Workflow::kDecode,
+                CQ_LOG_WARN_WF(ChqWorkflow::kDecode,
                                "Flush 等待在途帧超时(1s)：按丢失处理，残余帧可能漏进下一区间");
                 break;
             }
@@ -856,7 +856,7 @@ void VideoToolboxDecoder::Flush() {
     }
     has_prev_ = false;
     order_mismatch_streak_ = 0;  // MEDIA-027：等待依据随队列一并失效
-    prev_popped_pts_ = RationalTime{0, 0};
+    prev_popped_pts_ = ChqRationalTime{0, 0};
 }
 
 // ---------------------------------------------------------------------------

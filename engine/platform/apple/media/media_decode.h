@@ -1,12 +1,12 @@
 // ChuanqiCut — PALA-011 Apple 硬解后端（VideoToolbox）
 //
-// 实现 core 冻结接口 `cq::IFrameDecoder`（定义于 core/include/cq/media/system_frame_provider.h）。
+// 实现 core 冻结接口 `cq::ChqIFrameDecoder`（定义于 core/include/cq/media/system_frame_provider.h）。
 // 用 VideoToolbox 的 `VTDecompressionSession` 做 H.264 / HEVC 硬解，输出 CVPixelBuffer
 // （BGRA），包装为 Platform 的 `NativeImageHandle` 由上层消费。
 //
 // 红线（与 core 一致，本文件只是 Platform Apple 实现，不进入 core 头）：
 //   * 平台类型（CVPixelBufferRef / VT* / AV* / CM*）只出现在本文件与 .mm；
-//   * 内核禁用异常：错误一律 Status；长任务接受 CancelToken（本接缝为同步/协作式）。
+//   * 内核禁用异常：错误一律 ChqStatus；长任务接受 ChqCancelToken（本接缝为同步/协作式）。
 //
 // 本头**仅被 Apple 平台 TU 包含**（tests/ 与未来 Platform 装配代码），绝不进入 core。
 // 门禁 check_platform_headers.py 只扫 core/include/cq/{platform,gfx,media}，故此处使用平台类型安全。
@@ -26,7 +26,7 @@
 #include <string>
 #include <utility>  // std::pair
 
-#include "cq/media/system_frame_provider.h"  // cq::IFrameDecoder / MediaFrame / StreamInfo
+#include "cq/media/chq_system_frame_provider.h"  // cq::ChqIFrameDecoder / ChqMediaFrame / ChqStreamInfo
 
 namespace cq {
 
@@ -55,7 +55,7 @@ struct CqNativeImage {
 // Apple 平台专属辅助：从 NativeImageHandle 取回 CVPixelBufferRef（仅限 Apple TU 调用）。
 CVPixelBufferRef GetCvPixelBuffer(NativeImageHandle handle);
 
-// VideoToolbox 硬解后端（实现 IFrameDecoder）。
+// VideoToolbox 硬解后端（实现 ChqIFrameDecoder）。
 //
 // 设计要点：
 //   * 用 `VTDecompressionSession` 做 H.264 / HEVC 硬解（优先硬件；实际是否硬解由
@@ -84,7 +84,7 @@ CVPixelBufferRef GetCvPixelBuffer(NativeImageHandle handle);
 //   * PALA-012 编码导出
 //   * PALA-002 零拷贝导入（本期产出 CVPixelBuffer，已为同根）
 //   * ProRes / MJPEG 等其它解码（需求出现时按同构路径补）
-class VideoToolboxDecoder : public IFrameDecoder {
+class VideoToolboxDecoder : public ChqIFrameDecoder {
 public:
     // source_path：用于读取 avcC/hvcC 建立解码会话（Apple Platform 细节，不进入 core）。
     // 可为 nullptr；此时解码将返回 kDecodeUnsupported（诚实报告缺 codec 描述）。
@@ -94,9 +94,9 @@ public:
     VideoToolboxDecoder(const VideoToolboxDecoder&) = delete;
     VideoToolboxDecoder& operator=(const VideoToolboxDecoder&) = delete;
 
-    Status Open(const StreamInfo& info) override;
-    Status Feed(const MediaPacket& pkt) override;
-    Status PopFrame(MediaFrame& out) override;
+    ChqStatus Open(const ChqStreamInfo& info) override;
+    ChqStatus Feed(const ChqMediaPacket& pkt) override;
+    ChqStatus PopFrame(ChqMediaFrame& out) override;
     void Flush() override;
 
     // 查询本次会话是否真正走了硬件解码（运行时查询，非编译期推断；不伪造硬解生效）。
@@ -166,15 +166,15 @@ private:
                               VTDecodeInfoFlags info_flags, CVImageBufferRef image_buffer,
                               CMTime pts, CMTime duration);
 
-    void Enqueue(CVPixelBufferRef pb, const RationalTime& pts, const RationalTime& dts);
+    void Enqueue(CVPixelBufferRef pb, const ChqRationalTime& pts, const ChqRationalTime& dts);
     // 回调完成登记（成败皆调）：把该包从「已喂未完成」集合移除，解锁重排等待。
-    void MarkDecoded(const RationalTime& dts);
+    void MarkDecoded(const ChqRationalTime& dts);
     void ReleaseOutputQueue();
     void TeardownSession();
-    RationalTime ToRational(CMTime t) const;
+    ChqRationalTime ToRational(CMTime t) const;
 
     std::string source_path_;
-    CodecId bound_codec_ = CodecId::kUnknown;
+    ChqCodecId bound_codec_ = ChqCodecId::kUnknown;
     uint32_t width_ = 0;
     uint32_t height_ = 0;
     uint32_t output_width_ = 0;   // MEDIA-023：实际输出尺寸（降采样后）
@@ -194,8 +194,8 @@ private:
     std::mutex queue_mutex_;
     struct OutputFrame {
         CVPixelBufferRef pb = nullptr;
-        RationalTime pts{0, kProjectTimeScale};
-        RationalTime dts{0, kProjectTimeScale};
+        ChqRationalTime pts{0, kProjectTimeScale};
+        ChqRationalTime dts{0, kProjectTimeScale};
     };
     std::deque<OutputFrame> output_queue_;
     // ⚠️ P77 不变量：**下面两个容器 + output_queue_ 一律由 queue_mutex_ 保护**，
@@ -206,15 +206,15 @@ private:
     // 加字段 / 加访问点时，逐个 grep 该字段的全部访问点并指认守卫互斥量。
     // 已喂入、尚未收到完成回调的包：dts.value → pts（重排依据）。key 约束：
     // demuxer 已把 pts/dts 统一转换到项目网格（timescale 120000），故用 value 作 key。
-    std::map<int64_t, RationalTime> pending_dts_pts_;
+    std::map<int64_t, ChqRationalTime> pending_dts_pts_;
     // MEDIA-026：各未完成包的提交时刻（steady clock ns）——PopFrame 等待上界
     // 依据：VT 偶发**静默丢弃**某帧（永不回调，真机 ~5-7s 必现一次），等待无上界
     // 会把泵永久卡死。超时的帧按丢失处理（清理 + kIoNotFound，上层重新 seek）。
     std::map<int64_t, uint64_t> pending_submit_nanos_;
-    RationalTime prev_popped_pts_{0, 0};  // timescale=0 表示未初始化
-    RationalTime prev_duration_{0, 1};    // 上一弹出帧 duration（显示序连续性判据：期望=pts+duration）
+    ChqRationalTime prev_popped_pts_{0, 0};  // timescale=0 表示未初始化
+    ChqRationalTime prev_duration_{0, 1};    // 上一弹出帧 duration（显示序连续性判据：期望=pts+duration）
     bool has_prev_ = false;
-    RationalTime nominal_duration_{4000, kProjectTimeScale};  // 首帧时长兜底（≈1/30s @120000）
+    ChqRationalTime nominal_duration_{4000, kProjectTimeScale};  // 首帧时长兜底（≈1/30s @120000）
     int64_t popped_count_ = 0;
 
 #ifndef NDEBUG
@@ -249,7 +249,7 @@ private:
     // 首帧时长兜底：记录前两个喂入包的解码序差（假定恒定帧率），用于首帧 duration。
     // 必须用 dts 差：B 帧文件前两个包的 pts 差 = (bframes+1) 帧（media_decode.mm
     // Feed 内注释），曾致首帧区间报宽 4 倍、kExact 在关键帧提前命中（画面差帧）。
-    RationalTime first_fed_dts_{0, 0};
+    ChqRationalTime first_fed_dts_{0, 0};
     bool fed_first_ = false;
     bool fed_second_ = false;
 

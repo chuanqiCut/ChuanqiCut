@@ -1,7 +1,7 @@
 // ChuanqiCut — MEDIA-020 真实链路冒烟（Apple：PALA-010 demux + PALA-011 硬解 + Provider）
 //
 // 目的：打通「真实 MP4 → 真实 PALA-010 解封装 → PALA-011 VideoToolbox 硬解 →
-// SystemFrameProvider 编排」的**完整端到端**，并验证 AcquireFrame 返回**真实解码帧**
+// ChqSystemFrameProvider 编排」的**完整端到端**，并验证 AcquireFrame 返回**真实解码帧**
 // （PALA-011 落地后不再是 kDecodeUnsupported）。解码结果须像素正确（非全黑）。
 //
 // 验收（打通版）：
@@ -16,10 +16,10 @@
 
 #include <CoreVideo/CoreVideo.h>
 
-#include "cq/base/status.h"
-#include "cq/base/rational_time.h"
-#include "cq/media/system_frame_provider.h"
-#include "cq/platform/media.h"
+#include "cq/base/chq_status.h"
+#include "cq/base/chq_rational_time.h"
+#include "cq/media/chq_system_frame_provider.h"
+#include "cq/platform/chq_media.h"
 #include "media_decode.h"
 
 #ifndef CQ_SOURCE_DIR
@@ -41,7 +41,7 @@ void Check(bool cond, const char* msg) {
     }
 }
 
-const char* Rt(const cq::RationalTime& t) {
+const char* Rt(const cq::ChqRationalTime& t) {
     static char buf[64];
     std::snprintf(buf, sizeof(buf), "v=%lld/%d (%.4fs)",
                   static_cast<long long>(t.value), static_cast<int>(t.timescale),
@@ -59,13 +59,13 @@ int main() {
         std::string(CQ_SOURCE_DIR) + "/tests/golden/frames/gf_1080p_h264.mp4";
     std::printf("样本: %s\n", path.c_str());
 
-    cq::MediaSource src;
+    cq::ChqMediaSource src;
     src.path = path.c_str();
     src.path_len = path.size();
 
     // 真实 PALA-010 解封装后端。
-    cq::PlatformPtr<cq::IMediaDemuxer> demuxer;
-    cq::Status s = cq::CreateMediaDemuxer(src, demuxer);
+    cq::ChqPlatformPtr<cq::ChqIMediaDemuxer> demuxer;
+    cq::ChqStatus s = cq::CreateMediaDemuxer(src, demuxer);
     Check(s.IsOk() && demuxer, "CreateMediaDemuxer（真实 Apple 后端）打开成功");
     if (!demuxer) {
         std::printf("\n真实解封装打开失败，用例终止。\n");
@@ -76,13 +76,13 @@ int main() {
     std::printf("  流数量 = %d\n", n);
     Check(n == 1, "真实流数量 = 1");
 
-    cq::StreamInfo info{};
+    cq::ChqStreamInfo info{};
     s = demuxer->GetStreamInfo(0, info);
-    Check(s.IsOk() && info.type == cq::MediaType::kVideo && info.codec == cq::CodecId::kH264,
+    Check(s.IsOk() && info.type == cq::ChqMediaType::kVideo && info.codec == cq::ChqCodecId::kH264,
           "真实流：视频 / H.264");
     Check(info.width == 1920 && info.height == 1080, "真实尺寸 = 1920x1080");
 
-    cq::RationalTime dur{0, 1};
+    cq::ChqRationalTime dur{0, 1};
     s = demuxer->GetDuration(dur);
     Check(s.IsOk() && dur.value >= 560000 && dur.value <= 640000,
           "真实时长 ≈ 5.0s（≈600000 ticks @120000）");
@@ -92,23 +92,23 @@ int main() {
     cq::VideoToolboxDecoder decoder(src.path);
     auto provider = cq::CreateSystemFrameProvider(std::move(demuxer), &decoder);
     s = provider->Open(src);
-    Check(s.IsOk(), "SystemFrameProvider.Open 成功（demux + 硬解后端均通）");
+    Check(s.IsOk(), "ChqSystemFrameProvider.Open 成功（demux + 硬解后端均通）");
 
     // 真实取帧：端到端打通，AcquireFrame 必须返回真实解码帧（非 kDecodeUnsupported）。
     std::printf("\n[真实取帧] AcquireFrame 应返回真实解码帧（像素正确，非全黑）\n");
-    cq::FrameRequest req;
-    req.at = cq::RationalTime{120000, 120000};  // 1.0s
-    req.policy = cq::SeekPolicy::kExact;
-    cq::MediaFrame f{};
-    cq::CancelToken no_cancel;
+    cq::ChqFrameRequest req;
+    req.at = cq::ChqRationalTime{120000, 120000};  // 1.0s
+    req.policy = cq::ChqSeekPolicy::kExact;
+    cq::ChqMediaFrame f{};
+    cq::ChqCancelToken no_cancel;
     s = provider->AcquireFrame(req, f, no_cancel);
     std::printf("  AcquireFrame -> code=%s IsError=%d\n", cq::StatusToString(s.code),
                 s.IsError() ? 1 : 0);
-    Check(s.IsOk() && f.type == cq::MediaType::kVideo && f.video.image != nullptr,
+    Check(s.IsOk() && f.type == cq::ChqMediaType::kVideo && f.video.image != nullptr,
           "真实链路打通：AcquireFrame 返回真实解码帧（不再是 kDecodeUnsupported）");
 
     // 像素级复核：中心像素非全黑（smptebars 彩条，中心落在绿/青区域，绝不黑）。
-    if (f.type == cq::MediaType::kVideo && f.video.image != nullptr) {
+    if (f.type == cq::ChqMediaType::kVideo && f.video.image != nullptr) {
         CVPixelBufferRef pb = cq::GetCvPixelBuffer(f.video.image);
         if (pb != nullptr) {
             CVPixelBufferLockBaseAddress(pb, 0);

@@ -1,18 +1,18 @@
 // ChuanqiCut — Apple Metal 后端（PALA-001）
 //
-// 实现 core/include/cq/platform/gfx.h 中冻结的 Platform GFX HAL（IGraphicsDevice 等 12 概念）。
+// 实现 core/include/cq/platform/gfx.h 中冻结的 Platform GFX HAL（ChqIGraphicsDevice 等 12 概念）。
 // 平台类型（MTLDevice / id<MTLTexture> 等）**只出现在本文件与 gfx_metal_internal.h**，
 // 内核头零平台类型红线不受影响。
 //
 // 设计要点：
 //   * 每个 Platform 概念 1:1 映射 Metal 概念（见 .ai/modules/platform-apple.md 概念映射表）。
-//   * 资源生命周期走 PlatformPtr + Destroy()（与 IPlatformResource 契约一致）；本 .mm 用 ARC 管理
+//   * 资源生命周期走 ChqPlatformPtr + Destroy()（与 ChqIPlatformResource 契约一致）；本 .mm 用 ARC 管理
 //     Objective-C 对象，Destroy() 把成员置 nil 释放并 delete this。
 //   * ShaderModule 支持 Platform-Native 源码（MSL，`is_platform_native=true`）；SPIR-V 路径
 //     本期未实现（SHADER-001 的 MSL 生成尚未接入），返回 kInternal。
-//   * INativeImageImporter（PALA-002）已实现：CVMetalTextureCacheCreateTextureFromImage
+//   * ChqINativeImageImporter（PALA-002）已实现：CVMetalTextureCacheCreateTextureFromImage
 //     零拷贝；失败时退化为 CPU 拷贝（out_cpu_fallback=true）。
-//   * 错误一律 Status，无异常（内核禁用异常）。
+//   * 错误一律 ChqStatus，无异常（内核禁用异常）。
 //
 // 编译：Objective-C++（.mm）+ ARC（-fobjc-arc）。警告集含 -Wconversion/-Wshadow/
 // -Wold-style-cast，类型转换一律显式 static_cast。
@@ -42,8 +42,8 @@ static const MTLStorageMode kCqCpuVisibleStorageMode = MTLStorageModeShared;
 static const MTLStorageMode kCqCpuVisibleStorageMode = MTLStorageModeManaged;
 #endif
 
-#include "cq/platform/gfx.h"
-#include "cq/base/status.h"
+#include "cq/platform/chq_gfx.h"
+#include "cq/base/chq_status.h"
 #include "gfx_metal_internal.h"
 #include "media_decode.h"  // 由 CMake 的 Apple Platform media include dir 提供
 
@@ -56,41 +56,41 @@ static const MTLStorageMode kCqCpuVisibleStorageMode = MTLStorageModeManaged;
 namespace cq {
 
 // ---- 格式映射辅助 ----
-static uint32_t BytesPerPixel(TextureFormat f) {
+static uint32_t BytesPerPixel(ChqTextureFormat f) {
     switch (f) {
-        case TextureFormat::kR8:        return 1;
-        case TextureFormat::kRG8:       return 2;
-        case TextureFormat::kRGBA8:     return 4;
-        case TextureFormat::kRGBA16F:   return 8;
-        case TextureFormat::kR16F:      return 2;
-        case TextureFormat::kR32F:      return 4;
-        case TextureFormat::kRGBA32F:   return 16;
+        case ChqTextureFormat::kR8:        return 1;
+        case ChqTextureFormat::kRG8:       return 2;
+        case ChqTextureFormat::kRGBA8:     return 4;
+        case ChqTextureFormat::kRGBA16F:   return 8;
+        case ChqTextureFormat::kR16F:      return 2;
+        case ChqTextureFormat::kR32F:      return 4;
+        case ChqTextureFormat::kRGBA32F:   return 16;
         default:                        return 4;
     }
 }
 
-static MTLPixelFormat ToMTLPixelFormat(TextureFormat f) {
+static MTLPixelFormat ToMTLPixelFormat(ChqTextureFormat f) {
     switch (f) {
-        case TextureFormat::kR8:        return MTLPixelFormatR8Unorm;
-        case TextureFormat::kRG8:       return MTLPixelFormatRG8Unorm;
-        case TextureFormat::kRGBA8:     return MTLPixelFormatRGBA8Unorm;
-        case TextureFormat::kRGBA16F:   return MTLPixelFormatRGBA16Float;
-        case TextureFormat::kR16F:      return MTLPixelFormatR16Float;
-        case TextureFormat::kR32F:      return MTLPixelFormatR32Float;
-        case TextureFormat::kRGBA32F:   return MTLPixelFormatRGBA32Float;
+        case ChqTextureFormat::kR8:        return MTLPixelFormatR8Unorm;
+        case ChqTextureFormat::kRG8:       return MTLPixelFormatRG8Unorm;
+        case ChqTextureFormat::kRGBA8:     return MTLPixelFormatRGBA8Unorm;
+        case ChqTextureFormat::kRGBA16F:   return MTLPixelFormatRGBA16Float;
+        case ChqTextureFormat::kR16F:      return MTLPixelFormatR16Float;
+        case ChqTextureFormat::kR32F:      return MTLPixelFormatR32Float;
+        case ChqTextureFormat::kRGBA32F:   return MTLPixelFormatRGBA32Float;
         default:                        return MTLPixelFormatRGBA8Unorm;
     }
 }
 
-static MTLVertexFormat ToMTLVertexFormat(VertexFormat f) {
+static MTLVertexFormat ToMTLVertexFormat(ChqVertexFormat f) {
     switch (f) {
-        case VertexFormat::kFloat32:     return MTLVertexFormatFloat;
-        case VertexFormat::kFloat32x2:   return MTLVertexFormatFloat2;
-        case VertexFormat::kFloat32x3:   return MTLVertexFormatFloat3;
-        case VertexFormat::kFloat32x4:   return MTLVertexFormatFloat4;
-        case VertexFormat::kUInt16:      return MTLVertexFormatUShortNormalized;
-        case VertexFormat::kUInt16x2:    return MTLVertexFormatUShort2Normalized;
-        case VertexFormat::kUInt16x4:    return MTLVertexFormatUShort4Normalized;
+        case ChqVertexFormat::kFloat32:     return MTLVertexFormatFloat;
+        case ChqVertexFormat::kFloat32x2:   return MTLVertexFormatFloat2;
+        case ChqVertexFormat::kFloat32x3:   return MTLVertexFormatFloat3;
+        case ChqVertexFormat::kFloat32x4:   return MTLVertexFormatFloat4;
+        case ChqVertexFormat::kUInt16:      return MTLVertexFormatUShortNormalized;
+        case ChqVertexFormat::kUInt16x2:    return MTLVertexFormatUShort2Normalized;
+        case ChqVertexFormat::kUInt16x4:    return MTLVertexFormatUShort4Normalized;
         default:                         return MTLVertexFormatFloat;
     }
 }
@@ -99,10 +99,10 @@ static MTLVertexFormat ToMTLVertexFormat(VertexFormat f) {
 // 资源类（命名与 common.h 的 opaque 句柄 CqXxx 对齐，使 TextureHandle 等即本类指针）
 // ===========================================================================
 
-struct CqTexture : public ITexture {
+struct CqTexture : public ChqITexture {
 public:
     id<MTLTexture> tex_ = nil;
-    TextureDesc desc_{};
+    ChqTextureDesc desc_{};
     // 零拷贝导入时持有 CVMetalTextureRef（其底层 IOSurface 与源 CVPixelBuffer 共享），
     // 使纹理在存活期内 IOSurface 不被回收。普通纹理此项为 nil。
     CVMetalTextureRef cv_keepalive_ = nullptr;
@@ -113,10 +113,10 @@ public:
             cv_keepalive_ = nullptr;
         }
         tex_ = nil;
-        desc_ = TextureDesc{};
+        desc_ = ChqTextureDesc{};
         delete this;
     }
-    void GetDesc(TextureDesc& out) const override { out = desc_; }
+    void GetDesc(ChqTextureDesc& out) const override { out = desc_; }
     int64_t GetMemoryBytes() const override {
         const int64_t bpp = static_cast<int64_t>(BytesPerPixel(desc_.format));
         return static_cast<int64_t>(desc_.width) * static_cast<int64_t>(desc_.height) *
@@ -124,35 +124,35 @@ public:
     }
 };
 
-struct CqBuffer : public IBuffer {
+struct CqBuffer : public ChqIBuffer {
 public:
     id<MTLBuffer> buf_ = nil;
-    BufferDesc desc_{};
+    ChqBufferDesc desc_{};
 
     void Destroy() override {
         buf_ = nil;
-        desc_ = BufferDesc{};
+        desc_ = ChqBufferDesc{};
         delete this;
     }
-    void GetDesc(BufferDesc& out) const override { out = desc_; }
+    void GetDesc(ChqBufferDesc& out) const override { out = desc_; }
     int64_t GetMemoryBytes() const override {
         return static_cast<int64_t>(desc_.size_bytes);
     }
-    Status Map(void*& out_ptr) override {
-        if (buf_ == nil) return Status(StatusCode::kInternal);
+    ChqStatus Map(void*& out_ptr) override {
+        if (buf_ == nil) return ChqStatus(ChqStatusCode::kInternal);
         out_ptr = [buf_ contents];
-        return Status::Ok();
+        return ChqStatus::Ok();
     }
     void Unmap() override {}
 };
 
-struct CqRenderTarget : public IRenderTarget {
+struct CqRenderTarget : public ChqIRenderTarget {
 public:
     id<MTLDevice> device_ = nil;
     id<MTLTexture> color_tex_ = nil;
     uint32_t w_ = 0;
     uint32_t h_ = 0;
-    TextureFormat fmt_ = TextureFormat::kRGBA8;
+    ChqTextureFormat fmt_ = ChqTextureFormat::kRGBA8;
 
     void Destroy() override {
         color_tex_ = nil;
@@ -172,7 +172,7 @@ public:
     RenderTargetHandle Handle() override { return this; }
 };
 
-struct CqShaderModule : public IShaderModule {
+struct CqShaderModule : public ChqIShaderModule {
 public:
     id<MTLLibrary> lib_ = nil;
     id<MTLFunction> func_ = nil;
@@ -184,7 +184,7 @@ public:
     }
 };
 
-struct CqPipeline : public IPipeline {
+struct CqPipeline : public ChqIPipeline {
 public:
     id<MTLRenderPipelineState> state_ = nil;
 
@@ -194,7 +194,7 @@ public:
     }
 };
 
-struct CqSampler : public ISampler {
+struct CqSampler : public ChqISampler {
 public:
     id<MTLSamplerState> state_ = nil;
 
@@ -204,7 +204,7 @@ public:
     }
 };
 
-struct CqFence : public IFence {
+struct CqFence : public ChqIFence {
 public:
     std::mutex mtx_;
     std::condition_variable cv_;
@@ -212,26 +212,26 @@ public:
 
     void Destroy() override { delete this; }
 
-    Status Signal() override {
+    ChqStatus Signal() override {
         {
             std::lock_guard<std::mutex> lk(mtx_);
             signaled_ = true;
         }
         cv_.notify_all();
-        return Status::Ok();
+        return ChqStatus::Ok();
     }
 
-    Status Wait(uint64_t timeout_ms) override {
+    ChqStatus Wait(uint64_t timeout_ms) override {
         std::unique_lock<std::mutex> lk(mtx_);
-        if (signaled_) return Status::Ok();
-        if (timeout_ms == 0) return Status(StatusCode::kIoTimeout);
+        if (signaled_) return ChqStatus::Ok();
+        if (timeout_ms == 0) return ChqStatus(ChqStatusCode::kIoTimeout);
         const auto rel = std::chrono::milliseconds(static_cast<long>(timeout_ms));
         const bool ok = cv_.wait_for(lk, rel, [this]() { return signaled_; });
-        return ok ? Status::Ok() : Status(StatusCode::kIoTimeout);
+        return ok ? ChqStatus::Ok() : ChqStatus(ChqStatusCode::kIoTimeout);
     }
 };
 
-struct CqCommandEncoder : public ICommandEncoder {
+struct CqCommandEncoder : public ChqICommandEncoder {
 public:
     id<MTLCommandBuffer> cb_ = nil;       // 由 CqCommandBuffer 持有，encoder 不释放
     id<MTLRenderCommandEncoder> enc_ = nil;
@@ -242,9 +242,9 @@ public:
         delete this;
     }
 
-    Status BeginRenderPass(RenderTargetHandle target, const float clear_color[4]) override {
+    ChqStatus BeginRenderPass(RenderTargetHandle target, const float clear_color[4]) override {
         auto* mrt = static_cast<CqRenderTarget*>(target);
-        if (mrt == nullptr || mrt->color_tex_ == nil) return Status(StatusCode::kInvalidArgument);
+        if (mrt == nullptr || mrt->color_tex_ == nil) return ChqStatus(ChqStatusCode::kInvalidArgument);
 
         MTLRenderPassDescriptor* dp = [MTLRenderPassDescriptor renderPassDescriptor];
         dp.colorAttachments[0].texture = mrt->color_tex_;
@@ -257,8 +257,8 @@ public:
         dp.colorAttachments[0].storeAction = MTLStoreActionStore;
 
         enc_ = [cb_ renderCommandEncoderWithDescriptor:dp];
-        if (enc_ == nil) return Status(StatusCode::kInternal);
-        return Status::Ok();
+        if (enc_ == nil) return ChqStatus(ChqStatusCode::kInternal);
+        return ChqStatus::Ok();
     }
 
     void SetPipeline(PipelineHandle pipeline) override {
@@ -319,7 +319,7 @@ public:
     }
 };
 
-struct CqCommandBuffer : public ICommandBuffer {
+struct CqCommandBuffer : public ChqICommandBuffer {
 public:
     id<MTLCommandQueue> queue_ = nil;
     id<MTLCommandBuffer> cb_ = nil;
@@ -331,31 +331,31 @@ public:
         delete this;
     }
 
-    Status CreateEncoder(PlatformPtr<ICommandEncoder>& out_encoder) override {
-        if (cb_ == nil) return Status(StatusCode::kInternal);
+    ChqStatus CreateEncoder(ChqPlatformPtr<ChqICommandEncoder>& out_encoder) override {
+        if (cb_ == nil) return ChqStatus(ChqStatusCode::kInternal);
         auto* e = new CqCommandEncoder();
         e->cb_ = cb_;
-        out_encoder = PlatformPtr<ICommandEncoder>(e);
-        return Status::Ok();
+        out_encoder = ChqPlatformPtr<ChqICommandEncoder>(e);
+        return ChqStatus::Ok();
     }
 
-    Status Commit() override {
-        if (committed_) return Status::Ok();
-        if (cb_ == nil) return Status(StatusCode::kInternal);
+    ChqStatus Commit() override {
+        if (committed_) return ChqStatus::Ok();
+        if (cb_ == nil) return ChqStatus(ChqStatusCode::kInternal);
         [cb_ commit];
         committed_ = true;
-        return Status::Ok();
+        return ChqStatus::Ok();
     }
 
-    Status WaitUntilCompleted() override {
-        if (cb_ == nil) return Status(StatusCode::kInternal);
+    ChqStatus WaitUntilCompleted() override {
+        if (cb_ == nil) return ChqStatus(ChqStatusCode::kInternal);
         [cb_ waitUntilCompleted];
-        if (cb_.status == MTLCommandBufferStatusError) return Status(StatusCode::kInternal);
-        return Status::Ok();
+        if (cb_.status == MTLCommandBufferStatusError) return ChqStatus(ChqStatusCode::kInternal);
+        return ChqStatus::Ok();
     }
 };
 
-struct CqCommandQueue : public ICommandQueue {
+struct CqCommandQueue : public ChqICommandQueue {
 public:
     id<MTLDevice> device_ = nil;
     id<MTLCommandQueue> queue_ = nil;
@@ -366,19 +366,19 @@ public:
         delete this;
     }
 
-    Status CreateCommandBuffer(PlatformPtr<ICommandBuffer>& out_buffer) override {
-        if (queue_ == nil) return Status(StatusCode::kInternal);
+    ChqStatus CreateCommandBuffer(ChqPlatformPtr<ChqICommandBuffer>& out_buffer) override {
+        if (queue_ == nil) return ChqStatus(ChqStatusCode::kInternal);
         id<MTLCommandBuffer> b = [queue_ commandBuffer];
-        if (b == nil) return Status(StatusCode::kInternal);
+        if (b == nil) return ChqStatus(ChqStatusCode::kInternal);
         auto* mb = new CqCommandBuffer();
         mb->queue_ = queue_;
         mb->cb_ = b;
-        out_buffer = PlatformPtr<ICommandBuffer>(mb);
-        return Status::Ok();
+        out_buffer = ChqPlatformPtr<ChqICommandBuffer>(mb);
+        return ChqStatus::Ok();
     }
 
-    Status Submit(ICommandBuffer* buffer) override {
-        if (buffer == nullptr) return Status(StatusCode::kInvalidArgument);
+    ChqStatus Submit(ChqICommandBuffer* buffer) override {
+        if (buffer == nullptr) return ChqStatus(ChqStatusCode::kInvalidArgument);
         return static_cast<CqCommandBuffer*>(buffer)->Commit();
     }
 
@@ -404,7 +404,7 @@ public:
 // 输出，使 CVMetalTexture 能直接复用其 IOSurface）。Metal 对 BGRA8Unorm 的采样已按「逻辑 RGBA」
 // 返回（.r=红/.b=蓝，该厂商布局由格式内部吸收），故采样端着色器**无需**手动交换通道；
 // 对外逻辑格式仍报 kRGBA8。
-struct CqNativeImageImporter : public INativeImageImporter {
+struct CqNativeImageImporter : public ChqINativeImageImporter {
 public:
     id<MTLDevice> device_ = nil;
     CVMetalTextureCacheRef cache_ = nullptr;  // 按 device 持有并复用
@@ -418,20 +418,20 @@ public:
         delete this;
     }
 
-    Status Import(NativeImageHandle image, TextureUsage usage,
+    ChqStatus Import(NativeImageHandle image, ChqTextureUsage usage,
                   TextureHandle& out_texture, bool& out_cpu_fallback) override {
         out_texture = nullptr;
         out_cpu_fallback = false;
-        if (device_ == nil || cache_ == nullptr) return Status(StatusCode::kInternal);
-        if (image == nullptr) return Status(StatusCode::kInvalidArgument);
+        if (device_ == nil || cache_ == nullptr) return ChqStatus(ChqStatusCode::kInternal);
+        if (image == nullptr) return ChqStatus(ChqStatusCode::kInvalidArgument);
 
         auto* ni = static_cast<CqNativeImage*>(image);
         CVPixelBufferRef pb = ni->pixel_buffer;
-        if (pb == nullptr) return Status(StatusCode::kInvalidArgument);
+        if (pb == nullptr) return ChqStatus(ChqStatusCode::kInvalidArgument);
 
         const size_t w = CVPixelBufferGetWidth(pb);
         const size_t h = CVPixelBufferGetHeight(pb);
-        if (w == 0 || h == 0) return Status(StatusCode::kInvalidArgument);
+        if (w == 0 || h == 0) return ChqStatus(ChqStatusCode::kInvalidArgument);
 
         // ---- 零拷贝路径：CVPixelBuffer -> CVMetalTexture（共享 IOSurface）----
         // ⚠️ 这里**没有任何像素缓冲拷贝**：CVMetalTextureCacheCreateTextureFromImage
@@ -446,7 +446,7 @@ public:
             if (tex != nil) {
                 auto* t = new CqTexture();
                 t->tex_ = tex;
-                t->desc_.format = TextureFormat::kRGBA8;  // 逻辑格式：管线按 RGBA 消费
+                t->desc_.format = ChqTextureFormat::kRGBA8;  // 逻辑格式：管线按 RGBA 消费
                 t->desc_.width = static_cast<uint32_t>(w);
                 t->desc_.height = static_cast<uint32_t>(h);
                 t->desc_.usage = usage;
@@ -455,7 +455,7 @@ public:
                 t->cv_keepalive_ = cvtex;
                 out_texture = t;
                 out_cpu_fallback = false;
-                return Status::Ok();
+                return ChqStatus::Ok();
             }
             CFRelease(cvtex);  // tex 为 nil 的异常分支
         }
@@ -475,15 +475,15 @@ public:
 private:
     // 退化路径实现：锁定源基址 + replaceRegion 把 BGRA 该厂商拷进 BGRA8Unorm 纹理。
     // ⚠️ 这是**唯一发生像素拷贝**的地方。零拷贝成立时 Import 不会调用它。
-    Status ImportCpu(CVPixelBufferRef pb, TextureUsage usage,
+    ChqStatus ImportCpu(CVPixelBufferRef pb, ChqTextureUsage usage,
                      TextureHandle& out_texture, bool& out_cpu_fallback) {
         out_texture = nullptr;
         out_cpu_fallback = true;
         if (CVPixelBufferGetPixelFormatType(pb) != kCVPixelFormatType_32BGRA) {
-            return Status(StatusCode::kFormatUnsupported);
+            return ChqStatus(ChqStatusCode::kFormatUnsupported);
         }
         if (CVPixelBufferLockBaseAddress(pb, kCVPixelBufferLock_ReadOnly) != kCVReturnSuccess) {
-            return Status(StatusCode::kInternal);
+            return ChqStatus(ChqStatusCode::kInternal);
         }
         const size_t w = CVPixelBufferGetWidth(pb);
         const size_t h = CVPixelBufferGetHeight(pb);
@@ -500,7 +500,7 @@ private:
         id<MTLTexture> ctex = [device_ newTextureWithDescriptor:td];
         if (ctex == nil) {
             CVPixelBufferUnlockBaseAddress(pb, kCVPixelBufferLock_ReadOnly);
-            return Status(StatusCode::kInternal);
+            return ChqStatus(ChqStatusCode::kInternal);
         }
         [ctex replaceRegion:MTLRegionMake2D(0, 0, static_cast<NSUInteger>(w),
                                             static_cast<NSUInteger>(h))
@@ -511,16 +511,16 @@ private:
 
         auto* t = new CqTexture();
         t->tex_ = ctex;
-        t->desc_.format = TextureFormat::kRGBA8;
+        t->desc_.format = ChqTextureFormat::kRGBA8;
         t->desc_.width = static_cast<uint32_t>(w);
         t->desc_.height = static_cast<uint32_t>(h);
         t->desc_.usage = usage;
         out_texture = t;
-        return Status::Ok();
+        return ChqStatus::Ok();
     }
 };
 
-struct CqDevice : public IGraphicsDevice {
+struct CqDevice : public ChqIGraphicsDevice {
 public:
     id<MTLDevice> device_ = nil;
 
@@ -529,10 +529,10 @@ public:
         delete this;
     }
 
-    Status CreateTexture(const TextureDesc& desc, PlatformPtr<ITexture>& out) override {
-        if (device_ == nil) return Status(StatusCode::kInternal);
-        const bool is_rt = (static_cast<uint32_t>(desc.usage & TextureUsage::kRenderTarget) != 0u);
-        const bool is_sampled = (static_cast<uint32_t>(desc.usage & TextureUsage::kSampled) != 0u);
+    ChqStatus CreateTexture(const ChqTextureDesc& desc, ChqPlatformPtr<ChqITexture>& out) override {
+        if (device_ == nil) return ChqStatus(ChqStatusCode::kInternal);
+        const bool is_rt = (static_cast<uint32_t>(desc.usage & ChqTextureUsage::kRenderTarget) != 0u);
+        const bool is_sampled = (static_cast<uint32_t>(desc.usage & ChqTextureUsage::kSampled) != 0u);
 
         MTLTextureDescriptor* td =
             [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:ToMTLPixelFormat(desc.format)
@@ -548,31 +548,31 @@ public:
         td.usage = usage;
 
         id<MTLTexture> tex = [device_ newTextureWithDescriptor:td];
-        if (tex == nil) return Status(StatusCode::kInternal);
+        if (tex == nil) return ChqStatus(ChqStatusCode::kInternal);
 
         auto* t = new CqTexture();
         t->tex_ = tex;
         t->desc_ = desc;
-        out = PlatformPtr<ITexture>(t);
-        return Status::Ok();
+        out = ChqPlatformPtr<ChqITexture>(t);
+        return ChqStatus::Ok();
     }
 
-    Status CreateBuffer(const BufferDesc& desc, PlatformPtr<IBuffer>& out) override {
-        if (device_ == nil) return Status(StatusCode::kInternal);
-        if (desc.size_bytes == 0) return Status(StatusCode::kInvalidArgument);
+    ChqStatus CreateBuffer(const ChqBufferDesc& desc, ChqPlatformPtr<ChqIBuffer>& out) override {
+        if (device_ == nil) return ChqStatus(ChqStatusCode::kInternal);
+        if (desc.size_bytes == 0) return ChqStatus(ChqStatusCode::kInvalidArgument);
         id<MTLBuffer> buf =
             [device_ newBufferWithLength:static_cast<NSUInteger>(desc.size_bytes)
                                  options:MTLResourceStorageModeShared];
-        if (buf == nil) return Status(StatusCode::kInternal);
+        if (buf == nil) return ChqStatus(ChqStatusCode::kInternal);
         auto* b = new CqBuffer();
         b->buf_ = buf;
         b->desc_ = desc;
-        out = PlatformPtr<IBuffer>(b);
-        return Status::Ok();
+        out = ChqPlatformPtr<ChqIBuffer>(b);
+        return ChqStatus::Ok();
     }
 
-    Status CreateRenderTarget(const RenderTargetDesc& desc, PlatformPtr<IRenderTarget>& out) override {
-        if (device_ == nil) return Status(StatusCode::kInternal);
+    ChqStatus CreateRenderTarget(const ChqRenderTargetDesc& desc, ChqPlatformPtr<ChqIRenderTarget>& out) override {
+        if (device_ == nil) return ChqStatus(ChqStatusCode::kInternal);
         MTLTextureDescriptor* td =
             [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:ToMTLPixelFormat(desc.color_format)
                                                                 width:static_cast<NSUInteger>(desc.width)
@@ -581,7 +581,7 @@ public:
         td.storageMode = MTLStorageModePrivate;
         td.usage = MTLTextureUsageRenderTarget | MTLTextureUsageShaderRead;
         id<MTLTexture> tex = [device_ newTextureWithDescriptor:td];
-        if (tex == nil) return Status(StatusCode::kInternal);
+        if (tex == nil) return ChqStatus(ChqStatusCode::kInternal);
 
         auto* rt = new CqRenderTarget();
         rt->device_ = device_;
@@ -589,18 +589,18 @@ public:
         rt->w_ = desc.width;
         rt->h_ = desc.height;
         rt->fmt_ = desc.color_format;
-        out = PlatformPtr<IRenderTarget>(rt);
-        return Status::Ok();
+        out = ChqPlatformPtr<ChqIRenderTarget>(rt);
+        return ChqStatus::Ok();
     }
 
-    Status CreateShaderModule(const ShaderModuleDesc& desc, PlatformPtr<IShaderModule>& out) override {
-        if (device_ == nil) return Status(StatusCode::kInternal);
+    ChqStatus CreateShaderModule(const ChqShaderModuleDesc& desc, ChqPlatformPtr<ChqIShaderModule>& out) override {
+        if (device_ == nil) return ChqStatus(ChqStatusCode::kInternal);
         if (!desc.is_platform_native) {
             // SPIR-V -> MSL 转译尚未接入（SHADER-001），本期仅支持 Platform-Native MSL 源码。
-            return Status(StatusCode::kInternal);
+            return ChqStatus(ChqStatusCode::kInternal);
         }
         const char* src_ptr = static_cast<const char*>(desc.code);
-        if (src_ptr == nullptr) return Status(StatusCode::kInvalidArgument);
+        if (src_ptr == nullptr) return ChqStatus(ChqStatusCode::kInvalidArgument);
         std::string src = (desc.code_size > 0u)
                               ? std::string(src_ptr, desc.code_size)
                               : std::string(src_ptr);
@@ -610,11 +610,11 @@ public:
                                  [NSString stringWithUTF8String:src.c_str()]
                                                   options:nil
                                                     error:&err];
-        if (lib == nil) return Status(StatusCode::kInternal);
+        if (lib == nil) return ChqStatus(ChqStatusCode::kInternal);
 
         const MTLFunctionType want =
-            (desc.stage == ShaderStage::kFragment) ? MTLFunctionTypeFragment
-            : (desc.stage == ShaderStage::kCompute) ? MTLFunctionTypeKernel
+            (desc.stage == ChqShaderStage::kFragment) ? MTLFunctionTypeFragment
+            : (desc.stage == ChqShaderStage::kCompute) ? MTLFunctionTypeKernel
                                                    : MTLFunctionTypeVertex;
         id<MTLFunction> fn = nil;
         for (NSString* name in lib.functionNames) {
@@ -624,27 +624,27 @@ public:
                 break;
             }
         }
-        if (fn == nil) return Status(StatusCode::kInternal);
+        if (fn == nil) return ChqStatus(ChqStatusCode::kInternal);
 
         auto* m = new CqShaderModule();
         m->lib_ = lib;
         m->func_ = fn;
-        out = PlatformPtr<IShaderModule>(m);
-        return Status::Ok();
+        out = ChqPlatformPtr<ChqIShaderModule>(m);
+        return ChqStatus::Ok();
     }
 
-    Status CreatePipeline(const PipelineDesc& desc, PlatformPtr<IPipeline>& out) override {
-        if (device_ == nil) return Status(StatusCode::kInternal);
+    ChqStatus CreatePipeline(const ChqPipelineDesc& desc, ChqPlatformPtr<ChqIPipeline>& out) override {
+        if (device_ == nil) return ChqStatus(ChqStatusCode::kInternal);
         auto* vm = static_cast<CqShaderModule*>(desc.vertex_shader);
         auto* fm = static_cast<CqShaderModule*>(desc.fragment_shader);
         if (vm == nullptr || fm == nullptr || vm->func_ == nil || fm->func_ == nil) {
-            return Status(StatusCode::kInvalidArgument);
+            return ChqStatus(ChqStatusCode::kInvalidArgument);
         }
 
         // 顶点布局 -> MTLVertexDescriptor（所有属性来自 slot 0 的顶点缓冲）。
         MTLVertexDescriptor* vd = [MTLVertexDescriptor new];
         for (uint32_t i = 0; i < desc.vertex_layout.attr_count; ++i) {
-            const VertexAttribute& a = desc.vertex_layout.attrs[i];
+            const ChqVertexAttribute& a = desc.vertex_layout.attrs[i];
             vd.attributes[a.location].format = ToMTLVertexFormat(a.format);
             vd.attributes[a.location].offset = static_cast<NSUInteger>(a.offset);
             vd.attributes[a.location].bufferIndex = 0;
@@ -662,16 +662,16 @@ public:
         NSError* err = nil;
         id<MTLRenderPipelineState> st =
             [device_ newRenderPipelineStateWithDescriptor:pd error:&err];
-        if (st == nil) return Status(StatusCode::kInternal);
+        if (st == nil) return ChqStatus(ChqStatusCode::kInternal);
 
         auto* p = new CqPipeline();
         p->state_ = st;
-        out = PlatformPtr<IPipeline>(p);
-        return Status::Ok();
+        out = ChqPlatformPtr<ChqIPipeline>(p);
+        return ChqStatus::Ok();
     }
 
-    Status CreateSampler(const SamplerDesc& desc, PlatformPtr<ISampler>& out) override {
-        if (device_ == nil) return Status(StatusCode::kInternal);
+    ChqStatus CreateSampler(const ChqSamplerDesc& desc, ChqPlatformPtr<ChqISampler>& out) override {
+        if (device_ == nil) return ChqStatus(ChqStatusCode::kInternal);
         MTLSamplerDescriptor* sd = [MTLSamplerDescriptor new];
         const MTLSamplerMinMagFilter f =
             desc.linear_filter ? MTLSamplerMinMagFilterLinear : MTLSamplerMinMagFilterNearest;
@@ -683,46 +683,46 @@ public:
         sd.tAddressMode = am;
         sd.rAddressMode = am;
         id<MTLSamplerState> s = [device_ newSamplerStateWithDescriptor:sd];
-        if (s == nil) return Status(StatusCode::kInternal);
+        if (s == nil) return ChqStatus(ChqStatusCode::kInternal);
         auto* sm = new CqSampler();
         sm->state_ = s;
-        out = PlatformPtr<ISampler>(sm);
-        return Status::Ok();
+        out = ChqPlatformPtr<ChqISampler>(sm);
+        return ChqStatus::Ok();
     }
 
-    Status CreateFence(PlatformPtr<IFence>& out) override {
-        out = PlatformPtr<IFence>(new CqFence());
-        return Status::Ok();
+    ChqStatus CreateFence(ChqPlatformPtr<ChqIFence>& out) override {
+        out = ChqPlatformPtr<ChqIFence>(new CqFence());
+        return ChqStatus::Ok();
     }
 
-    Status CreateCommandQueue(PlatformPtr<ICommandQueue>& out) override {
-        if (device_ == nil) return Status(StatusCode::kInternal);
+    ChqStatus CreateCommandQueue(ChqPlatformPtr<ChqICommandQueue>& out) override {
+        if (device_ == nil) return ChqStatus(ChqStatusCode::kInternal);
         id<MTLCommandQueue> q = [device_ newCommandQueue];
-        if (q == nil) return Status(StatusCode::kInternal);
+        if (q == nil) return ChqStatus(ChqStatusCode::kInternal);
         auto* cq = new CqCommandQueue();
         cq->device_ = device_;
         cq->queue_ = q;
-        out = PlatformPtr<ICommandQueue>(cq);
-        return Status::Ok();
+        out = ChqPlatformPtr<ChqICommandQueue>(cq);
+        return ChqStatus::Ok();
     }
 
-    Status CreateNativeImageImporter(PlatformPtr<INativeImageImporter>& out) override {
-        if (device_ == nil) return Status(StatusCode::kInternal);
+    ChqStatus CreateNativeImageImporter(ChqPlatformPtr<ChqINativeImageImporter>& out) override {
+        if (device_ == nil) return ChqStatus(ChqStatusCode::kInternal);
         CVMetalTextureCacheRef cache = nullptr;
         const CVReturn r = CVMetalTextureCacheCreate(kCFAllocatorDefault, nullptr, device_,
                                                      nullptr, &cache);
         if (r != kCVReturnSuccess || cache == nullptr) {
-            return Status(StatusCode::kInternal);
+            return ChqStatus(ChqStatusCode::kInternal);
         }
         auto* imp = new CqNativeImageImporter();
         imp->device_ = device_;      // ARC 自动 retain
         imp->cache_ = cache;         // 所有权交给 imp，Destroy 时 CFRelease
-        out = PlatformPtr<INativeImageImporter>(imp);
-        return Status::Ok();
+        out = ChqPlatformPtr<ChqINativeImageImporter>(imp);
+        return ChqStatus::Ok();
     }
 
-    Status WaitFence(IFence* fence, uint64_t timeout_ms) override {
-        if (fence == nullptr) return Status(StatusCode::kInvalidArgument);
+    ChqStatus WaitFence(ChqIFence* fence, uint64_t timeout_ms) override {
+        if (fence == nullptr) return ChqStatus(ChqStatusCode::kInvalidArgument);
         return static_cast<CqFence*>(fence)->Wait(timeout_ms);
     }
 };
@@ -731,13 +731,13 @@ public:
 // 工厂 + 内部辅助
 // ===========================================================================
 
-Status CreateGraphicsDevice(const GraphicsDeviceDesc& /*desc*/, PlatformPtr<IGraphicsDevice>& out_device) {
+ChqStatus CreateGraphicsDevice(const ChqGraphicsDeviceDesc& /*desc*/, ChqPlatformPtr<ChqIGraphicsDevice>& out_device) {
     id<MTLDevice> dev = MTLCreateSystemDefaultDevice();
-    if (dev == nil) return Status(StatusCode::kInternal);
+    if (dev == nil) return ChqStatus(ChqStatusCode::kInternal);
     auto* d = new CqDevice();
     d->device_ = dev;
-    out_device = PlatformPtr<IGraphicsDevice>(d);
-    return Status::Ok();
+    out_device = ChqPlatformPtr<ChqIGraphicsDevice>(d);
+    return ChqStatus::Ok();
 }
 
 }  // namespace cq
@@ -745,20 +745,20 @@ Status CreateGraphicsDevice(const GraphicsDeviceDesc& /*desc*/, PlatformPtr<IGra
 namespace cq {
 namespace apple {
 
-Status ReadRenderTargetPixels(IRenderTarget* rt,
+ChqStatus ReadRenderTargetPixels(ChqIRenderTarget* rt,
                               uint32_t x, uint32_t y, uint32_t w, uint32_t h,
                               void* out_rgba8, size_t out_size) {
-    if (rt == nullptr || out_rgba8 == nullptr) return Status(StatusCode::kInvalidArgument);
+    if (rt == nullptr || out_rgba8 == nullptr) return ChqStatus(ChqStatusCode::kInvalidArgument);
     auto* mrt = static_cast<CqRenderTarget*>(rt);
-    if (mrt->device_ == nil || mrt->color_tex_ == nil) return Status(StatusCode::kInternal);
+    if (mrt->device_ == nil || mrt->color_tex_ == nil) return ChqStatus(ChqStatusCode::kInternal);
 
     const NSUInteger bpr = static_cast<NSUInteger>(w) * 4u;
     const NSUInteger img_bytes = bpr * static_cast<NSUInteger>(h);
-    if (static_cast<NSUInteger>(out_size) < img_bytes) return Status(StatusCode::kInvalidArgument);
+    if (static_cast<NSUInteger>(out_size) < img_bytes) return ChqStatus(ChqStatusCode::kInvalidArgument);
 
     id<MTLBuffer> buf = [mrt->device_ newBufferWithLength:img_bytes
                                                  options:MTLResourceStorageModeShared];
-    if (buf == nil) return Status(StatusCode::kInternal);
+    if (buf == nil) return ChqStatus(ChqStatusCode::kInternal);
 
     id<MTLCommandQueue> q = [mrt->device_ newCommandQueue];
     id<MTLCommandBuffer> cb = [q commandBuffer];
@@ -777,34 +777,34 @@ destinationBytesPerImage:img_bytes];
     [cb waitUntilCompleted];
 
     const void* src = [buf contents];
-    if (src == nullptr) return Status(StatusCode::kInternal);
+    if (src == nullptr) return ChqStatus(ChqStatusCode::kInternal);
     std::memcpy(out_rgba8, src, static_cast<size_t>(img_bytes));
-    return Status::Ok();
+    return ChqStatus::Ok();
 }
 
-Status UploadTextureData(ITexture* tex, const void* data, size_t bytes) {
-    if (tex == nullptr || data == nullptr) return Status(StatusCode::kInvalidArgument);
+ChqStatus UploadTextureData(ChqITexture* tex, const void* data, size_t bytes) {
+    if (tex == nullptr || data == nullptr) return ChqStatus(ChqStatusCode::kInvalidArgument);
     auto* mt = static_cast<CqTexture*>(tex);
-    if (mt->tex_ == nil) return Status(StatusCode::kInternal);
+    if (mt->tex_ == nil) return ChqStatus(ChqStatusCode::kInternal);
     const uint32_t w = mt->desc_.width;
     const uint32_t h = mt->desc_.height;
     const size_t need = static_cast<size_t>(w) * static_cast<size_t>(h) * 4u;
-    if (bytes < need) return Status(StatusCode::kInvalidArgument);
+    if (bytes < need) return ChqStatus(ChqStatusCode::kInvalidArgument);
     const NSUInteger bpr = static_cast<NSUInteger>(w) * 4u;
     [mt->tex_ replaceRegion:MTLRegionMake2D(0, 0, static_cast<NSUInteger>(w), static_cast<NSUInteger>(h))
                  mipmapLevel:0
                    withBytes:data
                  bytesPerRow:bpr];
-    return Status::Ok();
+    return ChqStatus::Ok();
 }
 
 // ---- 句柄桥接（CqXxx 继承 Ixxx，安全下行转换）----
-ShaderModuleHandle   ToShaderHandle(IShaderModule* p)   { return static_cast<CqShaderModule*>(p); }
-PipelineHandle      ToPipelineHandle(IPipeline* p)       { return static_cast<CqPipeline*>(p); }
-BufferHandle        ToBufferHandle(IBuffer* p)           { return static_cast<CqBuffer*>(p); }
-TextureHandle       ToTextureHandle(ITexture* p)         { return static_cast<CqTexture*>(p); }
-SamplerHandle       ToSamplerHandle(ISampler* p)         { return static_cast<CqSampler*>(p); }
-RenderTargetHandle  ToRenderTargetHandle(IRenderTarget* p){ return static_cast<CqRenderTarget*>(p); }
+ShaderModuleHandle   ToShaderHandle(ChqIShaderModule* p)   { return static_cast<CqShaderModule*>(p); }
+PipelineHandle      ToPipelineHandle(ChqIPipeline* p)       { return static_cast<CqPipeline*>(p); }
+BufferHandle        ToBufferHandle(ChqIBuffer* p)           { return static_cast<CqBuffer*>(p); }
+TextureHandle       ToTextureHandle(ChqITexture* p)         { return static_cast<CqTexture*>(p); }
+SamplerHandle       ToSamplerHandle(ChqISampler* p)         { return static_cast<CqSampler*>(p); }
+RenderTargetHandle  ToRenderTargetHandle(ChqIRenderTarget* p){ return static_cast<CqRenderTarget*>(p); }
 
 // 零拷贝验证辅助：返回导入纹理背后 IOSurface 的 ID。取不到（非 IOSurface 纹理 / 平台不支持）
 // 时返回 0，调用方据以降级到替代证据（如耗时实测）。用于证明「纹理与源 CVPixelBuffer 共享
@@ -826,7 +826,7 @@ uint32_t GetImportedTextureIosurfaceId(TextureHandle tex) {
 // 零拷贝耗时代差证明：对「Metal 兼容帧」走零拷贝（zero_handle）、对「非兼容帧」走 CPU 退化
 // （cpu_handle）各 iters 次，返回各自总耗时（毫秒）。零拷贝仅建纹理视图（µs 级），CPU 退化含
 // 整帧 BGRA memcpy；二者差距即为零拷贝收益的客观证据（取不到 IOSurface 时退化为该实测）。
-Status BenchmarkNativeImageImport(IGraphicsDevice* dev,
+ChqStatus BenchmarkNativeImageImport(ChqIGraphicsDevice* dev,
                                  NativeImageHandle zero_handle,
                                  NativeImageHandle cpu_handle,
                                  int iters,
@@ -834,29 +834,29 @@ Status BenchmarkNativeImageImport(IGraphicsDevice* dev,
     out_zero_ms = 0.0;
     out_cpu_ms = 0.0;
     if (dev == nullptr || zero_handle == nullptr || cpu_handle == nullptr || iters <= 0) {
-        return Status(StatusCode::kInvalidArgument);
+        return ChqStatus(ChqStatusCode::kInvalidArgument);
     }
     auto* cdev = static_cast<CqDevice*>(dev);
-    if (cdev == nullptr || cdev->device_ == nil) return Status(StatusCode::kInternal);
-    PlatformPtr<INativeImageImporter> imp;
-    if (!cdev->CreateNativeImageImporter(imp).IsOk()) return Status(StatusCode::kInternal);
+    if (cdev == nullptr || cdev->device_ == nil) return ChqStatus(ChqStatusCode::kInternal);
+    ChqPlatformPtr<ChqINativeImageImporter> imp;
+    if (!cdev->CreateNativeImageImporter(imp).IsOk()) return ChqStatus(ChqStatusCode::kInternal);
     auto* cimp = static_cast<CqNativeImageImporter*>(imp.get());
 
-    auto time_it = [&](NativeImageHandle h, double& out_ms) -> Status {
+    auto time_it = [&](NativeImageHandle h, double& out_ms) -> ChqStatus {
         const auto t0 = std::chrono::steady_clock::now();
         for (int i = 0; i < iters; ++i) {
             TextureHandle th = nullptr;
             bool fb = false;
-            if (!cimp->Import(h, TextureUsage::kSampled, th, fb).IsOk()) {
-                return Status(StatusCode::kInternal);
+            if (!cimp->Import(h, ChqTextureUsage::kSampled, th, fb).IsOk()) {
+                return ChqStatus(ChqStatusCode::kInternal);
             }
-            static_cast<ITexture*>(th)->Destroy();
+            static_cast<ChqITexture*>(th)->Destroy();
         }
         const auto t1 = std::chrono::steady_clock::now();
         out_ms = std::chrono::duration<double, std::milli>(t1 - t0).count();
-        return Status::Ok();
+        return ChqStatus::Ok();
     };
-    Status s = time_it(zero_handle, out_zero_ms);
+    ChqStatus s = time_it(zero_handle, out_zero_ms);
     if (!s.IsOk()) return s;
     return time_it(cpu_handle, out_cpu_ms);
 }

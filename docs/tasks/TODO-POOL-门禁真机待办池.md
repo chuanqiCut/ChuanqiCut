@@ -300,3 +300,22 @@ SPM 临时产物一律 `swift test --disable-sandbox --scratch-path "$ROOT/build
 - 验收回填：baselines 新增「预览音频」段（现为空）；关池 [12] 需真机数字；pitfalls P106 已记
 - 追加（2026-10-11 下午）：壳工程已冻结入库（ADR-0037，XcodeGen 退役）——真机趟顺带确认
   冻结工程出包可跑（metallib 双产物 9391B/7123B 已核非空壳）；此后壳工程改动直接进 Xcode 提交。
+
+## [13] TASK-INFRA-025 内核 Chq 前缀改名（ADR-0039）——Swift 侧与 Pod 布局待验（2026-10-11，集成机）
+
+- 来源：传哲裁决「只 C++ 内核加 Chq 前缀」；189 类型 + 83 文件改名，模块级验证已过
+  （Debug+Release 双配置 -Werror、ctest 48/48、check_platform_headers 41 头 0 违规、
+  golden 21/21；`cq_sdk.h` 声明区 diff=0，ABI 未动）。
+- 构建机/门禁（集成机）：
+  - [ ] Swift 窄检未跑——原因：engine/bindings/swift 正处 ADR-0038 在途状态
+    （Pod 重命名未收口），此时跑 swift build 无法归因失败方；本任务写集可证不含
+    .swift/.c（grep 全库 0 残留）。ADR-0038 收口时顺带跑 bindings swift build + 冒烟。
+  - [ ] `pod install` 后 Pods 工程 Copy Headers 布局验证——podspec
+    `source_files = 'core/cq/**/*.{h,cpp}'` 为 glob 自动纳新文件名，理论无影响；
+    下次真机趟顺带确认（注意 P96 噪音条目仍在：chq_gfx.h 双目录同名共存）。
+  - [ ] 全量门禁按阶段批（本任务已记模块级数字，见 .ai/modules/core.md 2026-10-11 行）。
+- 已知风险（写明）：`engine/bindings/swift/Frameworks/ChuanqiCut.xcframework` 内嵌
+  **旧 pal 时代头**（cq/pal/*，引用 cq/base/status.h 等旧路径）先于本任务即与源码树
+  脱节，本次改名后脱节加深；该 xcframework 重建（build_core_apple.sh + prepare.sh）
+  时自然消除——与池 [12] 的 xcframework 重建项同一趟做。
+- 验收回填：关池需 Swift 窄检 + pod install 布局两项勾掉。

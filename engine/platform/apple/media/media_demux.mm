@@ -1,20 +1,20 @@
 // ChuanqiCut — PALA-010 Apple 解封装后端（AVFoundation / AVAssetReader）
 //
-// 职责：实现 Platform 冻结接口 `cq::IMediaDemuxer`（core/include/cq/platform/media.h）。
+// 职责：实现 Platform 冻结接口 `cq::ChqIMediaDemuxer`（core/include/cq/platform/media.h）。
 // 用 AVFoundation 读取 MP4/MOV 等容器，逐包（压缩数据）吐出本项目自有的
-// `MediaPacket`，全程不使用任何 FFmpeg 类型，也不把任何平台类型泄漏到 core 头。
+// `ChqMediaPacket`，全程不使用任何 FFmpeg 类型，也不把任何平台类型泄漏到 core 头。
 //
 // 设计要点：
 //   * 走 AVAssetReader + AVAssetReaderTrackOutput，outputSettings 传 nil（passthrough），
 //     这样拿到的 CMSampleBuffer 携带的是**压缩数据**（而非已解码帧），满足
 //     "demux 只做容器层、不含解码" 的契约（解码是 PALA-011 的事）。
-//   * 时间一律走 `RationalTime` 项目网格 120000。AVFoundation 的 `CMTime` 自带
+//   * 时间一律走 `ChqRationalTime` 项目网格 120000。AVFoundation 的 `CMTime` 自带
 //     timescale，必须显式 `Rescale` 到 120000，且**非整除时必须显式指定舍入方向**
 //     （本文件统一用 kRound 表示时间戳、kFloor 表示关键帧锚点），绝不默认。
 //   * 平台类型（AVAsset / AVAssetReader / CMSampleBuffer / __strong 等）只出现在本 .mm。
 //
-// 红线：零 FFmpeg 类型、零平台类型出现在 core/ 头、统一 base 类型（RationalTime/Status/
-// CancelToken）、内核禁用异常、长任务接受 CancelToken。
+// 红线：零 FFmpeg 类型、零平台类型出现在 core/ 头、统一 base 类型（ChqRationalTime/ChqStatus/
+// ChqCancelToken）、内核禁用异常、长任务接受 ChqCancelToken。
 
 #import <AVFoundation/AVFoundation.h>
 #import <dispatch/dispatch.h>
@@ -25,13 +25,13 @@
 #include <sys/stat.h>
 #include <vector>
 
-#include "cq/base/perf.h"       // CQ_SLOW_CALL_WF（CORE-010）
-#include "cq/base/logging.h"        // 带 workflow 的分级日志
-#include "cq/base/rational_time.h"        // RationalTime / Rescale / RoundMode / kProjectTimeScale
-#include "cq/base/status.h"      // Status / StatusCode
-#include "cq/base/concurrency.h" // CancelToken
-#include "cq/platform/media.h"        // IMediaDemuxer / MediaPacket / StreamInfo / CreateMediaDemuxer
-#include "cq/platform/common.h"       // CodecId / MediaType / PixelFormat 等枚举
+#include "cq/base/chq_perf.h"       // CQ_SLOW_CALL_WF（CORE-010）
+#include "cq/base/chq_logging.h"        // 带 workflow 的分级日志
+#include "cq/base/chq_rational_time.h"        // ChqRationalTime / Rescale / ChqRoundMode / kProjectTimeScale
+#include "cq/base/chq_status.h"      // ChqStatus / ChqStatusCode
+#include "cq/base/chq_concurrency.h" // ChqCancelToken
+#include "cq/platform/chq_media.h"        // ChqIMediaDemuxer / ChqMediaPacket / ChqStreamInfo / CreateMediaDemuxer
+#include "cq/platform/chq_common.h"       // ChqCodecId / ChqMediaType / ChqPixelFormat 等枚举
 
 namespace cq {
 
@@ -39,15 +39,15 @@ namespace cq {
 // 按链路可筛，不再在每个文件里各抄一份 Debug-only 的结构体。
 namespace {
 
-// CMTime -> RationalTime（项目网格 120000），显式舍入方向（非整除也不默认）。
-RationalTime ToRational(CMTime t, RoundMode mode) {
+// CMTime -> ChqRationalTime（项目网格 120000），显式舍入方向（非整除也不默认）。
+ChqRationalTime ToRational(CMTime t, ChqRoundMode mode) {
     if (CMTIME_IS_INVALID(t) || CMTIME_IS_INDEFINITE(t)) {
-        return RationalTime{0, 1};
+        return ChqRationalTime{0, 1};
     }
-    RationalTime src{static_cast<int64_t>(t.value), static_cast<int32_t>(t.timescale)};
-    RationalTime out = src;
+    ChqRationalTime src{static_cast<int64_t>(t.value), static_cast<int32_t>(t.timescale)};
+    ChqRationalTime out = src;
     // 非整除必须显式舍入方向；Rescale 在指定 mode 下只会在溢出时失败。
-    Status s = Rescale(src, kProjectTimeScale, mode, out);
+    ChqStatus s = Rescale(src, kProjectTimeScale, mode, out);
     if (!s.IsOk()) {
         // 溢出兜底：退回原始（非项目网格）值，保证不丢信息。
         out = src;
@@ -55,51 +55,51 @@ RationalTime ToRational(CMTime t, RoundMode mode) {
     return out;
 }
 
-// 视频/音频 FourCharCode -> 本项目 CodecId（与 FFmpeg 解耦，映射在 Platform 内）。
+// 视频/音频 FourCharCode -> 本项目 ChqCodecId（与 FFmpeg 解耦，映射在 Platform 内）。
 // MEDIA-022：'hev1'（ffmpeg 默认 HEVC tag）与 'dvh1'/'dvhe'（杜比视界，HEVC 基底）
 // 与 'hvc1' 同属 HEVC —— 缺了它们，iPhone 相册/常见 HEVC 素材会被报成 kUnknown。
-CodecId VideoCodecToCq(FourCharCode c) {
+ChqCodecId VideoCodecToCq(FourCharCode c) {
     switch (c) {
         case kCMVideoCodecType_H264:
-            return CodecId::kH264;
+            return ChqCodecId::kH264;
         case kCMVideoCodecType_HEVC:
         case kCMVideoCodecType_HEVCWithAlpha:
         case 'hev1':
         case 'dvh1':
         case 'dvhe':
-            return CodecId::kHevc;
+            return ChqCodecId::kHevc;
         case kCMVideoCodecType_AppleProRes422:
         case kCMVideoCodecType_AppleProRes4444:
         case kCMVideoCodecType_AppleProRes422HQ:
         case kCMVideoCodecType_AppleProRes4444XQ:
         case kCMVideoCodecType_AppleProRes422LT:
         case kCMVideoCodecType_AppleProRes422Proxy:
-            return CodecId::kProres;
+            return ChqCodecId::kProres;
         case kCMVideoCodecType_JPEG:
         case kCMVideoCodecType_JPEG_OpenDML:
-            return CodecId::kMjpeg;
+            return ChqCodecId::kMjpeg;
         default:
-            return CodecId::kUnknown;
+            return ChqCodecId::kUnknown;
     }
 }
 
-CodecId AudioCodecToCq(FourCharCode c) {
+ChqCodecId AudioCodecToCq(FourCharCode c) {
     switch (c) {
         case kAudioFormatLinearPCM:
-            return CodecId::kPcmS16Le;  // 近似：实际格式见 StreamInfo，这里仅作 codec 标签
+            return ChqCodecId::kPcmS16Le;  // 近似：实际格式见 ChqStreamInfo，这里仅作 codec 标签
         case kAudioFormatMPEG4AAC:
         case kAudioFormatMPEG4AAC_HE:
         case kAudioFormatMPEG4AAC_LD:
         case kAudioFormatMPEG4AAC_ELD:
-            return CodecId::kAac;
+            return ChqCodecId::kAac;
         case kAudioFormatMPEGLayer3:
-            return CodecId::kMp3;
+            return ChqCodecId::kMp3;
         case kAudioFormatFLAC:
-            return CodecId::kFlac;
+            return ChqCodecId::kFlac;
         case kAudioFormatOpus:
-            return CodecId::kOpus;
+            return ChqCodecId::kOpus;
         default:
-            return CodecId::kUnknown;
+            return ChqCodecId::kUnknown;
     }
 }
 
@@ -265,15 +265,15 @@ struct TrackState {
     AVAssetReaderTrackOutput* __strong output = nullptr;  // passthrough 输出
     CMSampleBufferRef next = nullptr;  // 预取的下一样本（+1 retained），耗尽为 nullptr
     int32_t stream_index = -1;
-    MediaType media_type = MediaType::kUnknown;
-    CodecId codec = CodecId::kUnknown;
-    // StreamInfo 字段（从首个样本的格式描述解析，避免 deprecated 属性）。
+    ChqMediaType media_type = ChqMediaType::kUnknown;
+    ChqCodecId codec = ChqCodecId::kUnknown;
+    // ChqStreamInfo 字段（从首个样本的格式描述解析，避免 deprecated 属性）。
     uint32_t width = 0;
     uint32_t height = 0;
     uint32_t sample_rate = 0;
     uint32_t channels = 0;
-    PixelFormat pixel_format = PixelFormat::kUnknown;
-    RationalTime time_base{0, 1};
+    ChqPixelFormat pixel_format = ChqPixelFormat::kUnknown;
+    ChqRationalTime time_base{0, 1};
 };
 
 void ReleaseSample(CMSampleBufferRef& s) {
@@ -285,18 +285,18 @@ void ReleaseSample(CMSampleBufferRef& s) {
 
 // 从 CMFormatDescription（Open 时来自 track.formatDescriptions，不依赖读取样本）
 // 抽取 stream 元数据（codec/尺寸/采样率）。
-void ExtractStreamMeta(TrackState& ts, CMFormatDescriptionRef fmt, MediaType type) {
+void ExtractStreamMeta(TrackState& ts, CMFormatDescriptionRef fmt, ChqMediaType type) {
     if (fmt == nullptr) return;
     ts.media_type = type;
-    if (type == MediaType::kVideo) {
+    if (type == ChqMediaType::kVideo) {
         FourCharCode codec = CMVideoFormatDescriptionGetCodecType(fmt);
         ts.codec = VideoCodecToCq(codec);
         CMVideoDimensions dim = CMVideoFormatDescriptionGetDimensions(fmt);
         ts.width = static_cast<uint32_t>(dim.width);
         ts.height = static_cast<uint32_t>(dim.height);
         // 压缩层不感知像素格式细节；标记 kYUV420SemiPlanar 为常见 H.264 默认，
-        // 真实解码后由 PALA-011 给出精确 PixelFormat。此处仅占位。
-        ts.pixel_format = PixelFormat::kYUV420SemiPlanar;
+        // 真实解码后由 PALA-011 给出精确 ChqPixelFormat。此处仅占位。
+        ts.pixel_format = ChqPixelFormat::kYUV420SemiPlanar;
     } else {
         const AudioStreamBasicDescription* asbd =
             CMAudioFormatDescriptionGetStreamBasicDescription(fmt);
@@ -312,9 +312,9 @@ void ExtractStreamMeta(TrackState& ts, CMFormatDescriptionRef fmt, MediaType typ
 }  // namespace
 
 // ---------------------------------------------------------------------------
-// AppleDemuxer — Platform IMediaDemuxer 的 Apple 实现
+// AppleDemuxer — Platform ChqIMediaDemuxer 的 Apple 实现
 // ---------------------------------------------------------------------------
-class AppleDemuxer : public IMediaDemuxer {
+class AppleDemuxer : public ChqIMediaDemuxer {
 public:
     AppleDemuxer() = default;
     ~AppleDemuxer() override {
@@ -322,21 +322,21 @@ public:
         for (auto& ts : tracks_) ReleaseSample(ts.next);
     }
 
-    // IPlatformResource
+    // ChqIPlatformResource
     void Destroy() override { delete this; }
 
-    Status Open(const MediaSource& src) override {
+    ChqStatus Open(const ChqMediaSource& src) override {
         // CORE-010：Release 可见（慢调用不是调试细节，是「系统正在变得不可用」）。
-        CQ_SLOW_CALL_WF(Workflow::kDemux, "demuxer Open(含 ScanKeyframes)");
-        if (src.path == nullptr) return Status{StatusCode::kInvalidArgument};
+        CQ_SLOW_CALL_WF(ChqWorkflow::kDemux, "demuxer Open(含 ScanKeyframes)");
+        if (src.path == nullptr) return ChqStatus{ChqStatusCode::kInvalidArgument};
 
         NSString* ns_path = [[NSString alloc] initWithUTF8String:src.path];
-        if (ns_path == nil) return Status{StatusCode::kInvalidArgument};
+        if (ns_path == nil) return ChqStatus{ChqStatusCode::kInvalidArgument};
         NSURL* url = [NSURL fileURLWithPath:ns_path];
-        if (url == nil) return Status{StatusCode::kInvalidArgument};
+        if (url == nil) return ChqStatus{ChqStatusCode::kInvalidArgument};
 
         asset_ = [AVURLAsset URLAssetWithURL:url options:nil];
-        if (asset_ == nil) return Status{StatusCode::kIoError};
+        if (asset_ == nil) return ChqStatus{ChqStatusCode::kIoError};
 
         // 加载 tracks + duration（异步加载 + 信号量收敛成同步 Open）。
         // ⚠️ completionHandler 触发 ≠ 加载成功：它在所有 key 到**终态**时调用，
@@ -349,7 +349,7 @@ public:
         // 5s；超时/失败返回 kIoError，上层按「文件无法解析」处理。
         // 瞬态失败重建 asset 重试一次：新实例不受前实例失败状态影响。
         constexpr int64_t kLoadTimeoutNs = 5LL * 1000 * 1000 * 1000;  // 5s
-        Status load_status{StatusCode::kUnknown};
+        ChqStatus load_status{ChqStatusCode::kUnknown};
         for (int attempt = 0;; ++attempt) {
             dispatch_semaphore_t sem = dispatch_semaphore_create(0);
             [asset_ loadValuesAsynchronouslyForKeys:@[ @"tracks", @"duration" ]
@@ -380,11 +380,11 @@ public:
                 std::printf("[AppleDemuxer] load attempt %d -> timeout (5s)\n", attempt);
             }
             if (loaded) {
-                load_status = Status::Ok();
+                load_status = ChqStatus::Ok();
                 break;
             }
             if (attempt >= 1) {
-                load_status = Status{StatusCode::kIoError};
+                load_status = ChqStatus{ChqStatusCode::kIoError};
                 break;
             }
             // 文件已不存在 = 确定性失败，重试无意义（省一次 5s 超时）。
@@ -392,7 +392,7 @@ public:
             struct stat st_buf{};
             if (::stat(url.fileSystemRepresentation, &st_buf) != 0) {
                 std::printf("[AppleDemuxer] file gone, skip retry\n");
-                load_status = Status{StatusCode::kIoError};
+                load_status = ChqStatus{ChqStatusCode::kIoError};
                 break;
             }
             asset_ = nil;  // 重建 asset 重试（绕开前实例的失败状态）
@@ -400,11 +400,11 @@ public:
         if (!load_status.IsOk()) return load_status;
 
         // 记录时长（Rescale 到 120000，kRound）。
-        duration_ = ToRational([asset_ duration], RoundMode::kRound);
+        duration_ = ToRational([asset_ duration], ChqRoundMode::kRound);
 
         // 建 reader（全范围），预取每条轨首个样本，并从 track.formatDescriptions 解析元数据。
-        CancelToken no_cancel;
-        Status s = RebuildReader(kCMTimeZero, no_cancel);
+        ChqCancelToken no_cancel;
+        ChqStatus s = RebuildReader(kCMTimeZero, no_cancel);
         if (!s.IsOk()) return s;
         // 关键帧扫描在 Open 同步完成（供 Seek 吸附）。⚠️ 后台线程方案已否决：
         // 与播放路径在同一 AVAsset 上并发建 AVAssetReader 会触发
@@ -412,25 +412,25 @@ public:
         ScanKeyframes();
         s = RebuildReader(kCMTimeZero, no_cancel);
         if (!s.IsOk()) return s;
-        return Status::Ok();
+        return ChqStatus::Ok();
     }
 
-    Status GetDuration(RationalTime& out_duration) const override {
+    ChqStatus GetDuration(ChqRationalTime& out_duration) const override {
         out_duration = duration_;
-        return Status::Ok();
+        return ChqStatus::Ok();
     }
 
     // MEDIA-026：轻量打开——只加载 duration，不建 reader / 不扫关键帧。
     // 导入探测（cq_media_probe_duration）专用：大文件从秒级降到毫秒级。
-    Status OpenLight(const MediaSource& src) override {
-        if (src.path == nullptr) return Status{StatusCode::kInvalidArgument};
+    ChqStatus OpenLight(const ChqMediaSource& src) override {
+        if (src.path == nullptr) return ChqStatus{ChqStatusCode::kInvalidArgument};
         NSString* ns_path = [[NSString alloc] initWithUTF8String:src.path];
-        if (ns_path == nil) return Status{StatusCode::kInvalidArgument};
+        if (ns_path == nil) return ChqStatus{ChqStatusCode::kInvalidArgument};
         NSURL* url = [NSURL fileURLWithPath:ns_path];
-        if (url == nil) return Status{StatusCode::kInvalidArgument};
+        if (url == nil) return ChqStatus{ChqStatusCode::kInvalidArgument};
 
         AVURLAsset* asset = [AVURLAsset URLAssetWithURL:url options:nil];
-        if (asset == nil) return Status{StatusCode::kIoError};
+        if (asset == nil) return ChqStatus{ChqStatusCode::kIoError};
 
         // 有限超时 + 单次重试：与全量 Open 的加载纪律一致（P33：加载失败后
         // completion 可能永不触发，无限等 = 挂死）。
@@ -454,24 +454,24 @@ public:
             } else {
                 std::printf("[AppleDemuxer] OpenLight load timeout (attempt %d)\n", attempt);
             }
-            if (attempt >= 1) return Status{StatusCode::kIoError};
+            if (attempt >= 1) return ChqStatus{ChqStatusCode::kIoError};
             asset = [AVURLAsset URLAssetWithURL:url options:nil];  // 重建重试
-            if (asset == nil) return Status{StatusCode::kIoError};
+            if (asset == nil) return ChqStatus{ChqStatusCode::kIoError};
         }
-        duration_ = ToRational([asset duration], RoundMode::kRound);
-        return Status::Ok();
+        duration_ = ToRational([asset duration], ChqRoundMode::kRound);
+        return ChqStatus::Ok();
     }
 
     int32_t GetStreamCount() const override {
         return static_cast<int32_t>(tracks_.size());
     }
 
-    Status GetStreamInfo(int32_t index, StreamInfo& out_info) const override {
+    ChqStatus GetStreamInfo(int32_t index, ChqStreamInfo& out_info) const override {
         if (index < 0 || index >= static_cast<int32_t>(tracks_.size())) {
-            return Status{StatusCode::kInvalidArgument};
+            return ChqStatus{ChqStatusCode::kInvalidArgument};
         }
         const TrackState& ts = tracks_[static_cast<size_t>(index)];
-        out_info = StreamInfo{};
+        out_info = ChqStreamInfo{};
         out_info.type = ts.media_type;
         out_info.codec = ts.codec;
         out_info.time_base = ts.time_base;
@@ -480,20 +480,20 @@ public:
         out_info.sample_rate = ts.sample_rate;
         out_info.channels = ts.channels;
         out_info.pixel_format = ts.pixel_format;
-        return Status::Ok();
+        return ChqStatus::Ok();
     }
 
     // 精确 seek：吸附到 <=target 的最近关键帧，重建 reader（timeRange.start = 该关键帧）。
     // 关键帧位置来自 Open 时扫描的 keyframe_times_（依赖已修复的 IsKeyframe，与 ffprobe 吻合）。
     // 精确 seek 必须自关键帧起解码：调用方（MEDIA-020）再从关键帧前向解码到 t 帧。
     // 无关键帧（空集）时退化为从头，保证不崩溃。
-    Status Seek(const RationalTime& target, const CancelToken& token) override {
+    ChqStatus Seek(const ChqRationalTime& target, const ChqCancelToken& token) override {
         if (token.IsCancelled()) return token.Cancelled();
-        if (asset_ == nil) return Status{StatusCode::kInvalidArgument};
+        if (asset_ == nil) return ChqStatus{ChqStatusCode::kInvalidArgument};
 
         // 吸附：<=target 的最大关键帧。
-        RationalTime snap{0, kProjectTimeScale};
-        for (const RationalTime& kf : keyframe_times_) {
+        ChqRationalTime snap{0, kProjectTimeScale};
+        for (const ChqRationalTime& kf : keyframe_times_) {
             if (cq::CompareRational(kf, snap) >= 0 &&
                 cq::CompareRational(kf, target) <= 0) {
                 snap = kf;
@@ -509,20 +509,20 @@ public:
     // 关键：passthrough 模式下容器层会吐出**零该厂商样本**（如 H.264 参数集 /
     // priming 包），它们不带帧数据且会破坏 pts 单调性（pts=0 的空包紧跟真正的
     // pts=0 首帧）。这类样本在 demux 层直接跳过，只向外吐出带有效编码数据的包。
-    Status ReadPacket(MediaPacket& out_packet) override {
-        out_packet = MediaPacket{};
+    ChqStatus ReadPacket(ChqMediaPacket& out_packet) override {
+        out_packet = ChqMediaPacket{};
         // CORE-010：Release 可见。逐包路径（每帧一次）的额外开销是两次单调时钟
         // 读取，相对毫秒级的解封装耗时可忽略。
-        CQ_SLOW_CALL_WF(Workflow::kDemux, "demux ReadPacket");
+        CQ_SLOW_CALL_WF(ChqWorkflow::kDemux, "demux ReadPacket");
 #ifndef NDEBUG
         // 成对日志（进入/返回都打——析构式警报对「永不返回」的调用失明，
         // 「最后一个无配对进入」即卡点）。逐包高频，只在 Debug 保留。
         static std::atomic<int> seq{0};
         const int my_seq = seq.fetch_add(1);
-        CQ_LOG_TRACE_WF(Workflow::kDemux, "ReadPacket enter #%d", my_seq);
+        CQ_LOG_TRACE_WF(ChqWorkflow::kDemux, "ReadPacket enter #%d", my_seq);
         struct ExitLog {
             int seq;
-            ~ExitLog() { CQ_LOG_TRACE_WF(Workflow::kDemux, "ReadPacket exit #%d", seq); }
+            ~ExitLog() { CQ_LOG_TRACE_WF(ChqWorkflow::kDemux, "ReadPacket exit #%d", seq); }
         } exit_log{my_seq};
 #endif
         // MEDIA-027：同 RebuildReader —— 泵线程无 autorelease pool，逐包调用必须
@@ -542,7 +542,7 @@ public:
                 }
             }
             if (best < 0) {
-                return Status{StatusCode::kIoNotFound};  // 流末尾，非错误
+                return ChqStatus{ChqStatusCode::kIoNotFound};  // 流末尾，非错误
             }
 
             TrackState& ts = tracks_[static_cast<size_t>(best)];
@@ -551,7 +551,7 @@ public:
 
             // 懒填充 stream 元数据：passthrough 首样本可能不带格式描述，
             // 用实际读到的样本补一次（仅一次）。
-            if (ts.codec == CodecId::kUnknown) {
+            if (ts.codec == ChqCodecId::kUnknown) {
                 CMFormatDescriptionRef fmt = CMSampleBufferGetFormatDescription(sbuf);
                 if (fmt != nullptr) ExtractStreamMeta(ts, fmt, ts.media_type);
             }
@@ -579,8 +579,8 @@ public:
             if (CMTIME_IS_INVALID(dts)) dts = pts;
 
             out_packet.stream_index = ts.stream_index;
-            out_packet.pts = ToRational(pts, RoundMode::kRound);
-            out_packet.dts = ToRational(dts, RoundMode::kRound);
+            out_packet.pts = ToRational(pts, ChqRoundMode::kRound);
+            out_packet.dts = ToRational(dts, ChqRoundMode::kRound);
             out_packet.codec = ts.codec;
             out_packet.data = last_data_.empty() ? nullptr : last_data_.data();
             out_packet.size = last_data_.size();
@@ -591,7 +591,7 @@ public:
 
             // 用毕释放当前样本（我们已把数据拷出）。
             CFRelease(sbuf);
-            return Status::Ok();
+            return ChqStatus::Ok();
         }
         }  // @autoreleasepool（MEDIA-027）
     }
@@ -613,21 +613,21 @@ private:
 
     // 以 [start, asset.duration) 为时间范围重建 reader 与每条轨的 passthrough 输出，
     // 并预取每条轨首个样本。start = kCMTimeZero 即从头/重置。
-    Status RebuildReader(CMTime start, const CancelToken& token) {
+    ChqStatus RebuildReader(CMTime start, const ChqCancelToken& token) {
         // MEDIA-027：本函数被**泵线程**按帧调用（每次 Seek 一次），而泵线程是纯
         // C++ std::thread，**没有 autorelease pool**。AVFoundation 在这里产出的
         // 自动释放对象（AVAssetReader / NSError / tracks 数组等）会一直挂到线程
         // 退出才回收 —— 播放越久攒越多。显式池把生命周期压到单次调用。
         @autoreleasepool {
         TearDownReader();
-        tracks_.clear();  // 幂等：Open 可能重复调用（如 CreateMediaDemuxer + SystemFrameProvider::Open），
+        tracks_.clear();  // 幂等：Open 可能重复调用（如 CreateMediaDemuxer + ChqSystemFrameProvider::Open），
                           // 不清空会累积失效（output=nil）的旧轨，导致 ScanKeyframes 读到 0 样本。
-        if (asset_ == nil) return Status{StatusCode::kInvalidArgument};
+        if (asset_ == nil) return ChqStatus{ChqStatusCode::kInvalidArgument};
         if (token.IsCancelled()) return token.Cancelled();
 
         NSError* err = nil;
         reader_ = [AVAssetReader assetReaderWithAsset:asset_ error:&err];
-        if (reader_ == nil || err != nil) return Status{StatusCode::kIoError};
+        if (reader_ == nil || err != nil) return ChqStatus{ChqStatusCode::kIoError};
 
         CMTime dur = [asset_ duration];
         CMTime start_clamped = start;
@@ -659,8 +659,8 @@ private:
             TrackState ts;
             ts.output = out;
             ts.stream_index = idx++;
-            ts.media_type = is_video ? MediaType::kVideo : MediaType::kAudio;
-            ts.time_base = RationalTime{kProjectTimeScale, kProjectTimeScale};  // 包统一报项目网格
+            ts.media_type = is_video ? ChqMediaType::kVideo : ChqMediaType::kAudio;
+            ts.time_base = ChqRationalTime{kProjectTimeScale, kProjectTimeScale};  // 包统一报项目网格
             // 从 track 的格式描述取 codec/尺寸/采样率（Open 即可得，不依赖读取样本）。
             NSArray* fds = track.formatDescriptions;
             if (fds.count > 0) {
@@ -676,7 +676,7 @@ private:
         }
 
         if (![reader_ startReading]) {
-            // 某些资产（如纯音频或受限）可能 startReading 失败；把错误转成 Status。
+            // 某些资产（如纯音频或受限）可能 startReading 失败；把错误转成 ChqStatus。
             NSError* rerr = [reader_ error];
             if (rerr != nil) {
                 std::printf("[AppleDemuxer] startReading failed: %s\n",
@@ -685,14 +685,14 @@ private:
                 std::printf("[AppleDemuxer] startReading failed (no error)\n");
             }
             TearDownReader();
-            return Status{StatusCode::kIoError};
+            return ChqStatus{ChqStatusCode::kIoError};
         }
 
         // startReading 之后才能预取首样本（copyNextSampleBuffer 要求 reader 已启动）。
         for (auto& ts : tracks_) {
             ts.next = [ts.output copyNextSampleBuffer];  // +1 retained（可能为 nil）
         }
-        return Status::Ok();
+        return ChqStatus::Ok();
         }  // @autoreleasepool（MEDIA-027）
     }
 
@@ -700,10 +700,10 @@ private:
     // 注意：扫描会消费当前 reader；调用方需在之后 RebuildReader(kCMTimeZero) 重置。
     void ScanKeyframes() {
         // CORE-010：Release 可见。全文件扫描是最容易在大素材上爆时间的调用之一。
-        CQ_SLOW_CALL_WF(Workflow::kDemux, "ScanKeyframes(全文件)");
+        CQ_SLOW_CALL_WF(ChqWorkflow::kDemux, "ScanKeyframes(全文件)");
         keyframe_times_.clear();
         for (auto& ts : tracks_) {
-            if (ts.media_type != MediaType::kVideo) continue;
+            if (ts.media_type != ChqMediaType::kVideo) continue;
             while (true) {
                 CMSampleBufferRef sbuf = [ts.output copyNextSampleBuffer];
                 if (sbuf == nullptr) break;
@@ -719,7 +719,7 @@ private:
                 }
                 if (IsKeyframe(sbuf)) {
                     CMTime pts = CMSampleBufferGetPresentationTimeStamp(sbuf);
-                    keyframe_times_.push_back(ToRational(pts, RoundMode::kRound));
+                    keyframe_times_.push_back(ToRational(pts, ChqRoundMode::kRound));
                 }
                 CFRelease(sbuf);
             }
@@ -730,24 +730,24 @@ private:
     AVAsset* __strong asset_ = nil;
     AVAssetReader* __strong reader_ = nil;
     std::vector<TrackState> tracks_;
-    RationalTime duration_{0, 1};
-    std::vector<uint8_t> last_data_;  // 最近一个包的压缩数据（MediaPacket.data 指向它）
-    std::vector<RationalTime> keyframe_times_;  // 视频轨关键帧 pts 集合（Seek 吸附用）
+    ChqRationalTime duration_{0, 1};
+    std::vector<uint8_t> last_data_;  // 最近一个包的压缩数据（ChqMediaPacket.data 指向它）
+    std::vector<ChqRationalTime> keyframe_times_;  // 视频轨关键帧 pts 集合（Seek 吸附用）
 };
 
 // ---------------------------------------------------------------------------
 // Platform 工厂（声明于 core/include/cq/platform/media.h，定义于本 Platform 实现）
 // ---------------------------------------------------------------------------
-Status CreateMediaDemuxer(const MediaSource& src, PlatformPtr<IMediaDemuxer>& out_demuxer) {
+ChqStatus CreateMediaDemuxer(const ChqMediaSource& src, ChqPlatformPtr<ChqIMediaDemuxer>& out_demuxer) {
     AppleDemuxer* d = new AppleDemuxer();
-    Status s = d->Open(src);
+    ChqStatus s = d->Open(src);
     if (!s.IsOk()) {
         d->Destroy();
         out_demuxer.reset();
         return s;
     }
-    out_demuxer = PlatformPtr<IMediaDemuxer>(d);
-    return Status::Ok();
+    out_demuxer = ChqPlatformPtr<ChqIMediaDemuxer>(d);
+    return ChqStatus::Ok();
 }
 
 }  // namespace cq

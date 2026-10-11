@@ -3,7 +3,7 @@
 // 重点验证几条**设计承诺**，而不只是"能调用"：
 //   1. 关闭时零开销/无输出（默认关闭，不产生任何记录）
 //   2. 开启后能记录，且耗时非零（真的取了时钟）
-//   3. 帧可追溯：记录里带 RationalTime pts（与 ADR-0009 的 120000 网格一致）
+//   3. 帧可追溯：记录里带 ChqRationalTime pts（与 ADR-0009 的 120000 网格一致）
 //   4. 采样生效：采样率 N 时约每 N 次记一次（高频路径降开销的关键）
 //   5. sink 可注入：自定义 sink 能收到记录（平台侧可接 os_signpost/ATrace）
 //   6. 附加量（bytes / queue_depth）能带上
@@ -17,8 +17,8 @@
 #include <cstdio>
 #include <vector>
 
-#include "cq/base/perf.h"
-#include "cq/base/rational_time.h"
+#include "cq/base/chq_perf.h"
+#include "cq/base/chq_rational_time.h"
 
 namespace {
 
@@ -36,12 +36,12 @@ void Check(bool cond, const char* msg) {
 }
 
 // 收集型 sink：记录收到的条目，便于断言。
-class CollectingPerfSink : public cq::IPerfSink {
+class CollectingPerfSink : public cq::ChqIPerfSink {
 public:
-    void Record(const cq::PerfRecord& rec) override { records.push_back(rec); }
+    void Record(const cq::ChqPerfRecord& rec) override { records.push_back(rec); }
     void Flush() override { flushed = true; }
 
-    std::vector<cq::PerfRecord> records;
+    std::vector<cq::ChqPerfRecord> records;
     bool flushed = false;
 };
 
@@ -51,9 +51,9 @@ void TestDisabledByDefaultNoOutput() {
     CollectingPerfSink sink;
     cq::SetPerfSink(&sink);
 
-    const cq::RationalTime pts(1000, cq::kProjectTimeScale);
+    const cq::ChqRationalTime pts(1000, cq::kProjectTimeScale);
     {
-        CQ_PERF_SCOPE(cq::PerfStage::kDecode, pts);
+        CQ_PERF_SCOPE(cq::ChqPerfStage::kDecode, pts);
     }
     Check(sink.records.empty(), "关闭时无记录产生");
     Check(!cq::PerfEnabled(), "PerfEnabled() 为 false");
@@ -66,9 +66,9 @@ void TestEnabledRecordsDurationAndPts() {
     cq::SetPerfSampleRate(1);
     cq::SetPerfEnabled(true);
 
-    const cq::RationalTime pts(3000, cq::kProjectTimeScale);
+    const cq::ChqRationalTime pts(3000, cq::kProjectTimeScale);
     {
-        CQ_PERF_SCOPE(cq::PerfStage::kDecode, pts);
+        CQ_PERF_SCOPE(cq::ChqPerfStage::kDecode, pts);
         // 制造一点可测量的耗时（volatile 复合赋值在 C++20 已弃用，用普通赋值）
         volatile int64_t acc = 0;
         for (int i = 0; i < 20000; ++i) acc = acc + i;
@@ -78,8 +78,8 @@ void TestEnabledRecordsDurationAndPts() {
 
     Check(sink.records.size() == 1, "开启后产生 1 条记录");
     if (sink.records.size() == 1) {
-        const cq::PerfRecord& r = sink.records[0];
-        Check(r.stage == cq::PerfStage::kDecode, "stage 正确");
+        const cq::ChqPerfRecord& r = sink.records[0];
+        Check(r.stage == cq::ChqPerfStage::kDecode, "stage 正确");
         Check(r.pts.value == 3000 && r.pts.timescale == cq::kProjectTimeScale,
               "pts 与项目 timescale 一致（可对齐到帧）");
         Check(r.duration_ns >= 0, "耗时非负（单调时钟可用）");
@@ -93,9 +93,9 @@ void TestSampleRate() {
     cq::SetPerfSampleRate(4);
     cq::SetPerfEnabled(true);
 
-    const cq::RationalTime pts(0, cq::kProjectTimeScale);
+    const cq::ChqRationalTime pts(0, cq::kProjectTimeScale);
     for (int i = 0; i < 40; ++i) {
-        CQ_PERF_SCOPE(cq::PerfStage::kRender, pts);
+        CQ_PERF_SCOPE(cq::ChqPerfStage::kRender, pts);
     }
     cq::SetPerfEnabled(false);
     cq::SetPerfSampleRate(1);
@@ -112,9 +112,9 @@ void TestSinkInjectionAndExtras() {
     cq::SetPerfSink(&sink);
     cq::SetPerfEnabled(true);
 
-    const cq::RationalTime pts(7000, cq::kProjectTimeScale);
+    const cq::ChqRationalTime pts(7000, cq::kProjectTimeScale);
     {
-        CQ_PERF_SCOPE_NAMED(cq::PerfStage::kCustom, pts, "my_stage");
+        CQ_PERF_SCOPE_NAMED(cq::ChqPerfStage::kCustom, pts, "my_stage");
     }
     cq::SetPerfEnabled(false);
 
@@ -123,16 +123,16 @@ void TestSinkInjectionAndExtras() {
         Check(sink.records[0].name != nullptr, "自定义 name 已携带");
     }
 
-    // 附加量：显式构造 PerfScope（业务侧需要设附加量时这样用）
+    // 附加量：显式构造 ChqPerfScope（业务侧需要设附加量时这样用）
     sink.records.clear();
     cq::SetPerfEnabled(true);
     {
-        cq::PerfScope scope(cq::PerfStage::kQueuePush, pts);
+        cq::ChqPerfScope scope(cq::ChqPerfStage::kQueuePush, pts);
         scope.SetBytes(1024);
         scope.SetQueueDepth(3);
     }
     cq::SetPerfEnabled(false);
-    Check(sink.records.size() == 1, "显式 PerfScope 产生 1 条");
+    Check(sink.records.size() == 1, "显式 ChqPerfScope 产生 1 条");
     if (sink.records.size() == 1) {
         Check(sink.records[0].bytes == 1024, "bytes 附加量正确");
         Check(sink.records[0].queue_depth == 3, "queue_depth 附加量正确");
@@ -145,8 +145,8 @@ void TestReleaseMustWork() {
     cq::SetPerfSink(&sink);
     cq::SetPerfEnabled(true);
     {
-        const cq::RationalTime pts(9000, cq::kProjectTimeScale);
-        CQ_PERF_SCOPE(cq::PerfStage::kDemux, pts);
+        const cq::ChqRationalTime pts(9000, cq::kProjectTimeScale);
+        CQ_PERF_SCOPE(cq::ChqPerfStage::kDemux, pts);
     }
     cq::SetPerfEnabled(false);
 #ifdef NDEBUG

@@ -15,12 +15,12 @@
 | C ABI 回调 typedef | `CQXxxFn` / `CQXxxObserver` | `CQSnapshotObserver` |
 | C 宏 / include guard | `CQ_` 前缀；guard 统一 `CQ_<路径>_<文件>_H_`（尾下划线） | `CQ_BASE_TIME_H_` |
 | C++ 命名空间 | 内核一律 `namespace cq`；platform 平台层嵌套 `cq::apple` | |
-| C++ 类型 | PascalCase；接口 `I` 前缀；叶子实现类标 `final` | `IPlatformResource`、`GfxDeviceImpl final` |
-| C++ 函数 | PascalCase（与既有库一致，不改 snake_case） | `CreateGfxDevice` |
+| C++ 类型 | PascalCase；内核类型一律 `Chq` 前缀（ADR-0039，2026-10-11 起）；接口 `I` 前缀叠加其后；叶子实现类标 `final` | `ChqIGfxDevice`、`ChqGfxDeviceImpl final` |
+| C++ 函数 | PascalCase（与既有库一致，不改 snake_case）；**方法/函数一律不加前缀**（ADR-0039 裁决） | `CreateGfxDevice` |
 | 成员变量 | 尾下划线 `x_` | `mtx_`、`state_` |
-| 枚举 | `enum class` + `k` 前缀值 | `StatusCode::kOk` |
+| 枚举 | `enum class` + `k` 前缀值 | `ChqStatusCode::kOk` |
 | 常量 | `k` 前缀 PascalCase | `kProjectTimeScale` |
-| 文件名 | snake_case，与主类型对应 | `timeline.h` → `Timeline` |
+| 文件名 | snake_case + `chq_` 前缀，与主类型对应（ADR-0039）；例外：`cq_sdk.*`（C ABI 公开面）、`test_*`、平台层文件名 | `chq_timeline.h` → `ChqTimeline` |
 | Swift 绑定层类型 | **不带前缀**，靠 module `ChuanqiCut` 隔离（成文决策，勿加前缀） | `Session`、`Status` |
 | Swift 状态码 | 语义码一律命名 static（`extension Status` 落在绑定层），**禁止绑定层之外出现裸 `Status(rawValue: n)`** | `.decodeError` |
 | App 层（iOSApp/MacApp/SharedUI） | App target 内一律 internal（禁 `public`）；SharedUI 的 `public` 唯一判据 = 被 App target 消费 | |

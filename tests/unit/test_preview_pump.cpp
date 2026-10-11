@@ -1,6 +1,6 @@
 // ChuanqiCut — 预览取帧泵验收（UIA-010 子步骤 5）
 //
-// 用**假帧源**（可控耗时）测泵的并发语义 —— 真实 PreviewRenderer 依赖 Metal +
+// 用**假帧源**（可控耗时）测泵的并发语义 —— 真实 ChqPreviewRenderer 依赖 Metal +
 // 硬解后端，单帧耗时由解码速度决定，用它测「合并 / 线程归属 / 锁协议」既慢又
 // 不确定。假源把耗时钉死，这些语义才能测成确定性断言。
 //
@@ -23,12 +23,12 @@
 #include <thread>
 #include <vector>
 
-#include "cq/base/concurrency.h"
-#include "cq/base/status.h"
-#include "cq/base/rational_time.h"
-#include "cq/platform/common.h"
-#include "cq/preview/preview_frame_source.h"
-#include "cq/preview/preview_pump.h"
+#include "cq/base/chq_concurrency.h"
+#include "cq/base/chq_status.h"
+#include "cq/base/chq_rational_time.h"
+#include "cq/platform/chq_common.h"
+#include "cq/preview/chq_preview_frame_source.h"
+#include "cq/preview/chq_preview_pump.h"
 
 namespace {
 
@@ -59,10 +59,10 @@ cq::TextureHandle FakeTexture() {
 }
 
 // ---- 假帧源：可控耗时 + 记录被谁在什么时候调用 ----
-class FakeSource final : public cq::IPreviewFrameSource {
+class FakeSource final : public cq::ChqIPreviewFrameSource {
 public:
     std::chrono::milliseconds frame_cost{5};
-    cq::Status result = cq::Status::Ok();
+    cq::ChqStatus result = cq::ChqStatus::Ok();
 
     mutable std::mutex m;
     std::vector<int64_t> rendered_pts;  // 实际执行过的渲染（按完成顺序）
@@ -72,8 +72,8 @@ public:
     uint32_t last_w = 0;
     uint32_t last_h = 0;
 
-    cq::Status RenderFrame(const cq::RationalTime& pts, cq::TextureHandle& out_texture,
-                           const cq::CancelToken&) override {
+    cq::ChqStatus RenderFrame(const cq::ChqRationalTime& pts, cq::TextureHandle& out_texture,
+                           const cq::ChqCancelToken&) override {
         std::this_thread::sleep_for(frame_cost);
         {
             std::lock_guard<std::mutex> lk(m);
@@ -84,16 +84,16 @@ public:
         return result;
     }
 
-    cq::Status Resize(uint32_t width, uint32_t height) override {
+    cq::ChqStatus Resize(uint32_t width, uint32_t height) override {
         std::lock_guard<std::mutex> lk(m);
         ++resize_calls;
         resize_thread = std::this_thread::get_id();
         last_w = width;
         last_h = height;
-        return cq::Status::Ok();
+        return cq::ChqStatus::Ok();
     }
 
-    cq::IRenderTarget* Target() override { return nullptr; }
+    cq::ChqIRenderTarget* Target() override { return nullptr; }
 
     size_t RenderedCount() const {
         std::lock_guard<std::mutex> lk(m);
@@ -120,7 +120,7 @@ bool WaitUntil(Pred pred, int timeout_ms = 3000) {
     return pred();
 }
 
-cq::RationalTime Ticks(int64_t v) { return cq::RationalTime(v, cq::kProjectTimeScale); }
+cq::ChqRationalTime Ticks(int64_t v) { return cq::ChqRationalTime(v, cq::kProjectTimeScale); }
 
 }  // namespace
 
@@ -136,7 +136,7 @@ int main() {
     {
         FakeSource src;
         src.frame_cost = std::chrono::milliseconds(5);
-        cq::PreviewPump pump(&src);
+        cq::ChqPreviewPump pump(&src);
         Check(!pump.IsRunning(), "创建后未启动（IsRunning=false）");
         Check(pump.Start().IsOk(), "Start()");
         Check(pump.IsRunning(), "启动后 IsRunning=true");
@@ -152,7 +152,7 @@ int main() {
         });
 
         pump.Lock();
-        const cq::PreviewPump::Frame& f = pump.LatestLocked();
+        const cq::ChqPreviewPump::Frame& f = pump.LatestLocked();
         Check(f.seq >= 1, "已发布帧（seq >= 1）");
         Check(f.texture == FakeTexture(), "句柄 == 帧源给出的句柄");
         Check(f.pts.value == 60000, "发布的 pts == 请求的 pts");
@@ -169,7 +169,7 @@ int main() {
     std::printf("\n[2] 渲染发生在泵线程，不是调用线程\n");
     {
         FakeSource src;
-        cq::PreviewPump pump(&src);
+        cq::ChqPreviewPump pump(&src);
         Check(pump.Start().IsOk(), "Start()");
         pump.Request(Ticks(1));
         Check(WaitUntil([&] { return src.RenderedCount() >= 1; }), "渲染执行");
@@ -186,7 +186,7 @@ int main() {
     {
         FakeSource src;
         src.frame_cost = std::chrono::milliseconds(50);
-        cq::PreviewPump pump(&src);
+        cq::ChqPreviewPump pump(&src);
         Check(pump.Start().IsOk(), "Start()");
         pump.Request(Ticks(1));  // 让泵先进入渲染状态
         WaitUntil([&] { return src.RenderedCount() >= 1; });
@@ -208,7 +208,7 @@ int main() {
     {
         FakeSource src;
         src.frame_cost = std::chrono::milliseconds(20);
-        cq::PreviewPump pump(&src);
+        cq::ChqPreviewPump pump(&src);
         Check(pump.Start().IsOk(), "Start()");
 
         // 以 2ms 间隔投 12 个请求：远快于 20ms/帧的渲染速度 → 必然丢帧。
@@ -226,11 +226,11 @@ int main() {
 
         // 等队列排空（没有待取走的请求了）
         WaitUntil([&] {
-            const cq::PreviewPump::Stats s = pump.GetStats();
+            const cq::ChqPreviewPump::Stats s = pump.GetStats();
             return s.requested == s.rendered + s.coalesced;
         }, 3000);
         pump.Stop();
-        const cq::PreviewPump::Stats s = pump.GetStats();
+        const cq::ChqPreviewPump::Stats s = pump.GetStats();
         std::printf("  requested=%llu rendered=%llu coalesced=%llu non_ok=%llu\n",
                     static_cast<unsigned long long>(s.requested),
                     static_cast<unsigned long long>(s.rendered),
@@ -253,7 +253,7 @@ int main() {
         //    而不是它已经发布完之后，否则测不出"发布被锁挡住"。
         FakeSource src;
         src.frame_cost = std::chrono::milliseconds(100);
-        cq::PreviewPump pump(&src);
+        cq::ChqPreviewPump pump(&src);
         Check(pump.Start().IsOk(), "Start()");
         pump.Request(Ticks(1));
         WaitUntil([&] {
@@ -293,7 +293,7 @@ int main() {
     {
         FakeSource src;
         src.frame_cost = std::chrono::milliseconds(5);
-        cq::PreviewPump pump(&src);
+        cq::ChqPreviewPump pump(&src);
         Check(pump.Start().IsOk(), "Start()");
         pump.Request(Ticks(1));
         WaitUntil([&] {
@@ -319,7 +319,7 @@ int main() {
             return ok;
         });
         pump.Lock();
-        const cq::PreviewPump::Frame& f = pump.LatestLocked();
+        const cq::ChqPreviewPump::Frame& f = pump.LatestLocked();
         Check(f.texture == nullptr, "Resize 后旧句柄作废（texture == nullptr）");
         Check(f.seq > seq_before, "seq 前进（消费者据此丢弃旧句柄）");
         pump.Unlock();
@@ -333,7 +333,7 @@ int main() {
     {
         FakeSource src;
         src.frame_cost = std::chrono::milliseconds(5);
-        cq::PreviewPump pump(&src);
+        cq::ChqPreviewPump pump(&src);
         Check(pump.Start().IsOk(), "Start()");
         pump.Request(Ticks(1));
         WaitUntil([&] { return src.RenderedCount() >= 1; });
@@ -354,10 +354,10 @@ int main() {
     // =========================================================================
     std::printf("\n[8] 参数校验\n");
     {
-        cq::PreviewPump null_pump(nullptr);
+        cq::ChqPreviewPump null_pump(nullptr);
         Check(!null_pump.Start().IsOk(), "空帧源 Start() 失败（不静默成功）");
         FakeSource src;
-        cq::PreviewPump pump(&src);
+        cq::ChqPreviewPump pump(&src);
         Check(!pump.RequestResize(0, 100).IsOk(), "RequestResize(0,100) 被拒");
         Check(!pump.RequestResize(100, 0).IsOk(), "RequestResize(100,0) 被拒");
         // 未启动时 resize 也该被拒（没有线程执行它，静默入队会造成"明明改了没生效"）

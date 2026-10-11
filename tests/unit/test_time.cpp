@@ -1,14 +1,14 @@
-// ChuanqiCut — RationalTime 单测（CORE-001）
+// ChuanqiCut — ChqRationalTime 单测（CORE-001）
 //
-// 编译期红线守卫：RationalTime 不得隐式转 double（见 TASK-CORE-001 risk 段）。
+// 编译期红线守卫：ChqRationalTime 不得隐式转 double（见 TASK-CORE-001 risk 段）。
 // 若有人加了 operator double，下面这条 static_assert 会直接编译失败。
 #include <cstdint>
 #include <cstdio>
 #include <string>
 #include <type_traits>
 
-#include "cq/base/status.h"
-#include "cq/base/rational_time.h"
+#include "cq/base/chq_status.h"
+#include "cq/base/chq_rational_time.h"
 
 namespace {
 
@@ -23,9 +23,9 @@ void Check(bool cond, const char* msg) {
     }
 }
 
-// 编译期断言：禁止 RationalTime -> double 隐式转换。
-static_assert(!std::is_convertible_v<cq::RationalTime, double>,
-              "RationalTime must NOT be implicitly convertible to double (CORE-001 red line)");
+// 编译期断言：禁止 ChqRationalTime -> double 隐式转换。
+static_assert(!std::is_convertible_v<cq::ChqRationalTime, double>,
+              "ChqRationalTime must NOT be implicitly convertible to double (CORE-001 red line)");
 
 // 八种帧率：(名称, timescale, 每帧 tick)
 struct FrameRate {
@@ -50,19 +50,19 @@ void TestEightRatesZeroDrift() {
     constexpr int kSteps = 10000;
 
     for (const auto& r : kRates) {
-        cq::RationalTime frame(r.frame_ticks, r.ts);
-        cq::RationalTime acc(0, r.ts);
+        cq::ChqRationalTime frame(r.frame_ticks, r.ts);
+        cq::ChqRationalTime acc(0, r.ts);
 
         bool all_ok = true;
         for (int i = 0; i < kSteps; ++i) {
-            cq::RationalTime tmp;
-            cq::Status s = cq::AddRational(acc, frame, tmp);
+            cq::ChqRationalTime tmp;
+            cq::ChqStatus s = cq::AddRational(acc, frame, tmp);
             if (!s.IsOk()) { all_ok = false; break; }
             acc = tmp;
         }
 
         // 理论值：fp * 10000，落在原生 timescale。
-        cq::RationalTime expected(r.frame_ticks * kSteps, r.ts);
+        cq::ChqRationalTime expected(r.frame_ticks * kSteps, r.ts);
         int64_t drift = acc.value - expected.value;
         bool ts_stable = (acc.timescale == r.ts);
 
@@ -83,10 +83,10 @@ void TestEightRatesZeroDrift() {
 void TestComparisonExact() {
     std::printf("[test] 跨 timescale 比较精确（无浮点）\n");
     // 1/2 与 2/4 应相等；1/3 与 1/2 应不等。
-    cq::RationalTime a(1, 2);
-    cq::RationalTime b(2, 4);
-    cq::RationalTime c(1, 3);
-    cq::RationalTime d(1, 2);
+    cq::ChqRationalTime a(1, 2);
+    cq::ChqRationalTime b(2, 4);
+    cq::ChqRationalTime c(1, 3);
+    cq::ChqRationalTime d(1, 2);
     Check(a == b, "1/2 == 2/4");
     Check(a != c, "1/2 != 1/3");
     Check(c < d, "1/3 < 1/2");
@@ -96,24 +96,24 @@ void TestComparisonExact() {
 
 void TestSubtractAndScale() {
     std::printf("[test] 减法与缩放（retime）\n");
-    cq::RationalTime x(1000, 60000);
-    cq::RationalTime y(250, 60000);
-    cq::RationalTime diff;
-    cq::Status s = cq::SubRational(x, y, diff);
+    cq::ChqRationalTime x(1000, 60000);
+    cq::ChqRationalTime y(250, 60000);
+    cq::ChqRationalTime diff;
+    cq::ChqStatus s = cq::SubRational(x, y, diff);
     Check(s.IsOk() && diff.value == 750 && diff.timescale == 60000, "1000/60000 - 250/60000 = 750/60000");
 
     // 2x 变速：t * (2/1)
-    cq::RationalTime scaled;
+    cq::ChqRationalTime scaled;
     s = cq::ScaleRational(x, 2, 1, scaled);
     Check(s.IsOk() && scaled.value == 2000 && scaled.timescale == 60000, "scale 2x -> 2000/60000");
 
     // 倒放：t * (-1/1) 应使 value 变负、timescale 仍为正
-    cq::RationalTime reversed;
+    cq::ChqRationalTime reversed;
     s = cq::ScaleRational(x, -1, 1, reversed);
     Check(s.IsOk() && reversed.value == -1000 && reversed.timescale == 60000, "reverse -> -1000/60000");
 
     // 0.5x 慢放：t * (1/2)
-    cq::RationalTime slow;
+    cq::ChqRationalTime slow;
     s = cq::ScaleRational(x, 1, 2, slow);
     Check(s.IsOk() && slow.value == 1000 && slow.timescale == 120000, "scale 0.5x -> 1000/120000");
 }
@@ -121,15 +121,15 @@ void TestSubtractAndScale() {
 void TestModulo() {
     std::printf("[test] 取模（欧几里得，落在 [0, base)）\n");
     // 1500/60000 mod 1000/60000 = 500/60000
-    cq::RationalTime t(1500, 60000);
-    cq::RationalTime base(1000, 60000);
-    cq::RationalTime rem;
-    cq::Status s = cq::ModRational(t, base, rem);
+    cq::ChqRationalTime t(1500, 60000);
+    cq::ChqRationalTime base(1000, 60000);
+    cq::ChqRationalTime rem;
+    cq::ChqStatus s = cq::ModRational(t, base, rem);
     Check(s.IsOk() && rem.value == 500 && rem.timescale == 60000, "1500 mod 1000 = 500");
 
     // 负值取模结果非负：(-1500) mod 1000 = 500
-    cq::RationalTime neg(-1500, 60000);
-    cq::RationalTime rem2;
+    cq::ChqRationalTime neg(-1500, 60000);
+    cq::ChqRationalTime rem2;
     s = cq::ModRational(neg, base, rem2);
     Check(s.IsOk() && rem2.value == 500 && rem2.timescale == 60000, "(-1500) mod 1000 = 500 (非负)");
 }
@@ -137,27 +137,27 @@ void TestModulo() {
 void TestRescaleRounding() {
     std::printf("[test] 跨 timescale 舍入方向（23.976 帧周期 1001/24000 -> 60000）\n");
     // 1001/24000 秒 = 2502.5 tick @60000（非整除，必须显式舍入）
-    cq::RationalTime period(1001, 24000);
+    cq::ChqRationalTime period(1001, 24000);
 
-    cq::RationalTime floor_v, ceil_v, round_v;
-    cq::Status sf = cq::Rescale(period, 60000, cq::RoundMode::kFloor, floor_v);
-    cq::Status sc = cq::Rescale(period, 60000, cq::RoundMode::kCeil, ceil_v);
-    cq::Status sr = cq::Rescale(period, 60000, cq::RoundMode::kRound, round_v);
+    cq::ChqRationalTime floor_v, ceil_v, round_v;
+    cq::ChqStatus sf = cq::Rescale(period, 60000, cq::ChqRoundMode::kFloor, floor_v);
+    cq::ChqStatus sc = cq::Rescale(period, 60000, cq::ChqRoundMode::kCeil, ceil_v);
+    cq::ChqStatus sr = cq::Rescale(period, 60000, cq::ChqRoundMode::kRound, round_v);
     Check(sf.IsOk() && floor_v.value == 2502, "Floor(2502.5) = 2502");
     Check(sc.IsOk() && ceil_v.value == 2503, "Ceil(2502.5) = 2503");
     Check(sr.IsOk() && round_v.value == 2503, "Round(2502.5 平局远离零) = 2503");
 
     // 负数 Floor/Ceil 方向正确性：(-1001)/24000 -> 60000 = -2502.5
-    cq::RationalTime neg_period(-1001, 24000);
-    cq::RationalTime nf, nc;
-    cq::Rescale(neg_period, 60000, cq::RoundMode::kFloor, nf);
-    cq::Rescale(neg_period, 60000, cq::RoundMode::kCeil, nc);
+    cq::ChqRationalTime neg_period(-1001, 24000);
+    cq::ChqRationalTime nf, nc;
+    cq::Rescale(neg_period, 60000, cq::ChqRoundMode::kFloor, nf);
+    cq::Rescale(neg_period, 60000, cq::ChqRoundMode::kCeil, nc);
     Check(nf.value == -2503, "Floor(-2502.5) = -2503");
     Check(nc.value == -2502, "Ceil(-2502.5) = -2502");
 
     // 若项目 timescale 改用 120000，23.976 可**精确**表示（无舍入）：
-    cq::RationalTime exact120k;
-    cq::Status se = cq::Rescale(period, 120000, cq::RoundMode::kRound, exact120k);
+    cq::ChqRationalTime exact120k;
+    cq::ChqStatus se = cq::Rescale(period, 120000, cq::ChqRoundMode::kRound, exact120k);
     Check(se.IsOk() && exact120k.value == 5005,
           "23.976 @120000 精确 = 5005（支持 ADR 修正建议）");
 }
@@ -169,9 +169,9 @@ void TestProjectTimescaleCoversAllFrameRates() {
     std::printf("[test] ADR-0009：项目 timescale %d 覆盖度验证\n", cq::kProjectTimeScale);
 
     // ① 历史缺口：60000 不能被 24000 整除 → 23.976 单帧 2502.5 tick，非整数。
-    cq::RationalTime period(1001, 24000);
-    cq::RationalTime to60k;
-    cq::Status s = cq::Rescale(period, 60000, cq::RoundMode::kRound, to60k);
+    cq::ChqRationalTime period(1001, 24000);
+    cq::ChqRationalTime to60k;
+    cq::ChqStatus s = cq::Rescale(period, 60000, cq::ChqRoundMode::kRound, to60k);
     Check(s.IsOk() && to60k.value == 2503,
           "60000 下 23.976 帧周期只能近似(2503)——证实 ADR-0006 缺口");
 
@@ -192,12 +192,12 @@ void TestProjectTimescaleCoversAllFrameRates() {
     };
     const int32_t ts = cq::kProjectTimeScale;
     for (const Rate& r : rates) {
-        cq::RationalTime p(r.den, static_cast<int32_t>(r.num));
-        cq::RationalTime out;
-        cq::Status st = cq::Rescale(p, ts, cq::RoundMode::kRound, out);
+        cq::ChqRationalTime p(r.den, static_cast<int32_t>(r.num));
+        cq::ChqRationalTime out;
+        cq::ChqStatus st = cq::Rescale(p, ts, cq::ChqRoundMode::kRound, out);
         // 精确性判据：四舍五入与向下取整结果相同 → 说明本来就是整数，无需舍入
-        cq::RationalTime out_floor;
-        cq::Status st2 = cq::Rescale(p, ts, cq::RoundMode::kFloor, out_floor);
+        cq::ChqRationalTime out_floor;
+        cq::ChqStatus st2 = cq::Rescale(p, ts, cq::ChqRoundMode::kFloor, out_floor);
         std::string msg = std::string(r.name) + "fps 单帧在 " + std::to_string(ts) +
                           " 下为整数 tick (" + std::to_string(r.expect) + ")";
         Check(st.IsOk() && st2.IsOk() && out.value == r.expect && out_floor.value == r.expect,
@@ -226,23 +226,23 @@ void TestOverflowBoundary() {
                 static_cast<long long>(INT64_MAX));
 
     // 实际溢出检测：INT64_MAX + 1 越过 INT64，必须返回 kOverflow。
-    cq::RationalTime big(INT64_MAX, 1);
-    cq::RationalTime one(1, 1);
-    cq::RationalTime sum;
-    cq::Status s = cq::AddRational(big, one, sum);
-    Check(s.code == cq::StatusCode::kOverflow, "a+b 越过 INT64 应返回 kOverflow");
+    cq::ChqRationalTime big(INT64_MAX, 1);
+    cq::ChqRationalTime one(1, 1);
+    cq::ChqRationalTime sum;
+    cq::ChqStatus s = cq::AddRational(big, one, sum);
+    Check(s.code == cq::ChqStatusCode::kOverflow, "a+b 越过 INT64 应返回 kOverflow");
 
     // Rescale 溢出：INT64_MAX * 2 越过 INT64。
-    cq::RationalTime huge(INT64_MAX, 1);
-    cq::RationalTime rescaled;
-    cq::Status s2 = cq::Rescale(huge, 2, cq::RoundMode::kFloor, rescaled);
-    Check(s2.code == cq::StatusCode::kOverflow, "value*target_ts 越过 INT64 应返回 kOverflow");
+    cq::ChqRationalTime huge(INT64_MAX, 1);
+    cq::ChqRationalTime rescaled;
+    cq::ChqStatus s2 = cq::Rescale(huge, 2, cq::ChqRoundMode::kFloor, rescaled);
+    Check(s2.code == cq::ChqStatusCode::kOverflow, "value*target_ts 越过 INT64 应返回 kOverflow");
 
     // 合法大值仍精确：1 年项目 @60000 加 1 天应精确。
-    cq::RationalTime y(kYearValue, 60000);
-    cq::RationalTime d(kDayValue, 60000);
-    cq::RationalTime yd;
-    cq::Status s3 = cq::AddRational(y, d, yd);
+    cq::ChqRationalTime y(kYearValue, 60000);
+    cq::ChqRationalTime d(kDayValue, 60000);
+    cq::ChqRationalTime yd;
+    cq::ChqStatus s3 = cq::AddRational(y, d, yd);
     Check(s3.IsOk() && yd.value == (kYearValue + kDayValue) && yd.timescale == 60000,
           "1年+1天 @60000 精确相加不溢出");
 }

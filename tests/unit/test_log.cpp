@@ -1,6 +1,6 @@
 // ChuanqiCut — 日志与帧级 trace 单测（CORE-003）
 //
-// 覆盖：级别过滤、sink 注入、帧级 trace 用 RationalTime pts 标识、默认 sink 不崩。
+// 覆盖：级别过滤、sink 注入、帧级 trace 用 ChqRationalTime pts 标识、默认 sink 不崩。
 
 #include <cstdarg>
 #include <cstdint>
@@ -9,9 +9,9 @@
 #include <string>
 #include <vector>
 
-#include "cq/base/logging.h"
-#include "cq/base/status.h"
-#include "cq/base/rational_time.h"
+#include "cq/base/chq_logging.h"
+#include "cq/base/chq_status.h"
+#include "cq/base/chq_rational_time.h"
 
 namespace {
 
@@ -27,14 +27,14 @@ void Check(bool cond, const char* msg) {
 }
 
 // 捕获型 sink：把每次 Emit 的内容记录下来，供断言。
-class CapturingSink : public cq::ILogSink {
+class CapturingSink : public cq::ChqILogSink {
 public:
     struct Record {
-        cq::LogLevel level;
+        cq::ChqLogLevel level;
         std::string message;
     };
 
-    void Emit(cq::LogLevel level, const char* /*file*/, int /*line*/,
+    void Emit(cq::ChqLogLevel level, const char* /*file*/, int /*line*/,
               const char* message) override {
         records.push_back(Record{level, std::string(message)});
     }
@@ -43,9 +43,9 @@ public:
 };
 
 // 计数型 sink：只数各级别条数，用于验证过滤。
-class CountingSink : public cq::ILogSink {
+class CountingSink : public cq::ChqILogSink {
 public:
-    void Emit(cq::LogLevel level, const char* /*file*/, int /*line*/,
+    void Emit(cq::ChqLogLevel level, const char* /*file*/, int /*line*/,
               const char* /*message*/) override {
         counts[static_cast<int>(level)]++;
     }
@@ -55,7 +55,7 @@ public:
 // 恢复全局状态，避免用例互相影响。
 void ResetGlobal() {
     cq::SetLogSink(nullptr);
-    cq::SetLogLevel(cq::LogLevel::kInfo);
+    cq::SetLogLevel(cq::ChqLogLevel::kInfo);
 }
 
 void TestLevelFiltering() {
@@ -63,7 +63,7 @@ void TestLevelFiltering() {
     ResetGlobal();
     CountingSink sink;
     cq::SetLogSink(&sink);
-    cq::SetLogLevel(cq::LogLevel::kWarn);  // 只保留 Warn / Error
+    cq::SetLogLevel(cq::ChqLogLevel::kWarn);  // 只保留 Warn / Error
 
     CQ_LOG_TRACE("t");
     CQ_LOG_DEBUG("d");
@@ -71,27 +71,27 @@ void TestLevelFiltering() {
     CQ_LOG_WARN("w");
     CQ_LOG_ERROR("e");
 
-    Check(sink.counts[static_cast<int>(cq::LogLevel::kTrace)] == 0, "Trace 被过滤");
-    Check(sink.counts[static_cast<int>(cq::LogLevel::kDebug)] == 0, "Debug 被过滤");
-    Check(sink.counts[static_cast<int>(cq::LogLevel::kInfo)] == 0, "Info 被过滤");
-    Check(sink.counts[static_cast<int>(cq::LogLevel::kWarn)] == 1, "Warn 透传");
-    Check(sink.counts[static_cast<int>(cq::LogLevel::kError)] == 1, "Error 透传");
+    Check(sink.counts[static_cast<int>(cq::ChqLogLevel::kTrace)] == 0, "Trace 被过滤");
+    Check(sink.counts[static_cast<int>(cq::ChqLogLevel::kDebug)] == 0, "Debug 被过滤");
+    Check(sink.counts[static_cast<int>(cq::ChqLogLevel::kInfo)] == 0, "Info 被过滤");
+    Check(sink.counts[static_cast<int>(cq::ChqLogLevel::kWarn)] == 1, "Warn 透传");
+    Check(sink.counts[static_cast<int>(cq::ChqLogLevel::kError)] == 1, "Error 透传");
 
     // 提高到 Trace，全部应透传。
     // ⚠️ 同 TestFrameTrace：Release（NDEBUG）下 CQ_LOG_TRACE 由宏层编译期剔除，
     //    Trace 计数恒为 0，故按构建类型分别断言。
-    cq::SetLogLevel(cq::LogLevel::kTrace);
+    cq::SetLogLevel(cq::ChqLogLevel::kTrace);
     CQ_LOG_TRACE("t2");
     CQ_LOG_DEBUG("d2");
     CQ_LOG_INFO("i2");
 #ifdef NDEBUG
-    Check(sink.counts[static_cast<int>(cq::LogLevel::kTrace)] == 0,
+    Check(sink.counts[static_cast<int>(cq::ChqLogLevel::kTrace)] == 0,
           "Release 下 Trace 被编译期剔除（零开销）");
 #else
-    Check(sink.counts[static_cast<int>(cq::LogLevel::kTrace)] == 1, "Trace 在最低级别=kTrace 时透传");
+    Check(sink.counts[static_cast<int>(cq::ChqLogLevel::kTrace)] == 1, "Trace 在最低级别=kTrace 时透传");
 #endif
-    Check(sink.counts[static_cast<int>(cq::LogLevel::kDebug)] == 1, "Debug 透传");
-    Check(sink.counts[static_cast<int>(cq::LogLevel::kInfo)] == 1, "Info 透传");
+    Check(sink.counts[static_cast<int>(cq::ChqLogLevel::kDebug)] == 1, "Debug 透传");
+    Check(sink.counts[static_cast<int>(cq::ChqLogLevel::kInfo)] == 1, "Info 透传");
     ResetGlobal();
 }
 
@@ -100,12 +100,12 @@ void TestSinkInjection() {
     ResetGlobal();
     CapturingSink sink;
     cq::SetLogSink(&sink);
-    cq::SetLogLevel(cq::LogLevel::kTrace);
+    cq::SetLogLevel(cq::ChqLogLevel::kTrace);
 
     CQ_LOG_INFO("hello %d", 42);
     Check(sink.records.size() == 1, "捕获到 1 条");
     if (!sink.records.empty()) {
-        Check(sink.records[0].level == cq::LogLevel::kInfo, "级别为 Info");
+        Check(sink.records[0].level == cq::ChqLogLevel::kInfo, "级别为 Info");
         Check(std::strcmp(sink.records[0].message.c_str(), "hello 42") == 0, "消息内容正确");
     }
 
@@ -117,15 +117,15 @@ void TestSinkInjection() {
 }
 
 void TestFrameTrace() {
-    std::printf("[test] 帧级 trace：用 RationalTime pts 标识帧\n");
+    std::printf("[test] 帧级 trace：用 ChqRationalTime pts 标识帧\n");
     ResetGlobal();
     CapturingSink sink;
     cq::SetLogSink(&sink);
-    cq::SetLogLevel(cq::LogLevel::kTrace);
+    cq::SetLogLevel(cq::ChqLogLevel::kTrace);
 
     // 第 100 帧，timescale 取项目统一值（ADR-0009：120000）。
-    cq::RationalTime pts(100 * 1000, cq::kProjectTimeScale);
-    CQ_LOG_FRAME(cq::PipelineStage::kDecode, pts, "got frame, size=%d", 1920 * 1080);
+    cq::ChqRationalTime pts(100 * 1000, cq::kProjectTimeScale);
+    CQ_LOG_FRAME(cq::ChqPipelineStage::kDecode, pts, "got frame, size=%d", 1920 * 1080);
 
 // ⚠️ Release（NDEBUG）下 CQ_LOG_FRAME 由宏层编译期剔除（CORE-003 设计意图：
 //    发布产物零开销）。因此这里**不能无条件断言"捕获到 N 条"**——records 会是空的，
@@ -138,7 +138,7 @@ void TestFrameTrace() {
 #else
     Check(sink.records.size() == 1, "捕获到 1 条帧 trace");
     if (!sink.records.empty()) {
-        Check(sink.records[0].level == cq::LogLevel::kTrace, "帧 trace 级别为 Trace");
+        Check(sink.records[0].level == cq::ChqLogLevel::kTrace, "帧 trace 级别为 Trace");
         const std::string& m = sink.records[0].message;
         // 前缀应含阶段名 decode 与 pts 有理数 value/timescale。
         // 期望串随 kProjectTimeScale 生成，避免常量再次变更时断言硬编码失效
@@ -153,9 +153,9 @@ void TestFrameTrace() {
 #endif
 
     // demux 与 encode 不同阶段应能区分。
-    cq::RationalTime pts2(50000, cq::kProjectTimeScale);
-    CQ_LOG_FRAME(cq::PipelineStage::kDemux, pts2, "packet in");
-    CQ_LOG_FRAME(cq::PipelineStage::kEncode, pts2, "packet out");
+    cq::ChqRationalTime pts2(50000, cq::kProjectTimeScale);
+    CQ_LOG_FRAME(cq::ChqPipelineStage::kDemux, pts2, "packet in");
+    CQ_LOG_FRAME(cq::ChqPipelineStage::kEncode, pts2, "packet out");
 #ifdef NDEBUG
     Check(sink.records.empty(), "Release 下仍无记录（零开销）");
 #else
@@ -166,30 +166,30 @@ void TestFrameTrace() {
     ResetGlobal();
 }
 
-// 验证 LogFrameImpl 直接用 RationalTime（非 int64/double），编译期已保证类型正确。
+// 验证 LogFrameImpl 直接用 ChqRationalTime（非 int64/double），编译期已保证类型正确。
 void TestFrameTagIsRationalTime() {
-    std::printf("[test] 帧标识类型为 RationalTime（非裸 int64/double）\n");
+    std::printf("[test] 帧标识类型为 ChqRationalTime（非裸 int64/double）\n");
     // 若有人想改成 int64 帧号或 double 秒，下面函数签名不匹配会编译失败——
-    // 此处仅确保可调用，证明接口以 RationalTime 为帧标识。
+    // 此处仅确保可调用，证明接口以 ChqRationalTime 为帧标识。
     CapturingSink sink;
     cq::SetLogSink(&sink);
-    cq::SetLogLevel(cq::LogLevel::kTrace);
-    cq::RationalTime pts(12345, 60000);
-    CQ_LOG_FRAME(cq::PipelineStage::kRender, pts, "render ok");
+    cq::SetLogLevel(cq::ChqLogLevel::kTrace);
+    cq::ChqRationalTime pts(12345, 60000);
+    CQ_LOG_FRAME(cq::ChqPipelineStage::kRender, pts, "render ok");
 #ifdef NDEBUG
     Check(sink.records.empty(), "Release 下剔除（零开销），调用仍合法");
 #else
-    Check(sink.records.size() == 1, "RationalTime 帧标识可正常调用");
+    Check(sink.records.size() == 1, "ChqRationalTime 帧标识可正常调用");
 #endif
     ResetGlobal();
 }
 
 void TestNames() {
     std::printf("[test] 级别/阶段名可读\n");
-    Check(std::strcmp(cq::LogLevelName(cq::LogLevel::kError), "ERROR") == 0, "Error 名");
-    Check(std::strcmp(cq::LogLevelName(cq::LogLevel::kTrace), "TRACE") == 0, "Trace 名");
-    Check(std::strcmp(cq::PipelineStageName(cq::PipelineStage::kDecode), "decode") == 0, "decode 名");
-    Check(std::strcmp(cq::PipelineStageName(cq::PipelineStage::kEncode), "encode") == 0, "encode 名");
+    Check(std::strcmp(cq::LogLevelName(cq::ChqLogLevel::kError), "ERROR") == 0, "Error 名");
+    Check(std::strcmp(cq::LogLevelName(cq::ChqLogLevel::kTrace), "TRACE") == 0, "Trace 名");
+    Check(std::strcmp(cq::PipelineStageName(cq::ChqPipelineStage::kDecode), "decode") == 0, "decode 名");
+    Check(std::strcmp(cq::PipelineStageName(cq::ChqPipelineStage::kEncode), "encode") == 0, "encode 名");
 }
 
 }  // namespace

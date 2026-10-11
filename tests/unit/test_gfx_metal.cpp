@@ -14,8 +14,8 @@
 #include <cstring>
 #include <vector>
 
-#include "cq/base/status.h"
-#include "cq/platform/gfx.h"
+#include "cq/base/chq_status.h"
+#include "cq/platform/chq_gfx.h"
 #include "gfx_metal_internal.h"
 
 namespace {
@@ -91,13 +91,13 @@ fragment float4 fs_main(VOut in [[stage_in]],
 }
 )MSL";
 
-void RunCaseA(cq::IGraphicsDevice* dev, cq::IRenderTarget* rt) {
+void RunCaseA(cq::ChqIGraphicsDevice* dev, cq::ChqIRenderTarget* rt) {
     std::printf("\n[用例 A] 清屏红 + 读回中心像素\n");
-    cq::PlatformPtr<cq::ICommandQueue> q;
+    cq::ChqPlatformPtr<cq::ChqICommandQueue> q;
     Check(dev->CreateCommandQueue(q).IsOk(), "CreateCommandQueue");
-    cq::PlatformPtr<cq::ICommandBuffer> cb;
+    cq::ChqPlatformPtr<cq::ChqICommandBuffer> cb;
     Check(q->CreateCommandBuffer(cb).IsOk(), "CreateCommandBuffer");
-    cq::PlatformPtr<cq::ICommandEncoder> enc;
+    cq::ChqPlatformPtr<cq::ChqICommandEncoder> enc;
     Check(cb->CreateEncoder(enc).IsOk(), "CreateEncoder");
 
     const float clear[4] = {1.0f, 0.0f, 0.0f, 1.0f};
@@ -114,25 +114,25 @@ void RunCaseA(cq::IGraphicsDevice* dev, cq::IRenderTarget* rt) {
     Check(c[0] == 255 && c[1] == 0 && c[2] == 0 && c[3] == 255, "中心像素 = 不透明红 (清屏生效)");
 }
 
-void RunCaseB(cq::IGraphicsDevice* dev, cq::IRenderTarget* rt) {
+void RunCaseB(cq::ChqIGraphicsDevice* dev, cq::ChqIRenderTarget* rt) {
     std::printf("\n[用例 B] 清屏黑 + 全屏采样四色纹理 + 读回四角像素\n");
 
     // 2x2 四色纹理（采样源）
-    cq::TextureDesc td;
-    td.format = cq::TextureFormat::kRGBA8;
+    cq::ChqTextureDesc td;
+    td.format = cq::ChqTextureFormat::kRGBA8;
     td.width = 2;
     td.height = 2;
-    td.usage = cq::TextureUsage::kSampled;
-    cq::PlatformPtr<cq::ITexture> tex;
+    td.usage = cq::ChqTextureUsage::kSampled;
+    cq::ChqPlatformPtr<cq::ChqITexture> tex;
     Check(dev->CreateTexture(td, tex).IsOk(), "CreateTexture(2x2)");
     Check(cq::apple::UploadTextureData(tex.get(), kTex2x2, sizeof(kTex2x2)).IsOk(),
           "UploadTextureData(四色)");
 
     // 顶点缓冲
-    cq::BufferDesc bd;
-    bd.usage = cq::BufferUsage::kVertex;
+    cq::ChqBufferDesc bd;
+    bd.usage = cq::ChqBufferUsage::kVertex;
     bd.size_bytes = sizeof(kVerts);
-    cq::PlatformPtr<cq::IBuffer> vbuf;
+    cq::ChqPlatformPtr<cq::ChqIBuffer> vbuf;
     Check(dev->CreateBuffer(bd, vbuf).IsOk(), "CreateBuffer(vertex)");
     void* mapped = nullptr;
     Check(vbuf->Map(mapped).IsOk(), "Map(vertex)");
@@ -140,19 +140,19 @@ void RunCaseB(cq::IGraphicsDevice* dev, cq::IRenderTarget* rt) {
     vbuf->Unmap();
 
     // Shader modules (Platform-Native MSL)
-    cq::ShaderModuleDesc vmd;
-    vmd.stage = cq::ShaderStage::kVertex;
+    cq::ChqShaderModuleDesc vmd;
+    vmd.stage = cq::ChqShaderStage::kVertex;
     vmd.code = static_cast<const void*>(kVertMSL);
     vmd.code_size = std::strlen(kVertMSL);
     vmd.is_platform_native = true;
-    cq::PlatformPtr<cq::IShaderModule> vs;
+    cq::ChqPlatformPtr<cq::ChqIShaderModule> vs;
     Check(dev->CreateShaderModule(vmd, vs).IsOk(), "CreateShaderModule(vertex MSL)");
 
-    cq::ShaderModuleDesc fmd = vmd;
-    fmd.stage = cq::ShaderStage::kFragment;
+    cq::ChqShaderModuleDesc fmd = vmd;
+    fmd.stage = cq::ChqShaderStage::kFragment;
     fmd.code = static_cast<const void*>(kFragMSL);
     fmd.code_size = std::strlen(kFragMSL);
-    cq::PlatformPtr<cq::IShaderModule> fs;
+    cq::ChqPlatformPtr<cq::ChqIShaderModule> fs;
     Check(dev->CreateShaderModule(fmd, fs).IsOk(), "CreateShaderModule(fragment MSL)");
 
     // 失败防御：着色器或管线没建成就不要往下走。
@@ -164,30 +164,30 @@ void RunCaseB(cq::IGraphicsDevice* dev, cq::IRenderTarget* rt) {
     }
 
     // Pipeline
-    cq::PipelineDesc pd;
+    cq::ChqPipelineDesc pd;
     pd.vertex_shader = cq::apple::ToShaderHandle(vs.get());
     pd.fragment_shader = cq::apple::ToShaderHandle(fs.get());
-    pd.target_format = cq::TextureFormat::kRGBA8;
+    pd.target_format = cq::ChqTextureFormat::kRGBA8;
     pd.vertex_layout.stride = 16;
     pd.vertex_layout.attr_count = 2;
-    pd.vertex_layout.attrs[0] = cq::VertexAttribute{0, 0, cq::VertexFormat::kFloat32x2};
-    pd.vertex_layout.attrs[1] = cq::VertexAttribute{1, 8, cq::VertexFormat::kFloat32x2};
-    cq::PlatformPtr<cq::IPipeline> pipe;
+    pd.vertex_layout.attrs[0] = cq::ChqVertexAttribute{0, 0, cq::ChqVertexFormat::kFloat32x2};
+    pd.vertex_layout.attrs[1] = cq::ChqVertexAttribute{1, 8, cq::ChqVertexFormat::kFloat32x2};
+    cq::ChqPlatformPtr<cq::ChqIPipeline> pipe;
     Check(dev->CreatePipeline(pd, pipe).IsOk(), "CreatePipeline");
 
     // Sampler：最近邻 + 边缘钳制（四角精确落在四个 texel）
-    cq::SamplerDesc sd;
+    cq::ChqSamplerDesc sd;
     sd.linear_filter = false;
     sd.clamp_to_edge = true;
-    cq::PlatformPtr<cq::ISampler> samp;
+    cq::ChqPlatformPtr<cq::ChqISampler> samp;
     Check(dev->CreateSampler(sd, samp).IsOk(), "CreateSampler");
 
     // 录制：清屏黑 -> 画全屏三角形采样纹理
-    cq::PlatformPtr<cq::ICommandQueue> q;
+    cq::ChqPlatformPtr<cq::ChqICommandQueue> q;
     Check(dev->CreateCommandQueue(q).IsOk(), "CreateCommandQueue");
-    cq::PlatformPtr<cq::ICommandBuffer> cb;
+    cq::ChqPlatformPtr<cq::ChqICommandBuffer> cb;
     Check(q->CreateCommandBuffer(cb).IsOk(), "CreateCommandBuffer");
-    cq::PlatformPtr<cq::ICommandEncoder> enc;
+    cq::ChqPlatformPtr<cq::ChqICommandEncoder> enc;
     Check(cb->CreateEncoder(enc).IsOk(), "CreateEncoder");
 
     const float clear[4] = {0.0f, 0.0f, 0.0f, 1.0f};
@@ -241,21 +241,21 @@ int main() {
     std::setvbuf(stdout, nullptr, _IONBF, 0);
     std::printf("== ChuanqiCut PALA-001 Metal 离屏渲染读回验证 ==\n");
 
-    cq::GraphicsDeviceDesc dd;
+    cq::ChqGraphicsDeviceDesc dd;
     dd.prefer_low_power = false;
-    cq::PlatformPtr<cq::IGraphicsDevice> dev;
-    cq::Status s = cq::CreateGraphicsDevice(dd, dev);
+    cq::ChqPlatformPtr<cq::ChqIGraphicsDevice> dev;
+    cq::ChqStatus s = cq::CreateGraphicsDevice(dd, dev);
     Check(s.IsOk(), "CreateGraphicsDevice(Metal)");
     if (!dev) {
         std::printf("\n无法创建 Metal 设备，用例终止。\n");
         return 1;
     }
 
-    cq::RenderTargetDesc rd;
+    cq::ChqRenderTargetDesc rd;
     rd.width = 64;
     rd.height = 64;
-    rd.color_format = cq::TextureFormat::kRGBA8;
-    cq::PlatformPtr<cq::IRenderTarget> rt;
+    rd.color_format = cq::ChqTextureFormat::kRGBA8;
+    cq::ChqPlatformPtr<cq::ChqIRenderTarget> rt;
     Check(dev->CreateRenderTarget(rd, rt).IsOk(), "CreateRenderTarget(64x64)");
     if (!rt) {
         std::printf("\n无法创建 RenderTarget，用例终止。\n");

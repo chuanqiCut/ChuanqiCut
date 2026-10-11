@@ -16,7 +16,7 @@
 
 #include "capabilities_apple.h"
 
-#include "cq/platform/capabilities.h"
+#include "cq/platform/chq_capabilities.h"
 
 namespace cq {
 namespace apple {
@@ -45,9 +45,9 @@ id<MTLDevice> GetMetalDevice() {
 // kVTVideoDecoderSpecification_EnableHardwareAcceleratedVideoDecoder，该常量要求
 // **iOS 17.0+**，iOS 16 上只能"不知为不知"（见 media_decode.mm 注释）。
 // 本函数在 iOS 16 上就能如实上报硬解能力。
-CapabilityValue QueryHwDecode(CMVideoCodecType codec) {
-    return VTIsHardwareDecodeSupported(codec) ? CapabilityValue::kYes
-                                              : CapabilityValue::kNo;
+ChqCapabilityValue QueryHwDecode(CMVideoCodecType codec) {
+    return VTIsHardwareDecodeSupported(codec) ? ChqCapabilityValue::kYes
+                                              : ChqCapabilityValue::kNo;
 }
 
 // ---------------------------------------------------------------------------
@@ -67,7 +67,7 @@ CapabilityValue QueryHwDecode(CMVideoCodecType codec) {
 //    而真实情况是"未知"（iOS 设备实际普遍具备 H.264 硬编）。
 //    返回 **kDegraded**：语义为「未确认，上层须按软编路径处理，并在真正创建
 //    会话时按实际结果处理」。
-CapabilityValue DoProbeHwEncode(CMVideoCodecType codec) {
+ChqCapabilityValue DoProbeHwEncode(CMVideoCodecType codec) {
 #if !TARGET_OS_IPHONE
     // macOS：常量自 10.9 起在 SDK 中声明，部署目标 15.4，直接探针。
     // 探针用 1080p：分辨率会影响硬件编码器可用性，取项目最常用的档位。
@@ -83,15 +83,15 @@ CapabilityValue DoProbeHwEncode(CMVideoCodecType codec) {
         (__bridge CFDictionaryRef)spec, nullptr, nullptr, nullptr, nullptr, &session);
     if (st != noErr || session == nullptr) {
         // 连会话都建不起来 → 该编码格式在此设备上不可用（硬软皆无）。
-        return CapabilityValue::kNo;
+        return ChqCapabilityValue::kNo;
     }
-    CapabilityValue result = CapabilityValue::kNo;
+    ChqCapabilityValue result = ChqCapabilityValue::kNo;
     CFBooleanRef hw = nullptr;
     if (VTSessionCopyProperty(
             session, kVTCompressionPropertyKey_UsingHardwareAcceleratedVideoEncoder,
             kCFAllocatorDefault, &hw) == noErr &&
         hw != nullptr) {
-        result = (hw == kCFBooleanTrue) ? CapabilityValue::kYes : CapabilityValue::kNo;
+        result = (hw == kCFBooleanTrue) ? ChqCapabilityValue::kYes : ChqCapabilityValue::kNo;
         CFRelease(hw);
     }
     VTCompressionSessionInvalidate(session);
@@ -99,110 +99,110 @@ CapabilityValue DoProbeHwEncode(CMVideoCodecType codec) {
     return result;
 #else
     (void)codec;  // iOS：无法探测，如实返回"未知"
-    return CapabilityValue::kDegraded;
+    return ChqCapabilityValue::kDegraded;
 #endif
 }
 
 // 探针会创建并销毁一个 VTCompressionSession，有开销，故每个 codec 缓存一次结果。
-CapabilityValue ProbeHwEncodeH264() {
-    static const CapabilityValue v = DoProbeHwEncode(kCMVideoCodecType_H264);
+ChqCapabilityValue ProbeHwEncodeH264() {
+    static const ChqCapabilityValue v = DoProbeHwEncode(kCMVideoCodecType_H264);
     return v;
 }
-CapabilityValue ProbeHwEncodeHevc() {
-    static const CapabilityValue v = DoProbeHwEncode(kCMVideoCodecType_HEVC);
+ChqCapabilityValue ProbeHwEncodeHevc() {
+    static const ChqCapabilityValue v = DoProbeHwEncode(kCMVideoCodecType_HEVC);
     return v;
 }
-CapabilityValue ProbeHwEncodeProRes() {
-    static const CapabilityValue v = DoProbeHwEncode(kCMVideoCodecType_AppleProRes422);
+ChqCapabilityValue ProbeHwEncodeProRes() {
+    static const ChqCapabilityValue v = DoProbeHwEncode(kCMVideoCodecType_AppleProRes422);
     return v;
 }
 
 // ---------------------------------------------------------------------------
 // 后端实现
 // ---------------------------------------------------------------------------
-class AppleCapabilities final : public ICapabilities {
+class AppleCapabilities final : public ChqICapabilities {
 public:
-    CapabilityValue Query(Capability cap) const override {
+    ChqCapabilityValue Query(ChqCapability cap) const override {
         switch (cap) {
             // ---- 硬解：VTIsHardwareDecodeSupported（iOS 11+ / macOS 10.13+）----
-            case Capability::kHwDecodeH264:
+            case ChqCapability::kHwDecodeH264:
                 return QueryHwDecode(kCMVideoCodecType_H264);
-            case Capability::kHwDecodeHevc:
+            case ChqCapability::kHwDecodeHevc:
                 return QueryHwDecode(kCMVideoCodecType_HEVC);
-            case Capability::kHwDecodeAv1:
+            case ChqCapability::kHwDecodeAv1:
                 return QueryHwDecode(kCMVideoCodecType_AV1);
-            case Capability::kHwDecodeProres:
+            case ChqCapability::kHwDecodeProres:
                 // ProRes 有多个变体（422 / 422HQ / 4444 / RAW），这里以最常用的
                 // Apple ProRes 422 作为该能力项的判定代表。
                 return QueryHwDecode(kCMVideoCodecType_AppleProRes422);
 
             // ---- 硬编：会话探针（iOS 17.4+ / macOS 10.9+）----
-            case Capability::kHwEncodeH264:
+            case ChqCapability::kHwEncodeH264:
                 return ProbeHwEncodeH264();
-            case Capability::kHwEncodeHevc:
+            case ChqCapability::kHwEncodeHevc:
                 return ProbeHwEncodeHevc();
-            case Capability::kHwEncodeProres:
+            case ChqCapability::kHwEncodeProres:
                 return ProbeHwEncodeProRes();
 
             // ---- 10-bit 管线：无可靠的单一查询 API ----
-            case Capability::k10BitPipeline:
+            case ChqCapability::k10BitPipeline:
                 // 10-bit 管线需同时满足：Metal 能处理 10-bit 像素格式（BGR10A2Unorm /
                 // RGBA16Float）+ 10-bit HEVC 硬解。前者没有直接的公开查询 API
                 // （-supportsFeatureSet: 已在 iOS 16 弃用，supportsFamily 的家族语义
                 //  跨平台不对齐），后者又无法区分 8-bit / 10-bit profile。
                 // 按 D2：不猜，返回 kDegraded —— 上层按 8-bit 处理，不报错、不谎报。
-                return CapabilityValue::kDegraded;
+                return ChqCapabilityValue::kDegraded;
 
             // ---- HDR 显示 ----
-            case Capability::kHdrDisplay:
+            case ChqCapability::kHdrDisplay:
                 // 从 **SDK 能力** 角度如实返回 kNo：RenderGraph 目前未接入 EDR /
                 // HDR 色彩管理，即便设备支持 HDR 显示，SDK 侧也无法正确呈现。
                 // 另：真实查询需 AppKit(NSScreen) / UIKit(UIScreen) 依赖，为一项能力
                 // 查询给内核引入 UI 框架并不划算。待渲染侧支持 HDR 后再回来接。
-                return CapabilityValue::kNo;
+                return ChqCapabilityValue::kNo;
 
             // ---- GPU 特性 ----
-            case Capability::kComputeShader:
+            case ChqCapability::kComputeShader:
                 // Metal 自 1.0 起支持 kernel function，所有 Metal 设备均具备。
-                return GetMetalDevice() != nil ? CapabilityValue::kYes : CapabilityValue::kNo;
-            case Capability::kFloatTexture:
+                return GetMetalDevice() != nil ? ChqCapabilityValue::kYes : ChqCapabilityValue::kNo;
+            case ChqCapability::kFloatTexture:
                 // float 纹理**采样**在所有 Metal 设备上可用。
                 // 注意：作为 render target 时仍须按具体 MTLPixelFormat 校验，
                 // 本项只表达「float 纹理可用」，不表达「任意格式可作 RT」。
-                return GetMetalDevice() != nil ? CapabilityValue::kYes : CapabilityValue::kNo;
-            case Capability::kExternalMemoryImport:
+                return GetMetalDevice() != nil ? ChqCapabilityValue::kYes : ChqCapabilityValue::kNo;
+            case ChqCapability::kExternalMemoryImport:
                 // PALA-002 已实测打通 CVPixelBuffer → CVMetalTexture 零拷贝导入
                 // （IOSurface 一致性验证通过），故有 Metal 设备即视为可用。
-                return GetMetalDevice() != nil ? CapabilityValue::kYes : CapabilityValue::kNo;
+                return GetMetalDevice() != nil ? ChqCapabilityValue::kYes : ChqCapabilityValue::kNo;
 
             // ---- NPU ----
-            case Capability::kNpuInference:
+            case ChqCapability::kNpuInference:
                 // 语义收窄为「CoreML 推理可用」（iOS 11+ / macOS 10.13+），
                 // 部署目标已远超 → kYes。
                 // ⚠️ **不代表实际跑在 ANE**：是否用 ANE 由 CoreML 运行时决定，
                 //    没有任何 API 可预先查询（见 .ai/memory/pitfalls.md R1）。
-                return CapabilityValue::kYes;
+                return ChqCapabilityValue::kYes;
 
             // ---- GPU 后端标识 ----
-            case Capability::kGpuMetal:
-                return GetMetalDevice() != nil ? CapabilityValue::kYes : CapabilityValue::kNo;
-            case Capability::kGpuGles:
+            case ChqCapability::kGpuMetal:
+                return GetMetalDevice() != nil ? ChqCapabilityValue::kYes : ChqCapabilityValue::kNo;
+            case ChqCapability::kGpuGles:
                 // Apple 平台 GLES 已废弃（iOS 12 / macOS 10.14 起），本项目不提供
                 // GLES 后端。如实 kNo，不是"没查"。
-                return CapabilityValue::kNo;
-            case Capability::kGpuVulkan:
+                return ChqCapabilityValue::kNo;
+            case ChqCapability::kGpuVulkan:
                 // Apple 无原生 Vulkan（第三方 MoltenVK 属外部依赖，本项目未接入）。
-                return CapabilityValue::kNo;
+                return ChqCapabilityValue::kNo;
         }
         // 枚举被扩展但此处未覆盖时，落到安全值。刻意不写 default:，
         // 这样新增枚举项会触发 -Wswitch 让编译先失败，而不是静默走兜底。
-        return CapabilityValue::kNo;
+        return ChqCapabilityValue::kNo;
     }
 };
 
 }  // namespace
 
-Status InstallCapabilities() {
+ChqStatus InstallCapabilities() {
     // 静态实例：进程生命周期内有效，满足契约「生命周期须长于查询调用」。
     // 重复调用只是重复注入同一实例，幂等。
     static AppleCapabilities backend;

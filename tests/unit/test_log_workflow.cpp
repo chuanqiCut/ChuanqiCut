@@ -15,9 +15,9 @@
 #include <string>
 #include <vector>
 
-#include "cq/base/logging.h"
-#include "cq/base/perf.h"
-#include "cq/base/rational_time.h"
+#include "cq/base/chq_logging.h"
+#include "cq/base/chq_perf.h"
+#include "cq/base/chq_rational_time.h"
 
 namespace {
 
@@ -33,13 +33,13 @@ void Check(bool cond, const char* msg) {
 }
 
 // 捕获型 sink。
-class CapturingSink : public cq::ILogSink {
+class CapturingSink : public cq::ChqILogSink {
 public:
     struct Record {
-        cq::LogLevel level;
+        cq::ChqLogLevel level;
         std::string message;
     };
-    void Emit(cq::LogLevel level, const char* /*file*/, int /*line*/,
+    void Emit(cq::ChqLogLevel level, const char* /*file*/, int /*line*/,
               const char* message) override {
         records.push_back(Record{level, std::string(message)});
     }
@@ -52,10 +52,10 @@ CapturingSink g_sink;
 void ResetGlobal() {
     cq::SetLogSink(&g_sink);
     g_sink.records.clear();
-    cq::SetLogLevel(cq::LogLevel::kInfo);
+    cq::SetLogLevel(cq::ChqLogLevel::kInfo);
     cq::SetWorkflowFilter(cq::kWorkflowMaskAll);
-    for (int i = 0; i < static_cast<int>(cq::Workflow::kCount); ++i) {
-        cq::ClearWorkflowLevel(static_cast<cq::Workflow>(i));
+    for (int i = 0; i < static_cast<int>(cq::ChqWorkflow::kCount); ++i) {
+        cq::ClearWorkflowLevel(static_cast<cq::ChqWorkflow>(i));
     }
 }
 
@@ -63,16 +63,16 @@ void ResetGlobal() {
 void TestWorkflowNameRoundTrip() {
     std::printf("[test] workflow 名字可读且可用于筛选\n");
     ResetGlobal();
-    Check(std::strcmp(cq::WorkflowName(cq::Workflow::kDecode), "decode") == 0, "decode 名");
-    Check(std::strcmp(cq::WorkflowName(cq::Workflow::kPreview), "preview") == 0, "preview 名");
-    Check(std::strcmp(cq::WorkflowName(cq::Workflow::kPerf), "perf") == 0, "perf 名");
-    Check(std::strcmp(cq::WorkflowName(cq::Workflow::kMem), "mem") == 0, "mem 名");
+    Check(std::strcmp(cq::WorkflowName(cq::ChqWorkflow::kDecode), "decode") == 0, "decode 名");
+    Check(std::strcmp(cq::WorkflowName(cq::ChqWorkflow::kPreview), "preview") == 0, "preview 名");
+    Check(std::strcmp(cq::WorkflowName(cq::ChqWorkflow::kPerf), "perf") == 0, "perf 名");
+    Check(std::strcmp(cq::WorkflowName(cq::ChqWorkflow::kMem), "mem") == 0, "mem 名");
 
     // kCount 是哨兵不是可用链路：名字应为 "?"，且不得参与位掩码。
-    Check(std::strcmp(cq::WorkflowName(cq::Workflow::kCount), "?") == 0,
+    Check(std::strcmp(cq::WorkflowName(cq::ChqWorkflow::kCount), "?") == 0,
           "kCount 是哨兵，名字为 ?");
     // bit(X) 必须互不相同，否则筛选会把两条链路一起打开。
-    Check(cq::WorkflowBit(cq::Workflow::kDecode) != cq::WorkflowBit(cq::Workflow::kPreview),
+    Check(cq::WorkflowBit(cq::ChqWorkflow::kDecode) != cq::WorkflowBit(cq::ChqWorkflow::kPreview),
           "不同链路的位不重叠");
 }
 
@@ -80,13 +80,13 @@ void TestWorkflowNameRoundTrip() {
 void TestStageMapsToWorkflow() {
     std::printf("[test] 环节 → workflow 归属（帧级 trace 自动继承标签）\n");
     ResetGlobal();
-    Check(cq::WorkflowForStage(cq::PipelineStage::kDemux) == cq::Workflow::kDemux,
+    Check(cq::WorkflowForStage(cq::ChqPipelineStage::kDemux) == cq::ChqWorkflow::kDemux,
           "demux 环节归属 demux 链路");
-    Check(cq::WorkflowForStage(cq::PipelineStage::kDecode) == cq::Workflow::kDecode,
+    Check(cq::WorkflowForStage(cq::ChqPipelineStage::kDecode) == cq::ChqWorkflow::kDecode,
           "decode 环节归属 decode 链路");
-    Check(cq::WorkflowForStage(cq::PipelineStage::kRender) == cq::Workflow::kRender,
+    Check(cq::WorkflowForStage(cq::ChqPipelineStage::kRender) == cq::ChqWorkflow::kRender,
           "render 环节归属 render 链路");
-    Check(cq::WorkflowForStage(cq::PipelineStage::kEncode) == cq::Workflow::kExport,
+    Check(cq::WorkflowForStage(cq::ChqPipelineStage::kEncode) == cq::ChqWorkflow::kExport,
           "encode 环节归属 export 链路");
 }
 
@@ -94,12 +94,12 @@ void TestStageMapsToWorkflow() {
 void TestMaskFilter() {
     std::printf("[test] 掩码白名单：未入围的链路一条不发\n");
     ResetGlobal();
-    cq::SetLogLevel(cq::LogLevel::kTrace);
-    cq::SetWorkflowFilter(cq::WorkflowBit(cq::Workflow::kDecode));  // 只要 decode
+    cq::SetLogLevel(cq::ChqLogLevel::kTrace);
+    cq::SetWorkflowFilter(cq::WorkflowBit(cq::ChqWorkflow::kDecode));  // 只要 decode
 
-    CQ_LOG_WARN_WF(cq::Workflow::kDecode, "d");
-    CQ_LOG_WARN_WF(cq::Workflow::kPreview, "p");
-    CQ_LOG_WARN_WF(cq::Workflow::kCore, "c");
+    CQ_LOG_WARN_WF(cq::ChqWorkflow::kDecode, "d");
+    CQ_LOG_WARN_WF(cq::ChqWorkflow::kPreview, "p");
+    CQ_LOG_WARN_WF(cq::ChqWorkflow::kCore, "c");
 
     Check(g_sink.records.size() == 1, "只有 decode 通过");
     if (!g_sink.records.empty()) {
@@ -109,7 +109,7 @@ void TestMaskFilter() {
 
     // 全开后全部通过。
     cq::SetWorkflowFilter(cq::kWorkflowMaskAll);
-    CQ_LOG_WARN_WF(cq::Workflow::kPreview, "p2");
+    CQ_LOG_WARN_WF(cq::ChqWorkflow::kPreview, "p2");
     Check(g_sink.records.size() == 2, "全开后 preview 通过");
     ResetGlobal();
 }
@@ -119,13 +119,13 @@ void TestPerWorkflowLevelOverride() {
     std::printf("[test] per-workflow 独立提级：不想看的链路保持安静\n");
     ResetGlobal();
     // 全局 Info：Debug 级全被挡。
-    CQ_LOG_DEBUG_WF(cq::Workflow::kDecode, "d1");
+    CQ_LOG_DEBUG_WF(cq::ChqWorkflow::kDecode, "d1");
     Check(g_sink.records.empty(), "全局 Info 下 Debug 被挡");
 
     // 只把 decode 提到 Trace —— 其余链路维持 Info。
-    cq::SetWorkflowLevel(cq::Workflow::kDecode, cq::LogLevel::kTrace);
-    CQ_LOG_DEBUG_WF(cq::Workflow::kDecode, "d2");
-    CQ_LOG_DEBUG_WF(cq::Workflow::kPreview, "p2");
+    cq::SetWorkflowLevel(cq::ChqWorkflow::kDecode, cq::ChqLogLevel::kTrace);
+    CQ_LOG_DEBUG_WF(cq::ChqWorkflow::kDecode, "d2");
+    CQ_LOG_DEBUG_WF(cq::ChqWorkflow::kPreview, "p2");
 
 #ifdef NDEBUG
     // Release：Debug 不 Trace 这些的非 Trace 宏仍在——本用例不依赖 Trace 编译与否。
@@ -139,8 +139,8 @@ void TestPerWorkflowLevelOverride() {
     }
 
     // 清除提级 → 回落到全局，重新安静。
-    cq::ClearWorkflowLevel(cq::Workflow::kDecode);
-    CQ_LOG_DEBUG_WF(cq::Workflow::kDecode, "d3");
+    cq::ClearWorkflowLevel(cq::ChqWorkflow::kDecode);
+    CQ_LOG_DEBUG_WF(cq::ChqWorkflow::kDecode, "d3");
     Check(g_sink.records.size() == 1, "清除提级后回落到全局");
     ResetGlobal();
 }
@@ -149,12 +149,12 @@ void TestPerWorkflowLevelOverride() {
 void TestWarnVisibleInRelease() {
     std::printf("[test] Warn/Error 在所有构建下都发得出来（排障留痕的前提）\n");
     ResetGlobal();
-    CQ_LOG_WARN_WF(cq::Workflow::kMem, "queue cap hit");
-    CQ_LOG_ERROR_WF(cq::Workflow::kPerf, "slow call 8226ms");
+    CQ_LOG_WARN_WF(cq::ChqWorkflow::kMem, "queue cap hit");
+    CQ_LOG_ERROR_WF(cq::ChqWorkflow::kPerf, "slow call 8226ms");
     Check(g_sink.records.size() == 2, "Warn 与 Error 在 Release 下同样可发");
     if (g_sink.records.size() == 2) {
-        Check(g_sink.records[0].level == cq::LogLevel::kWarn, "第一条是 Warn");
-        Check(g_sink.records[1].level == cq::LogLevel::kError, "第二条是 Error");
+        Check(g_sink.records[0].level == cq::ChqLogLevel::kWarn, "第一条是 Warn");
+        Check(g_sink.records[1].level == cq::ChqLogLevel::kError, "第二条是 Error");
         Check(g_sink.records[0].message.find("[wf:mem]") != std::string::npos,
               "Warn 带 wf:mem 前缀");
     }
@@ -165,8 +165,8 @@ void TestWarnVisibleInRelease() {
 void TestTraceCompiledOutInRelease() {
     std::printf("[test] Trace 在 Release 下编译期剔除（逐帧日志零成本）\n");
     ResetGlobal();
-    cq::SetLogLevel(cq::LogLevel::kTrace);
-    CQ_LOG_TRACE_WF(cq::Workflow::kDecode, "per-frame trace");
+    cq::SetLogLevel(cq::ChqLogLevel::kTrace);
+    CQ_LOG_TRACE_WF(cq::ChqWorkflow::kDecode, "per-frame trace");
 #ifdef NDEBUG
     Check(g_sink.records.empty(), "Release：Trace 被编译期剔除");
 #else
@@ -179,9 +179,9 @@ void TestTraceCompiledOutInRelease() {
 void TestFrameTraceInheritsWorkflow() {
     std::printf("[test] 帧级 trace 自动继承环节的 workflow 前缀\n");
     ResetGlobal();
-    cq::SetLogLevel(cq::LogLevel::kTrace);
-    const cq::RationalTime pts(100000, cq::kProjectTimeScale);
-    CQ_LOG_FRAME(cq::PipelineStage::kDecode, pts, "frame ready");
+    cq::SetLogLevel(cq::ChqLogLevel::kTrace);
+    const cq::ChqRationalTime pts(100000, cq::kProjectTimeScale);
+    CQ_LOG_FRAME(cq::ChqPipelineStage::kDecode, pts, "frame ready");
 #ifdef NDEBUG
     Check(g_sink.records.empty(), "Release：帧 trace 剔除（零开销）");
 #else
@@ -207,17 +207,17 @@ void TestEnvConfig() {
     setenv("CQ_LOG_WF_LEVEL", "preview=debug", 1);
     cq::ConfigureLogFromEnv();
 
-    Check(cq::GetLogLevel() == cq::LogLevel::kTrace, "CQ_LOG_LEVEL=trace 生效");
+    Check(cq::GetLogLevel() == cq::ChqLogLevel::kTrace, "CQ_LOG_LEVEL=trace 生效");
     Check(cq::GetWorkflowFilter() ==
-              (cq::WorkflowBit(cq::Workflow::kDecode) | cq::WorkflowBit(cq::Workflow::kMem)),
+              (cq::WorkflowBit(cq::ChqWorkflow::kDecode) | cq::WorkflowBit(cq::ChqWorkflow::kMem)),
           "CQ_LOG_WORKFLOW 白名单生效");
-    Check(cq::EffectiveLogLevel(cq::Workflow::kPreview) == cq::LogLevel::kDebug,
+    Check(cq::EffectiveLogLevel(cq::ChqWorkflow::kPreview) == cq::ChqLogLevel::kDebug,
           "CQ_LOG_WF_LEVEL 单链路提级生效（大小写/空格容忍）");
 
     // 行为验证：preview 在白名单之外，即便提到 debug 也不会发出。
-    CQ_LOG_DEBUG_WF(cq::Workflow::kPreview, "p");
+    CQ_LOG_DEBUG_WF(cq::ChqWorkflow::kPreview, "p");
     Check(g_sink.records.empty(), "提级不能绕过白名单");
-    CQ_LOG_DEBUG_WF(cq::Workflow::kDecode, "d");
+    CQ_LOG_DEBUG_WF(cq::ChqWorkflow::kDecode, "d");
 #ifdef NDEBUG
     Check(g_sink.records.size() == 1, "decode 在白名单内发出（Debug 级，Release 也保留）");
 #else
@@ -234,7 +234,7 @@ void TestEnvConfig() {
 void TestEnvInvalidValuesIgnored() {
     std::printf("[test] 环境变量非法值：忽略而非猜一个默认值\n");
     ResetGlobal();
-    const cq::LogLevel before = cq::GetLogLevel();
+    const cq::ChqLogLevel before = cq::GetLogLevel();
 
     setenv("CQ_LOG_LEVEL", "verbose", 1);  // 非法级别名
     cq::ConfigureLogFromEnv();
@@ -249,7 +249,7 @@ void TestEnvInvalidValuesIgnored() {
     // 部分正确：正确的段应生效，错误的段被跳过。
     setenv("CQ_LOG_WORKFLOW", "nosuch,decode", 1);
     cq::ConfigureLogFromEnv();
-    Check(cq::GetWorkflowFilter() == cq::WorkflowBit(cq::Workflow::kDecode),
+    Check(cq::GetWorkflowFilter() == cq::WorkflowBit(cq::ChqWorkflow::kDecode),
           "部分正确：正确段生效，错误段跳过");
 
     unsetenv("CQ_LOG_LEVEL");
@@ -263,14 +263,14 @@ void TestSlowCallAlarm() {
     ResetGlobal();
     {
         // 阈值拉到极大 → 正常调用不应触发（避免测试依赖真实耗时）。
-        CQ_SLOW_CALL_THRESHOLD_WF(cq::Workflow::kPerf, "unit-fast", 3600000);
+        CQ_SLOW_CALL_THRESHOLD_WF(cq::ChqWorkflow::kPerf, "unit-fast", 3600000);
     }
     Check(g_sink.records.empty(), "未达阈值不告警");
 
     {
         // 阈值 <=0 视为无效（不是「每次都报」）：设成 0 会退化成每调用必打，
         // 等于把这条告警变成噪声源，故实现里直接早退。
-        CQ_SLOW_CALL_THRESHOLD_WF(cq::Workflow::kPerf, "unit-zero-threshold", 0);
+        CQ_SLOW_CALL_THRESHOLD_WF(cq::ChqWorkflow::kPerf, "unit-zero-threshold", 0);
     }
     Check(g_sink.records.empty(), "阈值 <=0 按无效处理，不告警（防止变成噪声源）");
     ResetGlobal();

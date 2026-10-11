@@ -11,9 +11,9 @@
 
 #include <cstdio>
 
-#include "cq/base/status.h"
-#include "cq/base/rational_time.h"
-#include "cq/model/timeline.h"
+#include "cq/base/chq_status.h"
+#include "cq/base/chq_rational_time.h"
+#include "cq/model/chq_timeline.h"
 
 namespace {
 
@@ -29,12 +29,12 @@ void Check(bool cond, const char* msg) {
 }
 
 // 毫秒 → 项目时间刻度（timescale = 120000，即 1ms = 120 ticks）
-cq::RationalTime Ms(int64_t ms) {
-    return cq::RationalTime(ms * 120, cq::kProjectTimeScale);
+cq::ChqRationalTime Ms(int64_t ms) {
+    return cq::ChqRationalTime(ms * 120, cq::kProjectTimeScale);
 }
 
-cq::Clip MakeClip(cq::ClipKind kind, int64_t start_ms, int64_t dur_ms) {
-    cq::Clip c;
+cq::ChqClip MakeClip(cq::ChqClipKind kind, int64_t start_ms, int64_t dur_ms) {
+    cq::ChqClip c;
     c.kind = kind;
     c.source.asset_id = 1;
     c.source.source_in = Ms(0);
@@ -47,16 +47,16 @@ cq::Clip MakeClip(cq::ClipKind kind, int64_t start_ms, int64_t dur_ms) {
 // ---------------------------------------------------------------------------
 
 void TestMultiTrack() {
-    cq::Timeline tl;
+    cq::ChqTimeline tl;
     uint64_t video_track = 0, audio_track = 0;
 
-    Check(tl.AddTrack(cq::TrackKind::kVideo, video_track).IsOk(), "创建视频轨");
-    Check(tl.AddTrack(cq::TrackKind::kAudio, audio_track).IsOk(), "创建音频轨");
+    Check(tl.AddTrack(cq::ChqTrackKind::kVideo, video_track).IsOk(), "创建视频轨");
+    Check(tl.AddTrack(cq::ChqTrackKind::kAudio, audio_track).IsOk(), "创建音频轨");
     Check(video_track != audio_track, "轨道 id 唯一");
     Check(tl.Tracks().size() == 2, "时间线持有两条轨道");
 
-    const cq::Track* vt = tl.FindTrack(video_track);
-    Check(vt != nullptr && vt->kind == cq::TrackKind::kVideo, "可按 id 取回视频轨");
+    const cq::ChqTrack* vt = tl.FindTrack(video_track);
+    Check(vt != nullptr && vt->kind == cq::ChqTrackKind::kVideo, "可按 id 取回视频轨");
 
     Check(!tl.RemoveTrack(9999).IsOk(), "删除不存在的轨道返回错误");
     Check(tl.RemoveTrack(audio_track).IsOk(), "删除音频轨");
@@ -64,52 +64,52 @@ void TestMultiTrack() {
 }
 
 void TestOverlapRules() {
-    cq::Timeline tl;
+    cq::ChqTimeline tl;
     uint64_t vt = 0, at = 0;
-    tl.AddTrack(cq::TrackKind::kVideo, vt);
-    tl.AddTrack(cq::TrackKind::kAudio, at);
+    tl.AddTrack(cq::ChqTrackKind::kVideo, vt);
+    tl.AddTrack(cq::ChqTrackKind::kAudio, at);
 
     uint64_t c1 = 0;
-    Check(tl.InsertClip(vt, MakeClip(cq::ClipKind::kVideo, 0, 1000), c1).IsOk(),
+    Check(tl.InsertClip(vt, MakeClip(cq::ChqClipKind::kVideo, 0, 1000), c1).IsOk(),
           "插入 0–1s 视频片段");
 
     // 同轨重叠 → 拒绝
     uint64_t dummy = 0;
-    Check(!tl.InsertClip(vt, MakeClip(cq::ClipKind::kVideo, 500, 1000), dummy).IsOk(),
+    Check(!tl.InsertClip(vt, MakeClip(cq::ChqClipKind::kVideo, 500, 1000), dummy).IsOk(),
           "同轨重叠被拒绝（0.5–1.5s 与 0–1s 相交）");
 
     // 同轨首尾相接 → 允许（半开区间）
     uint64_t c2 = 0;
-    Check(tl.InsertClip(vt, MakeClip(cq::ClipKind::kVideo, 1000, 1000), c2).IsOk(),
+    Check(tl.InsertClip(vt, MakeClip(cq::ChqClipKind::kVideo, 1000, 1000), c2).IsOk(),
           "同轨首尾相接允许（1–2s 紧接 0–1s）");
 
     // 跨轨重叠 → 允许（这才是多轨）
     uint64_t a1 = 0;
-    Check(tl.InsertClip(at, MakeClip(cq::ClipKind::kAudio, 0, 5000), a1).IsOk(),
+    Check(tl.InsertClip(at, MakeClip(cq::ChqClipKind::kAudio, 0, 5000), a1).IsOk(),
           "跨轨重叠允许（音频 0–5s 覆盖视频轨）");
 
     // 类型不匹配 → 拒绝
     uint64_t bad = 0;
-    Check(!tl.InsertClip(vt, MakeClip(cq::ClipKind::kAudio, 3000, 1000), bad).IsOk(),
+    Check(!tl.InsertClip(vt, MakeClip(cq::ChqClipKind::kAudio, 3000, 1000), bad).IsOk(),
           "音频片段放进视频轨被拒绝");
 
     // 零时长 → 拒绝
     uint64_t zero = 0;
-    Check(!tl.InsertClip(vt, MakeClip(cq::ClipKind::kVideo, 5000, 0), zero).IsOk(),
+    Check(!tl.InsertClip(vt, MakeClip(cq::ChqClipKind::kVideo, 5000, 0), zero).IsOk(),
           "零时长片段被拒绝");
 
     Check(tl.FindTrack(vt)->clips.size() == 2, "视频轨最终两个片段");
 }
 
 void TestHitTest() {
-    cq::Timeline tl;
+    cq::ChqTimeline tl;
     uint64_t vt = 0;
-    tl.AddTrack(cq::TrackKind::kVideo, vt);
+    tl.AddTrack(cq::ChqTrackKind::kVideo, vt);
     uint64_t c1 = 0, c2 = 0;
-    tl.InsertClip(vt, MakeClip(cq::ClipKind::kVideo, 0, 1000), c1);    // 0–1s
-    tl.InsertClip(vt, MakeClip(cq::ClipKind::kVideo, 1000, 1000), c2); // 1–2s
+    tl.InsertClip(vt, MakeClip(cq::ChqClipKind::kVideo, 0, 1000), c1);    // 0–1s
+    tl.InsertClip(vt, MakeClip(cq::ChqClipKind::kVideo, 1000, 1000), c2); // 1–2s
 
-    const cq::Clip* hit = tl.FindClipAt(vt, Ms(500));
+    const cq::ChqClip* hit = tl.FindClipAt(vt, Ms(500));
     Check(hit != nullptr && hit->id == c1, "0.5s 命中第一个片段");
 
     hit = tl.FindClipAt(vt, Ms(1000));
@@ -123,40 +123,40 @@ void TestHitTest() {
 }
 
 void TestDurationAndTransition() {
-    cq::Timeline tl;
+    cq::ChqTimeline tl;
     uint64_t vt = 0, at = 0;
-    tl.AddTrack(cq::TrackKind::kVideo, vt);
-    tl.AddTrack(cq::TrackKind::kAudio, at);
+    tl.AddTrack(cq::ChqTrackKind::kVideo, vt);
+    tl.AddTrack(cq::ChqTrackKind::kAudio, at);
 
     uint64_t ignored = 0;
-    tl.InsertClip(vt, MakeClip(cq::ClipKind::kVideo, 0, 2000), ignored);  // 0–2s
-    tl.InsertClip(at, MakeClip(cq::ClipKind::kAudio, 0, 5000), ignored);  // 0–5s
+    tl.InsertClip(vt, MakeClip(cq::ChqClipKind::kVideo, 0, 2000), ignored);  // 0–2s
+    tl.InsertClip(at, MakeClip(cq::ChqClipKind::kAudio, 0, 5000), ignored);  // 0–5s
 
     // 总时长取所有轨道的最大值（音频轨更长）
     Check(tl.Duration().value == Ms(5000).value, "总时长取最大轨道结束时刻（5s）");
 
     // 转场计入总时长：给音频轨加 1s 出转场 → 6s
     uint64_t at2 = 0;
-    tl.AddTrack(cq::TrackKind::kAudio, at2);
-    cq::Clip with_trans = MakeClip(cq::ClipKind::kAudio, 0, 5000);
-    with_trans.out_transition = cq::TransitionKind::kCrossFade;
+    tl.AddTrack(cq::ChqTrackKind::kAudio, at2);
+    cq::ChqClip with_trans = MakeClip(cq::ChqClipKind::kAudio, 0, 5000);
+    with_trans.out_transition = cq::ChqTransitionKind::kCrossFade;
     with_trans.transition_duration = Ms(1000);
     uint64_t tc = 0;
     Check(tl.InsertClip(at2, with_trans, tc).IsOk(), "插入带出转场的片段");
     Check(tl.Duration().value == Ms(6000).value, "出转场时长计入总时长（5s + 1s = 6s）");
 
     // 空时间线
-    cq::Timeline empty;
+    cq::ChqTimeline empty;
     Check(empty.Duration().value == 0, "空时间线时长为 0");
 }
 
 void TestEditOperations() {
-    cq::Timeline tl;
+    cq::ChqTimeline tl;
     uint64_t vt = 0;
-    tl.AddTrack(cq::TrackKind::kVideo, vt);
+    tl.AddTrack(cq::ChqTrackKind::kVideo, vt);
     uint64_t c1 = 0, c2 = 0;
-    tl.InsertClip(vt, MakeClip(cq::ClipKind::kVideo, 0, 1000), c1);    // 0–1s
-    tl.InsertClip(vt, MakeClip(cq::ClipKind::kVideo, 1000, 1000), c2); // 1–2s
+    tl.InsertClip(vt, MakeClip(cq::ChqClipKind::kVideo, 0, 1000), c1);    // 0–1s
+    tl.InsertClip(vt, MakeClip(cq::ChqClipKind::kVideo, 1000, 1000), c2); // 1–2s
 
     // 移动：撞上邻居 → 拒绝
     Check(!tl.MoveClip(c1, Ms(500)).IsOk(), "移动到与邻居重叠的位置被拒绝");

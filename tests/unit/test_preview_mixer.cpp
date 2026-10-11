@@ -1,4 +1,4 @@
-// ChuanqiCut — PreviewAudioMixer 单测（AUDIO-002）
+// ChuanqiCut — ChqPreviewAudioMixer 单测（AUDIO-002）
 //
 // 验收面（全 core，无平台依赖：引擎/读取器/快照均为确定性假实现）：
 //   1. 块网格连续性：写入引擎的块 pts 从重锚点起严格 +block_ticks 递进。
@@ -25,11 +25,11 @@
 #include <thread>
 #include <vector>
 
-#include "cq/audio/preview_mixer.h"
-#include "cq/audio/track_reader.h"
-#include "cq/base/rational_time.h"
-#include "cq/model/model_snapshot.h"
-#include "cq/platform/audio.h"
+#include "cq/audio/chq_preview_mixer.h"
+#include "cq/audio/chq_track_reader.h"
+#include "cq/base/chq_rational_time.h"
+#include "cq/model/chq_model_snapshot.h"
+#include "cq/platform/chq_audio.h"
 
 using namespace cq;  // NOLINT（测试文件，直用内核命名空间）
 
@@ -55,30 +55,30 @@ constexpr int64_t kBlockTicks = kBlockFrames * kTs / kRate;
 // 假读取器：按路径配置幅度函数与素材总长；Seek 幂等；EOF 后 kIoNotFound。
 // 幅度 = amp_fn(源 tick)（默认常数；映射测试用分段函数）。
 // ---------------------------------------------------------------------------
-class FakeReader final : public IAudioTrackReader {
+class FakeReader final : public ChqIAudioTrackReader {
 public:
     void Destroy() override { delete this; }
-    Status Open(const MediaSource& src) override {
+    ChqStatus Open(const ChqMediaSource& src) override {
         (void)src;
-        return Status::Ok();
+        return ChqStatus::Ok();
     }
     bool HasAudio() const override { return has_audio_; }
-    Status GetDuration(RationalTime& out) const override {
-        out = RationalTime{total_ticks_, kTs};
-        return Status::Ok();
+    ChqStatus GetDuration(ChqRationalTime& out) const override {
+        out = ChqRationalTime{total_ticks_, kTs};
+        return ChqStatus::Ok();
     }
-    Status Seek(const RationalTime& src_time, const CancelToken& token) override {
+    ChqStatus Seek(const ChqRationalTime& src_time, const ChqCancelToken& token) override {
         (void)token;
         pos_ticks_ = src_time.value;
         eof_ = false;
         ++seek_count_;
-        return Status::Ok();
+        return ChqStatus::Ok();
     }
-    Status ReadBlock(PcmBuffer& out, const CancelToken& token) override {
+    ChqStatus ReadBlock(ChqPcmBuffer& out, const ChqCancelToken& token) override {
         if (token.IsCancelled()) return token.Cancelled();
         if (eof_ || pos_ticks_ >= total_ticks_) {
             eof_ = true;
-            return Status{StatusCode::kIoNotFound};
+            return ChqStatus{ChqStatusCode::kIoNotFound};
         }
         const uint64_t frames = frames_per_block_;
         const float amp = amp_fn_(pos_ticks_);
@@ -86,15 +86,15 @@ public:
             scratch_[i * 2] = amp;
             scratch_[i * 2 + 1] = amp;
         }
-        out.format = SampleFormat::kFloat32;
+        out.format = ChqSampleFormat::kFloat32;
         out.channels = 2;
         out.sample_rate = static_cast<uint32_t>(kRate);
         out.frame_count = frames;
         out.data = scratch_.data();
         out.data_bytes = frames * 2 * sizeof(float);
-        out.pts = RationalTime{pos_ticks_, kTs};
+        out.pts = ChqRationalTime{pos_ticks_, kTs};
         pos_ticks_ += static_cast<int64_t>(frames) * kTs / kRate;
-        return Status::Ok();
+        return ChqStatus::Ok();
     }
 
     bool has_audio_ = true;
@@ -112,15 +112,15 @@ private:
 // ---------------------------------------------------------------------------
 // 假读取器工厂：按路径配置（"fake://<amp>|<seconds>" 协议，够用且自明）。
 // ---------------------------------------------------------------------------
-class FakeReaderFactory final : public IAudioTrackReaderFactory {
+class FakeReaderFactory final : public ChqIAudioTrackReaderFactory {
 public:
     struct Cfg {
         float amp = 0.25f;
         int64_t total_ticks = 10 * kTs;
         bool has_audio = true;
     };
-    Status Create(const MediaSource& src, const AudioGraphSpec& spec,
-                  AudioReaderPtr& out) override {
+    ChqStatus Create(const ChqMediaSource& src, const ChqAudioGraphSpec& spec,
+                  ChqAudioReaderPtr& out) override {
         const std::string path(src.path, src.path_len);
         // 路径协议：fake://a 即查 configs_["a"]；无配置 = 默认。
         const std::string key = path.substr(std::min<size_t>(7, path.size()));
@@ -132,9 +132,9 @@ public:
         r->amp_fn_ = [amp](int64_t) { return amp; };
         if (amp_fn_) r->amp_fn_ = amp_fn_;  // 全局覆盖（映射测试）
         created_paths_.push_back(key);
-        out = AudioReaderPtr(static_cast<IAudioTrackReader*>(r));
+        out = ChqAudioReaderPtr(static_cast<ChqIAudioTrackReader*>(r));
         (void)spec;
-        return Status::Ok();
+        return ChqStatus::Ok();
     }
     std::map<std::string, Cfg> configs_;
     std::function<float(int64_t)> amp_fn_;
@@ -145,18 +145,18 @@ public:
 // 假引擎：记录写入块（pts + 峰值幅度），按真实时间流逝消费（1:1 实时），
 // FlushOutput 清账（与真引擎 Flush 语义一致：缓冲即空）。
 // ---------------------------------------------------------------------------
-class FakeEngine final : public IAudioEngine {
+class FakeEngine final : public ChqIAudioEngine {
 public:
     void Destroy() override { delete this; }
-    Status OpenOutput(uint32_t sample_rate, uint32_t channels, SampleFormat fmt,
+    ChqStatus OpenOutput(uint32_t sample_rate, uint32_t channels, ChqSampleFormat fmt,
                       uint32_t frames_per_buffer) override {
         (void)channels;
         (void)frames_per_buffer;
         rate_ = sample_rate;
-        fmt_ok_ = (fmt == SampleFormat::kFloat32);
-        return Status::Ok();
+        fmt_ok_ = (fmt == ChqSampleFormat::kFloat32);
+        return ChqStatus::Ok();
     }
-    Status Write(const PcmBuffer& buf) override {
+    ChqStatus Write(const ChqPcmBuffer& buf) override {
         std::lock_guard<std::mutex> lock(mu_);
         const auto* s = static_cast<const float*>(buf.data);
         float peak = 0.0f;
@@ -166,13 +166,13 @@ public:
         written_.push_back(Written{buf.pts.value, buf.frame_count, peak});
         if (total_frames_ == 0) anchor_ = std::chrono::steady_clock::now();
         total_frames_ += buf.frame_count;
-        return Status::Ok();
+        return ChqStatus::Ok();
     }
-    Status FlushOutput() override {
+    ChqStatus FlushOutput() override {
         std::lock_guard<std::mutex> lock(mu_);
         ++flush_count_;
         total_frames_ = 0;  // 缓冲清空（真引擎 Flush 语义）
-        return Status::Ok();
+        return ChqStatus::Ok();
     }
     uint64_t BufferedFrames() const override {
         std::lock_guard<std::mutex> lock(mu_);
@@ -184,19 +184,19 @@ public:
             static_cast<uint64_t>(elapsed_ns) * rate_ / 1'000'000'000ULL;
         return consumed >= total_frames_ ? 0 : total_frames_ - consumed;
     }
-    Status OpenInput(uint32_t, uint32_t, SampleFormat, uint32_t) override {
-        return Status{StatusCode::kDecodeUnsupported};
+    ChqStatus OpenInput(uint32_t, uint32_t, ChqSampleFormat, uint32_t) override {
+        return ChqStatus{ChqStatusCode::kDecodeUnsupported};
     }
-    Status Read(PcmBuffer&, const CancelToken&) override {
-        return Status{StatusCode::kDecodeUnsupported};
+    ChqStatus Read(ChqPcmBuffer&, const ChqCancelToken&) override {
+        return ChqStatus{ChqStatusCode::kDecodeUnsupported};
     }
-    Status Start() override {
+    ChqStatus Start() override {
         ++start_count_;
-        return Status::Ok();
+        return ChqStatus::Ok();
     }
-    Status Stop() override {
+    ChqStatus Stop() override {
         ++stop_count_;
-        return Status::Ok();
+        return ChqStatus::Ok();
     }
 
     struct Written {
@@ -204,7 +204,7 @@ public:
         uint64_t frames;
         float peak;
     };
-    std::vector<Written> Snapshot() const {
+    std::vector<Written> ChqSnapshot() const {
         std::lock_guard<std::mutex> lock(mu_);
         return written_;
     }
@@ -231,12 +231,12 @@ public:
 // ---------------------------------------------------------------------------
 // 假快照源 + 装配助手
 // ---------------------------------------------------------------------------
-class FakeSnapshots final : public IModelSnapshotProvider {
+class FakeSnapshots final : public ChqIModelSnapshotProvider {
 public:
-    std::shared_ptr<const ModelSnapshot> CurrentSnapshot() const override {
+    std::shared_ptr<const ChqModelSnapshot> CurrentSnapshot() const override {
         return snap_;
     }
-    std::shared_ptr<ModelSnapshot> snap_;
+    std::shared_ptr<ChqModelSnapshot> snap_;
 };
 
 // 轨道类型：预览音频把视频轨片段的内嵌音频同样计入（与真混音器一致）。
@@ -247,41 +247,41 @@ struct ClipSpec {
     int64_t source_in_ms;
 };
 
-std::shared_ptr<ModelSnapshot> MakeSnapshot(
-    const std::vector<std::pair<TrackKind, std::vector<ClipSpec>>>& tracks,
+std::shared_ptr<ChqModelSnapshot> MakeSnapshot(
+    const std::vector<std::pair<ChqTrackKind, std::vector<ClipSpec>>>& tracks,
     const std::map<uint64_t, std::string>& assets) {
-    auto timeline = std::make_shared<Timeline>();
+    auto timeline = std::make_shared<ChqTimeline>();
     for (const auto& [kind, clips] : tracks) {
         uint64_t track_id = 0;
         CHECK(timeline->AddTrack(kind, track_id).IsOk(), "AddTrack");
-        // ClipKind 必须与 TrackKind 匹配（InsertClip 类型校验）。
-        const ClipKind clip_kind =
-            (kind == TrackKind::kAudio) ? ClipKind::kAudio : ClipKind::kVideo;
+        // ChqClipKind 必须与 ChqTrackKind 匹配（InsertClip 类型校验）。
+        const ChqClipKind clip_kind =
+            (kind == ChqTrackKind::kAudio) ? ChqClipKind::kAudio : ChqClipKind::kVideo;
         for (const ClipSpec& cs : clips) {
-            Clip c;
+            ChqClip c;
             c.kind = clip_kind;
             c.source.asset_id = cs.asset_id;
-            c.source.source_in = RationalTime{cs.source_in_ms * kTs / 1000, kTs};
-            c.source.source_duration = RationalTime{cs.dur_ms * kTs / 1000, kTs};
-            c.start = RationalTime{cs.start_ms * kTs / 1000, kTs};
-            c.duration = RationalTime{cs.dur_ms * kTs / 1000, kTs};
+            c.source.source_in = ChqRationalTime{cs.source_in_ms * kTs / 1000, kTs};
+            c.source.source_duration = ChqRationalTime{cs.dur_ms * kTs / 1000, kTs};
+            c.start = ChqRationalTime{cs.start_ms * kTs / 1000, kTs};
+            c.duration = ChqRationalTime{cs.dur_ms * kTs / 1000, kTs};
             uint64_t clip_id = 0;
             CHECK(timeline->InsertClip(track_id, c, clip_id).IsOk(), "InsertClip");
         }
     }
-    auto registry = std::make_shared<AssetRegistry>();
+    auto registry = std::make_shared<ChqAssetRegistry>();
     for (const auto& [id, path] : assets) {
         CHECK(registry->Register(id, path).IsOk(), "Register");
     }
-    auto snap = std::make_shared<ModelSnapshot>();
+    auto snap = std::make_shared<ChqModelSnapshot>();
     snap->timeline = timeline;
     snap->assets = registry;
     return snap;
 }
 
-PreviewAudioMixer::Config TestConfig() {
-    PreviewAudioMixer::Config cfg;
-    cfg.spec.format = SampleFormat::kFloat32;
+ChqPreviewAudioMixer::Config TestConfig() {
+    ChqPreviewAudioMixer::Config cfg;
+    cfg.spec.format = ChqSampleFormat::kFloat32;
     cfg.spec.channels = 2;
     cfg.spec.sample_rate = static_cast<uint32_t>(kRate);
     cfg.spec.frames_per_block = static_cast<uint32_t>(kBlockFrames);
@@ -292,8 +292,8 @@ PreviewAudioMixer::Config TestConfig() {
 }
 
 // 最近一次 Sync 的播放头（测试辅助：保持墙钟外推不把窗口拉飞）。
-void SyncAt(PreviewAudioMixer& m, int64_t ms, bool playing) {
-    m.Sync(RationalTime{ms * kTs / 1000, kTs}, playing);
+void SyncAt(ChqPreviewAudioMixer& m, int64_t ms, bool playing) {
+    m.Sync(ChqRationalTime{ms * kTs / 1000, kTs}, playing);
 }
 
 }  // namespace
@@ -305,17 +305,17 @@ int main() {
         readers.configs_["a"] = {0.25f, 10 * kTs, true};
         FakeEngine engine;
         FakeSnapshots snaps;
-        snaps.snap_ = MakeSnapshot({{TrackKind::kAudio,
+        snaps.snap_ = MakeSnapshot({{ChqTrackKind::kAudio,
                                      {{1, 0, 5000, 0}}}},
                                    {{1, "fake://a"}});
-        PreviewAudioMixer mixer(&readers, &snaps, &engine, TestConfig());
+        ChqPreviewAudioMixer mixer(&readers, &snaps, &engine, TestConfig());
         CHECK(mixer.Start().IsOk(), "Start");
         SyncAt(mixer, 0, true);
         std::this_thread::sleep_for(std::chrono::milliseconds(600));
         SyncAt(mixer, 600, false);  // 停写，冻结窗口
         std::this_thread::sleep_for(std::chrono::milliseconds(100));
 
-        const auto blocks = engine.Snapshot();
+        const auto blocks = engine.ChqSnapshot();
         CHECK(blocks.size() >= 5, "case1: 至少 5 块（0.6s 窗口 / 0.1s 块）");
         if (!blocks.empty()) {
             CHECK(blocks[0].pts == 0, "case1: 首块 pts=0（重锚点）");
@@ -344,17 +344,17 @@ int main() {
         readers.configs_["b"] = {0.5f, 10 * kTs, true};
         FakeEngine engine;
         FakeSnapshots snaps;
-        snaps.snap_ = MakeSnapshot({{TrackKind::kAudio,
+        snaps.snap_ = MakeSnapshot({{ChqTrackKind::kAudio,
                                      {{1, 0, 300, 0}, {2, 500, 700, 0}}}},
                                    {{1, "fake://a"}, {2, "fake://b"}});
-        PreviewAudioMixer mixer(&readers, &snaps, &engine, TestConfig());
+        ChqPreviewAudioMixer mixer(&readers, &snaps, &engine, TestConfig());
         CHECK(mixer.Start().IsOk(), "Start");
         SyncAt(mixer, 0, true);
         std::this_thread::sleep_for(std::chrono::milliseconds(900));
         SyncAt(mixer, 900, false);
         std::this_thread::sleep_for(std::chrono::milliseconds(100));
 
-        const auto blocks = engine.Snapshot();
+        const auto blocks = engine.ChqSnapshot();
         int checked_25 = 0, checked_gap = 0, checked_50 = 0;
         for (const auto& b : blocks) {
             const int64_t ms = b.pts * 1000 / kTs;
@@ -381,16 +381,16 @@ int main() {
         readers.configs_["a"] = {0.9f, 10 * kTs, true};
         FakeEngine engine;
         FakeSnapshots snaps;
-        snaps.snap_ = MakeSnapshot({{TrackKind::kAudio, {{1, 0, 1000, 0}}},
-                                    {TrackKind::kAudio, {{1, 0, 1000, 0}}}},
+        snaps.snap_ = MakeSnapshot({{ChqTrackKind::kAudio, {{1, 0, 1000, 0}}},
+                                    {ChqTrackKind::kAudio, {{1, 0, 1000, 0}}}},
                                    {{1, "fake://a"}});
-        PreviewAudioMixer mixer(&readers, &snaps, &engine, TestConfig());
+        ChqPreviewAudioMixer mixer(&readers, &snaps, &engine, TestConfig());
         CHECK(mixer.Start().IsOk(), "Start");
         SyncAt(mixer, 0, true);
         std::this_thread::sleep_for(std::chrono::milliseconds(400));
         SyncAt(mixer, 400, false);
         std::this_thread::sleep_for(std::chrono::milliseconds(100));
-        const auto blocks = engine.Snapshot();
+        const auto blocks = engine.ChqSnapshot();
         CHECK(blocks.size() >= 3, "case3: 有块");
         for (const auto& b : blocks) {
             CHECK(std::fabs(b.peak - 1.0f) < 1e-4f, "case3: 求和削波到 1.0");
@@ -404,33 +404,33 @@ int main() {
         readers.configs_["a"] = {0.25f, 10 * kTs, true};
         FakeEngine engine;
         FakeSnapshots snaps;
-        snaps.snap_ = MakeSnapshot({{TrackKind::kAudio, {{1, 0, 1000, 0}}}},
+        snaps.snap_ = MakeSnapshot({{ChqTrackKind::kAudio, {{1, 0, 1000, 0}}}},
                                    {{1, "fake://a"}});
-        // muted 轨经 Timeline 公开恢复面（RestoreTrack，实体自带 id/muted）注入。
+        // muted 轨经 ChqTimeline 公开恢复面（RestoreTrack，实体自带 id/muted）注入。
         {
-            Track muted;
+            ChqTrack muted;
             muted.id = 99;
-            muted.kind = TrackKind::kAudio;
+            muted.kind = ChqTrackKind::kAudio;
             muted.muted = true;
-            Clip c;
+            ChqClip c;
             c.id = 9901;  // Restore 契约：实体自带 id 且非零（timeline.cpp:210）
-            c.kind = ClipKind::kAudio;  // 与轨类型匹配（RestoreTrack 校验）
+            c.kind = ChqClipKind::kAudio;  // 与轨类型匹配（RestoreTrack 校验）
             c.source.asset_id = 1;
-            c.source.source_in = RationalTime{0, kTs};
-            c.source.source_duration = RationalTime{1000 * kTs / 1000, kTs};
-            c.start = RationalTime{0, kTs};
-            c.duration = RationalTime{1000 * kTs / 1000, kTs};
+            c.source.source_in = ChqRationalTime{0, kTs};
+            c.source.source_duration = ChqRationalTime{1000 * kTs / 1000, kTs};
+            c.start = ChqRationalTime{0, kTs};
+            c.duration = ChqRationalTime{1000 * kTs / 1000, kTs};
             muted.clips.push_back(c);
-            auto timeline = std::const_pointer_cast<Timeline>(snaps.snap_->timeline);
+            auto timeline = std::const_pointer_cast<ChqTimeline>(snaps.snap_->timeline);
             CHECK(timeline->RestoreTrack(muted).IsOk(), "case4: RestoreTrack(muted)");
         }
-        PreviewAudioMixer mixer(&readers, &snaps, &engine, TestConfig());
+        ChqPreviewAudioMixer mixer(&readers, &snaps, &engine, TestConfig());
         CHECK(mixer.Start().IsOk(), "Start");
         SyncAt(mixer, 0, true);
         std::this_thread::sleep_for(std::chrono::milliseconds(400));
         SyncAt(mixer, 400, false);
         std::this_thread::sleep_for(std::chrono::milliseconds(100));
-        const auto blocks = engine.Snapshot();
+        const auto blocks = engine.ChqSnapshot();
         CHECK(blocks.size() >= 3, "case4: 有块");
         for (const auto& b : blocks) {
             CHECK(std::fabs(b.peak - 0.25f) < 1e-4f, "case4: muted 轨不计入（0.25）");
@@ -444,15 +444,15 @@ int main() {
         readers.configs_["short"] = {0.5f, 400 * kTs / 1000, true};
         FakeEngine engine;
         FakeSnapshots snaps;
-        snaps.snap_ = MakeSnapshot({{TrackKind::kAudio, {{1, 0, 1500, 0}}}},
+        snaps.snap_ = MakeSnapshot({{ChqTrackKind::kAudio, {{1, 0, 1500, 0}}}},
                                    {{1, "fake://short"}});
-        PreviewAudioMixer mixer(&readers, &snaps, &engine, TestConfig());
+        ChqPreviewAudioMixer mixer(&readers, &snaps, &engine, TestConfig());
         CHECK(mixer.Start().IsOk(), "Start");
         SyncAt(mixer, 0, true);
         std::this_thread::sleep_for(std::chrono::milliseconds(900));
         SyncAt(mixer, 900, false);
         std::this_thread::sleep_for(std::chrono::milliseconds(100));
-        const auto blocks = engine.Snapshot();
+        const auto blocks = engine.ChqSnapshot();
         for (const auto& b : blocks) {
             const int64_t ms = b.pts * 1000 / kTs;
             if (ms + 100 <= 400) {
@@ -474,15 +474,15 @@ int main() {
         };
         FakeEngine engine;
         FakeSnapshots snaps;
-        snaps.snap_ = MakeSnapshot({{TrackKind::kAudio, {{1, 0, 2000, 2000}}}},
+        snaps.snap_ = MakeSnapshot({{ChqTrackKind::kAudio, {{1, 0, 2000, 2000}}}},
                                    {{1, "fake://ladder"}});
-        PreviewAudioMixer mixer(&readers, &snaps, &engine, TestConfig());
+        ChqPreviewAudioMixer mixer(&readers, &snaps, &engine, TestConfig());
         CHECK(mixer.Start().IsOk(), "Start");
         SyncAt(mixer, 0, true);
         std::this_thread::sleep_for(std::chrono::milliseconds(500));
         SyncAt(mixer, 500, false);
         std::this_thread::sleep_for(std::chrono::milliseconds(100));
-        const auto blocks = engine.Snapshot();
+        const auto blocks = engine.ChqSnapshot();
         for (const auto& b : blocks) {
             const int64_t timeline_ms = b.pts * 1000 / kTs;
             const int64_t src_ms = timeline_ms + 2000;  // source_in = 2s
@@ -498,9 +498,9 @@ int main() {
         readers.configs_["a"] = {0.25f, 10 * kTs, true};
         FakeEngine engine;
         FakeSnapshots snaps;
-        snaps.snap_ = MakeSnapshot({{TrackKind::kAudio, {{1, 0, 20000, 0}}}},
+        snaps.snap_ = MakeSnapshot({{ChqTrackKind::kAudio, {{1, 0, 20000, 0}}}},
                                    {{1, "fake://a"}});
-        PreviewAudioMixer mixer(&readers, &snaps, &engine, TestConfig());
+        ChqPreviewAudioMixer mixer(&readers, &snaps, &engine, TestConfig());
         CHECK(mixer.Start().IsOk(), "Start");
         SyncAt(mixer, 0, true);
         std::this_thread::sleep_for(std::chrono::milliseconds(300));
@@ -517,7 +517,7 @@ int main() {
         std::this_thread::sleep_for(std::chrono::milliseconds(300));
         SyncAt(mixer, 5300, false);
         std::this_thread::sleep_for(std::chrono::milliseconds(100));
-        const auto blocks = engine.Snapshot();
+        const auto blocks = engine.ChqSnapshot();
         // 找到恢复后首块（pts ≥ 5s）。
         bool found_reanchor = false;
         for (const auto& b : blocks) {

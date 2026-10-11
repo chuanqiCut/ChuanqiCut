@@ -12,8 +12,8 @@
 #include <thread>
 #include <vector>
 
-#include "cq/session/task_runner.h"
-#include "cq/session/thread_model.h"
+#include "cq/session/chq_task_runner.h"
+#include "cq/session/chq_thread_model.h"
 
 namespace {
 
@@ -42,41 +42,41 @@ void SleepMs(int ms) {
 void TestThreadRole() {
     std::printf("[test] 线程角色标记与查询\n");
     // 未标记的线程必须是 kUnknown（不可猜成 main）。
-    Check(cq::CurrentThreadRole() == cq::ThreadRole::kUnknown, "默认角色为 kUnknown");
+    Check(cq::CurrentThreadRole() == cq::ChqThreadRole::kUnknown, "默认角色为 kUnknown");
     Check(!cq::IsMainThread(), "未标记时 IsMainThread()==false");
     Check(!cq::IsAudioThread(), "未标记时 IsAudioThread()==false");
 
-    cq::SetCurrentThreadRole(cq::ThreadRole::kMain);
-    Check(cq::CurrentThreadRole() == cq::ThreadRole::kMain, "标记为主线程后可读回");
+    cq::SetCurrentThreadRole(cq::ChqThreadRole::kMain);
+    Check(cq::CurrentThreadRole() == cq::ChqThreadRole::kMain, "标记为主线程后可读回");
     Check(cq::IsMainThread(), "标记后 IsMainThread()==true");
     Check(!cq::IsAudioThread(), "主线程不是音频线程");
 
-    cq::SetCurrentThreadRole(cq::ThreadRole::kAudio);
+    cq::SetCurrentThreadRole(cq::ChqThreadRole::kAudio);
     Check(cq::IsAudioThread(), "标记后可查询音频线程");
     Check(!cq::IsMainThread(), "音频线程不是主线程");
 
     // 角色名只是日志文本，不得返回空/未知。
-    Check(cq::ThreadRoleName(cq::ThreadRole::kSession) != nullptr, "kSession 有名字");
-    Check(cq::ThreadRoleName(cq::ThreadRole::kDecode) != nullptr, "kDecode 有名字");
+    Check(cq::ThreadRoleName(cq::ChqThreadRole::kSession) != nullptr, "kSession 有名字");
+    Check(cq::ThreadRoleName(cq::ChqThreadRole::kDecode) != nullptr, "kDecode 有名字");
 
     // 恢复到主线程身份：后续用例要模拟「宿主在主线程投递任务」。
-    cq::SetCurrentThreadRole(cq::ThreadRole::kMain);
+    cq::SetCurrentThreadRole(cq::ChqThreadRole::kMain);
 }
 
 // ---- 2. 主线程零阻塞（本任务的验收核心）----
 void TestPostDoesNotBlockMainThread() {
     std::printf("[test] 主线程零阻塞：投递 100ms 任务，Post() 本身须 < 16ms\n");
-    cq::TaskRunner::Config cfg;
-    cfg.role = cq::ThreadRole::kSession;
+    cq::ChqTaskRunner::Config cfg;
+    cfg.role = cq::ChqThreadRole::kSession;
     cfg.queue_capacity = 8;
-    cq::TaskRunner runner(cfg);
+    cq::ChqTaskRunner runner(cfg);
     Check(runner.Start().IsOk(), "Start 成功");
 
     Check(cq::IsMainThread(), "当前确实标记为主线程（否则本用例无意义）");
 
     std::atomic<bool> finished{false};
     Clock::time_point t0 = Clock::now();
-    cq::Status st = runner.Post([&] {
+    cq::ChqStatus st = runner.Post([&] {
         SleepMs(100);  // 故意耗时远超主线程预算
         finished.store(true, std::memory_order_release);
     });
@@ -106,19 +106,19 @@ void TestPostDoesNotBlockMainThread() {
 // ---- 3. 任务跑在 worker 线程，且角色被正确标记 ----
 void TestTaskRunsOnWorkerThread() {
     std::printf("[test] 任务在 worker 线程执行（非主线程）\n");
-    cq::TaskRunner::Config cfg;
-    cfg.role = cq::ThreadRole::kDecode;  // 换个角色，验证标记可配置
-    cq::TaskRunner runner(cfg);
+    cq::ChqTaskRunner::Config cfg;
+    cfg.role = cq::ChqThreadRole::kDecode;  // 换个角色，验证标记可配置
+    cq::ChqTaskRunner runner(cfg);
     runner.Start();
 
-    Check(runner.Role() == cq::ThreadRole::kDecode, "Role 返回配置的角色");
+    Check(runner.Role() == cq::ChqThreadRole::kDecode, "Role 返回配置的角色");
 
     std::atomic<bool> done{false};
     bool task_on_main = true;
     bool task_saw_role = false;
     runner.Post([&] {
         task_on_main = cq::IsMainThread();
-        task_saw_role = (cq::CurrentThreadRole() == cq::ThreadRole::kDecode);
+        task_saw_role = (cq::CurrentThreadRole() == cq::ChqThreadRole::kDecode);
         done.store(true, std::memory_order_release);
     });
 
@@ -137,9 +137,9 @@ void TestTaskRunsOnWorkerThread() {
 // ---- 4. 串行 FIFO ----
 void TestSerialFifo() {
     std::printf("[test] 串行执行且保持 FIFO\n");
-    cq::TaskRunner::Config cfg;
+    cq::ChqTaskRunner::Config cfg;
     cfg.queue_capacity = 32;
-    cq::TaskRunner runner(cfg);
+    cq::ChqTaskRunner runner(cfg);
     runner.Start();
 
     constexpr int kCount = 10;
@@ -175,9 +175,9 @@ void TestSerialFifo() {
 // ---- 5. 有界背压：队列满 -> kResourceExhausted（不无限增长）----
 void TestBackpressure() {
     std::printf("[test] 背压：队列满返回 kResourceExhausted\n");
-    cq::TaskRunner::Config cfg;
+    cq::ChqTaskRunner::Config cfg;
     cfg.queue_capacity = 2;  // 故意很小
-    cq::TaskRunner runner(cfg);
+    cq::ChqTaskRunner runner(cfg);
     runner.Start();
     Check(runner.QueueCapacity() == 2, "容量为 2");
 
@@ -207,10 +207,10 @@ void TestBackpressure() {
 
     // 队列已满：必须明确失败，不得阻塞、不得无界增长。
     Clock::time_point t0 = Clock::now();
-    cq::Status st = runner.Post([] {});
+    cq::ChqStatus st = runner.Post([] {});
     Clock::time_point t1 = Clock::now();
     Check(st.IsError(), "队列满时 Post 失败");
-    Check(st.code == cq::StatusCode::kResourceExhausted,
+    Check(st.code == cq::ChqStatusCode::kResourceExhausted,
           "失败码为 kResourceExhausted（背压信号，非崩溃/非阻塞）");
     Check(ElapsedMs(t0, t1) < 16.0, "满队列时 Post 也立即返回（< 16ms）");
 
@@ -222,10 +222,10 @@ void TestBackpressure() {
 void TestLifecycle() {
     std::printf("[test] 生命周期边界\n");
     // 未启动时投递必须明确失败，不得崩溃。
-    cq::TaskRunner::Config cfg;
-    cq::TaskRunner runner(cfg);
+    cq::ChqTaskRunner::Config cfg;
+    cq::ChqTaskRunner runner(cfg);
     Check(!runner.IsRunning(), "未启动时 IsRunning()==false");
-    Check(runner.Post([] {}).code == cq::StatusCode::kInvalidArgument,
+    Check(runner.Post([] {}).code == cq::ChqStatusCode::kInvalidArgument,
           "未启动时 Post 返回 kInvalidArgument");
 
     Check(runner.Start().IsOk(), "Start 成功");
@@ -233,7 +233,7 @@ void TestLifecycle() {
 
     Check(runner.Shutdown().IsOk(), "Shutdown 成功");
     Check(!runner.IsRunning(), "Shutdown 后 IsRunning()==false");
-    Check(runner.Post([] {}).code == cq::StatusCode::kInvalidArgument,
+    Check(runner.Post([] {}).code == cq::ChqStatusCode::kInvalidArgument,
           "Shutdown 后 Post 返回 kInvalidArgument");
     Check(runner.Shutdown().IsOk(), "重复 Shutdown 安全（幂等）");
 }

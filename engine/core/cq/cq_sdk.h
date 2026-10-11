@@ -77,7 +77,7 @@ int32_t cq_is_main_thread(void);
 int32_t cq_query_capability(int32_t capability);
 
 /* ==========================================================================
- * 会话（EditorSession 的 C ABI 句柄）
+ * 会话（ChqEditorSession 的 C ABI 句柄）
  * ==========================================================================
  * ARCH-001 §4.1：session = 「串起各模块，对外唯一门面」。
  */
@@ -111,7 +111,7 @@ int32_t cq_session_submit(CQSession* session, const char* change_name, CQMutateF
  * （内建模型状态；注入自定义 ISessionState 时语义由注入方定义）。 */
 typedef struct CQSnapshot {
     uint64_t version; /* 单调递增；0 = 尚无变更 */
-    uint64_t digest;  /* 时间线结构指纹（FNV-1a；字段集见 EditorModelState::Fingerprint） */
+    uint64_t digest;  /* 时间线结构指纹（FNV-1a；字段集见 ChqEditorModelState::Fingerprint） */
 } CQSnapshot;
 
 CQSnapshot cq_session_current_snapshot(const CQSession* session);
@@ -137,7 +137,7 @@ void cq_session_set_observer(CQSession* session, CQSnapshotObserver observer, vo
 /* --------------------------------------------------------------------------
  * 会话级模型：素材表 + 时间线（UIA-009 子步骤 1，2026-10-03）
  * --------------------------------------------------------------------------
- * EditorSession 内建真实模型状态（时间线 + 素材表 + 命令历史，可撤销）。
+ * ChqEditorSession 内建真实模型状态（时间线 + 素材表 + 命令历史，可撤销）。
  *
  * ⚠️ 提交与查询是**两种线程语义**：
  *    - register_asset / add_track / add_clip：**异步提交**（入队 session 线程
@@ -148,7 +148,7 @@ void cq_session_set_observer(CQSession* session, CQSnapshotObserver observer, vo
  *      （任意线程、无锁、不阻塞），反映「最近一次成功变更之后」的完整状态。
  *      未发生变更前返回空时间线（track_count=0）。
  *
- * 时间一律 RationalTime{value, timescale}（红线 #4，项目 timescale = 120000）。 */
+ * 时间一律 ChqRationalTime{value, timescale}（红线 #4，项目 timescale = 120000）。 */
 
 /* 注册素材到会话级素材表（id → 文件路径；path 被内核拷贝）。
  * 重复注册同一 id 整体替换。素材不参与 Undo（资料库语义，非时间线编辑）。 */
@@ -157,14 +157,14 @@ int32_t cq_session_register_asset(CQSession* session, uint64_t asset_id, const c
 /* 新增轨道。kind：0 = 视频，1 = 音频。 */
 int32_t cq_session_add_track(CQSession* session, int32_t kind);
 
-/* 新增片段（可撤销 —— 经 CommandHistory）。
+/* 新增片段（可撤销 —— 经 ChqCommandHistory）。
  * 轨道不存在 / 类型不匹配 / 时长非正 / 同轨重叠 → session 线程校验失败。 */
 int32_t cq_session_add_clip(CQSession* session, uint64_t track_id, uint64_t asset_id,
                             int64_t start_value, int32_t start_timescale,
                             int64_t duration_value, int32_t duration_timescale,
                             int64_t source_in_value, int32_t source_in_timescale);
 
-/* ---- 片段编辑：移动 / 裁剪（UIA-005；异步提交，经 CommandHistory 可撤销）----
+/* ---- 片段编辑：移动 / 裁剪（UIA-005；异步提交，经 ChqCommandHistory 可撤销）----
  *
  * 与 add_clip 同一提交语义：Ok = 已入队；校验（片段存在 / duration > 0 /
  * 同轨不重叠）在 session 线程执行 —— 失败表现为版本不推进 + 观察者不回调。
@@ -263,7 +263,7 @@ int32_t cq_media_probe_duration(const char* path, int64_t* out_value,
  * 模型的唯一真源是 CQSession（cq_session_register_asset / add_track / add_clip）。
  * 典型用法：session 装配模型 → cq_preview_create(session) → 每帧 render_frame。
  *
- * 时间一律 RationalTime{value, timescale}（红线 #4，禁止浮点秒）。
+ * 时间一律 ChqRationalTime{value, timescale}（红线 #4，禁止浮点秒）。
  * 本项目网格 timescale = 120000（ADR-0009）。
  *
  * ⚠️ 生命周期：CQPreview **不拥有** CQSession —— 必须 session 先活后死
@@ -350,7 +350,7 @@ int32_t cq_preview_last_timings(const CQPreview* preview, int64_t* out_acquire_n
  *    是必然的数据竞争。渲染与改尺寸一律走 cq_preview_pump_request / _request_resize。
  *
  * 请求合并：请求速率 > 渲染速率时取最新，被覆盖的请求永不渲染（计入 coalesced）。
- * 时刻由墙钟算（PlayerClock），丢帧只让画面少几张，不会让播放变快或变慢。
+ * 时刻由墙钟算（ChqPlayerClock），丢帧只让画面少几张，不会让播放变快或变慢。
  *
  * 消费协议（**必须成对**）：
  *     cq_preview_pump_lock(pump, &tex, &pts_v, &pts_ts, &seq);

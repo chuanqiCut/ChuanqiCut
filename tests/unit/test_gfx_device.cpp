@@ -16,9 +16,9 @@
 #include <cstring>
 #include <vector>
 
-#include "cq/base/status.h"
-#include "cq/gfx/gfx_device.h"
-#include "cq/platform/gfx.h"
+#include "cq/base/chq_status.h"
+#include "cq/gfx/chq_gfx_device.h"
+#include "cq/platform/chq_gfx.h"
 #include "gfx_metal_internal.h"
 
 namespace {
@@ -73,12 +73,12 @@ fragment float4 fs_main(VOut in [[stage_in]],
 )MSL";
 
 // 什么都不画的 client（只验证清屏 pass 执行）
-class EmptyClient final : public cq::IFrameEncoderClient {
+class EmptyClient final : public cq::ChqIFrameEncoderClient {
 public:
-    cq::Status Encode(cq::IGfxEncoder&, const cq::FrameContext&,
-                      const cq::CancelToken&) override {
+    cq::ChqStatus Encode(cq::ChqIGfxEncoder&, const cq::ChqFrameContext&,
+                      const cq::ChqCancelToken&) override {
         ++encode_calls_;
-        return cq::Status::Ok();
+        return cq::ChqStatus::Ok();
     }
     int encode_calls() const { return encode_calls_; }
 
@@ -87,7 +87,7 @@ private:
 };
 
 // 画全屏三角形采样纹理的 client
-class DrawClient final : public cq::IFrameEncoderClient {
+class DrawClient final : public cq::ChqIFrameEncoderClient {
 public:
     DrawClient(cq::PipelineHandle pipeline, cq::BufferHandle vbuf, cq::TextureHandle tex,
                cq::SamplerHandle sampler)
@@ -98,15 +98,15 @@ public:
         vp_x_ = x; vp_y_ = y; vp_w_ = w; vp_h_ = h; has_vp_ = true;
     }
 
-    cq::Status Encode(cq::IGfxEncoder& enc, const cq::FrameContext&,
-                      const cq::CancelToken&) override {
+    cq::ChqStatus Encode(cq::ChqIGfxEncoder& enc, const cq::ChqFrameContext&,
+                      const cq::ChqCancelToken&) override {
         enc.SetPipeline(pipeline_);
         enc.SetVertexBuffer(vbuf_, 0);
         enc.SetTexture(tex_, 0);
         enc.SetSampler(sampler_, 0);
         if (has_vp_) enc.SetViewport(vp_x_, vp_y_, vp_w_, vp_h_);
         enc.Draw(3);
-        return cq::Status::Ok();
+        return cq::ChqStatus::Ok();
     }
 
 private:
@@ -121,11 +121,11 @@ private:
 }  // namespace
 
 int main() {
-    std::printf("=== GFX-002：IGfxDevice 直连 Platform（Metal）===\n");
+    std::printf("=== GFX-002：ChqIGfxDevice 直连 Platform（Metal）===\n");
 
     // ---- Platform 设备 ----
-    cq::GraphicsDeviceDesc dev_desc;
-    cq::PlatformPtr<cq::IGraphicsDevice> platform_dev;
+    cq::ChqGraphicsDeviceDesc dev_desc;
+    cq::ChqPlatformPtr<cq::ChqIGraphicsDevice> platform_dev;
     Check(cq::CreateGraphicsDevice(dev_desc, platform_dev).IsOk(), "Platform CreateGraphicsDevice");
     if (!platform_dev) {
         std::printf("\nPASSED: 0 checks\n");
@@ -133,18 +133,18 @@ int main() {
     }
 
     // ---- GFX 设备（接管 platform_dev 所有权）----
-    cq::IGfxDevice* gfx = nullptr;
+    cq::ChqIGfxDevice* gfx = nullptr;
     Check(cq::CreateGfxDevice(platform_dev, gfx).IsOk(), "CreateGfxDevice");
     Check(gfx != nullptr, "GFX 设备非空");
     Check(platform_dev.get() == nullptr, "Platform 设备所有权已移交给 GFX（避免悬垂）");
     Check(gfx->PlatformDevice() != nullptr, "可取回底层 Platform 设备");
 
     // ---- 离屏渲染目标 ----
-    cq::RenderTargetDesc rt_desc;
+    cq::ChqRenderTargetDesc rt_desc;
     rt_desc.width = 64;
     rt_desc.height = 64;
-    rt_desc.color_format = cq::TextureFormat::kRGBA8;
-    cq::PlatformPtr<cq::IRenderTarget> rt;
+    rt_desc.color_format = cq::ChqTextureFormat::kRGBA8;
+    cq::ChqPlatformPtr<cq::ChqIRenderTarget> rt;
     Check(gfx->CreateRenderTarget(rt_desc, rt).IsOk(), "CreateRenderTarget(64x64)");
 
     // =====================================================================
@@ -152,9 +152,9 @@ int main() {
     // =====================================================================
     std::printf("\n[用例 A] RenderFrame 清屏 + 读回中心像素\n");
     {
-        cq::FrameContext ctx;
+        cq::ChqFrameContext ctx;
         EmptyClient client;
-        cq::CancelToken token;
+        cq::ChqCancelToken token;
         Check(gfx->RenderFrame(ctx, rt.get(), client, token).IsOk(), "RenderFrame(清屏)");
         Check(client.encode_calls() == 1, "client.Encode 被调用一次");
 
@@ -174,24 +174,24 @@ int main() {
     // =====================================================================
     std::printf("\n[用例 B] 采样四色纹理绘制 + 读回四角像素\n");
     {
-        cq::IGraphicsDevice* platform = gfx->PlatformDevice();
+        cq::ChqIGraphicsDevice* platform = gfx->PlatformDevice();
 
         // 纹理
-        cq::TextureDesc td;
-        td.format = cq::TextureFormat::kRGBA8;
+        cq::ChqTextureDesc td;
+        td.format = cq::ChqTextureFormat::kRGBA8;
         td.width = 2;
         td.height = 2;
-        td.usage = cq::TextureUsage::kSampled;
-        cq::PlatformPtr<cq::ITexture> tex;
+        td.usage = cq::ChqTextureUsage::kSampled;
+        cq::ChqPlatformPtr<cq::ChqITexture> tex;
         Check(platform->CreateTexture(td, tex).IsOk(), "CreateTexture(2x2)");
         Check(cq::apple::UploadTextureData(tex.get(), kTex2x2, sizeof(kTex2x2)).IsOk(),
               "UploadTextureData(四色)");
 
         // 顶点缓冲
-        cq::BufferDesc bd;
-        bd.usage = cq::BufferUsage::kVertex;
+        cq::ChqBufferDesc bd;
+        bd.usage = cq::ChqBufferUsage::kVertex;
         bd.size_bytes = sizeof(kVerts);
-        cq::PlatformPtr<cq::IBuffer> vbuf;
+        cq::ChqPlatformPtr<cq::ChqIBuffer> vbuf;
         Check(platform->CreateBuffer(bd, vbuf).IsOk(), "CreateBuffer(vertex)");
         void* mapped = nullptr;
         Check(vbuf->Map(mapped).IsOk(), "Map(vertex)");
@@ -199,42 +199,42 @@ int main() {
         vbuf->Unmap();
 
         // 着色器（Platform-Native MSL）
-        cq::ShaderModuleDesc vmd;
-        vmd.stage = cq::ShaderStage::kVertex;
+        cq::ChqShaderModuleDesc vmd;
+        vmd.stage = cq::ChqShaderStage::kVertex;
         vmd.code = static_cast<const void*>(kVertMSL);
         vmd.code_size = std::strlen(kVertMSL);
         vmd.is_platform_native = true;
-        cq::PlatformPtr<cq::IShaderModule> vs;
+        cq::ChqPlatformPtr<cq::ChqIShaderModule> vs;
         Check(platform->CreateShaderModule(vmd, vs).IsOk(), "CreateShaderModule(vertex)");
 
-        cq::ShaderModuleDesc fmd = vmd;
-        fmd.stage = cq::ShaderStage::kFragment;
+        cq::ChqShaderModuleDesc fmd = vmd;
+        fmd.stage = cq::ChqShaderStage::kFragment;
         fmd.code = static_cast<const void*>(kFragMSL);
         fmd.code_size = std::strlen(kFragMSL);
-        cq::PlatformPtr<cq::IShaderModule> fs;
+        cq::ChqPlatformPtr<cq::ChqIShaderModule> fs;
         Check(platform->CreateShaderModule(fmd, fs).IsOk(), "CreateShaderModule(fragment)");
 
         // 管线
-        cq::PipelineDesc pd;
+        cq::ChqPipelineDesc pd;
         pd.vertex_shader = cq::apple::ToShaderHandle(vs.get());
         pd.fragment_shader = cq::apple::ToShaderHandle(fs.get());
-        pd.target_format = cq::TextureFormat::kRGBA8;
+        pd.target_format = cq::ChqTextureFormat::kRGBA8;
         pd.vertex_layout.stride = 4 * sizeof(float);
         pd.vertex_layout.attr_count = 2;
-        // VertexAttribute{location, offset, format}
+        // ChqVertexAttribute{location, offset, format}
         // ⚠️ location 必须对应 MSL 的 [[attribute(n)]]：uv 是 attribute(1)，
         //    写成 0 会让 CreatePipeline 失败（2026-10-02 实测踩到）。
-        pd.vertex_layout.attrs[0] = cq::VertexAttribute{0, 0, cq::VertexFormat::kFloat32x2};
+        pd.vertex_layout.attrs[0] = cq::ChqVertexAttribute{0, 0, cq::ChqVertexFormat::kFloat32x2};
         pd.vertex_layout.attrs[1] =
-            cq::VertexAttribute{1, 2 * sizeof(float), cq::VertexFormat::kFloat32x2};
-        cq::PlatformPtr<cq::IPipeline> pipeline;
+            cq::ChqVertexAttribute{1, 2 * sizeof(float), cq::ChqVertexFormat::kFloat32x2};
+        cq::ChqPlatformPtr<cq::ChqIPipeline> pipeline;
         Check(platform->CreatePipeline(pd, pipeline).IsOk(), "CreatePipeline");
 
         // 采样器
-        cq::SamplerDesc sd;
+        cq::ChqSamplerDesc sd;
         sd.linear_filter = false;  // 最近邻，四色要能明确区分
         sd.clamp_to_edge = true;
-        cq::PlatformPtr<cq::ISampler> sampler;
+        cq::ChqPlatformPtr<cq::ChqISampler> sampler;
         Check(platform->CreateSampler(sd, sampler).IsOk(), "CreateSampler(nearest)");
 
         if (pipeline && sampler && tex && vbuf) {
@@ -242,8 +242,8 @@ int main() {
                               cq::apple::ToBufferHandle(vbuf.get()),
                               cq::apple::ToTextureHandle(tex.get()),
                               cq::apple::ToSamplerHandle(sampler.get()));
-            cq::FrameContext ctx;
-            cq::CancelToken token;
+            cq::ChqFrameContext ctx;
+            cq::ChqCancelToken token;
             Check(gfx->RenderFrame(ctx, rt.get(), client, token).IsOk(), "RenderFrame(绘制)");
 
             std::vector<uint8_t> px(64 * 64 * 4, 0);
@@ -275,8 +275,8 @@ int main() {
                                      cq::apple::ToTextureHandle(tex.get()),
                                      cq::apple::ToSamplerHandle(sampler.get()));
                 vp_client.UseViewport(16.0f, 16.0f, 32.0f, 32.0f);
-                cq::FrameContext ctx2;
-                cq::CancelToken token2;
+                cq::ChqFrameContext ctx2;
+                cq::ChqCancelToken token2;
                 Check(gfx->RenderFrame(ctx2, rt.get(), vp_client, token2).IsOk(),
                       "RenderFrame(视口绘制)");
                 std::vector<uint8_t> px2(64 * 64 * 4, 0);

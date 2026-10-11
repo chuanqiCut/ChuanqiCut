@@ -3,7 +3,7 @@
 // 硬验收（任务卡）：用真实 MP4 验证 demux 正确，而非仅"调用成功"。
 //   * 打开 gf_1080p_h264.mp4，断言流数量=1、codec=H.264、尺寸=1920x1080。
 //   * 总帧数 = 150（对照 tests/golden/manifest.toml 真值）。
-//   * 时长与 manifest 一致（用 RationalTime，转秒仅打印）。
+//   * 时长与 manifest 一致（用 ChqRationalTime，转秒仅打印）。
 //   * 连续 ReadPacket 读到包且 pts 单调递增。
 //   * Seek 到中间某时间后再读，pts 从该处继续（非从头）。
 // 所有真实数字打印出来（含首末 pts、seek 后 pts）。
@@ -16,9 +16,9 @@
 #include <string>
 #include <vector>
 
-#include "cq/base/status.h"
-#include "cq/base/rational_time.h"
-#include "cq/platform/media.h"
+#include "cq/base/chq_status.h"
+#include "cq/base/chq_rational_time.h"
+#include "cq/platform/chq_media.h"
 
 #ifndef CQ_SOURCE_DIR
 #define CQ_SOURCE_DIR "."
@@ -39,7 +39,7 @@ void Check(bool cond, const char* msg) {
     }
 }
 
-std::string RationalStr(const cq::RationalTime& t) {
+std::string RationalStr(const cq::ChqRationalTime& t) {
     char buf[64];
     std::snprintf(buf, sizeof(buf), "v=%lld/ts=%d (%.6fs)",
                   static_cast<long long>(t.value), static_cast<int>(t.timescale),
@@ -58,12 +58,12 @@ int main() {
         std::string(CQ_SOURCE_DIR) + "/tests/golden/frames/gf_1080p_h264.mp4";
     std::printf("样本: %s\n", path.c_str());
 
-    cq::MediaSource src;
+    cq::ChqMediaSource src;
     src.path = path.c_str();
     src.path_len = path.size();
 
-    cq::PlatformPtr<cq::IMediaDemuxer> demuxer;
-    cq::Status s = cq::CreateMediaDemuxer(src, demuxer);
+    cq::ChqPlatformPtr<cq::ChqIMediaDemuxer> demuxer;
+    cq::ChqStatus s = cq::CreateMediaDemuxer(src, demuxer);
     Check(s.IsOk() && demuxer, "CreateMediaDemuxer 打开成功");
     if (!demuxer) {
         std::printf("\n无法打开 demuxer，用例终止。\n");
@@ -75,18 +75,18 @@ int main() {
     std::printf("\n[流信息] 流数量 = %d\n", nstreams);
     Check(nstreams == 1, "流数量 = 1（单视频轨，对照 manifest）");
 
-    cq::StreamInfo info{};
+    cq::ChqStreamInfo info{};
     s = demuxer->GetStreamInfo(0, info);
     Check(s.IsOk(), "GetStreamInfo(0) 成功");
     std::printf("  stream[0]: type=%d codec=%d %ux%u\n",
                 static_cast<int>(info.type), static_cast<int>(info.codec),
                 info.width, info.height);
-    Check(info.type == cq::MediaType::kVideo, "stream[0] 是视频");
-    Check(info.codec == cq::CodecId::kH264, "codec = H.264");
+    Check(info.type == cq::ChqMediaType::kVideo, "stream[0] 是视频");
+    Check(info.codec == cq::ChqCodecId::kH264, "codec = H.264");
     Check(info.width == 1920 && info.height == 1080, "尺寸 = 1920x1080");
 
     // ---- 时长 ----
-    cq::RationalTime dur{0, 1};
+    cq::ChqRationalTime dur{0, 1};
     s = demuxer->GetDuration(dur);
     Check(s.IsOk(), "GetDuration 成功");
     std::printf("  时长 = %s，约 %.4f s（manifest: 5.0s / 150帧@30fps）\n",
@@ -97,19 +97,19 @@ int main() {
 
     // ---- 顺序读取全部包，统计帧数 + pts 单调性 ----
     std::printf("\n[顺序读取] 从开头读全部包\n");
-    std::vector<cq::RationalTime> pts_list;
-    cq::RationalTime first_pts{0, 1};
-    cq::RationalTime prev_pts{0, 1};
+    std::vector<cq::ChqRationalTime> pts_list;
+    cq::ChqRationalTime first_pts{0, 1};
+    cq::ChqRationalTime prev_pts{0, 1};
     bool monotonic = true;
     int keyframe_count = 0;
     int total = 0;
-    cq::MediaPacket pkt{};
-    cq::CancelToken no_cancel;
+    cq::ChqMediaPacket pkt{};
+    cq::ChqCancelToken no_cancel;
     int zero_size = 0;
     int dup_pts = 0;
     while (true) {
-        cq::Status r = demuxer->ReadPacket(pkt);
-        if (r.code == cq::StatusCode::kIoNotFound) break;  // 流末尾，非错误
+        cq::ChqStatus r = demuxer->ReadPacket(pkt);
+        if (r.code == cq::ChqStatusCode::kIoNotFound) break;  // 流末尾，非错误
         if (!r.IsOk()) {
             std::printf("  ReadPacket 出错: %s\n", cq::StatusToString(r.code));
             break;
@@ -144,15 +144,15 @@ int main() {
 
     // ---- Seek 到中间再读，pts 应从中段继续（非从头）----
     std::printf("\n[Seek 验证] Seek 到 2.5s（=300000/120000）后再读\n");
-    cq::RationalTime seek_t{300000, 120000};  // 2.5s
+    cq::ChqRationalTime seek_t{300000, 120000};  // 2.5s
     s = demuxer->Seek(seek_t, no_cancel);
     Check(s.IsOk(), "Seek(2.5s) 成功");
     // 读若干包，确认首 pts 落在区间 [2.5s, ~2.5s+1帧] 附近（AVFoundation 会落到关键帧）
     bool after_seek_ok = false;
-    cq::RationalTime seek_first{0, 1};
+    cq::ChqRationalTime seek_first{0, 1};
     for (int i = 0; i < 5; ++i) {
-        cq::Status r = demuxer->ReadPacket(pkt);
-        if (r.code == cq::StatusCode::kIoNotFound) break;
+        cq::ChqStatus r = demuxer->ReadPacket(pkt);
+        if (r.code == cq::ChqStatusCode::kIoNotFound) break;
         if (!r.IsOk()) break;
         if (i == 0) seek_first = pkt.pts;
         std::printf("  seek 后第 %d 包: pts=%s keyframe=%d\n", i,
@@ -160,14 +160,14 @@ int main() {
     }
     std::printf("  seek 后首包 pts = %s\n", RationalStr(seek_first).c_str());
     // 关键验收：不是从头（pts 远大于 0），即 seek 生效。
-    after_seek_ok = (cq::CompareRational(seek_first, cq::RationalTime{0, 1}) > 0) &&
+    after_seek_ok = (cq::CompareRational(seek_first, cq::ChqRationalTime{0, 1}) > 0) &&
                     (cq::CompareRational(seek_first, seek_t) >= 0 ||
                      cq::CompareRational(seek_first, seek_t) > -4000);
     // seek 后首包 pts 应 >= 0 且接近 2.5s（可能被夹到最近关键帧，略小于 2.5s 也合理，
     // 只要不是从头读取的位置）。用更宽松判据：明显 > 0 且 >= 2.0s。
-    Check(cq::CompareRational(seek_first, cq::RationalTime{0, 1}) > 0,
+    Check(cq::CompareRational(seek_first, cq::ChqRationalTime{0, 1}) > 0,
           "seek 后首包 pts > 0（不是从头）");
-    Check(cq::CompareRational(seek_first, cq::RationalTime{240000, 120000}) >= 0,
+    Check(cq::CompareRational(seek_first, cq::ChqRationalTime{240000, 120000}) >= 0,
           "seek 后首包 pts >= 2.0s（确实跳到中段）");
     (void)after_seek_ok;
 

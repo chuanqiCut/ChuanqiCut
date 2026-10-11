@@ -4,7 +4,7 @@
 //   tests/golden/frames/gf_1080p_h264_long_gop_bframes.mp4
 //   （manifest: fps=30, frame_count=300, gop_size=60, bframes=3）。
 //
-// 本测试验证的组件 = MEDIA-020 SystemFrameProvider 的 kExact 编排 + PALA-010 解封装/
+// 本测试验证的组件 = MEDIA-020 ChqSystemFrameProvider 的 kExact 编排 + PALA-010 解封装/
 // 关键帧判定/Seek 吸附（修复后）。修复后「是否关键帧」与「kKeyframeBefore 是否回退关键帧」
 // 均改回用 **demuxer 自己的 is_keyframe 标志** 做断言（不再依赖 ffprobe 真值兜底）。
 //
@@ -20,10 +20,10 @@
 #include <set>
 #include <vector>
 
-#include "cq/base/status.h"
-#include "cq/base/rational_time.h"
-#include "cq/media/system_frame_provider.h"
-#include "cq/platform/media.h"
+#include "cq/base/chq_status.h"
+#include "cq/base/chq_rational_time.h"
+#include "cq/media/chq_system_frame_provider.h"
+#include "cq/platform/chq_media.h"
 
 #ifndef CQ_SOURCE_DIR
 #define CQ_SOURCE_DIR "."
@@ -44,7 +44,7 @@ void Check(bool cond, const char* msg) {
     }
 }
 
-const char* Rt(const cq::RationalTime& t) {
+const char* Rt(const cq::ChqRationalTime& t) {
     static char buf[8][64];
     static int slot = 0;
     char* b = buf[slot++ % 8];
@@ -72,22 +72,22 @@ const double kBTargetSec[] = {0.100000, 2.100000, 4.100000};
 //   B 帧被喂入前不会越前显示；从而把真实 demuxer 的解码序包还原成显示序。刻意暴露并
 //   正确消化「解码序 ≠ 显示序」分离。
 // ---------------------------------------------------------------------------
-class ReorderingMockDecoder : public cq::IFrameDecoder {
+class ReorderingMockDecoder : public cq::ChqIFrameDecoder {
 public:
     explicit ReorderingMockDecoder(int64_t frame_ticks) : dt_(frame_ticks) {}
 
-    cq::Status Open(const cq::StreamInfo&) override { return cq::Status::Ok(); }
+    cq::ChqStatus Open(const cq::ChqStreamInfo&) override { return cq::ChqStatus::Ok(); }
 
-    cq::Status Feed(const cq::MediaPacket& pkt) override {
+    cq::ChqStatus Feed(const cq::ChqMediaPacket& pkt) override {
         int64_t p = pkt.pts.value;  // demuxer 已 Rescale 到 120000 网格
         buf_.push_back(F{p, pkt.is_keyframe});
         received_.insert(p);
         if (min_pts_ == kUnset || p < min_pts_) min_pts_ = p;
-        return cq::Status::Ok();
+        return cq::ChqStatus::Ok();
     }
 
-    cq::Status PopFrame(cq::MediaFrame& out) override {
-        if (buf_.empty()) return cq::Status{cq::StatusCode::kIoNotFound};
+    cq::ChqStatus PopFrame(cq::ChqMediaFrame& out) override {
+        if (buf_.empty()) return cq::ChqStatus{cq::ChqStatusCode::kIoNotFound};
         size_t cand = 0;
         for (size_t i = 1; i < buf_.size(); ++i) {
             if (buf_[i].pts < buf_[cand].pts) cand = i;
@@ -97,19 +97,19 @@ public:
             int64_t steps = (X - min_pts_) / dt_;
             for (int64_t k = 0; k <= steps; ++k) {
                 if (received_.count(min_pts_ + k * dt_) == 0) {
-                    return cq::Status{cq::StatusCode::kIoNotFound};  // 还有更小的帧未到
+                    return cq::ChqStatus{cq::ChqStatusCode::kIoNotFound};  // 还有更小的帧未到
                 }
             }
         }
-        out = cq::MediaFrame{};
-        out.type = cq::MediaType::kVideo;
-        out.video.pts = cq::RationalTime{X, kTs};
-        out.video.duration = cq::RationalTime{dt_, kTs};
+        out = cq::ChqMediaFrame{};
+        out.type = cq::ChqMediaType::kVideo;
+        out.video.pts = cq::ChqRationalTime{X, kTs};
+        out.video.duration = cq::ChqRationalTime{dt_, kTs};
         out.video.width = 1920;
         out.video.height = 1080;
-        out.video.pixel_format = cq::PixelFormat::kYUV420SemiPlanar;
+        out.video.pixel_format = cq::ChqPixelFormat::kYUV420SemiPlanar;
         buf_.erase(buf_.begin() + static_cast<long>(cand));
-        return cq::Status::Ok();
+        return cq::ChqStatus::Ok();
     }
 
     void Flush() override {
@@ -149,12 +149,12 @@ int main() {
 
     const std::string path =
         std::string(CQ_SOURCE_DIR) + "/tests/golden/frames/gf_1080p_h264_long_gop_bframes.mp4";
-    cq::MediaSource src;
+    cq::ChqMediaSource src;
     src.path = path.c_str();
     src.path_len = path.size();
 
-    cq::PlatformPtr<cq::IMediaDemuxer> demuxer;
-    cq::Status s = cq::CreateMediaDemuxer(src, demuxer);
+    cq::ChqPlatformPtr<cq::ChqIMediaDemuxer> demuxer;
+    cq::ChqStatus s = cq::CreateMediaDemuxer(src, demuxer);
     Check(s.IsOk() && demuxer, "CreateMediaDemuxer（真实 B 帧文件）打开成功");
     if (!demuxer) {
         std::printf("\n真实 demuxer 打开失败，用例终止。\n");
@@ -168,17 +168,17 @@ int main() {
     int64_t prev_raw_pts = -1;
     bool raw_monotonic = true;
     int total = 0;
-    cq::MediaPacket pkt{};
-    cq::CancelToken no_cancel;
+    cq::ChqMediaPacket pkt{};
+    cq::ChqCancelToken no_cancel;
     while (true) {
-        cq::Status r = demuxer->ReadPacket(pkt);
-        if (r.code == cq::StatusCode::kIoNotFound) break;
+        cq::ChqStatus r = demuxer->ReadPacket(pkt);
+        if (r.code == cq::ChqStatusCode::kIoNotFound) break;
         if (!r.IsOk()) {
             std::printf("  ReadPacket 错误: %s\n", cq::StatusToString(r.code));
             break;
         }
         if (total > 0 &&
-            cq::CompareRational(pkt.pts, cq::RationalTime{prev_raw_pts, kTs}) < 0) {
+            cq::CompareRational(pkt.pts, cq::ChqRationalTime{prev_raw_pts, kTs}) < 0) {
             raw_monotonic = false;  // 解码序下 B 帧会让 pts 回退
         }
         prev_raw_pts = pkt.pts.value;
@@ -197,15 +197,15 @@ int main() {
     // ---- 解码序→显示序重排正确性：把所有包喂入重排 MockDecoder，弹出应严格递增 ----
     {
         ReorderingMockDecoder dec(kFrameTicks);
-        dec.Open(cq::StreamInfo{});
+        dec.Open(cq::ChqStreamInfo{});
         for (const PktInfo& p : all_pkts) {
-            cq::MediaPacket mp{};
-            mp.pts = cq::RationalTime{p.pts, kTs};
+            cq::ChqMediaPacket mp{};
+            mp.pts = cq::ChqRationalTime{p.pts, kTs};
             mp.is_keyframe = p.kf;
             dec.Feed(mp);
         }
         std::vector<int64_t> out_pts;
-        cq::MediaFrame f{};
+        cq::ChqMediaFrame f{};
         while (dec.PopFrame(f).IsOk()) out_pts.push_back(f.video.pts.value);
         bool disp_mono = true;
         for (size_t i = 1; i < out_pts.size(); ++i) {
@@ -256,16 +256,16 @@ int main() {
     ReorderingMockDecoder decode(kFrameTicks);
     auto provider = cq::CreateSystemFrameProvider(std::move(demuxer), &decode);
     s = provider->Open(src);
-    Check(s.IsOk(), "SystemFrameProvider.Open（真实 demux + 重排 decoder）");
+    Check(s.IsOk(), "ChqSystemFrameProvider.Open（真实 demux + 重排 decoder）");
 
     for (double bt : kBTargetSec) {
         int64_t target = static_cast<int64_t>(bt * kTs + 0.5);  // B 帧目标 ticks
-        cq::FrameRequest req;
-        req.at = cq::RationalTime{target, kTs};
-        req.policy = cq::SeekPolicy::kExact;
-        cq::MediaFrame f{};
+        cq::ChqFrameRequest req;
+        req.at = cq::ChqRationalTime{target, kTs};
+        req.policy = cq::ChqSeekPolicy::kExact;
+        cq::ChqMediaFrame f{};
         s = provider->AcquireFrame(req, f, no_cancel);
-        bool ok = s.IsOk() && f.type == cq::MediaType::kVideo;
+        bool ok = s.IsOk() && f.type == cq::ChqMediaType::kVideo;
         bool pts_ok = ok && (f.video.pts.value >= target - kFrameTicks &&
                              f.video.pts.value <= target + kFrameTicks);
         // 「不是关键帧」用 demuxer 自己的 is_keyframe 标志集合核对（修复后已可靠）。
@@ -283,7 +283,7 @@ int main() {
     std::printf("\n[验收 2 — kKeyframeBefore 返回 demuxer 关键帧（修复后）]\n");
     for (double bt : kBTargetSec) {
         int64_t target = static_cast<int64_t>(bt * kTs + 0.5);
-        cq::PlatformPtr<cq::IMediaDemuxer> d2;
+        cq::ChqPlatformPtr<cq::ChqIMediaDemuxer> d2;
         cq::CreateMediaDemuxer(src, d2);
         ReorderingMockDecoder dec2(kFrameTicks);
         auto p2 = cq::CreateSystemFrameProvider(std::move(d2), &dec2);
@@ -293,11 +293,11 @@ int main() {
         for (int64_t k : demux_kf_pts) {
             if (k <= target && k > exp_kf) exp_kf = k;
         }
-        cq::FrameRequest req;
-        req.at = cq::RationalTime{target, kTs};
-        req.policy = cq::SeekPolicy::kKeyframeBefore;
-        cq::MediaFrame fk{};
-        cq::Status sk = p2->AcquireFrame(req, fk, no_cancel);
+        cq::ChqFrameRequest req;
+        req.at = cq::ChqRationalTime{target, kTs};
+        req.policy = cq::ChqSeekPolicy::kKeyframeBefore;
+        cq::ChqMediaFrame fk{};
+        cq::ChqStatus sk = p2->AcquireFrame(req, fk, no_cancel);
         bool match = sk.IsOk() && (fk.video.pts.value >= exp_kf - kFrameTicks &&
                                    fk.video.pts.value <= exp_kf + kFrameTicks);
         std::printf("  t=%.4fs 期望关键帧=%lld → 实际返回 pts=%s（命中=%s）\n",

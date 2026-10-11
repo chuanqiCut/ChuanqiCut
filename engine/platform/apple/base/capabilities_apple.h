@@ -7,7 +7,7 @@
 #ifndef CQ_PLATFORM_APPLE_CAPABILITIES_APPLE_H_
 #define CQ_PLATFORM_APPLE_CAPABILITIES_APPLE_H_
 
-#include "cq/base/status.h"
+#include "cq/base/chq_status.h"
 
 namespace cq {
 namespace apple {
@@ -17,7 +17,7 @@ namespace apple {
 // 后端本体是进程生命周期内有效的静态实例，满足契约「生命周期须长于查询调用」
 // 且不引入所有权歧义（内核侧不接管所有权，见 capabilities.cpp）。
 // 可重复调用（幂等）。
-Status InstallCapabilities();
+ChqStatus InstallCapabilities();
 
 }  // namespace apple
 }  // namespace cq

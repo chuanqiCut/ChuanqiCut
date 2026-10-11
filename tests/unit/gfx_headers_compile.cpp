@@ -5,9 +5,9 @@
 //   2. 证明零平台类型：所有跨层资源都是 Platform 的 opaque 指针句柄，编译单元内不出现
 //      任何平台类型（由 check_platform_headers.py 门禁 + 评审兜底，本 TU 固化
 //      「接口只含 opaque 指针」这一事实）。
-//   3. 证明分层边界：RenderGraph 将只依赖 IGfxDevice / IGfxEncoder / FrameContext，
-//      IGfxEncoder 继承 Platform IPlatformResource（编码器抽象位于 GFX 层）。
-//   4. 证明统一使用 base 层类型：时间 RationalTime、错误 Status、长任务 CancelToken。
+//   3. 证明分层边界：RenderGraph 将只依赖 ChqIGfxDevice / ChqIGfxEncoder / ChqFrameContext，
+//      ChqIGfxEncoder 继承 Platform ChqIPlatformResource（编码器抽象位于 GFX 层）。
+//   4. 证明统一使用 base 层类型：时间 ChqRationalTime、错误 ChqStatus、长任务 ChqCancelToken。
 //
 // 注册为 ctest 用例（tests/CMakeLists.txt）。仅包含头文件 + static_assert，不链接实现。
 
@@ -15,15 +15,15 @@
 #include <type_traits>
 
 // —— GFX 层头（聚合 + 各领域）——
-#include "cq/gfx/gfx.h"
-#include "cq/gfx/gfx_device.h"
+#include "cq/gfx/chq_gfx.h"
+#include "cq/gfx/chq_gfx_device.h"
 
 // Platform 与 base（GFX 之下/之上依赖，验证跨层 include 顺序无关）。
-#include "cq/platform/common.h"
-#include "cq/platform/gfx.h"
-#include "cq/base/rational_time.h"
-#include "cq/base/status.h"
-#include "cq/base/concurrency.h"
+#include "cq/platform/chq_common.h"
+#include "cq/platform/chq_gfx.h"
+#include "cq/base/chq_rational_time.h"
+#include "cq/base/chq_status.h"
+#include "cq/base/chq_concurrency.h"
 
 namespace cq {
 namespace {
@@ -35,55 +35,55 @@ static_assert(std::is_pointer_v<PipelineHandle>, "PipelineHandle must be opaque 
 static_assert(sizeof(NativeImageHandle) == sizeof(void*),
               "NativeImageHandle must be pointer-sized (no platform struct leaked)");
 
-// ---- 2. 分层边界：IGfxEncoder 位于 GFX 层，继承 Platform IPlatformResource ----
-static_assert(std::is_base_of_v<IPlatformResource, IGfxEncoder>,
-              "IGfxEncoder must be a Platform resource (encoder abstraction lives in GFX layer)");
+// ---- 2. 分层边界：ChqIGfxEncoder 位于 GFX 层，继承 Platform ChqIPlatformResource ----
+static_assert(std::is_base_of_v<ChqIPlatformResource, ChqIGfxEncoder>,
+              "ChqIGfxEncoder must be a Platform resource (encoder abstraction lives in GFX layer)");
 
 // ---- 3. 抽象接口不可默认构造（纯虚），强制由实现层落地 ----
-static_assert(!std::is_default_constructible_v<IGfxDevice>,
-              "IGfxDevice is abstract, implemented in core/src/gfx later");
-static_assert(!std::is_default_constructible_v<IGfxEncoder>,
-              "IGfxEncoder is abstract");
-static_assert(!std::is_default_constructible_v<IFrameEncoderClient>,
-              "IFrameEncoderClient is abstract (RenderGraph implements it)");
-static_assert(!std::is_default_constructible_v<ITexturePool>,
-              "ITexturePool is abstract (GFX-002 implements it)");
+static_assert(!std::is_default_constructible_v<ChqIGfxDevice>,
+              "ChqIGfxDevice is abstract, implemented in core/src/gfx later");
+static_assert(!std::is_default_constructible_v<ChqIGfxEncoder>,
+              "ChqIGfxEncoder is abstract");
+static_assert(!std::is_default_constructible_v<ChqIFrameEncoderClient>,
+              "ChqIFrameEncoderClient is abstract (RenderGraph implements it)");
+static_assert(!std::is_default_constructible_v<ChqITexturePool>,
+              "ChqITexturePool is abstract (GFX-002 implements it)");
 
-// ---- 4. 时间一律 RationalTime（FrameContext.pts 用 RationalTime，禁止浮点秒）----
-static_assert(std::is_same_v<RationalTime, decltype(FrameContext{}.pts)>,
-              "FrameContext.pts must be RationalTime, not double seconds");
+// ---- 4. 时间一律 ChqRationalTime（ChqFrameContext.pts 用 ChqRationalTime，禁止浮点秒）----
+static_assert(std::is_same_v<ChqRationalTime, decltype(ChqFrameContext{}.pts)>,
+              "ChqFrameContext.pts must be ChqRationalTime, not double seconds");
 
-// ---- 5. 错误一律 Status（无异常路径）----
-static_assert(std::is_same_v<Status, decltype(std::declval<IGfxDevice>().CreateRenderTarget(
-                  std::declval<const RenderTargetDesc&>(),
-                  std::declval<PlatformPtr<IRenderTarget>&>()))>,
-              "All fallible GFX ops return Status");
+// ---- 5. 错误一律 ChqStatus（无异常路径）----
+static_assert(std::is_same_v<ChqStatus, decltype(std::declval<ChqIGfxDevice>().CreateRenderTarget(
+                  std::declval<const ChqRenderTargetDesc&>(),
+                  std::declval<ChqPlatformPtr<ChqIRenderTarget>&>()))>,
+              "All fallible GFX ops return ChqStatus");
 
-// ---- 6. 长任务接口接受 CancelToken（协作取消，kCancelled 非错误）----
-static_assert(std::is_same_v<Status (IGfxDevice::*)(const FrameContext&, IRenderTarget*,
-                  IFrameEncoderClient&, const CancelToken&),
-                  decltype(&IGfxDevice::RenderFrame)>,
-              "RenderFrame(FrameContext, target, client, CancelToken) signature must match");
+// ---- 6. 长任务接口接受 ChqCancelToken（协作取消，kCancelled 非错误）----
+static_assert(std::is_same_v<ChqStatus (ChqIGfxDevice::*)(const ChqFrameContext&, ChqIRenderTarget*,
+                  ChqIFrameEncoderClient&, const ChqCancelToken&),
+                  decltype(&ChqIGfxDevice::RenderFrame)>,
+              "RenderFrame(ChqFrameContext, target, client, ChqCancelToken) signature must match");
 
 // ---- 7. 底层 Platform 设备经 PlatformDevice() 暴露（GFX 持有 Platform 设备，不重造）----
-static_assert(std::is_same_v<IGraphicsDevice* (IGfxDevice::*)(),
-                  decltype(&IGfxDevice::PlatformDevice)>,
-              "PlatformDevice() must surface the underlying Platform IGraphicsDevice");
+static_assert(std::is_same_v<ChqIGraphicsDevice* (ChqIGfxDevice::*)(),
+                  decltype(&ChqIGfxDevice::PlatformDevice)>,
+              "PlatformDevice() must surface the underlying Platform ChqIGraphicsDevice");
 
-// ---- 8. 原生图像导入接入点委托 Platform INativeImageImporter（GFX-003 位置）----
-static_assert(std::is_same_v<Status (IGfxDevice::*)(PlatformPtr<INativeImageImporter>&),
-                  decltype(&IGfxDevice::CreateNativeImageImporter)>,
-              "CreateNativeImageImporter must delegate to Platform INativeImageImporter");
+// ---- 8. 原生图像导入接入点委托 Platform ChqINativeImageImporter（GFX-003 位置）----
+static_assert(std::is_same_v<ChqStatus (ChqIGfxDevice::*)(ChqPlatformPtr<ChqINativeImageImporter>&),
+                  decltype(&ChqIGfxDevice::CreateNativeImageImporter)>,
+              "CreateNativeImageImporter must delegate to Platform ChqINativeImageImporter");
 
 // ---- 9. 纹理池钩子存在（GFX-002 接入点）----
-static_assert(std::is_same_v<void (IGfxDevice::*)(ITexturePool*),
-                  decltype(&IGfxDevice::SetTexturePool)>,
-              "SetTexturePool must accept ITexturePool* (GFX-002 hook)");
+static_assert(std::is_same_v<void (ChqIGfxDevice::*)(ChqITexturePool*),
+                  decltype(&ChqIGfxDevice::SetTexturePool)>,
+              "SetTexturePool must accept ChqITexturePool* (GFX-002 hook)");
 
-// ---- 10. 工厂签名：用 Platform 设备构造 GFX 门面，返回跨平台 IGfxDevice* ----
-static_assert(std::is_same_v<Status (*)(PlatformPtr<IGraphicsDevice>&, IGfxDevice*&),
+// ---- 10. 工厂签名：用 Platform 设备构造 GFX 门面，返回跨平台 ChqIGfxDevice* ----
+static_assert(std::is_same_v<ChqStatus (*)(ChqPlatformPtr<ChqIGraphicsDevice>&, ChqIGfxDevice*&),
                   decltype(&CreateGfxDevice)>,
-              "CreateGfxDevice(PlatformPtr<IGraphicsDevice>&, IGfxDevice*&) signature must match");
+              "CreateGfxDevice(ChqPlatformPtr<ChqIGraphicsDevice>&, ChqIGfxDevice*&) signature must match");
 
 }  // namespace
 }  // namespace cq

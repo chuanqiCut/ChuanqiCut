@@ -326,6 +326,7 @@ Debug 43/43、Release 43/43（本机门禁 PASS=9 / FAIL=0）。
 | Task ID | 标题 | 状态 |
 |---|---|---|
 | CORE-001~010 | 内核基础各卡 | 状态见 BACKLOG §2（现状口径：core 45/45 双配置） |
+| INFRA-025 | 内核 Chq 前缀改名（ADR-0039，189 类型 + 83 文件） | ✅ 2026-10-11（本机，模块级验证过） |
 
 ### 测试与门禁记录（阶段批）
 
@@ -333,6 +334,7 @@ Debug 43/43、Release 43/43（本机门禁 PASS=9 / FAIL=0）。
 |---|---|---|
 | 2026-10-07 | 全量门禁 | PASS=9 / FAIL=0 / SKIP=0（core-dbg 45/45、core-rel 45/45） |
 | 2026-10-09 | INFRA-024 目录共置 + 双 Pod 拆分 | **全量 ctest 46/46**（Debug；机器 macOS 26.7.1 / AppleClang 21 / cmake 4.4.3）。头文件由 `core/include/cq/**` 迁到 `core/cq/**` 与实现共置，CMake include root 改 `engine/core`，`#include "cq/..."` 不变；`platform_header_gate` 加契约目录白名单后 38 头 0 违规（P95）。**Release 与双壳构建未跑** |
+| 2026-10-11 | INFRA-025 内核 Chq 前缀改名（模块级） | `build_core.sh --platform=apple` **Debug + Release 双配置 -Werror 全过**；**ctest 48/48**（154.5s，含 test_c_abi*.c 纯 C ABI 三卡零改动全绿）；check_platform_headers **41 头 0 违规**；golden **21/21** 齐备（python3.12）。`cq_sdk.h` 声明区 diff=0。Swift 窄检与 pod install 布局未跑（bindings 在 ADR-0038 在途）→ 池 [13] |
 
 ### 调研 · 决策 · 池指针
 

@@ -1,4 +1,4 @@
-// ChuanqiCut — MEDIA-020 SystemFrameProvider 编排逻辑单测（Mock 驱动）
+// ChuanqiCut — MEDIA-020 ChqSystemFrameProvider 编排逻辑单测（Mock 驱动）
 //
 // 不依赖任何真实解码器 / 平台后端。用 MockDemuxer + MockDecoder 注入一个带 B 帧的
 // 小 GOP（I P B B，解码序 dts 0,1,2,3；显示序 pts 0,1,2,3），重点验证：
@@ -17,11 +17,11 @@
 #include <set>
 #include <vector>
 
-#include "cq/base/status.h"
-#include "cq/base/rational_time.h"
-#include "cq/media/system_frame_provider.h"
-#include "cq/platform/common.h"
-#include "cq/platform/media.h"
+#include "cq/base/chq_status.h"
+#include "cq/base/chq_rational_time.h"
+#include "cq/media/chq_system_frame_provider.h"
+#include "cq/platform/chq_common.h"
+#include "cq/platform/chq_media.h"
 
 namespace {
 
@@ -42,15 +42,15 @@ void Check(bool cond, const char* msg) {
 // 与项目 120000 网格逻辑等价，算法正确性不受 timescale 影响）。
 constexpr int32_t kTs = 4;
 
-bool Contains(const cq::MediaFrame& f, const cq::RationalTime& t) {
-    if (f.type != cq::MediaType::kVideo) return false;
-    cq::RationalTime end{0, 1};
-    cq::Status s = cq::AddRational(f.video.pts, f.video.duration, end);
+bool Contains(const cq::ChqMediaFrame& f, const cq::ChqRationalTime& t) {
+    if (f.type != cq::ChqMediaType::kVideo) return false;
+    cq::ChqRationalTime end{0, 1};
+    cq::ChqStatus s = cq::AddRational(f.video.pts, f.video.duration, end);
     if (!s.IsOk()) return false;
     return cq::CompareRational(f.video.pts, t) <= 0 && cq::CompareRational(t, end) < 0;
 }
 
-const char* Rt(const cq::RationalTime& t) {
+const char* Rt(const cq::ChqRationalTime& t) {
     static char buf[8][64];
     static int slot = 0;
     char* b = buf[slot++ % 8];
@@ -62,45 +62,45 @@ const char* Rt(const cq::RationalTime& t) {
 // ---------------------------------------------------------------------------
 // MockDemuxer：单 GOP、解码序返回包，Seek 落到 <= t 最近关键帧。
 // ---------------------------------------------------------------------------
-class MockDemuxer : public cq::IMediaDemuxer {
+class MockDemuxer : public cq::ChqIMediaDemuxer {
 public:
     struct GP { int64_t dts, pts; bool kf; };
     explicit MockDemuxer(std::vector<GP> gop) : gop_(std::move(gop)) {}
 
     void Destroy() override { delete this; }
-    cq::Status Open(const cq::MediaSource&) override { idx_ = 0; return cq::Status::Ok(); }
-    cq::Status GetDuration(cq::RationalTime& d) const override {
-        d = cq::RationalTime{static_cast<int64_t>(gop_.size()), kTs};
-        return cq::Status::Ok();
+    cq::ChqStatus Open(const cq::ChqMediaSource&) override { idx_ = 0; return cq::ChqStatus::Ok(); }
+    cq::ChqStatus GetDuration(cq::ChqRationalTime& d) const override {
+        d = cq::ChqRationalTime{static_cast<int64_t>(gop_.size()), kTs};
+        return cq::ChqStatus::Ok();
     }
     int32_t GetStreamCount() const override { return 1; }
-    cq::Status GetStreamInfo(int32_t, cq::StreamInfo& o) const override {
-        o = cq::StreamInfo{};
-        o.type = cq::MediaType::kVideo;
-        o.codec = cq::CodecId::kH264;
+    cq::ChqStatus GetStreamInfo(int32_t, cq::ChqStreamInfo& o) const override {
+        o = cq::ChqStreamInfo{};
+        o.type = cq::ChqMediaType::kVideo;
+        o.codec = cq::ChqCodecId::kH264;
         o.width = 64;
         o.height = 36;
-        o.time_base = cq::RationalTime{1, kTs};
-        return cq::Status::Ok();
+        o.time_base = cq::ChqRationalTime{1, kTs};
+        return cq::ChqStatus::Ok();
     }
-    cq::Status Seek(const cq::RationalTime& t, const cq::CancelToken&) override {
+    cq::ChqStatus Seek(const cq::ChqRationalTime& t, const cq::ChqCancelToken&) override {
         // 唯一关键帧在 pts=0；任何 t>=0 都落到它。
         idx_ = 0;
         (void)t;
-        return cq::Status::Ok();
+        return cq::ChqStatus::Ok();
     }
-    cq::Status ReadPacket(cq::MediaPacket& out) override {
-        out = cq::MediaPacket{};
-        if (idx_ >= gop_.size()) return cq::Status{cq::StatusCode::kIoNotFound};
+    cq::ChqStatus ReadPacket(cq::ChqMediaPacket& out) override {
+        out = cq::ChqMediaPacket{};
+        if (idx_ >= gop_.size()) return cq::ChqStatus{cq::ChqStatusCode::kIoNotFound};
         const GP& g = gop_[static_cast<size_t>(idx_++)];
         out.stream_index = 0;
-        out.pts = cq::RationalTime{g.pts, kTs};
-        out.dts = cq::RationalTime{g.dts, kTs};
-        out.codec = cq::CodecId::kH264;
+        out.pts = cq::ChqRationalTime{g.pts, kTs};
+        out.dts = cq::ChqRationalTime{g.dts, kTs};
+        out.codec = cq::ChqCodecId::kH264;
         out.is_keyframe = g.kf;
         out.data = buf_.data();
         out.size = buf_.size();
-        return cq::Status::Ok();
+        return cq::ChqStatus::Ok();
     }
 
 private:
@@ -118,15 +118,15 @@ private:
 //     的 B 帧先显示（真实 DPB 会压住 P 帧）。这条规则正是精确 seek 必须对 B 帧
 //     继续前向解码的成因，故必须被 mock 如实建模，否则测不出 provider 的正确行为。
 // ---------------------------------------------------------------------------
-class MockDecoder : public cq::IFrameDecoder {
+class MockDecoder : public cq::ChqIFrameDecoder {
 public:
     struct Spec { int64_t dts, pts, release; };
     explicit MockDecoder(std::vector<Spec> specs) : specs_(std::move(specs)) {
         for (const Spec& s : specs_) all_pts_.insert(s.pts);
     }
 
-    cq::Status Open(const cq::StreamInfo&) override { return cq::Status::Ok(); }
-    cq::Status Feed(const cq::MediaPacket& pkt) override {
+    cq::ChqStatus Open(const cq::ChqStreamInfo&) override { return cq::ChqStatus::Ok(); }
+    cq::ChqStatus Feed(const cq::ChqMediaPacket& pkt) override {
         last_fed_dts_ = pkt.dts.value;
         for (const Spec& s : specs_) {
             if (s.dts == pkt.dts.value) {
@@ -135,9 +135,9 @@ public:
                 break;
             }
         }
-        return cq::Status::Ok();
+        return cq::ChqStatus::Ok();
     }
-    cq::Status PopFrame(cq::MediaFrame& out) override {
+    cq::ChqStatus PopFrame(cq::ChqMediaFrame& out) override {
         size_t best_i = pending_.size();
         int64_t best_pts = 0;
         bool found = false;
@@ -159,16 +159,16 @@ public:
                 best_i = i;
             }
         }
-        if (!found) return cq::Status{cq::StatusCode::kIoNotFound};
-        out = cq::MediaFrame{};
-        out.type = cq::MediaType::kVideo;
-        out.video.pts = cq::RationalTime{best_pts, kTs};
-        out.video.duration = cq::RationalTime{1, kTs};
+        if (!found) return cq::ChqStatus{cq::ChqStatusCode::kIoNotFound};
+        out = cq::ChqMediaFrame{};
+        out.type = cq::ChqMediaType::kVideo;
+        out.video.pts = cq::ChqRationalTime{best_pts, kTs};
+        out.video.duration = cq::ChqRationalTime{1, kTs};
         out.video.width = 64;
         out.video.height = 36;
-        out.video.pixel_format = cq::PixelFormat::kYUV420SemiPlanar;
+        out.video.pixel_format = cq::ChqPixelFormat::kYUV420SemiPlanar;
         pending_.erase(pending_.begin() + static_cast<long>(best_i));
-        return cq::Status::Ok();
+        return cq::ChqStatus::Ok();
     }
     void Flush() override {
         pending_.clear();
@@ -204,10 +204,10 @@ std::vector<MockDecoder::Spec> MakeSpec() {
 }
 
 // 取一帧并打印真实数字。
-cq::Status Acquire(cq::FrameProvider& fp, int64_t t_val, cq::SeekPolicy policy,
-                   const cq::CancelToken& token, cq::MediaFrame& out) {
-    cq::FrameRequest req;
-    req.at = cq::RationalTime{t_val, kTs};
+cq::ChqStatus Acquire(cq::ChqFrameProvider& fp, int64_t t_val, cq::ChqSeekPolicy policy,
+                   const cq::ChqCancelToken& token, cq::ChqMediaFrame& out) {
+    cq::ChqFrameRequest req;
+    req.at = cq::ChqRationalTime{t_val, kTs};
     req.policy = policy;
     return fp.AcquireFrame(req, out, token);
 }
@@ -216,40 +216,40 @@ cq::Status Acquire(cq::FrameProvider& fp, int64_t t_val, cq::SeekPolicy policy,
 
 int main() {
     std::setvbuf(stdout, nullptr, _IONBF, 0);
-    std::printf("== ChuanqiCut MEDIA-020 SystemFrameProvider 编排单测 ==\n");
+    std::printf("== ChuanqiCut MEDIA-020 ChqSystemFrameProvider 编排单测 ==\n");
 
     auto demuxer = std::make_unique<MockDemuxer>(MakeGop());
     MockDecoder decoder(MakeSpec());
-    cq::MediaSource src{};
+    cq::ChqMediaSource src{};
     auto provider = cq::CreateSystemFrameProvider(
-        cq::PlatformPtr<cq::IMediaDemuxer>(demuxer.release()), &decoder);
-    cq::Status s = provider->Open(src);
+        cq::ChqPlatformPtr<cq::ChqIMediaDemuxer>(demuxer.release()), &decoder);
+    cq::ChqStatus s = provider->Open(src);
     Check(s.IsOk(), "Open 成功（demuxer + decoder 注入）");
     if (!s.IsOk()) {
         std::printf("\nOpen 失败，用例终止。\n");
         return 1;
     }
 
-    cq::RationalTime dur{0, 1};
+    cq::ChqRationalTime dur{0, 1};
     s = provider->GetDuration(dur);
     Check(s.IsOk() && dur.value == 4 && dur.timescale == kTs,
           "GetDuration = 4 帧 @4fps");
 
-    cq::CancelToken no_cancel;
+    cq::ChqCancelToken no_cancel;
 
     // ---- kExact：每个 t 返回真正包含 t 的展示帧（含 B 帧 t=2）----
     std::printf("\n[kExact] 逐帧精确 seek（含 B 帧）\n");
     const int64_t expect_pts[] = {0, 1, 2, 3};  // 显示序
     for (int64_t t = 0; t < 4; ++t) {
-        cq::MediaFrame f{};
-        s = Acquire(*provider, t, cq::SeekPolicy::kExact, no_cancel, f);
-        bool ok = s.IsOk() && f.type == cq::MediaType::kVideo &&
+        cq::ChqMediaFrame f{};
+        s = Acquire(*provider, t, cq::ChqSeekPolicy::kExact, no_cancel, f);
+        bool ok = s.IsOk() && f.type == cq::ChqMediaType::kVideo &&
                   f.video.pts.value == expect_pts[static_cast<size_t>(t)] &&
-                  Contains(f, cq::RationalTime{t, kTs});
+                  Contains(f, cq::ChqRationalTime{t, kTs});
         std::printf("  t=%lld -> 帧 pts=%s (expect %lld) 区间包含=%d\n",
                     static_cast<long long>(t), Rt(f.video.pts),
                     static_cast<long long>(expect_pts[static_cast<size_t>(t)]),
-                    Contains(f, cq::RationalTime{t, kTs}) ? 1 : 0);
+                    Contains(f, cq::ChqRationalTime{t, kTs}) ? 1 : 0);
         char msg[64];
         std::snprintf(msg, sizeof(msg), "kExact t=%lld 返回展示帧 pts=%lld 且区间归属",
                       static_cast<long long>(t),
@@ -260,9 +260,9 @@ int main() {
     // ---- kKeyframeBefore：t=2 应返回关键帧（pts=0），而非精确帧（pts=2）----
     std::printf("\n[kKeyframeBefore] t=2 应返回 <=t 最近关键帧\n");
     {
-        cq::MediaFrame f{};
-        s = Acquire(*provider, 2, cq::SeekPolicy::kKeyframeBefore, no_cancel, f);
-        bool ok = s.IsOk() && f.video.pts.value == 0 && !Contains(f, cq::RationalTime{2, kTs});
+        cq::ChqMediaFrame f{};
+        s = Acquire(*provider, 2, cq::ChqSeekPolicy::kKeyframeBefore, no_cancel, f);
+        bool ok = s.IsOk() && f.video.pts.value == 0 && !Contains(f, cq::ChqRationalTime{2, kTs});
         std::printf("  t=2 -> 帧 pts=%s（关键帧 pts=0，非精确帧 pts=2）\n", Rt(f.video.pts));
         Check(ok, "kKeyframeBefore t=2 返回关键帧 pts=0（缩略图语义）");
     }
@@ -270,8 +270,8 @@ int main() {
     // ---- kNearest：t=2 返回最近帧（pts=2，dist=0）----
     std::printf("\n[kNearest] t=2 返回 |pts-t| 最小帧\n");
     {
-        cq::MediaFrame f{};
-        s = Acquire(*provider, 2, cq::SeekPolicy::kNearest, no_cancel, f);
+        cq::ChqMediaFrame f{};
+        s = Acquire(*provider, 2, cq::ChqSeekPolicy::kNearest, no_cancel, f);
         bool ok = s.IsOk() && f.video.pts.value == 2;
         std::printf("  t=2 -> 帧 pts=%s（nearest=2）\n", Rt(f.video.pts));
         Check(ok, "kNearest t=2 返回最近帧 pts=2");
@@ -280,10 +280,10 @@ int main() {
     // ---- 取消语义：返回 kCancelled 且 IsError()==false ----
     std::printf("\n[取消] AcquireFrame 在取消时返回 kCancelled（非错误）\n");
     {
-        cq::CancelToken cancelled;
+        cq::ChqCancelToken cancelled;
         cancelled.RequestCancel();
-        cq::MediaFrame f{};
-        s = Acquire(*provider, 1, cq::SeekPolicy::kExact, cancelled, f);
+        cq::ChqMediaFrame f{};
+        s = Acquire(*provider, 1, cq::ChqSeekPolicy::kExact, cancelled, f);
         std::printf("  -> code=%s IsError=%d IsCancelled=%d\n",
                     cq::StatusToString(s.code), s.IsError() ? 1 : 0, s.IsCancelled() ? 1 : 0);
         Check(s.IsCancelled() && !s.IsError(),

@@ -349,7 +349,12 @@ SPM 临时产物一律 `swift test --disable-sandbox --scratch-path "$ROOT/build
     参数（框架采样），face_warp.metal 需按 CIWarpKernel 契约重写参数表；
     现状 = 美型诚实跳过（跑 cq-shader-portability 纪律）
   - [ ] **Pool kernel width 越界**：`Invalid Pool kernel width (9)/(13), must be
-    [1-8] or 14`（beauty_bilateral 相关，Metal 校验告警，伴生反复出现）
+    [1-8] or 14` —— **2026-10-11 真机日志重归因 [E]**：beauty_bilateral 是自有
+    CIKernel（metallib 构建期才报错，不会逐帧刷），该告警格式（`Invalid layer:`）
+    与 `numANECores: Unknown aneSubType` 同源，判为 **Vision 模型在 iPhone 17 Pro
+    ANE 上的编译告警**（landmark 模型 pooling 层宽度超 ANE 子类型支持 → 疑似部分
+    层回退 CPU → 检测更贵，加强检测裁剪必要性）。验证法：detectionHz 临时改 1
+    看告警是否降频（下次真机一趟）
   - [ ] 横持拍照方向（P111 表只覆盖竖屏）+ 初始黑帧优化（会话启动客观延迟，
     可评估"启动中"占位）
 - 验收回填：baselines「录制」段；关 [15] 需真机产物核验数字。
@@ -397,6 +402,15 @@ SPM 临时产物一律 `swift test --disable-sandbox --scratch-path "$ROOT/build
       - **C**：商美颜 SDK——与「业务下沉 C++/自研」红线及成本不符，不建议。
     - 拍板需要的真机读数（浮层已可看）：processing ms（磨皮开/关对比）、
       采集/渲染 fps、内存曲线、有无 FALLBACK 日志。
+  - **2026-10-11 真机日志批（用户回传）三结论**：
+    ① **磨皮引擎 INSTALLED 且全程无 FALLBACK** → 黏性回落假设排除，「慢」确证为
+    检测 30Hz 全家桶 + Blend×2 + 全分辨率的叠加（方案 A 判断坐实）；
+    ② 预览链健康：采集/渲染 1:1 同步增长、1920 帧零失败；
+    ③ **新观察项**：`FigCaptureSourceRemote assert err=-17281`（采集栈 XPC 远端断言，
+    与 P112 startWriting 被拒同错误码但不同调用点）出现 8 组，预览未断流——触发
+    操作待定位（切摄/后台恢复/档位切换？），若与新加的 stop→resume 重连相关需确认
+    resume 后功能完好；（`FigAudioSession -19224`/`Fig -12710` = Apple 私有栈启动期
+    噪声，社区经验无害 [E]，留意 B-02 音频项是否正常）
   - **编排细化（2026-10-11 深夜追问轮，并入方案 A 范围）**：
     ① 磨皮+美白各做一次全帧 CIBlendWithMask（CameraBeauty.apply 两段独立 blended）
     → 合并为单次（美颜结果合成后再混合，省一次全帧混合）；

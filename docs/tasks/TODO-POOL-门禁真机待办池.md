@@ -392,14 +392,12 @@ SPM 临时产物一律 `swift test --disable-sandbox --scratch-path "$ROOT/build
       ——真机日志 "beauty engine FALLBACK" 可判。
     - 效果不好的结构性原因：脸框椭圆蒙版只盖脸（不含颈/额际外）+ σr≤0.11 保守
       保边 + 半分辨率双边细节软；faces 时有时无的帧直通（磨皮断续感）。
-    - 方案拍板项：
-      - **A（推荐先走）**：不换引擎，链路瘦身 + 语义蒙版升级——磨皮/美白合并成
-        单次 BlendWithMask；蒙版从脸框椭圆换 VNGeneratePersonSegmentationRequest
-        （GPU 加速，iOS 15+，即 CAM-027「语义皮肤蒙版」的正确落地姿势）；检测桥
-        按需降频（无贴纸/美型时回 15Hz）。
-      - **B**：换磨皮内核为引导滤波/surface blur（自研 kernel 内改，契约与滑杆
-        映射不动），观感更均匀、保边更好。
-      - **C**：商美颜 SDK——与「业务下沉 C++/自研」红线及成本不符，不建议。
+    - 方案拍板项 **已升级为完整方案 [RESEARCH-015](../../docs/research/RESEARCH-015-相机美颜性能与效果重构方案.md)
+      （2026-10-11 深夜，吸收 A 的检测裁剪 + B 的引导滤波 + 语义分割蒙版，三期分卡）**：
+      P1 检测裁剪（metadataOutput 脸框 + 按需 Vision + 合并 Blend）→ P2 磨皮内核
+      （引导滤波 + 纹理保留系数 k，磨皮 pass 预期 3-5×[E]）→ P3 蒙版语义（分割∩脸框
+      + 美白重做）。原 A/B/C 归档：A=并入 P1+P3，B=并入 P2，C（商 SDK）仍不建议。
+      **拍板前 CI 链冻结新特效。**
     - 拍板需要的真机读数（浮层已可看）：processing ms（磨皮开/关对比）、
       采集/渲染 fps、内存曲线、有无 FALLBACK 日志。
   - **2026-10-11 真机日志批（用户回传）三结论**：

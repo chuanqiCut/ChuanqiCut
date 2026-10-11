@@ -113,23 +113,40 @@ public struct CameraView: View {
                             }
                     )
             }
+            // 顶部：DEBUG 天线（左）+ 录制计时（中）
             VStack {
-                #if DEBUG
-                topBar
-                    .overlay(alignment: .trailing) {
-                        Button {
-                            model.toggleDebugOverlay()
-                        } label: {
-                            Image(systemName: model.debugOverlayVisible
-                                  ? "antenna.radiowaves.left.and.right" : "antenna.radiowaves.left.and.right.slash")
-                                .font(.body)
-                                .foregroundStyle(model.debugOverlayVisible ? .green : .secondary)
-                                .padding(8)
-                        }
+                HStack {
+                    #if DEBUG
+                    Button {
+                        model.toggleDebugOverlay()
+                    } label: {
+                        Image(systemName: model.debugOverlayVisible
+                              ? "antenna.radiowaves.left.and.right" : "antenna.radiowaves.left.and.right.slash")
+                            .font(.body)
+                            .foregroundStyle(model.debugOverlayVisible ? .green : .secondary)
+                            .padding(10)
                     }
-                #else
-                topBar
-                #endif
+                    #endif
+                    Spacer()
+                    recordingTimer.padding(.top, 6)
+                    Spacer()
+                    // 与左侧天线对称的占位（让计时保持居中）
+                    Color.clear.frame(width: 40, height: 20)
+                }
+                Spacer()
+            }
+            // 右侧边栏（对标平台式：操作按钮纵向排列，悬停右缘）
+            VStack {
+                Spacer()
+                HStack {
+                    Spacer()
+                    sidebar
+                        .padding(.trailing, 14)
+                }
+                .padding(.bottom, 140)   // 避开底部快门/模式条
+            }
+            // 底部：模式/贴纸/滤镜/快门（居中）
+            VStack {
                 Spacer()
                 modePicker
                 stickerStrip
@@ -150,8 +167,10 @@ public struct CameraView: View {
         }
     }
 
-    private var topBar: some View {
-        HStack {
+    /// 右侧边栏（对标平台式，P118 用户 2026-10-11）：操作按钮纵向排列悬于右缘，
+    /// 顶部只留录制计时。按钮自上而下：美颜 → 设置 → 双摄 → 翻转。
+    private var sidebar: some View {
+        VStack(spacing: 18) {
             Button {
                 showBeautyPanel = true
             } label: {
@@ -173,11 +192,7 @@ public struct CameraView: View {
                     .background(.ultraThinMaterial, in: Circle())
             }
             .disabled(model.isRecording)
-            .padding(.leading, 8)
             dualCamToggle
-            Spacer()
-            recordingTimer
-            Spacer()
             if model.dualCamEnabled {
                 // 双摄：互换主画面/PiP（SPEC A8：PiP 可与主画面互换；录制中锁定）
                 Button {
@@ -190,7 +205,6 @@ public struct CameraView: View {
                         .background(.ultraThinMaterial, in: Circle())
                 }
                 .disabled(model.isRecording)
-                .padding(.trailing, 20)
             } else {
                 Button {
                     guard !model.isRecording else { return }  // 录制中锁切换
@@ -203,10 +217,8 @@ public struct CameraView: View {
                         .background(.ultraThinMaterial, in: Circle())
                 }
                 .disabled(model.isRecording || model.isCapturing)
-                .padding(.trailing, 20)
             }
         }
-        .padding(.top, 8)
     }
 
     /// 双摄开关（CAM-021；SPEC A8：不支持机型置灰，设置面板明示文案）。

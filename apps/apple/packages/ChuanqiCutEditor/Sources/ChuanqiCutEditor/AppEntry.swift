@@ -14,8 +14,9 @@ import SwiftUI
 import Foundation
 import Darwin
 import os
+import Combine
 import ChuanqiCutEngine
-import SharedUI   // ADR-0040：DebugDefaults（诊断浮层默认态）
+import SharedUI   // ADR-0040：DebugCenter/DebugPanel（诊断浮层）
 
 // MARK: - 错误
 
@@ -112,6 +113,7 @@ public final class EditorViewModel: ObservableObject {
     #if DEBUG
     /// 浮层可见性（DEBUG only；传输条开关 + 环境变量默认值）。
     @Published public private(set) var debugOverlayVisible = false
+    private var debugCenterCancellable: AnyCancellable?
     /// 最近一次采样（nil = 尚无样本，浮层显示占位）。
     @Published public private(set) var debugSnapshot: EditorDebugSnapshot?
 
@@ -262,12 +264,16 @@ public final class EditorViewModel: ObservableObject {
         refreshTimeline()
         refreshHistoryFlags()
         #if DEBUG
-        // DEBUG 浮层：探针/走查默认开（ADR-0040 DebugDefaults）；正常图标启动关，
-        // 传输条天线按钮可开。采样器随可见性启停（2Hz，播放/暂停均可用）。
-        if DebugDefaults.overlayDefaultOn {
-            debugOverlayVisible = true
-            startDebugSampler()
-        }
+        // DEBUG 浮层：跟随全局 DebugCenter（ADR-0040；跨屏共享开关）。
+        debugOverlayVisible = DebugCenter.shared.isVisible
+        if debugOverlayVisible { startDebugSampler() }
+        debugCenterCancellable = DebugCenter.shared.$isVisible
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] visible in
+                guard let self else { return }
+                debugOverlayVisible = visible
+                if visible { startDebugSampler() } else { stopDebugSampler() }
+            }
         #endif
 
         // 订阅快照变更：内核 session 线程 → 绑定层 main queue → 本处 MainActor。
@@ -485,8 +491,7 @@ public final class EditorViewModel: ObservableObject {
     #if DEBUG
     /// DEBUG 浮层开关（传输条天线按钮；后续由设置模块驱动，2026-10-11）。
     public func toggleDebugOverlay() {
-        debugOverlayVisible.toggle()
-        if debugOverlayVisible { startDebugSampler() } else { stopDebugSampler() }
+        DebugCenter.shared.toggle()   // ADR-0040：全局开关（跨屏共享）
     }
 
     /// 2Hz 诊断采样：泵/音频累计值差分 + 内存足迹。独立于播放 tick ——

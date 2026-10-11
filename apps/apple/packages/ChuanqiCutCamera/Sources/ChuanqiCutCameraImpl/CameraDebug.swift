@@ -62,9 +62,22 @@ public struct CameraDebugSnapshot: Equatable {
 
 struct CameraDebugOverlayView: View {
     let snapshot: CameraDebugSnapshot
+    /// 系统行（内存/CPU）来自全局 DebugCenter（屏幕无关量）。
+    @ObservedObject private var center = DebugCenter.shared
 
     var body: some View {
-        DebugPanelView(title: header, lines: lines)
+        DebugPanelView(title: header,
+                       lines: lines + systemLines,
+                       scrollable: true,
+                       storageKey: "debug.camera",
+                       contentMaxHeight: 240)
+    }
+
+    /// 系统行（全局 DebugCenter 采样）。
+    private var systemLines: [String] {
+        [
+            "mem \(String(format: "%.0f", center.memoryMB))MB  cpu \(String(format: "%.0f", center.cpuPercent))%",
+        ]
     }
 
     private var header: String {

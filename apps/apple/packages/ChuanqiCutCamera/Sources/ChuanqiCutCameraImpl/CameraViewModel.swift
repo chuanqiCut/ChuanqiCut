@@ -6,7 +6,7 @@
 
 import AVFoundation
 import Combine
-import SharedUI   // ADR-0040：DebugDefaults（诊断浮层默认态）
+import SharedUI   // ADR-0040：DebugCenter/DebugPanel（诊断浮层）
 import CoreImage
 import CoreMedia
 import Foundation
@@ -292,11 +292,16 @@ final class CameraViewModel: ObservableObject {
         }
         prepared = true
         #if DEBUG
-        // DEBUG 浮层：探针/走查默认开（ADR-0040 DebugDefaults）+ 顶栏天线按钮可关。
-        if DebugDefaults.overlayDefaultOn {
-            debugOverlayVisible = true
-            startDebugSampler()
-        }
+        // DEBUG 浮层：跟随全局 DebugCenter（ADR-0040；跨屏共享开关）。
+        debugOverlayVisible = DebugCenter.shared.isVisible
+        if debugOverlayVisible { startDebugSampler() }
+        debugCenterCancellable = DebugCenter.shared.$isVisible
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] visible in
+                guard let self else { return }
+                self.debugOverlayVisible = visible
+                if visible { startDebugSampler() } else { stopDebugSampler() }
+            }
         #endif
         CameraManager.requestAuthorization { [weak self] cameraGranted, micGranted in
             guard let self else { return }
@@ -340,6 +345,9 @@ final class CameraViewModel: ObservableObject {
 
     #if DEBUG
     @Published public private(set) var debugOverlayVisible = false
+    #if DEBUG
+    private var debugCenterCancellable: AnyCancellable?
+    #endif
     @Published public private(set) var debugSnapshot: CameraDebugSnapshot?
 
     private var debugSampleTimer: Timer?
@@ -364,8 +372,7 @@ final class CameraViewModel: ObservableObject {
     }
 
     func toggleDebugOverlay() {
-        debugOverlayVisible.toggle()
-        if debugOverlayVisible { startDebugSampler() } else { stopDebugSampler() }
+        DebugCenter.shared.toggle()   // ADR-0040：全局开关（跨屏共享）
     }
 
     private func startDebugSampler() {

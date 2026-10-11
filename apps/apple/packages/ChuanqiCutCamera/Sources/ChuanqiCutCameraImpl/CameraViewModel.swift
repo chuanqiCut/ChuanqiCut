@@ -1013,7 +1013,9 @@ final class CameraViewModel: ObservableObject {
             fflush(stderr)
             return
         }
-        let metadataOK = manager.isMetadataFacesActive && !dualCamEnabled
+        // 后摄 metadata 映射未定标（contractRect 返回 nil 丢框）→ 后摄必须走
+        // Vision 兜底，否则 plan 空集且无人写 store = 磨皮全直通（闪帧同款故障）。
+        let metadataOK = manager.isMetadataFacesActive && !dualCamEnabled && position == .front
         detector.requests = BeautyDetectionPlan.requests(
             for: flags,
             faceRectNeeded: !beauty.isOff,

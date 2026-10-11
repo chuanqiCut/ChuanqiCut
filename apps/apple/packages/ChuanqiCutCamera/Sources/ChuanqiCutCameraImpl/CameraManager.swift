@@ -416,7 +416,7 @@ final class CameraManager: NSObject, @unchecked Sendable {
     /// 跑 CQ_CAM_FACE_CALIB=1 采集 meta raw/vision box 对照数据 → 反解映射 →
     /// 修 MetadataFaceGeometry → 本闸门翻 true。标定数据采集不受闸门影响
     ///（faceCalib 模式照常打日志）。
-    static let metadataFacesCalibrated = false
+    static let metadataFacesCalibrated = true   // 2026-10-11 前摄映射定标完成（转置，误差≤0.011）
 
     func stop() {
         sessionQueue.async { [weak self] in
@@ -1088,23 +1088,21 @@ extension CameraManager: AVCaptureMetadataOutputObjectsDelegate {
         // 走 VisionDetector 桥）。镜像读主 connection —— metadataQueue 读 connection
         // 状态是 AVFoundation 允许的轻量操作（属性快照）。
         let mirrored = videoOutput.connection(with: .video)?.isVideoMirrored ?? false
-        // 标定模式同时打 metadata 原始 bounds（0...1，sensor 坐标）：converted 输出
-        // 语义与文档不符（真机实证非归一化），映射关系以 vision box 对照数据反解。
-        let rawBounds: [CGRect] = Self.faceCalib
-            ? metadataObjects.compactMap { ($0 as? AVMetadataObject)?.bounds }
-            : []
+        // 直接吃 metadata 原始 bounds（sensor 坐标 0...1）做定标映射——
+        // outputRectConverted 实测语义错误（P117 坑③），已废弃。
         let rects = metadataObjects.compactMap { metadata -> CGRect? in
             guard metadata.type == .face else { return nil }
-            let converted = videoOutput.outputRectConverted(fromMetadataOutputRect: metadata.bounds)
-            return MetadataFaceGeometry.contractRect(fromConvertedRect: converted, mirrored: mirrored)
-        }
+            return MetadataFaceGeometry.contractRect(fromSensorBounds: metadata.bounds,
+                                                     mirrored: mirrored)
+        }.compactMap { $0 }   // 后摄未定标返回 nil → 丢弃（Vision 兜底）
         // 空数组也回调：目标离开画面 → FaceBoxStore 清空语义（与 Vision 快照对齐）。
         if Self.faceCalib {
-            let desc = rects.map { String(format: "(%.1f,%.1f,%.1f,%.1f)", $0.minX, $0.minY, $0.width, $0.height) }
+            let raw = metadataObjects.compactMap { ($0 as? AVMetadataObject)?.bounds }
+                .map { String(format: "(%.4f,%.4f,%.4f,%.4f)", $0.minX, $0.minY, $0.width, $0.height) }
                 .joined(separator: " ")
-            let raw = rawBounds.map { String(format: "(%.4f,%.4f,%.4f,%.4f)", $0.minX, $0.minY, $0.width, $0.height) }
+            let desc = rects.map { String(format: "(%.4f,%.4f,%.4f,%.4f)", $0.minX, $0.minY, $0.width, $0.height) }
                 .joined(separator: " ")
-            fputs("[face-calib] meta n=\(rects.count) mirrored=\(mirrored) raw=[\(raw)] conv=[\(desc)]\n", stderr)
+            fputs("[face-calib] meta n=\(rects.count) mirrored=\(mirrored) raw=[\(raw)] frame=[\(desc)]\n", stderr)
             fflush(stderr)
         }
         callback(rects, mirrored)

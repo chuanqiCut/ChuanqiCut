@@ -399,10 +399,16 @@ SPM 临时产物一律 `swift test --disable-sandbox --scratch-path "$ROOT/build
     无需 30Hz）；仅美型/贴纸锚点保持 30Hz（跟手）。改 VisionDetector plan 分档。
   - [ ] **后摄+美颜验证**（探针 back 分支未切摄待查 + 需真人对镜头）：后摄磨皮
     目检 + 档位回归；同时跑 metadata 标定（见下）。
-  - [ ] **CAM-033 标定收尾（需传哲 30 秒）**：人脸对镜头、居中静止，跑
-    `CQ_CAM_FACE_CALIB=1`（SOP §一键流程），日志回传后反解 metadata↔vision 映射 →
-    修 MetadataFaceGeometry → 闸门翻 true 零成本启用 metadata 路（远程采到的样本
-    脸贴边/出画，对照失真，无法定标）
+  - [x] **CAM-033 标定收尾完成**（2026-10-11 深夜，传哲人脸对镜头 30 秒
+    calib_run2：874 meta + 771 vision 对照）：**映射反解 = 转置**（x_f=y_s、
+    y_f=x_s、w/h 互换，iPhone 17 Pro 前摄，误差 ≤0.011）——90° 传感器安装角在
+    归一化坐标下恰为转置，前摄镜像已含在实测复合映射内。已落
+    MetadataFaceGeometry.contractRect(fromSensorBounds:mirrored:)（定标断言
+    单测 2 例）+ **闸门翻 true** + VM metadataOK 加 position==.front（后摄映射
+    未定标 → nil 丢框 → Vision 兜底，防"plan 空集无人写 store"回归）。
+    **端到端验证（E1）：前摄磨皮零 Vision（det 计数冻结 324）、noface 冻结 103
+    （不闪）、处理 0.5-2.8ms、无崩溃**。待传哲目检：预览蒙版对位（转置映射
+    视觉终验）+ 后摄磨皮（Vision 兜底路径）目检。
   - [ ] **Makeup/MetalFX 回归目检**：美妆五区域正常（irisMask/羽化修复后）、
     MetalFX 升采样画质（SDK 命名全对表后首次真编译）
 

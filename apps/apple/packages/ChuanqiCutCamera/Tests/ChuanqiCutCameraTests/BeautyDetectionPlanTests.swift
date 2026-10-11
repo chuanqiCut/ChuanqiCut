@@ -70,22 +70,27 @@ final class BeautyDetectionPlanTests: XCTestCase {
         XCTAssertEqual(plan, [.faceLandmarks, .bodyPose, .animal, .animalPose])
     }
 
-    // MARK: metadata 脸框坐标契约
+    // MARK: metadata 脸框坐标契约（2026-10-11 真机定标：前摄转置映射）
 
-    /// 非镜像 = 透传（AVFoundation metadata/output rect 与契约同向：origin 左上）。
-    func testContractRectPassthroughWhenNotMirrored() {
-        let rect = CGRect(x: 0.2, y: 0.3, width: 0.4, height: 0.5)
-        XCTAssertEqual(MetadataFaceGeometry.contractRect(fromConvertedRect: rect, mirrored: false), rect)
+    /// 定标数据回放：sensor bounds (0.4382,0.1982,0.2693,0.4763) 转置后应与
+    /// 同帧 Vision 框 (0.2237,0.4480,0.4832,0.2721) 对齐（实测误差 ≤0.026）。
+    func testContractRectFrontCameraTranspose() {
+        let out = MetadataFaceGeometry.contractRect(
+            fromSensorBounds: CGRect(x: 0.4382, y: 0.1982, width: 0.2693, height: 0.4763),
+            mirrored: true)!
+        XCTAssertEqual(out.minX, 0.1982, accuracy: 1e-9, "x_f = y_s")
+        XCTAssertEqual(out.minY, 0.4382, accuracy: 1e-9, "y_f = x_s")
+        XCTAssertEqual(out.width, 0.4763, accuracy: 1e-9, "w_f = h_s")
+        XCTAssertEqual(out.height, 0.2693, accuracy: 1e-9, "h_f = w_s")
+        // 与 Vision 对照框的位置误差
+        XCTAssertEqual(out.midX, 0.432, accuracy: 0.03, "vision 中心 x=0.432")
+        XCTAssertEqual(out.midY, 0.584, accuracy: 0.03, "vision 中心 y=0.584")
     }
 
-    /// 镜像 = 水平翻转（x' = 1 - maxX），y 与尺寸不变。
-    func testContractRectMirrorsHorizontally() {
-        let out = MetadataFaceGeometry.contractRect(
-            fromConvertedRect: CGRect(x: 0.2, y: 0.3, width: 0.4, height: 0.5),
-            mirrored: true)
-        XCTAssertEqual(out.minX, 0.4, accuracy: 1e-9, "1 - (0.2+0.4)")
-        XCTAssertEqual(out.minY, 0.3)
-        XCTAssertEqual(out.width, 0.4)
-        XCTAssertEqual(out.height, 0.5)
+    /// 后摄映射未定标 → nil（调用方丢框，plan 走 Vision 兜底）。
+    func testContractRectBackCameraReturnsNil() {
+        XCTAssertNil(MetadataFaceGeometry.contractRect(
+            fromSensorBounds: CGRect(x: 0.4, y: 0.2, width: 0.3, height: 0.4),
+            mirrored: false))
     }
 }

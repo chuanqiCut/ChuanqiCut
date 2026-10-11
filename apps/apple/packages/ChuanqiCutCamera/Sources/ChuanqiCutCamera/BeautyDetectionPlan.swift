@@ -76,22 +76,26 @@ public enum BeautyDetectionPlan {
     }
 }
 
-/// AVCaptureMetadataOutput 脸框 → CAM-011 契约坐标（图像归一化 origin 左上 0...1）。
+/// AVCaptureMetadataOutput 脸框（sensor 原始 bounds）→ CAM-011 契约坐标
+/// （图像归一化 origin 左上 0...1）。
 public enum MetadataFaceGeometry {
 
-    /// Impl 层已用 `AVCaptureOutput.outputRectConverted(fromMetadataOutputRect:)`
-    /// 把 metadata 坐标转到**视频帧图像**坐标（考虑 connection 旋转）。此处只做
-    /// 契约侧剩余补偿：前摄镜像。
+    /// sensor(metadata) → 视频帧映射（**2026-10-11 真机定标**，iPhone 17 Pro 前摄、
+    /// 人脸居中静止、meta/vision 双路对照反解，误差 ≤0.011——见 calib_run2 取证）：
+    /// **转置**：x_f = y_s、y_f = x_s、w_f = h_s、h_f = w_s（90° 传感器安装角的
+    /// 旋转在归一化坐标下恰好等于转置；前摄镜像已含在实测复合映射内）。
     ///
-    /// ⚠️ 真机标定项（SPEC-CAM-033 开放问题 1）：`outputRectConverted` 对镜像的
-    /// 处理语义未经真机核验，镜像翻转以参数注入、标定后如需修正只改调用方传参
-    /// 或此函数，不动其他层。
+    /// ⚠️ `outputRectConverted(fromMetadataOutputRect:)` 实测输出像素级+旋转错位
+    ///（P117 坑③），**不要用**——直接吃 metadata 原始 bounds 做本映射。
     ///
-    /// 坐标系事实（AVFoundation 文档）：metadata/output rect origin = 左上、0...1
-    /// 归一化 —— 与 CAM-011 契约同向，无 y 翻转（区别于 Vision 的 origin 左下）。
-    public static func contractRect(fromConvertedRect rect: CGRect, mirrored: Bool) -> CGRect {
-        guard mirrored else { return rect }
-        // 水平镜像：x' = 1 - maxX（宽高不变）
-        return CGRect(x: 1 - rect.maxX, y: rect.minY, width: rect.width, height: rect.height)
+    /// - Parameters:
+    ///   - sensorBounds: `AVMetadataObject.bounds`（0...1，sensor 坐标）。
+    ///   - mirrored: 前摄 true。**后摄映射未定标** → 返回 nil（调用方丢弃该框，
+    ///     plan 由 VM 按 `position == .front` 回退 Vision faceRectangles）。
+    public static func contractRect(fromSensorBounds sensorBounds: CGRect,
+                                    mirrored: Bool) -> CGRect? {
+        guard mirrored else { return nil }   // 后摄：未定标，诚实不消费
+        return CGRect(x: sensorBounds.minY, y: sensorBounds.minX,
+                      width: sensorBounds.height, height: sensorBounds.width)
     }
 }

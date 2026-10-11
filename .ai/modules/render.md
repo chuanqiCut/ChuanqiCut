@@ -69,3 +69,4 @@ ARCH-003 §5/§6/§8/§9、ADR-0005（美型实现切换）
 ### 调研 · 决策 · 池指针
 
 - ADR-0002（GPU 抽象）· PLAN-素材库草稿混排多轨（RENDER-011/012 依赖）
+- **[RESEARCH-014](../../docs/research/RESEARCH-014-主流NLE引擎架构综合调研与RENDER-001规划建议.md)**（2026-10-11）：GBU 综述 + FCP/Premiere/Resolve/该厂商系横向对比；RENDER-001 范围修订建议（+装配器三图同源/时钟源接口/Push-Pull 拍板）——**待拍板，不开工**

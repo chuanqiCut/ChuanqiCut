@@ -97,6 +97,7 @@
 				8C57824A778917F7D014621D /* Resources */,
 				4604AE10F8B868944256F47C /* Compile CoreImage metal kernel into bundle */,
 				215BB252D489201F050044C7 /* Frameworks */,
+				C562A44009B03518EEA1B081 /* [CP] Copy Pods Resources */,
 			);
 			buildRules = (
 			);
@@ -189,6 +190,23 @@
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
 			shellScript = "set -euo pipefail\nSRC=\"$PROJECT_DIR/../packages/ChuanqiCutCamera/Sources/ChuanqiCutCameraImpl/Effects/beauty_bilateral.metal\"\nAIR=\"$TARGET_TEMP_DIR/beauty_bilateral.air\"\nOUT=\"$TARGET_BUILD_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH/beauty_bilateral.metallib\"\nmkdir -p \"$TARGET_TEMP_DIR\"\ncase \"$PLATFORM_NAME\" in\n  *simulator) TRIPLE=\"air64-apple-ios${IPHONEOS_DEPLOYMENT_TARGET}-simulator\" ;;\n  *)          TRIPLE=\"air64-apple-ios${IPHONEOS_DEPLOYMENT_TARGET}\" ;;\nesac\n# 编译与链接**都要** -fcikernel（96B 空壳案底见 ADR-0021）；\n# 不依赖 $SDKROOT 环境变量，显式按 PLATFORM_NAME 解析 sysroot。\nSYSROOT=\"$(xcrun --sdk \"$PLATFORM_NAME\" --show-sdk-path)\"\nxcrun -sdk \"$PLATFORM_NAME\" metal -fcikernel -target \"$TRIPLE\" -isysroot \"$SYSROOT\" -c \"$SRC\" -o \"$AIR\"\nxcrun -sdk \"$PLATFORM_NAME\" metal -fcikernel -target \"$TRIPLE\" -isysroot \"$SYSROOT\" -o \"$OUT\" \"$AIR\"\n# CAM-013 美型 warp kernel（同一编译纪律，独立 metallib 便于 FaceWarp\n# 按自身 kernel 名扫描；加载失败 = 美型跳过，诚实降级）。\nSRC_WARP=\"$PROJECT_DIR/../packages/ChuanqiCutCamera/Sources/ChuanqiCutCameraImpl/Effects/face_warp.metal\"\nAIR_WARP=\"$TARGET_TEMP_DIR/face_warp.air\"\nOUT_WARP=\"$TARGET_BUILD_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH/face_warp.metallib\"\nxcrun -sdk \"$PLATFORM_NAME\" metal -fcikernel -target \"$TRIPLE\" -isysroot \"$SYSROOT\" -c \"$SRC_WARP\" -o \"$AIR_WARP\"\nxcrun -sdk \"$PLATFORM_NAME\" metal -fcikernel -target \"$TRIPLE\" -isysroot \"$SYSROOT\" -o \"$OUT_WARP\" \"$AIR_WARP\"\n";
+		};
+		C562A44009B03518EEA1B081 /* [CP] Copy Pods Resources */ = {
+			isa = PBXShellScriptBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+				"${PODS_ROOT}/Target Support Files/Pods-ChuanqiCutApp/Pods-ChuanqiCutApp-resources-${CONFIGURATION}-input-files.xcfilelist",
+			);
+			name = "[CP] Copy Pods Resources";
+			outputFileListPaths = (
+				"${PODS_ROOT}/Target Support Files/Pods-ChuanqiCutApp/Pods-ChuanqiCutApp-resources-${CONFIGURATION}-output-files.xcfilelist",
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "\"${PODS_ROOT}/Target Support Files/Pods-ChuanqiCutApp/Pods-ChuanqiCutApp-resources.sh\"\n";
+			showEnvVarsInLog = 0;
 		};
 /* End PBXShellScriptBuildPhase section */
 

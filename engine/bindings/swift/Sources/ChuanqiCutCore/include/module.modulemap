@@ -1,4 +1,4 @@
-module CChuanqiCut {
+module ChuanqiCutCore {
     header "cq_sdk.h"
     link "c++"
     export *

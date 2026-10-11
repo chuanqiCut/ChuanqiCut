@@ -1,7 +1,7 @@
-// ChuanqiCut — CChuanqiCut target 的源文件（BIND-002）
+// ChuanqiCut — ChuanqiCutCore target 的源文件（BIND-002）
 //
 // SwiftPM 的 C target 在「只有头文件、没有源文件」时**不会生成 module**，
-// 消费方会报 `no such module 'CChuanqiCut'`（2026-09-29 实测）。
+// 消费方会报 `no such module 'ChuanqiCutCore'`（2026-09-29 实测）。
 // 故本文件存在的唯一目的：让 SPM 认为这个 target 有东西可编译，
 // 从而把 include/module.modulemap 编译成 Swift 可 import 的 Clang module。
 //

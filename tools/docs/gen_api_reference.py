@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""engine/bindings/swift/Sources/CChuanqiCut/include/cq_sdk.h → docs/api/engine-api.md
+"""engine/bindings/swift/Sources/ChuanqiCutCore/include/cq_sdk.h → docs/api/engine-api.md
 
 接口展示生成器（传哲「展示头文件接口可以单独搞个展示逻辑」）：
 解析 C ABI 头文件的 ===大节 / ----子节 注释结构与顶层声明，生成 Markdown 接口参考。
@@ -12,7 +12,7 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
-HEADER = ROOT / "engine/bindings/swift/Sources/CChuanqiCut/include/cq_sdk.h"
+HEADER = ROOT / "engine/bindings/swift/Sources/ChuanqiCutCore/include/cq_sdk.h"
 OUT = ROOT / "docs/api/engine-api.md"
 
 MAJOR_RE = re.compile(r"/\* =+\n \* (.+?)\n \* =+\n(?: \*.*\n)* \*/")
@@ -108,7 +108,7 @@ def parse_header(original: str):
 def render(sections) -> str:
     out = ["# ChuanqiCutEngine 公共接口参考（C ABI）", "",
            "> 由 `tools/docs/gen_api_reference.py` 从",
-           "> `engine/bindings/swift/Sources/CChuanqiCut/include/cq_sdk.h` 自动生成",
+           "> `engine/bindings/swift/Sources/ChuanqiCutCore/include/cq_sdk.h` 自动生成",
            "> ——**不要手改本文件**；接口变更后重跑生成器。红线 #7：这是唯一对外接口。", ""]
     for sec in sections:
         subs = {}

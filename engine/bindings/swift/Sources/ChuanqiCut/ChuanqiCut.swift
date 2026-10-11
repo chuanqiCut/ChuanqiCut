@@ -5,14 +5,14 @@
 //
 // ⚠️ 命名为什么不带 CQ 前缀：C ABI 里已有 `CQSnapshot` / `CQChangeRecord` 等类型，
 //    Swift 模块若再定义同名类型，模块内引用就会与导入的 C 类型混淆（要靠
-//    `CChuanqiCut.CQSnapshot` 才能区分）。故 Swift 侧一律用无前缀名，
+//    `ChuanqiCutCore.CQSnapshot` 才能区分）。故 Swift 侧一律用无前缀名，
 //    与 C 类型天然不冲突，使用时 `ChuanqiCut.Session` / `Snapshot` 也很自然。
 //
 // 设计约束：
 //   - 内核禁用异常，错误一律状态码 → Swift 侧也不 throw，返回 Status。
 //   - 不复制内核的状态码枚举（复制必然漂移）→ 复用数值，只补语义访问器。
 
-import CChuanqiCut
+import ChuanqiCutCore
 
 // MARK: - 全局入口
 

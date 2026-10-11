@@ -16,7 +16,7 @@
 //    故参数类型是 `StaticString`（其 utf8Start 指向静态存储且 NUL 结尾），
 //    用 String 会导致悬垂指针 —— 这是刻意的 API 限制，不是笔误。
 
-import CChuanqiCut
+import ChuanqiCutCore
 import Foundation
 
 public final class Session {
@@ -93,7 +93,7 @@ public final class Session {
     /// 取 `fromVersion` 之后发生的全部变更（UI 可据此增量刷新）。
     public func changesSince(_ fromVersion: UInt64) -> [ChangeRecord] {
         guard let h = handle else { return [] }
-        var buffer = [CChuanqiCut.CQChangeRecord](repeating: CQChangeRecord(), count: 64)
+        var buffer = [ChuanqiCutCore.CQChangeRecord](repeating: CQChangeRecord(), count: 64)
         let n = cq_session_changes_since(h, fromVersion, &buffer, Int32(buffer.count))
         guard n > 0 else { return [] }
         return (0..<Int(n)).map { i in

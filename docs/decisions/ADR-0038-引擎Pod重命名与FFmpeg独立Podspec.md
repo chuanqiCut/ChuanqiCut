@@ -1,6 +1,6 @@
 # ADR-0038 — 引擎 Pod 重命名与 FFmpeg 独立 Podspec（提案，待实施）
 
-> 状态：**提案**（2026-10-11 传哲提出方向，本 ADR 定案设计；实施排 DEPS-012 提交收敛后第一批）
+> 状态：**已采纳并实施**（2026-10-11，传哲「开干」指令 + 真机在场；DEPS-012 先收口 de5b625 解锁写集）
 > 关联：ADR-0033（Engine 两 Pod 边界，本 ADR 修订其命名）、ADR-0036（FFmpeg vendored + LGPL 处置）、
 > ADR-0034（批次纪律：上一批未验收不叠加）、TODO-POOL [11]（FFmpeg 真机验证项）
 
@@ -60,3 +60,43 @@
   adapter，`ChuanqiCutFFmpeg` = 可选第三方后端——三层各自可独立演进、独立声明许可。
 - 消费端 `import ChuanqiCutEngine`（App 侧）**不变**——只有绑定层内部 import 改。
 - 改名不迁移历史卡号（PALA-xxx 先例：改了断链）；文档旧引用在收口批次统一 grep 清理。
+
+## 实施记录（2026-10-11 下午，集成机会话）
+
+改名与拆分全部落地，验证全绿：
+
+- 绑定层：`Sources/CChuanqiCut` → `ChuanqiCutCore`（git mv）、module.modulemap、
+  8 处 import、Tests/SwiftSmoke、Package.swift（C target → `ChuanqiCutCore`；
+  binaryTarget 让位改名 `ChuanqiCutCoreBinary`）。
+- Podspec：`ChuanqiCutCore.podspec`（s.name 改名 + FFmpeg 段摘除 +
+  `s.dependency 'ChuanqiCutFFmpeg', '9.0.2'`）；新增 `ChuanqiCutFFmpeg.podspec`
+  （LGPL-2.1-or-later 如实声明 + `ffmpeg/License.md` 资源包随 App 分发 =
+  ADR-0036「App 内声明」义务落地）；`ChuanqiCutEngine.podspec` 依赖名更新。
+- Podfile 双端：`pod 'ChuanqiCutCore'` + `pod 'ChuanqiCutFFmpeg'`。
+
+### 实施踩坑（三处，全部实测定位）
+
+1. **无源 vendored Pod 不产生链接产物**：ChuanqiCutFFmpeg 最初只带
+   vendored_libraries（无 source_files）→ CocoaPods 生成 xcconfig-only target
+   （无 Copy XCFrameworks、无 ldflags 聚合），`-l"ffmpeg"` 不进 App 链接行。
+   解法：vendored 接线留在有源的 ChuanqiCutCore（已验证路径），FFmpeg Pod
+   承载许可与义务（resource bundle = App 内声明载体）；ADR-0038 附录记录
+   迁移条件（CocoaPods 支持无源 vendored 后迁回）。
+2. **vendored_libraries 必须相对 podspec**：绝对路径被校验拒绝
+   （File patterns must be relative）。
+3. **本地 :path Pod 的头路径用 `PODS_TARGET_SRCROOT`**：`PODS_ROOT/<PodName>/`
+   对本地 Pod 不存在（不拷贝进 Pods/）；且 xcconfig 值引号成对（一处 `""$(` 笔误
+   让 CocoaPods shellsplit 直接崩）。
+
+### 验证（实施当日，真机在场）
+
+- pod install 双端 0 错误；Podfile.lock：`ChuanqiCutCore (0.1.0) → ChuanqiCutFFmpeg (9.0.2)`；
+  App 聚合 xcconfig 含 `-l"ffmpeg"`；ChuanqiCutCore 头路径含 vendored Headers。
+- macOS BUILD SUCCEEDED（x86_64/P96 口径）；iOS generic device **BUILD SUCCEEDED**。
+- 真机 iPhone 17 Pro：**安装成功 + 启动运行**（com.chuanqi.cut，进程存活）；
+  真机产物含 `_cq_audio_preview_create`（音频链）与
+  `ChuanqiCutFFmpegLicense.bundle/License.md`（合规义务随包）。
+  FFmpeg 符号未进二进制 = 预期（archive 成员按需拉取，MEDIA-021 落地后拉入；
+  `-l"ffmpeg"` 链接闭合由 ctest media_ffmpeg_probe 证明）。
+- SPM 路线 sanity：SharedUI swift build 通过（绑定模块改名后链路完好）。
+- 遗留：SPM 绑定 xcframework 重构建（池 [12]，bindings swift test 需要它链接）。

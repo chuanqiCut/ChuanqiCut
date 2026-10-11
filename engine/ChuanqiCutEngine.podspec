@@ -29,5 +29,5 @@ Pod::Spec.new do |s|
 
   s.source_files = 'bindings/swift/Sources/ChuanqiCut/**/*.swift'
   s.frameworks = 'Foundation'
-  s.dependency 'CChuanqiCut', s.version.to_s
+  s.dependency 'ChuanqiCutCore', s.version.to_s
 end

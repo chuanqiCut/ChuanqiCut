@@ -8,7 +8,7 @@
 //
 // 运行：bindings/swift/run_smoke.sh
 
-import CChuanqiCut
+import ChuanqiCutCore
 import Foundation
 
 var failures = 0

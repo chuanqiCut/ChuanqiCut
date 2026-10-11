@@ -5,7 +5,7 @@
 // ⚠️ 红线 #4：时间一律有理数，禁止浮点秒。本类型只持有整数，**刻意不提供**
 //    浮点秒的构造 / 转换入口 —— 任何「秒」的换算都必须在上层以整数完成。
 
-import CChuanqiCut
+import ChuanqiCutCore
 
 public struct RationalTime: Equatable, Comparable, Sendable {
 

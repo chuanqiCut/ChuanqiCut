@@ -12,7 +12,7 @@
 //
 // 时间一律 RationalTime（红线 #4）。
 
-import CChuanqiCut
+import ChuanqiCutCore
 import Foundation
 
 // MARK: - 值类型（查询结果的 Swift 投影）

@@ -26,7 +26,7 @@
 //    （Intel 双 GPU 的 MacBook Pro 上亦然）。若未来出现不同实例的场景
 //    （如 eGPU 热切换策略变化），需给 C ABI 补设备访问器再对齐。
 
-import CChuanqiCut
+import ChuanqiCutCore
 import Foundation
 
 public final class Previewer {

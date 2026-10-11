@@ -4,8 +4,8 @@ import PackageDescription
 // ChuanqiCut Swift 绑定（BIND-002）
 //
 // 结构：
-//   CChuanqiCut  —— binaryTarget：内核 XCFramework（自带 Modules/module.modulemap，
-//                   故 Swift 可直接 `import CChuanqiCut`）
+//   ChuanqiCutCoreBinary —— binaryTarget：内核 XCFramework（自带 Modules/module.modulemap，
+//                   故 Swift 可直接 `import ChuanqiCutCore`）
 //   ChuanqiCut   —— Swift target：面向 App 的封装（本 package 的对外产物）
 //
 // ⚠️ 为什么不用「C target + 手写 modulemap」包一层：
@@ -30,15 +30,15 @@ let package = Package(
     ],
     targets: [
         .binaryTarget(
-            name: "ChuanqiCutCore",
+            name: "ChuanqiCutCoreBinary",
             path: "Frameworks/ChuanqiCut.xcframework"
         ),
         // C target 必须有**源文件**才会生成 module（仅头文件不够，实测报
         // "no such module"），故配了一个 shim.c。头文件用符号链接指向内核，不复制。
         .target(
-            name: "CChuanqiCut",
-            dependencies: ["ChuanqiCutCore"],
-            path: "Sources/CChuanqiCut",
+            name: "ChuanqiCutCore",
+            dependencies: ["ChuanqiCutCoreBinary"],
+            path: "Sources/ChuanqiCutCore",
             // ⚠️ 必须显式链接：SPM **不会**自动把 binaryTarget 里的静态库链进最终产物。
             //    不写这一行时 `swift build` 仍然成功（library target 只编译不链接），
             //    直到 `swift test` 要链接可执行宿主时才报 "symbol(s) not found" ——
@@ -68,7 +68,7 @@ let package = Package(
         // 模块构建要求 module 名 == 目标名，module_name 别名技巧不可用）。路径不变。
         .target(
             name: "ChuanqiCutEngine",
-            dependencies: ["CChuanqiCut"],
+            dependencies: ["ChuanqiCutCore"],
             path: "Sources/ChuanqiCut",
             linkerSettings: [
                 .linkedLibrary("ChuanqiCut"),

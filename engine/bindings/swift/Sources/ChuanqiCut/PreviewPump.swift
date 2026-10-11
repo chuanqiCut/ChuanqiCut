@@ -17,7 +17,7 @@
 // 线程安全：`request` / `requestResize` / `stats` 可任意线程调用；
 // `withLatestFrame` 是消费端入口（内部成对 lock/unlock）。
 
-import CChuanqiCut
+import ChuanqiCutCore
 import Foundation
 
 public final class PreviewPump {

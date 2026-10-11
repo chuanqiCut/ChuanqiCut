@@ -47,7 +47,7 @@ echo "    slice : $SLICE"
 # 告警要消除（项目纪律：不留告警），故显式对齐部署目标。
 DEPLOY="15.4"
 
-# -I 指向含 module.modulemap 的目录，使 `import CChuanqiCut` 可用。
+# -I 指向含 module.modulemap 的目录，使 `import ChuanqiCutCore` 可用。
 #
 # 库名已改为 Unix 标准的 libChuanqiCut.a（2026-09-30），故 -L/-l 可用：
 # 此前叫 ChuanqiCut.a 时 `-lChuanqiCut` 找不到 —— `-lNAME` 只匹配 `libNAME.a`。
@@ -62,7 +62,7 @@ for fw in $FRAMEWORKS; do FW_FLAGS+=(-framework "$fw"); done
 
 xcrun swiftc -O \
     -target "${HOST_ARCH}-apple-macosx${DEPLOY}" \
-    -I "$SCRIPT_DIR/Sources/CChuanqiCut/include" \
+    -I "$SCRIPT_DIR/Sources/ChuanqiCutCore/include" \
     "$SCRIPT_DIR/Sources/ChuanqiCut/ChuanqiCut.swift" \
     "$SCRIPT_DIR/Sources/ChuanqiCut/Time.swift" \
     "$SCRIPT_DIR/Sources/ChuanqiCut/Previewer.swift" \

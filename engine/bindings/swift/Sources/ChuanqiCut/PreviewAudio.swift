@@ -13,7 +13,7 @@
 // ⚠️ 强持有 Session：CQAudioPreview 不拥有 session（cq_sdk.h 生命周期注），
 //    对象图保证 session 先活后死（与 Previewer 同型）。
 
-import CChuanqiCut
+import ChuanqiCutCore
 import Foundation
 
 public final class PreviewAudio {

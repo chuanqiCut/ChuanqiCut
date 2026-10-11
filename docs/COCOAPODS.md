@@ -1,15 +1,16 @@
 # CocoaPods 集成（Engine 层）与 App 依赖策略
 
-> 建立日期：2026-09-30；重构：2026-10-02（INFRA-009）、**2026-10-09（INFRA-024 / ADR-0033：拆 CChuanqiCut + ChuanqiCutEngine）**
-> 范围：`engine/CChuanqiCut.podspec`、`engine/ChuanqiCutEngine.podspec`、
+> 建立日期：2026-09-30；重构：2026-10-02（INFRA-009）、**2026-10-09（INFRA-024 / ADR-0033：拆 CChuanqiCut + ChuanqiCutEngine）；2026-10-11（ADR-0038：CChuanqiCut 更名 ChuanqiCutCore + FFmpeg 独立 Pod）**
+> 范围：`engine/ChuanqiCutCore.podspec`、`engine/ChuanqiCutEngine.podspec`、
 > `apps/apple/packages/*/*.podspec`、`apps/apple/{ios,mac}/` 双工程。
 
 ## 1. 现行拓扑（ADR-0033 起）
 
 ```
 engine/                              ← pod 根（两个本地 spec 同目录）
-├── CChuanqiCut.podspec              ← C ABI + C++20 内核 + Apple Platform（唯一 public 头 core/cq/cq_sdk.h）
-├── ChuanqiCutEngine.podspec         ← Swift 适配层（依赖 CChuanqiCut）
+├── ChuanqiCutCore.podspec              ← C ABI + C++20 内核 + Apple Platform（唯一 public 头 core/cq/cq_sdk.h）
+├── ChuanqiCutEngine.podspec         ← Swift 适配层（依赖 ChuanqiCutCore）
+├── ChuanqiCutFFmpeg.podspec         ← FFmpeg vendored 独立 Pod（LGPL，ADR-0038）
 ├── core/cq/<功能>/                  ← 内部 C++ 头与实现共置（base/audio/command/gfx/media/model/platform/preview/session/ai）
 ├── platform/apple/{base,gfx,media}/      ← Apple 私有头与实现共置（shader 随 gfx）
 └── bindings/swift/                  ← SPM 测试宿主（App 不使用 SPM）
@@ -18,14 +19,16 @@ engine/                              ← pod 根（两个本地 spec 同目录�
 依赖链：
 
 ```
-App → ChuanqiCutEngine (Swift) → CChuanqiCut (C ABI module) → 系统框架
+App → ChuanqiCutEngine (Swift) → ChuanqiCutCore (C ABI module) → 系统框架
+                                                  └→ ChuanqiCutFFmpeg (vendored, LGPL)
 App → SharedUI / 功能 Pod → ChuanqiCutEngine
 ```
 
 两条硬规矩：
 
 - 两个本地 spec 必须都在 Podfile 里显式给 `:path`，否则 CocoaPods 会为传递依赖
-  去远端 spec repo 找 `CChuanqiCut`（:path 目录里存在同名 podspec 不代表会用它）。
+  去远端 spec repo 找 `ChuanqiCutCore`（:path 目录里存在同名 podspec 不代表会用它；
+  engine/ 下现有 ChuanqiCutCore.podspec + ChuanqiCutFFmpeg.podspec 两份，Pod 按名匹配）。
 - 同一份源码不要既引 pod 又引 SPM（重复符号）。SPM 只作 `swift test` 宿主。
 
 ## 2. 头文件可见性（不再靠补丁）
@@ -33,7 +36,7 @@ App → SharedUI / 功能 Pod → ChuanqiCutEngine
 | 层 | 如何可见 |
 |---|---|
 | Swift / App | `import ChuanqiCutEngine`，经正常 Pod 依赖解析 |
-| Engine public C ABI | `CChuanqiCut` Pod 的 `public_header_files = core/cq/cq_sdk.h` |
+| Engine public C ABI | `ChuanqiCutCore` Pod 的 `public_header_files = core/cq/cq_sdk.h` |
 | Engine 内部 C++/Apple 头 | 与实现同目录，在 `CChuanqiCut` Pod 内编译并可浏览，**不进 module umbrella、不进主工程** |
 
 已删除的三处补丁（ADR-0033 起因）：

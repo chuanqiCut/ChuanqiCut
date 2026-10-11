@@ -12,7 +12,7 @@
 //
 // 语义（与内核一致，定死便于断言）：停止态（含播完自然结束）时刻**恒为 0**。
 
-import CChuanqiCut
+import ChuanqiCutCore
 import Foundation
 
 public final class Player {

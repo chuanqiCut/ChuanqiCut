@@ -397,3 +397,15 @@ SPM 临时产物一律 `swift test --disable-sandbox --scratch-path "$ROOT/build
       - **C**：商美颜 SDK——与「业务下沉 C++/自研」红线及成本不符，不建议。
     - 拍板需要的真机读数（浮层已可看）：processing ms（磨皮开/关对比）、
       采集/渲染 fps、内存曲线、有无 FALLBACK 日志。
+  - **编排细化（2026-10-11 深夜追问轮，并入方案 A 范围）**：
+    ① 磨皮+美白各做一次全帧 CIBlendWithMask（CameraBeauty.apply 两段独立 blended）
+    → 合并为单次（美颜结果合成后再混合，省一次全帧混合）；
+    ② **低分辨率过算法**可行且是业界标配：美颜链（磨皮/美白/美妆蒙版）在 540×960
+    （或 720）跑完后 upscale 混回原图，预览/录制渲染分辨率不变——磨皮是低频信息
+    观感无损 [E]；美型 warp 若启用应留全分辨率（几何变形低分辨率会糊边）；
+    拍照路径不降（成片质量）；
+    ③ 检测桥编排已是最优组织（单 handler.perform 共享预处理），但三处浪费可裁：
+    请求组合按功能开关动态裁剪（现在全家桶常开：FaceLandmarks+HumanBodyPose+
+    RecognizeAnimals[+AnimalBodyPose]，没开美体/宠物贴纸也全发）；30Hz 降为自适应
+    （仅磨皮=15Hz 足够，贴纸/美型跟手才要 30）；输入传缩略帧（480p 级）替代
+    1080p buffer。

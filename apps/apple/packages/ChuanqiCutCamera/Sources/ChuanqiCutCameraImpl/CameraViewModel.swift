@@ -577,7 +577,11 @@ final class CameraViewModel: ObservableObject {
                 self.recordedURL = url
                 // 成品存相册一份（用户要求：直接在相册看效果；add-only 权限，
                 // 不影响相册浏览导入的 read 权限语义）。
-                self.saveRecordingToPhotos(url)
+                // ⚠️ 探针录制（CQ_CAM_PROBE 在场）不入相册——机器验证产物不进
+                // 用户相册（B-02 用户反馈：相册被探针录像刷屏）。
+                if ProcessInfo.processInfo.environment["CQ_CAM_PROBE"] == nil {
+                    self.saveRecordingToPhotos(url)
+                }
             case .failure(let error):
                 self.errorMessage = "录制失败：\(error.localizedDescription)"
             }

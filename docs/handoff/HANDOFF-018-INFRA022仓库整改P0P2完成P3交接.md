@@ -80,7 +80,80 @@ CI 放最后（跑通需要时间，且依赖前面稳定）。
 grep 计数完全看不出来，只能逐行读。
 → **替换后必须专门复核 `→` 形式的行**。
 
-## 5. 验证口径提醒（给下一个接手人）
+## 5. 并发协作：给 DEPS 线（另一会话 / 另一 agent）的交接
+
+> 2026-10-11 09:00 确认：**另一 agent 正在同一工作区并行跑 DEPS 线**（FFmpeg 9.0.2 双集成
+> + xcframework 打包 + LGPL 处置，卡号 DEPS-012）。本节是给它的交接，INFRA-022 线的接手人也要读。
+
+### 5.1 我（INFRA-022 线）已经做了什么 —— 会影响你的部分
+
+**全仓 `PAL` → `Platform` 改名，5 个提交已落库、未推送**：
+
+```
+be669e3  文档与治理层（124 文件）
+2dd4edd  代码 / 构建 / 测试 + P1（100 文件）
+b5b2eec  skill 定义同步（3 文件）
+822b313  HANDOFF-018 + 台账 + README 补登
+5c4a001  台账：并发写入登记
+```
+
+**对你有影响的改名**（若你的新代码引用了旧名会断链）：
+
+| 旧 | 新 |
+|---|---|
+| `cq/pal/*.h` | `cq/platform/*.h` |
+| `engine/pal/` | `engine/platform/` |
+| `cq_pal_apple` | `cq_platform_apple`（CMake target） |
+| `PalPtr<T>` / `IPalResource` | `PlatformPtr<T>` / `IPlatformResource` |
+| `CQ_PAL_*_H_` | `CQ_PLATFORM_*_H_` |
+| `tools/pal/check_pal_headers.py` | `tools/platform/check_platform_headers.py` |
+
+⚠️ **历史卡号 `PALA-xxx` / `PALD-xxx` 有意保留了**（336 / 39 处）—— 不要顺手改，
+改了会让 TASK / BACKLOG / HANDOFF 几百处引用断链。已在 `TASK-BACKLOG.md` 第 43 行下加注明。
+
+### 5.2 两个写集交叉点 —— 已核，未冲突，但你提交时要知道
+
+我逐个核过，**你的改动是叠加在我的提交之上，没有互相覆盖**：
+
+**① `tools/build/build_ffmpeg_demux.sh`**（你我**都**改了）
+- 我改：第 39 行 `PIN_REF` 由 35 字符补全为 40 字符
+  （`946fcce07b6dcd0331c8cc609192aeff5e1924f8`）。
+  **原来第 51 行的校验必然失败**（deps.lock 与源码 HEAD 都是 40 字符），这是个真 bug。
+- 你改：PARSERS 去掉 `hevc`/`mpeg4video`/`opus`（上游 Makefile 不闭合）、
+  加 `--arch="$ARCH"`、加链接闭合冒烟（第 87 行之后）。
+- ✅ 现状：`grep -n "PIN_REF=" ` 显示 40 字符**仍在**，你的改动也在，行区间不重叠。
+- ⚠️ 你提交该文件时，**这个 diff 会同时含你我两人的改动**，commit message 里请都提到。
+
+**② `engine/CChuanqiCut.podspec`**（你我**都**改了）
+- 我改：`source_files` 的 `pal/apple/**` → `platform/apple/**`（第 33 行）、
+  `HEADER_SEARCH_PATHS` 的 `$(PODS_TARGET_SRCROOT)/platform/apple/{base,gfx,media}`（第 63-65 行）。
+- 你改：license 段改写为 `NOTICE.md` + LGPL-2.1-or-later 说明。
+- ✅ 现状：叠加态完整（`git show HEAD:... | grep -c NOTICE` = 0，工作区 = 2，说明我的已入库、你的在工作区）。
+
+### 5.3 我没有碰的（你的地盘，随便动）
+
+`third_party/CMakeLists.txt`（你引入 `cq_ffmpeg` target，binary/source 双模式，85 行 diff）、
+`third_party/manifest.toml`、`tools/build/make_ffmpeg_xcframework.sh`（新建，08:51:04，未跟踪）。
+我的 4 个提交里 `third_party/` 与 `make_ffmpeg_xcframework` **命中数全为 0**（已逐个 `git show --name-only` 核过）。
+
+### 5.4 给你的三条提醒
+
+1. **我的 5 个提交未推送**，main 领先 origin 5 个。你 push 前先 `git log` 看一下，
+   **别用 `git pull --rebase`**（会动我未推送的本地提交）。
+2. **我的 46/46 ctest 是在我的提交版本上跑的，不含你的 `third_party` 改动**。
+   你改完 CMake 引入 `cq_ffmpeg` 后**必须重跑** `build_core.sh --test`，
+   我的数字不能直接当你的回归基线。
+3. `tools/ci/run_gate.sh` 我改了（门禁脚本路径 `tools/pal/...` → `tools/platform/...`）。
+   你若在 CI 里加 FFmpeg 相关步骤，注意这行已被我动过。
+
+### 5.5 剩余风险
+
+- 两条线长期共用一个脏工作区：**任一方执行 `git checkout` / `git stash` / `git reset` 都可能波及对方**。
+  建议**你先提交你的改动**，让工作区收敛。
+- 28 个未提交文件里有 `apps/apple/` 相机改动（17）与壳工程（7），
+  **既不是我的写集也不是你的**，待传哲决定去向，别顺手提交。
+
+## 6. 验证口径提醒（给下一个接手人）
 
 - 本机是 **Intel Mac**（`uname -m` = x86_64），**无 ANE / ProRes 硬编** ——
   任何性能数字都**不得**作产品阈值。

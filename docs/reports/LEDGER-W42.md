@@ -500,3 +500,41 @@
     避免长期混在一个脏工作区里；
   - `tools/build/make_ffmpeg_xcframework.sh`（08:51:04 创建）仍未跟踪，**不属我写集，未提交**；
   - 我的 4 个提交**未推送**（main 领先 origin 4 个提交），推送前建议先与 DEPS 线协调。
+
+---
+
+## 2026-10-11 09:38（CST）· 传哲确认并发为预期，交接落地（DEPS 线继续）
+
+- **执行者**：WorkBuddy（对话引擎 Hy4 preview），集成机
+- **依据**：传哲 09:38「是我在别的 agent 跑的，你做好交接，后边让他继续」
+- **决策**：
+  1. **确认并发为预期**（非故障、非误判）—— 上一条的「风险」定性下调为「已知协作模式」；
+  2. **交叉点逐个核清并写进交接**，而不是只说「你俩别打架」—— 文件和行号级别的事实才可执行；
+  3. **INFRA-022 线暂停，不继续 P3** —— 理由：① P3 的 CI（`run_gate.sh`）与 DEPS 线的
+     `third_party/CMakeLists.txt` 有交互面，同时做会二次交叉；② ADR-0034「一批未验收
+     不得叠加下一批」；③ 传哲说「让他继续」，DEPS 线优先。**此判断属我自行决定，可驳回。**
+- **写集**：
+  - `docs/handoff/HANDOFF-018-...md`（新增 §5「并发协作：给 DEPS 线（另一会话）的交接」，
+    原 §5 顺延为 §6）
+  - `docs/reports/LEDGER-W42.md`（本条）
+  - `.workbuddy/memory/2026-10-11.md`（当日日志追加）
+  - `.workbuddy/memory/MEMORY.md`（并发协作模式入长期约定）
+- **验证**（均现场执行）：
+  - **交叉点 ①** `tools/build/build_ffmpeg_demux.sh`（**双方都改**）：
+    `grep -n "PIN_REF="` → 仍是 40 字符 `946fcce07b6dcd0331c8cc609192aeff5e1924f8`（我的修复在）；
+    `git diff` 74 行全是 DEPS 线的改动（PARSERS 裁剪 / `--arch` / 链接闭合冒烟，第 87 行之后）
+    → **行区间不重叠，未冲突** ✓
+  - **交叉点 ②** `engine/CChuanqiCut.podspec`（**双方都改**）：
+    `git show HEAD:... | grep -c NOTICE` = **0**，工作区 = **2**
+    → 我的改名已入库、DEPS 的 license 改动在工作区，**叠加态完整** ✓
+  - **未触碰确认**：我的 5 个提交里 `third_party/` 与 `make_ffmpeg_xcframework` 命中数 **0** ✓
+  - **门禁：本条无代码改动，未跑**；**真机：未执行**
+- **交付物**：HANDOFF-018 §5（给 DEPS agent 的执行级交接：改名映射表 / 两个交叉点 /
+  三条提醒 / 剩余风险）
+- **拍板**：传哲确认并发为预期，并指定「让他继续」。**未就 P3 归属表态**。
+- **遗留 / 需传哲决定**：
+  - **P3 归谁、何时做** —— 我暂缓的理由如上，若传哲要我并行做 P3，
+    建议先让 DEPS 线提交收敛，且 P3 里的 CI 部分等 `third_party` 定稿后再动；
+  - **推送时机** —— main 领先 origin 5 个提交，建议 DEPS 线提交后一起推；
+  - 28 个未提交文件（`apps/apple/` 相机 17 + 壳工程 7 + `make_ffmpeg_xcframework.sh` +
+    `third_party/manifest.toml` + 图标源文件 2）去向未定，交接里已写明「别顺手提交」。

@@ -444,6 +444,64 @@ public final class EditorViewModel: ObservableObject {
         session.trimClip(clipId: clipId, duration: duration)
     }
 
+    /// 左缘裁剪（EDIT-008）：右缘不动，start / sourceIn / duration 由内核联动。
+    @discardableResult
+    public func trimClipIn(clipId: UInt64, start: RationalTime) -> Status {
+        session.trimClipIn(clipId: clipId, start: start)
+    }
+
+    /// 分割片段（EDIT-007）：在 at 处切成两半；右半新 id 经快照回流确认。
+    @discardableResult
+    public func splitClip(clipId: UInt64, at: RationalTime) -> Status {
+        session.splitClip(clipId: clipId, at: at)
+    }
+
+    /// 删除片段（EDIT-007）。
+    @discardableResult
+    public func removeClip(clipId: UInt64) -> Status {
+        session.removeClip(clipId: clipId)
+    }
+
+    // MARK: 选中与结构动作（UIA-039；EDIT-007/008 收口）
+
+    /// 当前选中片段（**UI 本地状态**，不入内核）。选中态是工具栏动作
+    /// （分割 / 删除）的靶子；快照回流时片段已不存在则自动清除。
+    @Published public private(set) var selectedClipId: UInt64?
+
+    /// 点按片段 → 选中；再点同一片段或空白（clipId 传 nil）→ 取消。
+    public func selectClip(_ clipId: UInt64?) {
+        selectedClipId = (clipId != nil && clipId == selectedClipId) ? nil : clipId
+    }
+
+    /// 选中的片段是否可在播放头处分割：播放头严格落在片段内部
+    /// （切在边界上无意义，内核同样拒绝 —— UI 先置灰，判定与内核同语义）。
+    public var canSplitSelected: Bool {
+        guard let id = selectedClipId,
+              let clip = timeline.clips.first(where: { $0.clipId == id }) else { return false }
+        let t = Double(playhead.value) / Double(playhead.timescale)
+        return TimelineLayout.isStrictlyInside(clip, atSeconds: t)
+    }
+
+    /// 在播放头处分割选中片段（EDIT-007）。左半保留原 id —— 选中态自然延续；
+    /// 提交后主动回查真值（提交被拒时 observer 不回流，见 refreshFromKernel）。
+    @discardableResult
+    public func splitSelectedAtPlayhead() -> Status {
+        guard let id = selectedClipId, canSplitSelected else { return .invalidArgument }
+        let st = session.splitClip(clipId: id, at: playhead)
+        refreshFromKernel()
+        return st
+    }
+
+    /// 删除选中片段（EDIT-007）。删除后选中态随之清除。
+    @discardableResult
+    public func deleteSelectedClip() -> Status {
+        guard let id = selectedClipId else { return .invalidArgument }
+        let st = session.removeClip(clipId: id)
+        selectedClipId = nil
+        refreshFromKernel()
+        return st
+    }
+
     @discardableResult
     public func undo() -> Status { session.undo() }
 
@@ -461,6 +519,11 @@ public final class EditorViewModel: ObservableObject {
             tracks: session.queryTracks(),
             clips: session.queryClips(),
             version: session.currentSnapshot.version)
+        // 同 applySnapshot：选中的片段若已不在内核（提交被拒/撤销）→ 清除。
+        if let sel = selectedClipId,
+           !timeline.clips.contains(where: { $0.clipId == sel }) {
+            selectedClipId = nil
+        }
         refreshHistoryFlags()
         // 提交被拒（重叠 / duration ≤ 0）不触发 observer 回流，这里就是回到真值的
         // 唯一途径 —— 时间线可能变了，当前播放头的画面同样可能失效（UIA-020）。
@@ -655,6 +718,12 @@ public final class EditorViewModel: ObservableObject {
             tracks: session.queryTracks(),
             clips: session.queryClips(),
             version: snap.version)
+        // 选中片段随这次变更消失了（删除/撤销删除/undo 结构命令）→ 清除选中态，
+        // 避免工具栏动作打在一个内核里已不存在的 id 上。
+        if let sel = selectedClipId,
+           !timeline.clips.contains(where: { $0.clipId == sel }) {
+            selectedClipId = nil
+        }
         refreshMediaLibrary()
         refreshHistoryFlags()
         requestPreviewRerender()

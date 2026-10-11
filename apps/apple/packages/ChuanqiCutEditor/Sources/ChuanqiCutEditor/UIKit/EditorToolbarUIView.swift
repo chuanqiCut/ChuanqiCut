@@ -14,9 +14,15 @@ final class EditorToolbarUIView: UIView {
     var onUndo: (() -> Void)?
     var onRedo: (() -> Void)?
     var onOpenMedia: (() -> Void)?
+    /// 分割选中片段于播放头处（UIA-039；靶子与可用性由 EditorViewModel 决定）。
+    var onSplitSelected: (() -> Void)?
+    /// 删除选中片段（UIA-039）。
+    var onDeleteSelected: (() -> Void)?
 
     private var undoButton: UIButton!
     private var redoButton: UIButton!
+    private var splitButton: UIButton!
+    private var deleteButton: UIButton!
     private var mediaButton: UIButton!
 
     override init(frame: CGRect) {
@@ -31,12 +37,18 @@ final class EditorToolbarUIView: UIView {
 
         undoButton = toolButton(icon: "arrow.uturn.backward", label: "撤销", enabled: false) { [weak self] in self?.onUndo?() }
         redoButton = toolButton(icon: "arrow.uturn.forward", label: "重做", enabled: false) { [weak self] in self?.onRedo?() }
+        // 分割 / 删除（UIA-039）：靶子 = 选中片段，可用性由 VM 灌入（setSplitEnabled /
+        // setDeleteEnabled）。对标 App范式的「选中态二级替换条」另立卡 —— 本批先以
+        // 常驻位 + 置灰收口，交互语义（点选 → 动作）已完整。
+        splitButton = toolButton(icon: "scissors", label: "分割", enabled: false) { [weak self] in self?.onSplitSelected?() }
+        deleteButton = toolButton(icon: "trash", label: "删除", enabled: false) { [weak self] in self?.onDeleteSelected?() }
         let spacer = UIView()
         mediaButton = toolButton(icon: "film.stack", label: "媒体", enabled: true) { [weak self] in self?.onOpenMedia?() }
         let audio = toolButton(icon: "music.note", label: "音频", enabled: false) {}
         let text = toolButton(icon: "textformat", label: "文字", enabled: false) {}
         let fx = toolButton(icon: "sparkles", label: "特效", enabled: false) {}
-        stack.addArrangedSubviews([undoButton, redoButton, spacer, mediaButton, audio, text, fx])
+        stack.addArrangedSubviews([undoButton, redoButton, splitButton, deleteButton,
+                                   spacer, mediaButton, audio, text, fx])
         spacer.setContentHuggingPriority(.defaultLow, for: .horizontal)
 
         NSLayoutConstraint.activate([
@@ -72,6 +84,8 @@ final class EditorToolbarUIView: UIView {
 
     func setUndoEnabled(_ enabled: Bool) { undoButton?.isEnabled = enabled }
     func setRedoEnabled(_ enabled: Bool) { redoButton?.isEnabled = enabled }
+    func setSplitEnabled(_ enabled: Bool) { splitButton?.isEnabled = enabled }
+    func setDeleteEnabled(_ enabled: Bool) { deleteButton?.isEnabled = enabled }
 }
 
 private extension UIStackView {

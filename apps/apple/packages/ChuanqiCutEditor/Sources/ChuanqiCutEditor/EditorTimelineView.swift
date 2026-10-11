@@ -66,16 +66,34 @@ struct ClipDrag {
     static let minDurationSeconds: Double = 0.05
 
     var previewStart: Double {
-        // 裁剪不改起点 —— 位移只作用于时长（否则右边缘拖过左边界会出现负起点）。
-        guard region == .move else { return originStart }
-        // 起点不允许为负（内核不校验负值，UI 必须先夹住 —— 否则会提交一个
-        // 起点为负的片段进去，语义上不属于时间线）。
-        return max(0, originStart + deltaSeconds)
+        switch region {
+        case .move:
+            // 起点不允许为负（内核不校验负值，UI 必须先夹住 —— 否则会提交一个
+            // 起点为负的片段进去，语义上不属于时间线）。
+            return max(0, originStart + deltaSeconds)
+        case .trimStart:
+            // 左缘裁剪（EDIT-008）：新起点 = 原起点 + 位移。双重夹取：
+            //   下限 0（起点非负）；上限 右缘 − 最短时长（拖过右缘时锚住右缘，
+            //   而不是让整块片段滑走 —— 右缘恒定是本手势的不变式，见单测）。
+            return min(max(0, originStart + deltaSeconds),
+                       max(0, originStart + originDuration - Self.minDurationSeconds))
+        case .trimEnd:
+            // 裁剪不改起点 —— 位移只作用于时长（否则右边缘拖过左边界会出现负起点）。
+            return originStart
+        }
     }
 
     var previewDuration: Double {
-        guard region == .trimEnd else { return originDuration }
-        return max(Self.minDurationSeconds, originDuration + deltaSeconds)
+        switch region {
+        case .move:
+            return originDuration
+        case .trimStart:
+            // 时长收缩量 = 起点实际位移量（夹到 0 时位移随之缩小，右缘恒定）。
+            let shifted = previewStart - originStart
+            return max(Self.minDurationSeconds, originDuration - shifted)
+        case .trimEnd:
+            return max(Self.minDurationSeconds, originDuration + deltaSeconds)
+        }
     }
 
     var override: ClipPreviewOverride {
@@ -137,6 +155,11 @@ public struct EditorTimelineView: View {
             }
             .clipped()
             .background(Theme.timelineBackground)
+            // 点按选中（对标 App范式：选中态是工具栏动作的靶子）；点空白 = 取消选中。
+            .onTapGesture { location in
+                let hit = layout.hitTest(location)
+                viewModel.selectClip(hit?.clip.clipId)
+            }
             .gesture(
                 DragGesture(minimumDistance: 2)
                     .onChanged { value in
@@ -236,11 +259,18 @@ public struct EditorTimelineView: View {
     /// 松手：提交**一条**命令，并主动回到内核真值（防幽灵位置，见文件头）。
     private func commit(_ d: ClipDrag) {
         let ts = RationalTime.projectTimescale
-        if d.region == .trimEnd {
+        switch d.region {
+        case .trimEnd:
             let ticks = Int64((d.previewDuration * Double(ts)).rounded())
             viewModel.trimClip(clipId: d.clipId,
                                duration: RationalTime(value: ticks, timescale: ts))
-        } else {
+        case .trimStart:
+            // 左缘裁剪（EDIT-008）：提交新起点，start / sourceIn / duration
+            // 由内核按「右缘不动」联动推导。
+            let ticks = Int64((d.previewStart * Double(ts)).rounded())
+            viewModel.trimClipIn(clipId: d.clipId,
+                                 start: RationalTime(value: ticks, timescale: ts))
+        case .move:
             let ticks = Int64((d.previewStart * Double(ts)).rounded())
             viewModel.moveClip(clipId: d.clipId,
                                to: RationalTime(value: ticks, timescale: ts))
@@ -285,12 +315,17 @@ public struct EditorTimelineView: View {
         for clip in layout.clips {
             guard let rect = layout.rect(for: clip, override: override) else { continue }
             let isDragging = (override?.clipId == clip.clipId)
+            let isSelected = (viewModel.selectedClipId == clip.clipId)
             let path = Path(roundedRect: rect, cornerRadius: 4)
             context.fill(path, with: .color(
                 isDragging ? Theme.timelineClipDragging : Theme.timelineClip))
             drawThumbnails(for: clip, rect: rect, context: context)
-            // 边框压在缩略图上，遮住边缘溢出
-            context.stroke(path, with: .color(Theme.timelineClipBorder), lineWidth: 1)
+            // 边框压在缩略图上，遮住边缘溢出；选中态白描边（对标 App范式 ⑤）
+            if isSelected {
+                context.stroke(path, with: .color(Theme.primaryText), lineWidth: 2)
+            } else {
+                context.stroke(path, with: .color(Theme.timelineClipBorder), lineWidth: 1)
+            }
             if rect.width > 24 {
                 let label = context.resolve(
                     Text("素材 \(clip.assetId)")

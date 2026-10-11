@@ -106,6 +106,10 @@ final class EditorViewController: UIViewController {
         timelineView.onCommitDrag = { [weak self] drag in
             self?.commitDrag(drag)
         }
+        // 点按选中（UIA-039）：命中 → 选中/切换，空白 → 取消。
+        timelineView.onClipTapped = { [weak self] clipId in
+            self?.viewModel.selectClip(clipId)
+        }
         // 拖时间线 = 拖播放头（UIA-038，红条恒中央）；播放中不抢播放头。
         timelineView.onScrub = { [weak self] seconds in
             guard let self, !self.viewModel.isPlaying else { return }
@@ -123,6 +127,13 @@ final class EditorViewController: UIViewController {
         toolbarView.onRedo = { [weak self] in
             self?.viewModel.redo()
             self?.viewModel.refreshFromKernel()
+        }
+        // 分割 / 删除（UIA-039）：动作内已含 refreshFromKernel（被拒不回流时回真值）。
+        toolbarView.onSplitSelected = { [weak self] in
+            self?.viewModel.splitSelectedAtPlayhead()
+        }
+        toolbarView.onDeleteSelected = { [weak self] in
+            self?.viewModel.deleteSelectedClip()
         }
         toolbarView.onOpenMedia = { [weak self] in self?.onOpenMedia() }
     }
@@ -228,6 +239,12 @@ final class EditorViewController: UIViewController {
                 self?.toolbarView.setRedoEnabled(self?.viewModel.canRedo ?? false)
             } }.store(in: &cancellables)
 
+        // 选中态（UIA-039）：分割/删除按钮可用性 + 时间线描边。
+        viewModel.$selectedClipId
+            .dropFirst().receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in Task { @MainActor in self?.refreshSelectionState() } }
+            .store(in: &cancellables)
+
         // 播放态：传输条图标 + 显示链接启停 + MTK 连续绘制标志
         viewModel.$isPlaying
             .receive(on: DispatchQueue.main)
@@ -253,9 +270,18 @@ final class EditorViewController: UIViewController {
     private func refreshStaticState() {
         toolbarView.setUndoEnabled(viewModel.canUndo)
         toolbarView.setRedoEnabled(viewModel.canRedo)
+        refreshSelectionState()
         transportBar.setPlaying(viewModel.isPlaying)
         reloadTimeline()
         updatePlayheadUI()
+    }
+
+    /// 选中态灌入（UIA-039）：分割/删除按钮可用性 + 时间线选中描边。
+    /// 选中变化与 reload 都会走这里；播放头变化只影响分割可用性（见 updatePlayheadUI）。
+    private func refreshSelectionState() {
+        toolbarView.setSplitEnabled(viewModel.canSplitSelected)
+        toolbarView.setDeleteEnabled(viewModel.selectedClipId != nil)
+        timelineView.setSelectedClip(viewModel.selectedClipId)
     }
 
     private func reloadTimeline() {
@@ -264,6 +290,8 @@ final class EditorViewController: UIViewController {
                             clips: viewModel.timeline.clips,
                             assets: assets,
                             playheadSeconds: playheadSeconds)
+        // rebuild 清空全部层 → 选中描边重刷（VM 侧已保证失效 id 不会灌进来）
+        timelineView.setSelectedClip(viewModel.selectedClipId)
         let empty = viewModel.timeline.clips.isEmpty
         emptyStateView.isHidden = !empty
         transportBar.setEnabled(!empty)
@@ -302,6 +330,9 @@ final class EditorViewController: UIViewController {
     private func updatePlayheadUI() {
         let seconds = Double(viewModel.playhead.value) / Double(viewModel.playhead.timescale)
         timelineView.updatePlayhead(seconds: seconds)
+        // 播放头移动会改变「能否在播放头处分割」—— 只刷按钮可用性（布尔写，
+        // 不触碰层），描边归 refreshSelectionState（选中变化/reload 路径）。
+        toolbarView.setSplitEnabled(viewModel.canSplitSelected)
         let text = "\(viewModel.timecodeCurrent) / \(viewModel.timecodeDuration)"
         if text != lastTimecode {
             lastTimecode = text
@@ -322,11 +353,18 @@ final class EditorViewController: UIViewController {
 
     private func commitDrag(_ d: ClipDrag) {
         let ts = RationalTime.projectTimescale
-        if d.region == .trimEnd {
+        switch d.region {
+        case .trimEnd:
             let ticks = Int64((d.previewDuration * Double(ts)).rounded())
             viewModel.trimClip(clipId: d.clipId,
                                duration: RationalTime(value: ticks, timescale: ts))
-        } else {
+        case .trimStart:
+            // 左缘裁剪（EDIT-008）：提交新起点，start / sourceIn / duration
+            // 由内核按「右缘不动」联动推导。
+            let ticks = Int64((d.previewStart * Double(ts)).rounded())
+            viewModel.trimClipIn(clipId: d.clipId,
+                                 start: RationalTime(value: ticks, timescale: ts))
+        case .move:
             let ticks = Int64((d.previewStart * Double(ts)).rounded())
             viewModel.moveClip(clipId: d.clipId,
                                to: RationalTime(value: ticks, timescale: ts))

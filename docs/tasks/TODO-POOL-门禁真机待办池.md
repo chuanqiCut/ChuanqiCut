@@ -487,3 +487,19 @@ SPM 临时产物一律 `swift test --disable-sandbox --scratch-path "$ROOT/build
     RecognizeAnimals[+AnimalBodyPose]，没开美体/宠物贴纸也全发）；30Hz 降为自适应
     （仅磨皮=15Hz 足够，贴纸/美型跟手才要 30）；输入传缩略帧（480p 级）替代
     1080p buffer。
+
+
+### [16] iOS 模拟器全壳构建红：相机包 import MetalFX（模拟器无此模块）
+
+- 来源：集成机 / 编辑器线 UIA-039 批（2026-10-12 发现）
+- 现象：`xcodebuild -scheme ChuanqiCutApp -sdk iphonesimulator build` 失败——
+  `ChuanqiCutCamera/Sources/ChuanqiCutCameraImpl/Effects/MetalFXScaler.swift:17`
+  `import MetalFX`，iphonesimulator26.5 SDK 无 MetalFX 模块（真机 SDK 有）。
+  **fdb4e97（2026-10-07 构建机批）起即红**；相机线只验过真机壳（BUILD SUCCEEDED 均为
+  iphoneos），编辑器线池 [6] 的「iOS 模拟器构建」项被此挡。
+- 修法（三选一，归属线定）：
+  - [ ] ①`#if canImport(MetalFX)` 包住 import 与使用点 + 运行时能力降级（红线 #3 的
+    运行时查询精神，最推荐）
+  - [ ] ②Podsimulator 排除该文件（source_files 条件化）
+  - [ ] ③阶段批门禁对相机包改真机构建口径（不推荐：门禁降档）
+- 影响：阶段批门禁第 5 步（iOS 壳构建）不可绿；编辑器线全壳证据被挡。

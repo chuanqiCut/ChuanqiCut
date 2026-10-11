@@ -136,6 +136,41 @@ extension Session {
         return Status(rawValue: code)
     }
 
+    /// 左缘裁剪（EDIT-008）：右缘（end = start + duration）不动，start /
+    /// sourceIn / duration / sourceDuration 四字段由内核联动，调用方只给新起点。
+    /// 左缘拖过素材入点（sourceIn < 0）或越过右缘（duration ≤ 0）→ 校验失败。
+    @discardableResult
+    public func trimClipIn(clipId: UInt64, start: RationalTime) -> Status {
+        guard let h = handle else { return .invalidArgument }
+        let code = cq_session_trim_clip_in(h, clipId, start.value, start.timescale)
+        return Status(rawValue: code)
+    }
+
+    /// 分割片段（EDIT-007）：在时间线时刻 at 处切成两半。左半保留原 id；
+    /// 右半由内核分配新 id —— 经 queryClips 轮询确认（与 addClip 同约定）。
+    /// at 必须严格落在片段内部（切在边界 → session 线程校验失败）；
+    /// 分割点两侧的转场边界置 none（切线是媒体中段，不是媒体边界）。
+    @discardableResult
+    public func splitClip(clipId: UInt64, at: RationalTime) -> Status {
+        guard let h = handle else { return .invalidArgument }
+        let code = cq_session_split_clip(h, clipId, at.value, at.timescale)
+        return Status(rawValue: code)
+    }
+
+    /// 删除片段（EDIT-007）。Undo 以原 id 原位恢复（实体快照）。
+    @discardableResult
+    public func removeClip(clipId: UInt64) -> Status {
+        guard let h = handle else { return .invalidArgument }
+        return Status(rawValue: cq_session_remove_clip(h, clipId))
+    }
+
+    /// 删除轨道（EDIT-007）：连同轨内全部片段一起删除，Undo 整轨恢复。
+    @discardableResult
+    public func removeTrack(trackId: UInt64) -> Status {
+        guard let h = handle else { return .invalidArgument }
+        return Status(rawValue: cq_session_remove_track(h, trackId))
+    }
+
     // MARK: 撤销 / 重做（UIA-005）
 
     /// 撤销最近一条命令。**异步**：命令历史是 session 线程状态，

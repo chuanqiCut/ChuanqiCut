@@ -58,13 +58,21 @@ final class TimelineInteractionTests: XCTestCase {
         let trimHit = l.hitTest(CGPoint(x: 296, y: 40))
         XCTAssertEqual(trimHit?.region, .trimEnd)
 
-        // 左边缘仍归移动（左裁剪要动 source_in，本期内核不支持 —— 任务卡 D2）
-        XCTAssertEqual(l.hitTest(CGPoint(x: 102, y: 40))?.region, .move)
+        // 左边缘 8pt 内 → 左缘裁剪（EDIT-008：内核 trim-clip-in 已支持）
+        XCTAssertEqual(l.hitTest(CGPoint(x: 102, y: 40))?.region, .trimStart)
 
         // 空白 / 标尺区 → nil（调用方据此降级为平移视图）
         XCTAssertNil(l.hitTest(CGPoint(x: 500, y: 40)), "空白处不命中片段")
         XCTAssertNil(l.hitTest(CGPoint(x: 150, y: 10)), "标尺区不命中片段")
         XCTAssertNil(l.hitTest(CGPoint(x: 150, y: 100)), "轨道行以外不命中片段")
+    }
+
+    func testHitTestNarrowClipFallsBackToMove() {
+        // 宽度 < 2×手柄宽（8pt × 2 → 0.16s @ 100pps）：两个手柄互相吃掉主体，
+        // 整体归「移动」，避免窄片段无法拖拽。
+        let l = layout(clips: [clip(id: 10, start: 0, duration: Int64(ts) / 10)])  // 0.1s = 10pt
+        XCTAssertEqual(l.hitTest(CGPoint(x: 2, y: 40))?.region, .move)
+        XCTAssertEqual(l.hitTest(CGPoint(x: 9, y: 40))?.region, .move)
     }
 
     func testOverrideChangesGeometryForDraggedClipOnly() throws {
@@ -92,6 +100,40 @@ final class TimelineInteractionTests: XCTestCase {
         trim.deltaSeconds = -5.0
         XCTAssertEqual(trim.previewDuration, ClipDrag.minDurationSeconds, "裁剪不得为 0 或负")
         XCTAssertEqual(trim.previewStart, 0.5, "裁剪不改起点")
+    }
+
+    /// 左缘裁剪（EDIT-008）：右缘恒定，duration 收缩量 = 起点位移量。
+    func testDragTrimStartKeepsRightEdgeFixed() {
+        var trim = ClipDrag(clipId: 1, region: .trimStart, originStart: 1.0, originDuration: 3.0)
+
+        // 右拖 0.5s：start 1.0→1.5，duration 3.0→2.5（右缘 4.0 不动）
+        trim.deltaSeconds = 0.5
+        XCTAssertEqual(trim.previewStart, 1.5)
+        XCTAssertEqual(trim.previewDuration, 2.5)
+
+        // 左拖 1s（向左扩展）：start 1.0→0，duration 3.0→4.0 —— 右缘仍 4.0。
+        // 内核侧若素材无余量（source_in < 0）会拒绝；UI 预览如实显示扩展。
+        trim.deltaSeconds = -1.0
+        XCTAssertEqual(trim.previewStart, 0)
+        XCTAssertEqual(trim.previewDuration, 4.0)
+        XCTAssertEqual(trim.previewStart + trim.previewDuration, 4.0,
+                       "右缘（start + duration）在任何位移下恒定")
+
+        // 越过右缘：夹到最短时长并锚住右缘（不滑走）
+        trim.deltaSeconds = 10.0
+        XCTAssertEqual(trim.previewDuration, ClipDrag.minDurationSeconds, "左裁不得为 0 或负")
+        XCTAssertEqual(trim.previewStart + trim.previewDuration, 4.0, accuracy: 1e-9,
+                       "夹取后右缘仍恒定")
+    }
+
+    /// 分割可用性判定（UIA-039）：播放头严格落在片段内部（开区间）。
+    func testIsStrictlyInsideForSplit() {
+        let c = clip(id: 1, start: Int64(ts), duration: Int64(2 * ts))  // [1.0, 3.0)s
+        XCTAssertTrue(TimelineLayout.isStrictlyInside(c, atSeconds: 1.5), "片段中部可分割")
+        XCTAssertFalse(TimelineLayout.isStrictlyInside(c, atSeconds: 1.0), "切在 start 边界不可分割")
+        XCTAssertFalse(TimelineLayout.isStrictlyInside(c, atSeconds: 3.0), "切在 end 边界不可分割")
+        XCTAssertFalse(TimelineLayout.isStrictlyInside(c, atSeconds: 0.5), "片段前不可分割")
+        XCTAssertFalse(TimelineLayout.isStrictlyInside(c, atSeconds: 3.5), "片段后不可分割")
     }
 
     // MARK: - ViewModel 端到端（穿内核）
@@ -202,5 +244,72 @@ final class TimelineInteractionTests: XCTestCase {
 
         vm.refreshFromKernel()
         XCTAssertEqual(vm.timeline.clips.first?.start, first.start, "主动回查仍为真值")
+    }
+
+    /// 分割 / 删除穿内核（UIA-039，EDIT-007/008 收口）：全程断言内核查询值。
+    /// 选中是 UI 本地态 —— 分割后左半保留原 id，选中态自然延续。
+    func testSplitAndDeleteThroughViewModel() throws {
+        let vm = try EditorViewModel()
+        let url = goldenURL()
+        guard FileManager.default.fileExists(atPath: url.path) else {
+            return XCTFail("golden 夹具缺失：\(url.path)")
+        }
+        XCTAssertEqual(vm.importMedia(url: url), .ok)
+        XCTAssertTrue(waitForTimelineVersion(vm, 3), "导入推进到 v3")
+        let clipId = try XCTUnwrap(vm.timeline.clips.first?.clipId)
+        let originalDuration = try XCTUnwrap(vm.timeline.clips.first?.duration)
+
+        // ---- 选中 + 边界置灰判定 ----
+        vm.selectClip(clipId)
+        XCTAssertEqual(vm.selectedClipId, clipId)
+        vm.selectClip(clipId)  // 再点同一片段 = 取消
+        XCTAssertNil(vm.selectedClipId, "重复点选取消选中")
+        vm.selectClip(clipId)
+        XCTAssertFalse(vm.canSplitSelected, "播放头 0 在片段外（片段从追加时刻起）→ 分割置灰")
+
+        // ---- 播放头推进到片段内部 → 分割生效 ----
+        let start = try XCTUnwrap(vm.timeline.clips.first?.start)
+        let mid = RationalTime(value: start.value + originalDuration.value / 2,
+                               timescale: ts)
+        vm.setPlayhead(mid)
+        XCTAssertTrue(vm.canSplitSelected, "播放头严格在片段内部 → 可分割")
+        var v = vm.timeline.version
+        XCTAssertEqual(vm.splitSelectedAtPlayhead(), .ok)
+        XCTAssertTrue(waitForTimelineVersion(vm, v + 1))
+        XCTAssertEqual(vm.timeline.clips.count, 2, "分割后两个片段")
+        XCTAssertEqual(vm.selectedClipId, clipId, "左半保留原 id，选中态延续")
+        let left = try XCTUnwrap(vm.timeline.clips.first { $0.clipId == clipId })
+        let right = try XCTUnwrap(vm.timeline.clips.first { $0.clipId != clipId })
+        XCTAssertEqual(left.duration, RationalTime(value: originalDuration.value / 2,
+                                                   timescale: ts), "左半收缩")
+        XCTAssertEqual(right.start, mid, "右半从分割点起（内核真值）")
+        XCTAssertEqual(right.sourceIn,
+                       RationalTime(value: originalDuration.value / 2, timescale: ts),
+                     "右半 sourceIn 推进（媒体引用联动）")
+
+        // ---- undo：回到单片段（选中片段仍在 → 选中态保留）----
+        v = vm.timeline.version
+        XCTAssertEqual(vm.undo(), .ok)
+        XCTAssertTrue(waitForTimelineVersion(vm, v + 1))
+        XCTAssertEqual(vm.timeline.clips.count, 1, "undo split 回到单片段")
+        XCTAssertEqual(vm.selectedClipId, clipId)
+
+        // ---- redo → 删除右半（VM 路径 deleteSelected 靶子是选中 id=左半，
+        //      这里直接删右半验证 removeClip 命令本身）----
+        XCTAssertEqual(vm.redo(), .ok)
+        XCTAssertTrue(waitForTimelineVersion(vm, vm.timeline.version + 1))
+        XCTAssertEqual(vm.timeline.clips.count, 2)
+        v = vm.timeline.version
+        XCTAssertEqual(vm.removeClip(clipId: right.clipId), .ok)
+        XCTAssertTrue(waitForTimelineVersion(vm, v + 1))
+        XCTAssertEqual(vm.timeline.clips.count, 1)
+
+        // ---- 删除选中（UI 路径）：选中清除 + 片段消失 ----
+        XCTAssertEqual(vm.selectedClipId, clipId, "右半被删不影响左半选中")
+        v = vm.timeline.version
+        XCTAssertEqual(vm.deleteSelectedClip(), .ok)
+        XCTAssertTrue(waitForTimelineVersion(vm, v + 1))
+        XCTAssertNil(vm.selectedClipId, "删除后选中清除")
+        XCTAssertTrue(vm.timeline.clips.isEmpty, "删除后时间线为空（只剩空轨道）")
     }
 }

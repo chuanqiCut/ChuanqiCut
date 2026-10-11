@@ -27,10 +27,9 @@ struct ClipPreviewOverride: Equatable {
 enum ClipHitRegion: Equatable {
     /// 片段主体 → 拖拽移动（改 start）。
     case move
+    /// 左边缘 → 左缘裁剪（改 start / sourceIn，右缘不动；EDIT-008）。
+    case trimStart
     /// 右边缘 → 裁剪（改 duration）。
-    ///
-    /// ⚠️ **左边缘裁剪本期不支持**（任务卡 D2）：它会牵动 source_in，
-    ///    内核 TrimClipCommand 的语义是「只改 duration」。左边缘归「移动」。
     case trimEnd
 }
 
@@ -133,20 +132,37 @@ struct TimelineLayout {
     /// 纯函数、可单测 —— 手势的判定逻辑不藏在 View 里。
     /// 未命中任何片段返回 nil（调用方据此降级为「平移时间线」）。
     ///
-    /// ⚠️ 右边缘 `trimHandleWidth` 内算裁剪区；**左边缘仍归移动**
-    /// （左边缘裁剪要动 source_in，本期内核不支持，见任务卡 D2）。
+    /// 左 / 右边缘各留 `trimHandleWidth` 为裁剪区（EDIT-008 起左缘可裁）；
+    /// 片段过窄（< 2×手柄宽）时整体归「移动」，避免两个手柄互相吃掉主体。
     func hitTest(_ point: CGPoint, override: ClipPreviewOverride? = nil) -> TimelineHit? {
         for clip in clips {
             guard let r = rect(for: clip, override: override) else { continue }
             guard point.x >= r.minX, point.x <= r.maxX,
                   point.y >= r.minY, point.y <= r.maxY else { continue }
-            let region: ClipHitRegion =
-                (r.width >= Self.trimHandleWidth * 2 && point.x >= r.maxX - Self.trimHandleWidth)
-                    ? .trimEnd
-                    : .move
+            let region: ClipHitRegion
+            if r.width >= Self.trimHandleWidth * 2 {
+                if point.x >= r.maxX - Self.trimHandleWidth {
+                    region = .trimEnd
+                } else if point.x <= r.minX + Self.trimHandleWidth {
+                    region = .trimStart
+                } else {
+                    region = .move
+                }
+            } else {
+                region = .move
+            }
             return TimelineHit(clip: clip, region: region)
         }
         return nil
+    }
+
+    /// 时刻 t 是否严格落在片段内部（开区间）：分割可用性判定（对标 App语义：
+    /// 在播放头处剪开；切在边界上无意义，内核同样拒绝 —— UI 先置灰）。
+    /// 纯函数、可单测（ViewModel 与两侧工具栏共用）。
+    static func isStrictlyInside(_ clip: ClipInfo, atSeconds t: Double) -> Bool {
+        let start = Double(clip.start.value) / Double(clip.start.timescale)
+        let end = start + Double(clip.duration.value) / Double(clip.duration.timescale)
+        return t > start && t < end
     }
 
     /// 标尺刻度：返回 (时间秒, 是否主刻度)。步长随缩放自适应，保证相邻刻度 ≥ 60pt。

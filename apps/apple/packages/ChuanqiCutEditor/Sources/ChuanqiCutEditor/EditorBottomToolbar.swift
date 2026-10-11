@@ -23,6 +23,17 @@ struct EditorBottomToolbar: View {
             toolbarButton(icon: "arrow.uturn.forward", label: "重做",
                           enabled: viewModel.canRedo) { viewModel.redo() }
 
+            // 分割 / 删除（UIA-039，EDIT-007/008 收口）：靶子 = 选中片段。
+            // 分割要求播放头严格落在选中片段内部（切在边界 → 内核拒绝，先置灰）。
+            toolbarButton(icon: "scissors", label: "分割",
+                          enabled: viewModel.canSplitSelected) {
+                viewModel.splitSelectedAtPlayhead()
+            }
+            toolbarButton(icon: "trash", label: "删除",
+                          enabled: viewModel.selectedClipId != nil) {
+                viewModel.deleteSelectedClip()
+            }
+
             Spacer(minLength: 0)
 
             // 一级工具位。媒体 = 唯一可用入口；其余占位置灰。

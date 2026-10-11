@@ -56,6 +56,8 @@ final class EditorTimelineUIView: UIView {
     /// 用户拖动时间线 → 播放头时刻（帧栅格已取整；宿主转 VM.setPlayhead）。
     var onScrub: ((Double) -> Void)?
     var onCommitDrag: ((ClipDrag) -> Void)?
+    /// 点按选中（UIA-039）：命中片段回其 id，点空白回 nil（宿主转 VM.selectClip）。
+    var onClipTapped: ((UInt64?) -> Void)?
 
     /// 抽帧缓存（UIA-037）。视图持有；完成回调只重写槽位 contents。
     private let thumbnailStore = TimelineThumbnailStore()
@@ -77,6 +79,12 @@ final class EditorTimelineUIView: UIView {
         pan.maximumNumberOfTouches = 1
         contentView.addGestureRecognizer(pan)
         contentView.onCommitDrag = { [weak self] drag in self?.onCommitDrag?(drag) }
+
+        // 点按选中（UIA-039）：与 pan 并存 —— 零位移点按落在 tap 上，拖拽归 pan。
+        let tap = UITapGestureRecognizer(target: contentView,
+                                         action: #selector(TimelineContentView.handleTap(_:)))
+        contentView.addGestureRecognizer(tap)
+        contentView.onClipTapped = { [weak self] clipId in self?.onClipTapped?(clipId) }
 
         // 捏合缩放（UIA-038）：以播放头为锚，时间不跳变。
         let pinch = UIPinchGestureRecognizer(target: self, action: #selector(handlePinch(_:)))
@@ -151,6 +159,11 @@ final class EditorTimelineUIView: UIView {
         syncOffset(for: seconds)
     }
 
+    /// 选中片段描边（UIA-039；VM $selectedClipId / reloadTimeline 驱动）。
+    func setSelectedClip(_ id: UInt64?) {
+        contentView.setSelectedClip(id)
+    }
+
     private func syncOffset(for seconds: Double) {
         guard let layout, bounds.width > 0 else { return }
         let lead = layout.anchorX
@@ -209,6 +222,10 @@ final class TimelineContentView: UIView {
     private var dragClip: ClipInfo?
     /// 松手提交（宿主转接 EditorViewController.commitDrag）
     var onCommitDrag: ((ClipDrag) -> Void)?
+    /// 点按选中（UIA-039；宿主转接 VM.selectClip）
+    var onClipTapped: ((UInt64?) -> Void)?
+    /// 选中片段（UI 状态，VM 灌入；rebuild 后按此补描边）。
+    private var selectedClipId: UInt64?
     private var clipLayers: [UInt64: CALayer] = [:]
     /// 缩略图槽位（UIA-037）：clipId → 采样几何 + 槽层。
     private struct ThumbMeta {
@@ -298,8 +315,28 @@ final class TimelineContentView: UIView {
             clipLayers[clip.clipId] = container
             layer.addSublayer(container)
         }
+        applySelectionBorder()
 
         layer.addSublayer(makeSeparator())
+    }
+
+    /// 选中态灌入（VM $selectedClipId 驱动；rebuild 后按此补描边）。
+    func setSelectedClip(_ id: UInt64?) {
+        selectedClipId = id
+        applySelectionBorder()
+    }
+
+    /// 选中白描边（对标 App范式 ⑤；对照 SwiftUI 版 draw 的 isSelected 分支）。
+    private func applySelectionBorder() {
+        for (clipId, layer) in clipLayers {
+            if clipId == selectedClipId {
+                layer.borderColor = UIColor(Theme.primaryText).cgColor
+                layer.borderWidth = 2
+            } else {
+                layer.borderColor = UIColor(Theme.timelineClipBorder).cgColor
+                layer.borderWidth = 1
+            }
+        }
     }
 
     /// 片段内胶片槽（UIA-037）：先铺槽位层（空 contents = 底色透出），
@@ -366,6 +403,12 @@ final class TimelineContentView: UIView {
         return layout.hitTest(point) != nil
     }
 
+    @objc func handleTap(_ gesture: UITapGestureRecognizer) {
+        guard let layout else { return }
+        let hit = layout.hitTest(gesture.location(in: self))
+        onClipTapped?(hit?.clip.clipId)
+    }
+
     @objc func handlePan(_ gesture: UIPanGestureRecognizer) {
         guard let layout else { return }
         let location = gesture.location(in: self)
@@ -391,9 +434,21 @@ final class TimelineContentView: UIView {
                 layer.backgroundColor = UIColor(Theme.timelineClipDragging).cgColor
             }
         case .ended, .cancelled:
-            // 语义对照 SwiftUI 版：.ended 无条件提交一条命令（零位移 = 内核拒绝/
-            // 无变化，无撤销污染）；.cancelled 不提交、直接复位（VM reload 恢复真值）。
-            if let d = drag, gesture.state == .ended { onCommitDrag?(d) }
+            // 语义对照 SwiftUI 版：.ended 提交一条命令；.cancelled 不提交、
+            // 直接复位（VM reload 恢复真值）。
+            // ⚠️ 零位移（UIA-039 点选会同时触发 pan end）：不改模型、不提交 ——
+            //    提交一条同值 move/trim 只会给撤销栈塞垃圾（「无撤销污染」的意图
+            //    此前靠内核拒绝实现，实测内核对同值变更返回 Ok，故在 UI 侧挡）。
+            if let d = drag {
+                if gesture.state == .ended && abs(d.deltaSeconds) > 1e-9 {
+                    onCommitDrag?(d)
+                } else if let clip = dragClip, let layer = clipLayers[d.clipId],
+                          let rect = layout.rect(for: clip) {
+                    // 未提交：本地预览层回到内核真值
+                    layer.frame = rect
+                    layer.backgroundColor = UIColor(Theme.timelineClip).cgColor
+                }
+            }
             drag = nil
             dragClip = nil
         default:

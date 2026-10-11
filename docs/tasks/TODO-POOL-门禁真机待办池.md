@@ -330,3 +330,22 @@ SPM 临时产物一律 `swift test --disable-sandbox --scratch-path "$ROOT/build
   `SWIFT_OBJC_INTERFACE_HEADER_NAME` / 升级 CP），或壳工程钉 `ARCHS=arm64 x86_64`
   的官方发布口径与本地单 arch 验证口径分离；修完跑一次真通用构建作验收。
 - 关池条件：通用双 arch mac 构建 BUILD SUCCEEDED（清 DerivedData 口径）。
+
+### [15] 相机录像 P112/P113 修复收尾 + warp/pool kernel 两案（⏳ 待真机）
+
+- 来源：集成机 2026-10-11 真机探针批（5abcc11 / 37e2833；传哲实测报错驱动）
+- 已修待终验（设备解锁后重跑 CQ_CAM_PROBE 一轮）：
+  - [ ] 录制端到端：开始→结束无报错、产物 mp4 上传回 Mac、尺寸 1080×1920、帧数>0
+    （P112 = adaptor 源属性色键毒化 startWriting，已隔离复现+修复；P110 死锁已修）
+  - [ ] 切摄横屏闪现消失（P113 = switchPosition 补 begin/commitConfiguration 事务）
+  - [ ] 相机页不再自动锁屏中断（isIdleTimerDisabled）
+- 新登记待修（CAM 线）：
+  - [ ] **warp kernel 签名错**：`Function 'cq_face_warp' has an unsupported type
+    "sampler2D" for the parameter 'src0'` —— CIWarpKernel 原型不允许显式 sampler
+    参数（框架采样），face_warp.metal 需按 CIWarpKernel 契约重写参数表；
+    现状 = 美型诚实跳过（跑 cq-shader-portability 纪律）
+  - [ ] **Pool kernel width 越界**：`Invalid Pool kernel width (9)/(13), must be
+    [1-8] or 14`（beauty_bilateral 相关，Metal 校验告警，伴生反复出现）
+  - [ ] 横持拍照方向（P111 表只覆盖竖屏）+ 初始黑帧优化（会话启动客观延迟，
+    可评估"启动中"占位）
+- 验收回填：baselines「录制」段；关 [15] 需真机产物核验数字。

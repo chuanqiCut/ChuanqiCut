@@ -554,3 +554,15 @@
 - **实施踩坑**：CocoaPods 无源 vendored Pod 不产生链接产物（三处细节记 ADR-0038 附录）。
 - **真机证据**：iPhone 17 Pro 安装+启动成功；产物含音频符号与 FFmpegLicense bundle。
 - **待回填**：问卷 B-02 真机侧（A/B/C 三组）→ 回收后纠偏记入本台账；池 [12] 关闭条件 = A/B/C 全过。
+
+## 2026-10-11 16:40~18:00 · B-02 真机自动探针批：三案修复 + DEBUG 浮层
+- **指令**：传哲「真机的部分结果你自己拿（日志或其他），拿不到的再问」+「debugview 上屏可开可关」。
+- **机器验证**（devicectl console/文件拉取，iPhone 17 Pro）：音频链全绿（blocks≈100/s、
+  drop/under/resync=0）；方向语义 back=90/front=0/mirror=true；前摄照片修复后
+  1080×1920 端正（修复前横躺实证）。
+- **修复三案**（5abcc11）：P110 录制死锁+崩溃（10-07 起真机从未成功录制）；
+  P111 前摄照片方向（iOS 26 photoOutput 元数据语义 + 270° 偏移只属 videoDataOutput）；
+  探针钩子 DEBUG only。
+- **DEBUG 浮层**（877cbdd）：EditorDebugSnapshot 2Hz + DebugOverlayView + 传输条开关，
+  后续设置模块接管。
+- **待回填**：A3 录像尺寸（拉取未完成）、横持拍照、B 组听感/打分、C 组走查（问卷 B-02）。

@@ -1841,6 +1841,11 @@ TASK-CAM-012 剩余风险栏其实预判了（"若真机上 CI 工作空间表�
    { target, membership_exceptions = ["Info.plist"] }` 挂到同步组的 exceptions。
 - 防复发规则：动 PBXFileSystemSynchronizedRootGroup 一律先核全工程 sourceTree casing；
   含 Info.plist 的目录转同步组时**默认**配成员例外。
+3. **复现案例（2026-10-11 收口轮）——新文件后只刷一端 Pods = 另一端符号消失**：
+   B-02 批新增 DebugOverlayView.swift，iOS Pods 刷过、mac Pods 旧快照（0 引用）→
+   mac 壳 `EditorView.swift:52 cannot find 'DebugOverlayView' in scope`（报错点在
+   引用处不在缺失文件，极难联想到 Pods 陈旧）。双端 pod install 是新文件的固定动作，
+   不是只刷要跑构建的那一端。
 
 ## P108（2026-10-11，TASK-INFRA-025 收尾，集成机）壳工程 Pods 远程依赖三件缺失 = 假绿之源
 
@@ -1869,7 +1874,10 @@ TASK-CAM-012 剩余风险栏其实预判了（"若真机上 CI 工作空间表�
 - **处置惯例**：撞号方（后入库）让位改号并全文替换引用（本次 015→019，TASK 卡同步），
   与 P63/P67/P70「先入库保留、后入库让位」一致。
 
-## P110（2026-10-11，壳工程图标/启动图，集成机）synchronized groups 自动编 xcassets ≠ 图标生效——ASSETCATALOG_COMPILER_APPICON_NAME 必须显式写
+## P116（2026-10-11，壳工程图标/启动图，集成机）synchronized groups 自动编 xcassets ≠ 图标生效——ASSETCATALOG_COMPILER_APPICON_NAME 必须显式写
+
+> ⚠️ 原误记 **P110**，与录制死锁 P110 撞号；按 P109 惯例后入库方让位，2026-10-11
+> 收口轮改号 P116。历史文档中"图标语境的 P110"读作本条。
 
 - **现象**：353d1e0 已提交全套 AppIcon.appiconset，真机桌面仍显示默认白图标。
 - **根因**：壳工程（ADR-0037 手工源文件）target 级 buildSettings 只有

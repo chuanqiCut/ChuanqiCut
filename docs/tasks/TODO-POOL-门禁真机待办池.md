@@ -358,3 +358,12 @@ SPM 临时产物一律 `swift test --disable-sandbox --scratch-path "$ROOT/build
   探针终验 finish frames=90×2 段、两段录像 5.8MB 回传核验；**录制功能全链修复完成
   （P110/P111/P112/P114 四案）**。新增：录制成功自动存相册（PHPhotoLibrary add-only，
   首次使用会弹权限，允许后每段录像自动入相册）。A3 录像方向待传哲相册目检。
+
+- **2026-10-11 收口轮（集成机）**：P93/P94 MultiCam 档位修复 + 构建机批（Makeup 3 案 /
+  MetalFX 对表 / 曝光夹取）入库 fdb4e97（Camera 62/62 + 双壳绿，详见 camera.md 模块册）。
+  新增真机项：
+  - [ ] **P93/P94 复验**：双摄会话下切换 720p/1080p/4K 不崩（preset 异常已根除），
+    档位实际生效（activeFormat 分辨率对得上），帧率切换后仍准（选 format 后重放）；
+    单摄档位回归（普通 Session preset 路径未动）
+  - [ ] **Makeup/MetalFX 回归目检**：美妆五区域正常（irisMask/羽化修复后）、
+    MetalFX 升采样画质（SDK 命名全对表后首次真编译）

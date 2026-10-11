@@ -747,7 +747,7 @@ RESEARCH-004/005 结论全部维持，本文补**操作层**，关键增量：
 
 #### 壳工程图标/启动图修复（2026-10-11，随 B-02 真机批）
 
-- **AppIcon 不生效根因 = 双壳 pbxproj 缺 `ASSETCATALOG_COMPILER_APPICON_NAME`**（P110）：
+- **AppIcon 不生效根因 = 双壳 pbxproj 缺 `ASSETCATALOG_COMPILER_APPICON_NAME`**（P116，原误记 P110 已改号）：
   synchronized groups 自动把 xcassets 编进 Resources，但无此 setting 时 actool 收不到
   `--app-icon`，产物 Info.plist 无 CFBundleIcons → 桌面默认白图标。已用
   `edit_project.rb set-setting … AppIcon base` 补 iOS `ChuanqiCutApp` + macOS
@@ -759,8 +759,8 @@ RESEARCH-004/005 结论全部维持，本文补**操作层**，关键增量：
   任意设备 fit/crop 视觉一致）；`UILaunchScreen.UIImageName` → `LaunchImage`，
   旧 `LaunchIcon.imageset` 删除（构图已并入整图）。miora v2 场记板为旧版设计未采用，
   图标主图维持 353d1e0 的 v17。
-- **遗留**：根目录 `ChuanqiCut-AppIcon-Launch.miora` + `_assets/` 为 workbuddy 工具产物
-  （违反 ADR-0019 根目录纪律），待传哲拍板删除或挪 `.workbuddy/assets/`。
+- **遗留处置（2026-10-11 收口轮）**：miora 产物已挪 `.workbuddy/assets/`（ADR-0019
+  根目录纪律恢复）；是否彻底删除待传哲定。
 
 ### 调研 · 决策 · 池指针
 

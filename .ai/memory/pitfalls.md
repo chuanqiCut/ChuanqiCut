@@ -1868,3 +1868,51 @@ TASK-CAM-012 剩余风险栏其实预判了（"若真机上 CI 工作空间表�
   就会前进（今天一天 ADR 从 0038 走到 0039、HANDOFF 从 014 走到 019）。
 - **处置惯例**：撞号方（后入库）让位改号并全文替换引用（本次 015→019，TASK 卡同步），
   与 P63/P67/P70「先入库保留、后入库让位」一致。
+
+## P110（2026-10-11，壳工程图标/启动图，集成机）synchronized groups 自动编 xcassets ≠ 图标生效——ASSETCATALOG_COMPILER_APPICON_NAME 必须显式写
+
+- **现象**：353d1e0 已提交全套 AppIcon.appiconset，真机桌面仍显示默认白图标。
+- **根因**：壳工程（ADR-0037 手工源文件）target 级 buildSettings 只有
+  `INFOPLIST_FILE`/`TEAM`/`BUNDLE_ID` 四件，**缺 `ASSETCATALOG_COMPILER_APPICON_NAME`**。
+  synchronized groups 会自动把 Assets.xcassets 进 Resources（car 照编），但无此
+  setting 时 actool 收不到 `--app-icon`，构建产物 Info.plist **没有 CFBundleIcons** →
+  SpringBoard 用默认图标。xcassets 编译成功与图标生效是两件事。
+- **修法**：`edit_project.rb set-setting <project> <target> ASSETCATALOG_COMPILER_APPICON_NAME AppIcon base`
+  双壳各一条；顺带修了该脚本 `base` 模式的 ArgumentError（原写
+  `target.build_settings[key]`，xcodeproj gem 此方法需配置名参数 → 改为遍历
+  build_configurations 落到每个配置）。
+- **验证口径（防复发）**：①`xcodebuild -showBuildSettings | grep APPICON` 应有值；
+  ②`xcrun actool --compile … --app-icon AppIcon --output-partial-info-plist …`
+  产物 partial.plist 必须含 `CFBundleIcons/CFBundlePrimaryIcon`；③真机旧安装会缓存
+  图标，验收需删除重装。后续 ADR-0033 project.yml 迁移时此 setting 要进模板，
+  新 target 一律走 edit_project.rb 而非裸编 pbxproj。
+
+### P110 · appendVideo 的 .writing 守卫排在 startWriting 之前 = 录制完全坏 + 停止即崩
+> 日期 / 来源 / 验证状态：2026-10-11 / B-02 真机自动探针（CQ_CAM_PROBE）/ **verified**
+
+1. df2a672（CAM-030）给 appendVideo 加的 `writer.status == .writing` 守卫排在
+   `startSessionIfNeeded`（内含 startWriting）**之前**——writer 初始状态 .unknown
+   永远过不了守卫 → startWriting 永不执行 → **0 帧录制**；stop 时
+   `finishWriting` 对状态 0 抛 NSInternalInconsistencyException → App 崩溃。
+   自 10-07 起录制在真机上从未成功过（该批真机验证挂池未跑）。
+2. 修：守卫放行 `.unknown`（首帧必须走到 startSession）；finish 只对 .writing
+   调 markAsFinished/finishWriting，未知/失败态走显式失败路径（不碰 writer）。
+3. 防复发规则：①「拦截已失效状态」的守卫别误伤初始态——状态机守卫枚举合法
+   目标态，而不是排除单个坏态；②B-02 起 CameraRecorder 有真机探针
+   （CQ_CAM_PROBE），录制回归先跑探针再上问卷。
+
+### P111 · iOS 26 photoOutput 交付未旋转 buffer + 方向在元数据；前摄 270° 偏移只属于 videoDataOutput
+> 日期 / 来源 / 验证状态：2026-10-11 / B-02 真机自动探针（三轮回放定案）/ **verified**
+
+1. **photoOutput（iOS 26）**：连接 videoRotationAngle=90 实际生效（actual=90），
+   但交付 buffer 仍为横向原生（1920×1080），方向在
+   `photo.metadata[kCGImagePropertyOrientation]`（后摄=6，前摄=4）。
+   消费管线必须 `CIImage.oriented(exif)` 摆正——忽略元数据 = 存出横躺照片。
+   ⚠️ 元数据值装箱形态不赌（NSNumber/String 双形态兼容）；前摄（连接镜像）
+   metadata 4 的有效值为 6（数据驱动表在 CameraViewModel，横持未测挂池）。
+2. **P72 的前摄 270° 偏移只属于 videoDataOutput**：photoOutput 前摄用后摄同款
+   语义（90=竖屏）。拍照路径角度用 photo 语义、镜像仍按真实摄位——两件事
+   分开传参（applyOrientation(photoOutputSemantics:)）。
+3. 防复发规则：①拍照/录制产物验收必须**拉文件看尺寸**，预览正确 ≠ 产物正确；
+   ②photoOutput/videoDataOutput 的方向语义分开验证，不互相外推；③排障日志打印
+   实际生效值（actual），光打印计算值会被 supported=false 静默跳过骗掉。

@@ -70,7 +70,7 @@
 - 当前集成机实测：macOS 26.7.1 / Xcode 26.6 / Swift 6.3.3；cmake 4.4.3 位于 `~/.workbuddy/binaries/cmake/CMake.app`；无 Homebrew；CocoaPods 1.17.0。**CPU 是 Intel（`uname -m` = x86_64）** —— 报任何构建/性能结论都要带上这个前提。
 - 最近一次全量门禁（2026-10-08）：PASS 14 / FAIL 0；core Debug/Release 各 46/46，bindings 26，Player 52，Camera 57，Import 16，Editor 57，golden 21。
 - 最近一次 core 编译 + ctest（2026-10-11，PAL→Platform 改名后）：`build_core.sh --platform=apple --config=Debug --test` → **EXIT 0，46/46 通过**（113.32s），0 error / 0 warning。**全量门禁 `run_gate.sh` 尚未重跑**。
-- 编号取号前必须 `git fetch` 核远端；截至 2026-10-11：ADR 下一号 **0036**（0035 已用），INFRA 卡下一号 025（024 已用），pitfalls 下一号 **P104**（P98/P99/P100/P101/P102/P103 已占）。
+- 编号取号前必须 `git fetch` 核远端；截至 2026-10-11 09:40：ADR 下一号 **0037**（0035 我用、0036 被 DEPS 线同日取用），INFRA 卡下一号 025（024 已用），pitfalls 下一号 **P104**（P98/P99/P100/P101/P102/P103 已占）。**并发时更要现取现核** —— 两个 agent 同日取号极易撞。
 
 ## 未决事项
 - FFmpeg LGPL v2.1+ 链接处置待法务拍板，不由 AI 代决。

@@ -130,6 +130,27 @@ b5b2eec  skill 定义同步（3 文件）
 - 你改：license 段改写为 `NOTICE.md` + LGPL-2.1-or-later 说明。
 - ✅ 现状：叠加态完整（`git show HEAD:... | grep -c NOTICE` = 0，工作区 = 2，说明我的已入库、你的在工作区）。
 
+### 5.2b 09:40 复核：你又触及的高冲突共享文件 —— 已核，我的改名未被回退
+
+你在 09:0x 又改了一批，其中几个是**我这次动过的高冲突文件**。我逐个核过，
+**你的改动是叠加，没回退我的改名**（你基于已含我改名的 HEAD 工作，所以天然叠加）：
+
+| 文件 | 你的动作 | 我的改名是否还在 | 证据 |
+|---|---|---|---|
+| `CMakeLists.txt`（根） | 改 | ✅ 在 | `add_subdirectory(engine/platform)` 第 40 行 ✓ |
+| `engine/core/CMakeLists.txt` | 改 | ✅ 在 | `platform` 提及 2 处 ✓ |
+| `tests/CMakeLists.txt` | 改 | ✅ 未在本次 diff 中（本次动的是别处） | — |
+| `engine/core/cq/` | **新增** `ffmpeg_probe.{cpp,h}` | ✅ 新增，未覆盖我任何文件 | `git status` 显示 `??` ✓ |
+| `.ai/memory/baselines.md` | 改 | ✅ 我加的 2026-10-11 段在 | 计数 1 ✓ |
+| `engine/NOTICE.md` | 新增 | — | 你的地盘 |
+| `docs/tasks/TASK-DEPS-012.md` / `ADR-0036` | 新增 | — | 你的地盘 |
+
+**反查全仓确认无回退**：`grep -rn "cq/pal/\|cq_pal_\|PalPtr\|CQ_PAL_" engine tests CMakeLists.txt` → **0 命中**。
+
+⚠️ **编号提醒**：你取了 `ADR-0036`（FFmpeg 本地 Pod 二进制接入和 LGPL 处置），
+我此前记的「下一号 0036」已作废，我这边顺延为 **0037**。
+**并发时编号要现取现核** —— 两个 agent 同日取号极易撞，别只看 `docs/README.md` 的表（会滞后）。
+
 ### 5.3 我没有碰的（你的地盘，随便动）
 
 `third_party/CMakeLists.txt`（你引入 `cq_ffmpeg` target，binary/source 双模式，85 行 diff）、

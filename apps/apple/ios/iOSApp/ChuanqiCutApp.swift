@@ -51,7 +51,9 @@ struct ChuanqiCutApp: App {
     var body: some Scene {
         WindowGroup {
             #if DEBUG
-            if autoEnterEditor {
+            if autoEnterCamera {
+                CameraView().ignoresSafeArea()
+            } else if autoEnterEditor {
                 EditorScreen()
             } else {
                 HomeView()

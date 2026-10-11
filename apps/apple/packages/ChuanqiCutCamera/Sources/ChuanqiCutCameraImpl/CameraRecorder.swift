@@ -14,7 +14,7 @@
 // writer 永不启动的死锁（真机首验「录制无效」根因）。现序：setup →
 // startSession（首帧）→ 取池（懒取+缓存，取不到直配兜底）→ 渲染 → append。
 //
-// PTS 纪律（对齐 pal-apple.md PALA-012 口径）：会话起点 = 首个视频帧 PTS，
+// PTS 纪律（对齐 platform-apple.md PALA-012 口径）：会话起点 = 首个视频帧 PTS，
 // 早于首帧到达的音频块被丢弃（首帧几乎即时到达，头部截断可忽略且语义诚实）。
 //
 // 线程模型：appendVideo 只在 videoQueue、appendAudio 只在 audioQueue（由
@@ -81,6 +81,9 @@ final class CameraRecorder: @unchecked Sendable {
     private let faceBoxes: FaceBoxStore?
     private let ciContext: CIContext
     private let withAudio: Bool
+    /// CAM-018：产物 sRGB 标记（渲染后附着的色彩空间，全录制期同一实例）。
+    private let sRGBColorSpace = CGColorSpace(name: CGColorSpace.sRGB)
+        ?? CGColorSpaceCreateDeviceRGB()
     private let lock = NSLock()
     private var sessionStarted = false
     /// 会话起点 = 首个视频帧 PTS（startSession 时记录）。音频 append 的 PTS 下界。
@@ -454,22 +457,30 @@ final class CameraRecorder: @unchecked Sendable {
         // 串行队列上调用一次，闭包只读 status/error，且 writer 此后不再被写入
         // （markAsFinished 已调用）—— 跨闭包持有没有数据竞争。
         nonisolated(unsafe) let finishingWriter = writer
-        finishingWriter.finishWriting { [weak self] in
+        // ⚠️ P114（B-02 真机实锤）：完成回调必须**强持有 self**——stopRecording
+        // 先 recorderBox.set(nil) 再 finish，弱引用下 recorder 在回调执行前析构，
+        // currentAppendedFrameCount() 读出 0 → 把 status=.completed 的成功录制
+        // 误判 nothingWritten → 删文件 + 报「没有录制到任何画面」。
+        // 竞态 = 回调与析构赛跑（间歇性：探针赢过、用户手点输过）。
+        // 无保留环：writer 的完成回调一次性执行后即释放。
+        finishingWriter.finishWriting { [self] in
             let status = finishingWriter.status
             let error = finishingWriter.error
-            let url = self?.outputURL
-            // ⚠️ 帧数必须在回调内经锁读（P74）：finish 主线程直读会与 videoQueue 的
-            // 自增竞争，脏读成 0 时把成功录制误判 .nothingWritten 删文件 —— 真机
-            // 「修了池仍然录制无效」的残余根因。回调此刻 isFinished 已挡新帧。
-            let writtenFrames = self?.currentAppendedFrameCount() ?? 0
+            let url = self.outputURL
+            // 帧数必须在回调内经锁读（P74）：finish 主线程直读会与 videoQueue 的
+            // 自增竞争。回调此刻 isFinished 已挡新帧，锁读为终值。
+            let writtenFrames = self.currentAppendedFrameCount()
+            #if DEBUG
+            fputs("[cam-probe] finish status=\(status.rawValue) frames=\(writtenFrames)"
+                  + " err=\(error?.localizedDescription ?? "nil")\n", stderr)
+            fflush(stderr)
+            #endif
             Self.logger.info("录制收尾 status=\(status.rawValue, privacy: .public) frames=\(writtenFrames, privacy: .public) error=\(error?.localizedDescription ?? "nil", privacy: .public)")
             Task { @MainActor in
-                if status == .completed, let url, writtenFrames > 0 {
+                if status == .completed, writtenFrames > 0 {
                     completion(.success(url))
                 } else {
-                    if let url {
-                        try? FileManager.default.removeItem(at: url)
-                    }
+                    try? FileManager.default.removeItem(at: url)
                     // 0 帧完成 ≠ 成功（P60 族：计数必须绑定真出了效果）——不产空文件假成功。
                     completion(.failure(writtenFrames == 0
                         ? RecordingError.nothingWritten

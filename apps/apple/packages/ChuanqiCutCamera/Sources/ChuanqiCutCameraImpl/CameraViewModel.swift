@@ -368,21 +368,21 @@ final class CameraViewModel: ObservableObject {
         ])
         input.expectsMediaDataInRealTime = realtime
         writer.add(input)
-        var adaptor: AVAssetWriterInputPixelBufferAdaptor?
-        if variant == "C" || variant == "D" {
-            var sourceAttributes: [String: Any] = [
-                kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA,
-                kCVPixelBufferWidthKey as String: dims.0,
-                kCVPixelBufferHeightKey as String: dims.1,
-            ]
-            if variant == "C" {
-                sourceAttributes[kCVImageBufferCGColorSpaceKey as String] =
-                    CGColorSpace(name: CGColorSpace.sRGB) ?? CGColorSpaceCreateDeviceRGB()
-            }
-            adaptor = AVAssetWriterInputPixelBufferAdaptor(assetWriterInput: input,
-                sourcePixelBufferAttributes: sourceAttributes)
-            smokeLog("adaptor pre-created (variant \(variant))")
+        // adaptor 必须先于 startWriting 创建（之后创建直接抛 NSException——
+        // "input has already started writing"，smoke 自身首轮踩过）。
+        var sourceAttributes: [String: Any] = [
+            kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA,
+            kCVPixelBufferWidthKey as String: dims.0,
+            kCVPixelBufferHeightKey as String: dims.1,
+        ]
+        if variant == "C" {
+            // 毒性验证组：色键在源属性里 = iOS 26.6 startWriting 必炸（P112）
+            sourceAttributes[kCVImageBufferCGColorSpaceKey as String] =
+                CGColorSpace(name: CGColorSpace.sRGB) ?? CGColorSpaceCreateDeviceRGB()
         }
+        let adaptor = AVAssetWriterInputPixelBufferAdaptor(assetWriterInput: input,
+            sourcePixelBufferAttributes: sourceAttributes)
+        smokeLog("adaptor pre-created (variant \(variant))")
         let started = writer.startWriting()
         smokeLog("startWriting=\(started) status=\(writer.status.rawValue)")
         guard started else {
@@ -403,14 +403,8 @@ final class CameraViewModel: ObservableObject {
                 memset(base, 0x60, CVPixelBufferGetDataSize(pb))
             }
             CVPixelBufferUnlockBaseAddress(pb, [])
-            let appendAdaptor = adaptor ?? AVAssetWriterInputPixelBufferAdaptor(
-                assetWriterInput: input,
-                sourcePixelBufferAttributes: [
-                    kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA,
-                    kCVPixelBufferWidthKey as String: dims.0,
-                    kCVPixelBufferHeightKey as String: dims.1])
             let time = CMTime(seconds: 0, preferredTimescale: 600)
-            appendAdaptor.append(pb, withPresentationTime: time)
+            adaptor.append(pb, withPresentationTime: time)
             smokeLog("append status=\(writer.status.rawValue)")
         }
         // markAsFinished 仅合法于 .writing（.failed 上调用抛异常——P110 同族）。
@@ -428,6 +422,11 @@ final class CameraViewModel: ObservableObject {
         guard !probeStarted, phase == .running,
               let mode = ProcessInfo.processInfo.environment["CQ_CAM_PROBE"] else { return }
         probeStarted = true
+        if mode == "manual" {
+            // 人工复现模式：不自动操作，仅开取证（用户手点录制/停止，日志给真相）。
+            probeLog("manual mode: forensics on —— 请现在点录制，2 秒后点停止")
+            return
+        }
         probeLog("start mode=\(mode) position=\(position == .front ? "front" : "back")")
         // P112：smoke 挪到 detached 线程 + 2.5s 延迟——与真实录制同上下文
         //（非主线程、采集满负荷交付中）。若此时失败而主线程成功 = 上下文触发。
@@ -458,6 +457,15 @@ final class CameraViewModel: ObservableObject {
             self.stopRecording()
             self.probeLog("recording stopped")
             try? await Task.sleep(nanoseconds: 1_500_000_000)
+            // B-02 用户实测复现：同一会话内连续第二段录制（首段后不重启 App）。
+            if mode == "front" || mode == "double" {
+                self.startRecording()
+                self.probeLog("recording2 started")
+                try? await Task.sleep(nanoseconds: 3_000_000_000)
+                self.stopRecording()
+                self.probeLog("recording2 stopped")
+                try? await Task.sleep(nanoseconds: 1_500_000_000)
+            }
             // 产物回传：CQ_LOG_UPLOAD=host:port → HTTP PUT（WiFi 直传，绕开
             // devicectl 文件拷贝的不可靠——B-02 实测多次 0 该厂商）。
             if let endpoint = ProcessInfo.processInfo.environment["CQ_LOG_UPLOAD"] {
@@ -530,13 +538,14 @@ final class CameraViewModel: ObservableObject {
         // phase == .running 前置要求 prepare 成功（renderer 非 nil）；显式解包仅为
         // 编译器——人脸框单一真源 = renderer.faceBoxes（CAM-019 修复轮）。
         guard phase == .running, !isRecording, recorderBox.get() == nil,
-              let faceBoxes = renderer?.faceBoxes else { return }
+              let previewRenderer = renderer else { return }
+        let faceBoxes = previewRenderer.faceBoxes
         let url = FileManager.default.temporaryDirectory
             .appendingPathComponent("cq_rec_\(Int(Date().timeIntervalSince1970 * 1000)).mp4")
         // 双摄（CAM-021）：录制源 = Renderer 合成器（主+PiP 两路完整链，与预览同序）；
         // 单摄走 Recorder 内联链路（锁定参数语义不变）。
         let dualComposer: ((CVImageBuffer, CMTime) -> CIImage)? = dualCamEnabled
-            ? { [renderer] buffer, time in renderer.composeRecordingFrame(back: buffer, at: time) }
+            ? { buffer, time in previewRenderer.composeRecordingFrame(back: buffer, at: time) }
             : nil
         let recorder = CameraRecorder(
             outputURL: url,
@@ -566,6 +575,9 @@ final class CameraViewModel: ObservableObject {
             switch result {
             case .success(let url):
                 self.recordedURL = url
+                // 成品存相册一份（用户要求：直接在相册看效果；add-only 权限，
+                // 不影响相册浏览导入的 read 权限语义）。
+                self.saveRecordingToPhotos(url)
             case .failure(let error):
                 self.errorMessage = "录制失败：\(error.localizedDescription)"
             }
@@ -695,6 +707,17 @@ final class CameraViewModel: ObservableObject {
                 self.isCapturing = false
                 switch processed {
                 case .success(let cgImage):
+                    #if DEBUG
+                    if self.probeActive {
+                        let url = FileManager.default.temporaryDirectory
+                            .appendingPathComponent("cam_probe_photo.png")
+                        if let data = UIImage(cgImage: cgImage).pngData() {
+                            try? data.write(to: url)
+                        }
+                        self.probeLog("photo saved \(cgImage.width)x\(cgImage.height) -> \(url.lastPathComponent)")
+                        return
+                    }
+                    #endif
                     self.savePhotoToPhotos(cgImage)
                 case .failure(let error):
                     self.errorMessage = "拍照失败：\(error.localizedDescription)"
@@ -728,6 +751,31 @@ final class CameraViewModel: ObservableObject {
         }
     }
 
+    /// 录制产物存相册（PHPhotoLibrary add-only；与拍照同一权限面）。
+    /// 失败不吞不崩：errorMessage 提示，tmp 原件保留（编辑器入口仍可用）。
+    private func saveRecordingToPhotos(_ url: URL) {
+        PHPhotoLibrary.requestAuthorization(for: .addOnly) { status in
+            guard status == .authorized || status == .limited else {
+                Task { @MainActor in
+                    self.errorMessage = "相册保存被拒（系统设置中开启后，下次录制生效）"
+                }
+                return
+            }
+            PHPhotoLibrary.shared().performChanges {
+                PHAssetChangeRequest.creationRequestForAssetFromVideo(atFileURL: url)
+            } completionHandler: { ok, error in
+                Task { @MainActor in
+                    if ok {
+                        Self.photoLogger.info("录制已存相册")
+                    } else {
+                        Self.photoLogger.error("录制存相册失败：\(error?.localizedDescription ?? "未知", privacy: .public)")
+                        self.errorMessage = "存相册失败：\(error?.localizedDescription ?? "未知")（tmp 原件仍在，可进编辑器）"
+                    }
+                }
+            }
+        }
+    }
+
     func clearError() {
         errorMessage = nil
     }
@@ -742,7 +790,17 @@ final class CameraViewModel: ObservableObject {
         let recorderBox = self.recorderBox
         let detector = self.detector
         let frontDetector = self.frontDetector
+        #if DEBUG
+        nonisolated(unsafe) var probeFrameCount = 0
+        #endif
         manager.onVideoFrame = { buffer, pts in
+            #if DEBUG
+            probeFrameCount += 1
+            if probeFrameCount % 60 == 0 {
+                fputs("[cam-probe] frames flowing N=\(probeFrameCount)\n", stderr)
+                fflush(stderr)
+            }
+            #endif
             renderer.frameSlot.push(buffer)      // 预览（latest-wins）
             detector.offer(buffer, at: pts)      // 检测（内部降频+忙丢弃，永不阻塞采集）
             recorderBox.get()?.appendVideo(sourceBuffer: buffer, at: pts)  // 录制

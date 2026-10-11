@@ -1916,3 +1916,18 @@ TASK-CAM-012 剩余风险栏其实预判了（"若真机上 CI 工作空间表�
 3. 防复发规则：①拍照/录制产物验收必须**拉文件看尺寸**，预览正确 ≠ 产物正确；
    ②photoOutput/videoDataOutput 的方向语义分开验证，不互相外推；③排障日志打印
    实际生效值（actual），光打印计算值会被 supported=false 静默跳过骗掉。
+
+### P114 · finish 完成回调 [weak self] + 录制器提前析构 = 成功录制被判 0 帧删除
+> 日期 / 来源 / 验证状态：2026-10-11 / B-02 真机探针（finish status=2 frames=0 现场抓包）/ **verified**
+
+- **链路**：stopRecording 先 `recorderBox.set(nil)`（唯一强引用消失）→ finish()
+  返回 → recorder 在 finishWriting 的**异步完成回调执行前析构** → `[weak self]`
+  为 nil → `writtenFrames = self?.... ?? 0` 读出 0 → status=.completed 的成功
+  录制被判 nothingWritten → **删文件 + 报「没有录制到任何画面」**。
+- **间歇性**：回调与析构赛跑——探针（finish 后立马上传，checkpoint 多）赢过、
+  用户手点输过；这也是「修了池仍然录制无效」（P74）悬案多年的真正同族。
+- **修**：完成回调 `[self]` 强持有（writer 完成回调一次性执行后即释放，无保留环）；
+  修复后 finish frames=90×2 段全对（探针实测）。
+- 防复发规则：①异步完成回调里要读「对象终态」的，闭包一律强持有或提前把终值
+  拷进局部——weak self + 可选链 `?? 默认值` 是把竞态伪装成默认值的毒药；
+  ②「计数为 0 = 没发生」的断言必须先证明「读数者活着」。

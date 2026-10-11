@@ -83,7 +83,9 @@ final class MakeupMaskTests: XCTestCase {
         guard let mask = MakeupMask.polygonMask(points: tri, in: canvas) else {
             return XCTFail("三点应产出三角形蒙版")
         }
-        XCTAssertGreaterThanOrEqual(sample(mask, at: CGPoint(x: 50, y: 45)), 200, "多边形内 = 白（着色区）")
+        // 采样点取三角**内部**（归一化 (0.5,0.5) = 形心）：边缘 1px 羽化带内会掉到
+        // 200 以下，那是羽化，不是几何错——别拿边缘点当「内部」断言。
+        XCTAssertGreaterThanOrEqual(sample(mask, at: CGPoint(x: 50, y: 50)), 200, "多边形内 = 白（着色区）")
         XCTAssertLessThanOrEqual(sample(mask, at: CGPoint(x: 3, y: 3)), 25, "多边形外 = 黑（保持原样）")
     }
 

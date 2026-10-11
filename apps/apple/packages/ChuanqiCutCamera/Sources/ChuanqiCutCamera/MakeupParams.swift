@@ -155,16 +155,24 @@ public enum MakeupMask {
             let tri = triangleMask(a: anchor, b: ci[i], c: ci[i + 1], in: extent)
             mask = tri.composited(over: mask)
         }
+        // 羽化按画面高度取比例，但小画布（如单测 100px）比例值会退化到亚像素级
+        // 看不出羽化；下限 1px 保证「有羽化」这件事在任何尺度成立。真值 [E]。
+        let feather = max(featherRadius * extent.height, 1.0)
         return mask.applyingFilter("CIGaussianBlur", parameters: [
-            kCIInputRadiusKey: featherRadius * extent.height,
+            kCIInputRadiusKey: feather,
         ]).cropped(to: extent)
     }
 
     /// 三角形蒙版：白三角 + 羽化边缘（把三角形画进位图再转 CI——CI 无多边形原语，
     /// CPU 填充一次性成本，1080p 下 <0.5ms [E]，美妆 15-30Hz 蒙版缓存复用不逐帧重建）。
+    ///
+    /// ⚠️ 位图按 `extent.origin` 起算（CI 位图首行 = extent 顶部），像素绝对坐标 =
+    /// `extent.origin + 局部坐标`：extent 非零点原时几何才不会整体平移。
     private static func triangleMask(a: CGPoint, b: CGPoint, c: CGPoint, in extent: CGRect) -> CIImage {
         let width = max(Int(extent.width.rounded()), 1)
         let height = max(Int(extent.height.rounded()), 1)
+        let originX = Int(extent.minX.rounded())
+        let originY = Int(extent.minY.rounded())
         var bitmap = [UInt8](repeating: 0, count: width * height * 4)
         // 半平面光栅化（扫描线）：任一点在三角形内 = 三个叉积同号。
         func inside(_ p: CGPoint) -> Bool {
@@ -176,17 +184,19 @@ public enum MakeupMask {
             let hasPos = d1 > 0 || d2 > 0 || d3 > 0
             return !(hasNeg && hasPos)
         }
-        let minX = max(Int(floor(min(a.x, min(b.x, c.x)))), 0)
-        let maxX = min(Int(ceil(max(a.x, max(b.x, c.x)))), width - 1)
-        let minY = max(Int(floor(min(a.y, min(b.y, c.y)))), 0)
-        let maxY = min(Int(ceil(max(a.y, max(b.y, c.y)))), height - 1)
+        let minX = max(Int(floor(min(a.x, min(b.x, c.x)))) - originX, 0)
+        let maxX = min(Int(ceil(max(a.x, max(b.x, c.x)))) - originX, width - 1)
+        let minY = max(Int(floor(min(a.y, min(b.y, c.y)))) - originY, 0)
+        let maxY = min(Int(ceil(max(a.y, max(b.y, c.y)))) - originY, height - 1)
         guard minX <= maxX, minY <= maxY else {
             return CIImage(color: .black).cropped(to: extent)
         }
-        for y in minY...maxY {
-            for x in minX...maxX {
-                if inside(CGPoint(x: CGFloat(x) + 0.5, y: CGFloat(y) + 0.5)) {
-                    let offset = ((height - 1 - y) * width + x) * 4  // CI 位图首行 = 顶部
+        for row in minY...maxY {
+            for col in minX...maxX {
+                let px = CGPoint(x: CGFloat(originX + col) + 0.5,
+                                 y: CGFloat(originY + row) + 0.5)
+                if inside(px) {
+                    let offset = ((height - 1 - row) * width + col) * 4  // CI 位图首行 = 顶部
                     bitmap[offset] = 255
                     bitmap[offset + 1] = 255
                     bitmap[offset + 2] = 255
@@ -196,6 +206,8 @@ public enum MakeupMask {
         }
         return CIImage(bitmapData: Data(bitmap), bytesPerRow: width * 4,
                        size: extent.size, format: .RGBA8, colorSpace: nil)
+            .transformed(by: CGAffineTransform(translationX: extent.origin.x,
+                                               y: extent.origin.y))
     }
 
     /// 唇部蒙版：外唇多边形 − 内唇（口腔/牙齿保护，验收项）。
@@ -271,7 +283,11 @@ public enum MakeupMask {
             "inputColor0": CIColor(red: 1, green: 1, blue: 1),
             "inputColor1": CIColor(red: 1, green: 1, blue: 1, alpha: 0),
         ]), let output = filter.outputImage else { return nil }
-        return output.cropped(to: extent)
+        // ⚠️ cropped 是**交集**不是外扩（P81 反例）：把有限大小的输出裁回画面，
+        // 只会保留两者的交集 → extent 仍是渐变那块小矩形。要拿到「画面 extent」必须
+        // 把渐变**合成到黑底画布**上（composited 取并集语义），再裁一次兜底。
+        return output.composited(over: CIImage(color: .black).cropped(to: extent))
+            .cropped(to: extent)
     }
 }
 

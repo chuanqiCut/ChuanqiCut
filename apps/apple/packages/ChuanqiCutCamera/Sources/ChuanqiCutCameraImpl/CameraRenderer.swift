@@ -29,6 +29,7 @@
 //   - CIContext 线程安全，可被预览渲染线程与录制队列共享。
 
 import CoreImage
+import CoreMedia
 import Foundation
 import Metal
 import MetalKit
@@ -350,10 +351,13 @@ final class CameraPreviewRenderer: NSObject, MTKViewDelegate {
         defer { fxLock.unlock() }
         let key = (frameWidth, frameHeight, outW, outH, pixelFormat.rawValue)
         let entry: FXEntry
-        if fxKey == key, let existing = fxEntry {
+        // 元组键比较：Swift 6 不再给 optional 元组做隐式提升，先解包再比（别用 `==` 混 optional）。
+        if let cachedKey = fxKey, cachedKey == key, let existing = fxEntry {
             entry = existing
         } else {
-            guard MetalFX.isSupported(on: commandQueue.device),
+            // ⚠️ 支持性查询在 **MetalFXScaler** 上（本文件不 import MetalFX，
+            // 该模块只由 Effects/MetalFXScaler.swift 引入）——别写裸 `MetalFX.isSupported`。
+            guard MetalFXScaler.isSupported(on: commandQueue.device),
                   let scaler = MetalFXScaler(device: commandQueue.device,
                                              inputWidth: frameWidth, inputHeight: frameHeight,
                                              outputWidth: outW, outputHeight: outH,
@@ -690,6 +694,9 @@ final class CameraPreviewRenderer: NSObject, MTKViewDelegate {
               let buffer = mainSlot.latest() else {
             return  // 尚无帧 / 无 drawable：跳过本拍，不报错（启动初期常态）
         }
+        #if DEBUG
+        let debugStart = DispatchTime.now()
+        #endif
 
         var image = CIImage(cvPixelBuffer: buffer)
         // 动物/美体锚点仅由后摄检测桥供给（前摄只做人脸链）——v1 口径。

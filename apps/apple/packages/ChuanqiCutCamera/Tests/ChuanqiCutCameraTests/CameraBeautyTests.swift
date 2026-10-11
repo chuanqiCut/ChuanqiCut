@@ -73,10 +73,25 @@ final class CameraBeautyTests: XCTestCase {
         let box = InvocationBox()
         CameraBeautyEngine.smoothing = makeCountingEngine(box)
         let source = makeSourceImage()
-        let output = CameraBeautyParams(smoothing: 0.5, brightening: 0).apply(to: source)
-        XCTAssertEqual(box.count, 1, "smoothing > 0 必须走注入引擎")
+        // ⚠️ 必须给**非空人脸框**：算法驱动定则（传哲 2026-10-07）下 faces=nil / []
+        // 一律直通（无算法即无效果），引擎根本不会被调用——那是 testOffNeverInvokesEngine
+        // 与直通语义的验收范围，不是本用例的。本用例验的是「有脸时注入引擎接管磨皮」。
+        let output = CameraBeautyParams(smoothing: 0.5, brightening: 0)
+            .apply(to: source, faces: [CGRect(x: 0.25, y: 0.25, width: 0.5, height: 0.5)])
+        XCTAssertEqual(box.count, 1, "有脸 + smoothing > 0 必须走注入引擎")
         XCTAssertNotNil(output)
         XCTAssertEqual(output.extent, source.extent, "引擎结果不得改变画面尺寸（引擎契约）")
+    }
+
+    /// 直通语义的机器防线：nil / [] 时**任何引擎都不许被触碰**（算法驱动定则）。
+    func testNoFaceNeverInvokesEngine() {
+        let box = InvocationBox()
+        CameraBeautyEngine.smoothing = makeCountingEngine(box)
+        let source = makeSourceImage()
+        let params = CameraBeautyParams(smoothing: 0.5, brightening: 0)
+        XCTAssertTrue(params.apply(to: source, faces: nil) === source, "faces=nil 必须恒等直通")
+        XCTAssertTrue(params.apply(to: source, faces: []) === source, "faces=[] 必须恒等直通")
+        XCTAssertEqual(box.count, 0, "无脸时不得触碰引擎（无算法即无效果）")
     }
 
     func testOffNeverInvokesEngine() {
@@ -98,7 +113,9 @@ final class CameraBeautyTests: XCTestCase {
     func testEngineDeclineFallsBackToDefault() {
         CameraBeautyEngine.smoothing = { _, _ in nil }  // 引擎放弃
         let source = makeSourceImage()
-        let output = CameraBeautyParams(smoothing: 0.5, brightening: 0).apply(to: source)
+        // 同上：必须给脸，否则走的是直通分支，回落路径根本不会被触发。
+        let output = CameraBeautyParams(smoothing: 0.5, brightening: 0)
+            .apply(to: source, faces: [CGRect(x: 0.25, y: 0.25, width: 0.5, height: 0.5)])
         XCTAssertNotNil(output, "引擎放弃后必须回落默认实现，不允许 nil 输出")
         XCTAssertEqual(output.extent, source.extent, "回落路径同样不得改变画面尺寸")
     }

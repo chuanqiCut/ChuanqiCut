@@ -1,4 +1,4 @@
-// CameraManager — 相机采集编排（CAM-002，ADR-0014：iOS 原生，不经 PAL/C ABI）
+// CameraManager — 相机采集编排（CAM-002，ADR-0014：iOS 原生，不经 Platform/C ABI）
 //
 // 线程模型（扬长避短前提下仍守红线 #8「主线程零阻塞」）：
 //   - 会话配置/启停全部在 sessionQueue 串行执行（AVFoundation 的经典约束：
@@ -51,6 +51,16 @@ final class CameraManager: NSObject, @unchecked Sendable {
             case .hd720: return .hd1280x720
             case .hd1080: return .hd1920x1080
             case .uhd4K: return .hd4K3840x2160
+            }
+        }
+
+        /// 档位目标尺寸（**MultiCamSession 专用**：那条路径不能设 preset，只能逐设备
+        /// 选 activeFormat，用它做"最接近"筛选的目标）。
+        var targetDimensions: CMVideoDimensions {
+            switch self {
+            case .hd720: return CMVideoDimensions(width: 1280, height: 720)
+            case .hd1080: return CMVideoDimensions(width: 1920, height: 1080)
+            case .uhd4K: return CMVideoDimensions(width: 3840, height: 2160)
             }
         }
     }
@@ -366,18 +376,84 @@ final class CameraManager: NSObject, @unchecked Sendable {
             let wasRunning = self.session.isRunning
             if wasRunning { self.session.stopRunning() }
             self.session.beginConfiguration()
-            var applied = false
-            if self.session.canSetSessionPreset(quality.preset) {
-                self.session.sessionPreset = quality.preset
-                self.captureQuality = quality
-                applied = true
-            } else {
-                Self.logger.error("采集档位 \(quality.rawValue, privacy: .public) 不被支持，保持原档位")
-            }
+            let applied = self.applyCaptureQualityLocked(quality)
             self.session.commitConfiguration()
             if wasRunning { self.session.startRunning() }
             Task { @MainActor in onDone(applied) }
         }
+    }
+
+    /// 应用采集档位（sessionQueue + 配置事务内调用）。
+    /// - 普通 Session：走 `sessionPreset`（`canSetSessionPreset` 不过 = 保持原档位，如实 false）。
+    /// - **MultiCamSession：禁止碰 preset**（设了必崩），改逐设备 `activeFormat`。
+    /// 未建输入（configure 早期）时只记录档位值，等输入重建时重放。
+    @discardableResult
+    private func applyCaptureQualityLocked(_ quality: CaptureQuality) -> Bool {
+        if isMultiCamSession {
+            let inputs = [videoInput, frontVideoInput].compactMap { $0 }
+            guard !inputs.isEmpty else {
+                captureQuality = quality        // 输入还没建：存值，addVideoInputLocked 会重放
+                return true
+            }
+            var anyApplied = false
+            for input in inputs {
+                anyApplied = applyFormatLocked(quality, to: input.device) || anyApplied
+            }
+            guard anyApplied else {
+                Self.logger.warning("采集档位 \(quality.rawValue, privacy: .public) 在当前设备上无可用 activeFormat，保持原档位")
+                return false
+            }
+            captureQuality = quality
+            return true
+        }
+        guard session.canSetSessionPreset(quality.preset) else {
+            Self.logger.warning("采集档位 \(quality.rawValue, privacy: .public) 不被支持，保持原档位")
+            return false
+        }
+        session.sessionPreset = quality.preset
+        captureQuality = quality
+        return true
+    }
+
+    /// 逐设备选 activeFormat（MultiCam 路径）：在**帧率区间覆盖当前 fps** 的候选里，
+    /// 取分辨率最接近档位目标的一个；选完必须重放帧率（换 format 会重置帧率范围）。
+    @discardableResult
+    private func applyFormatLocked(_ quality: CaptureQuality, to device: AVCaptureDevice) -> Bool {
+        let target = quality.targetDimensions
+        let wantFps = Double(frameRate)
+        // 选择规则抽到契约层纯函数（可单测）：MultiCam 下 activeFormat 还有一条硬约束
+        // ——只能落在 isMultiCamSupported 的子集里（AVCaptureDevice.h 原文）。
+        // 以前这里只按帧率筛，等于把约束寄托在调用方记忆上。
+        let candidates = device.formats.map { format in
+            let dims = format.formatDescription.dimensions
+            let range = format.videoSupportedFrameRateRanges
+            let minFps = range.map { $0.minFrameRate }.min() ?? 0
+            let maxFps = range.map { $0.maxFrameRate }.max() ?? 0
+            return CameraFormatCandidate(width: Int(dims.width),
+                                         height: Int(dims.height),
+                                         minFrameRate: minFps,
+                                         maxFrameRate: maxFps,
+                                         multiCamSupported: format.isMultiCamSupported)
+        }
+        guard let picked = CameraFormatSelector.bestIndex(in: candidates,
+                                                          targetWidth: Int(target.width),
+                                                          targetHeight: Int(target.height),
+                                                          frameRate: wantFps,
+                                                          multiCam: isMultiCamSession) else {
+            Self.logger.warning("设备 \(device.localizedName, privacy: .public) 在 \(self.frameRate, privacy: .public)fps 下无可用 activeFormat")
+            return false
+        }
+        let format = device.formats[picked]
+        do {
+            try device.lockForConfiguration()
+            device.activeFormat = format
+            device.unlockForConfiguration()
+        } catch {
+            Self.logger.error("activeFormat 设置失败：\(error.localizedDescription, privacy: .public)")
+            return false
+        }
+        applyFrameRateLocked(frameRate, to: device)
+        return true
     }
 
     /// 帧率（主线程调用）。对视频设备设 min=max=1/fps（统一节拍，防漂移）。
@@ -450,8 +526,11 @@ final class CameraManager: NSObject, @unchecked Sendable {
     func setExposureBias(_ bias: Float) {
         sessionQueue.async { [weak self] in
             guard let self, let device = self.videoInput?.device else { return }
-            let clamped = min(max(bias, device.activeFormat.minExposureTargetBias),
-                              device.activeFormat.maxExposureTargetBias)
+            // ⚠️ 曝光夹取区间在 **device** 上，不在 activeFormat 上（AVCaptureDevice.h:
+            // min/maxExposureTargetBias 是 AVCaptureDevice 属性）。写错时 Swift 6 只报
+            // 「cannot convert '_' to DispatchWorkItem」这类闭包级联错，看不出真因（P83 同族）。
+            let clamped = min(max(bias, device.minExposureTargetBias),
+                              device.maxExposureTargetBias)
             do {
                 try device.lockForConfiguration()
                 device.setExposureTargetBias(clamped)
@@ -579,7 +658,9 @@ final class CameraManager: NSObject, @unchecked Sendable {
     private func configureLocked(position: Position) {
         session.beginConfiguration()
         // 档位由 captureQuality 决定（默认 1080p；用户可在设置面板换 720p/4K）。
-        session.sessionPreset = captureQuality.preset
+        // ⚠️ 不能直接 `session.sessionPreset = ...`：MultiCamSession 上会抛异常崩溃
+        //（2026-10-09 实测）→ 走 applyCaptureQualityLocked 分流（multiCam 逐设备 format）。
+        _ = applyCaptureQualityLocked(captureQuality)
         defer { session.commitConfiguration() }
 
         // 视频输出：32BGRA（与零拷贝链路同口径）+ 丢帧保实时。
@@ -666,7 +747,7 @@ final class CameraManager: NSObject, @unchecked Sendable {
     private func addVideoInputLocked(position: Position,
                                      output: AVCaptureVideoDataOutput) -> AVCaptureDeviceInput? {
         let deviceType: AVCaptureDevice.DeviceType = portraitBlurEnabled
-            ? (depthCapableDevice(for: position)?.deviceType ?? .builtInWideAngleCamera)
+            ? (Self.depthCapableDevice(for: position)?.deviceType ?? .builtInWideAngleCamera)
             : .builtInWideAngleCamera
         let avPosition: AVCaptureDevice.Position = (position == .front) ? .front : .back
         guard let device = AVCaptureDevice.default(deviceType, for: .video, position: avPosition),
@@ -675,6 +756,11 @@ final class CameraManager: NSObject, @unchecked Sendable {
             return nil  // 设备缺失/被占用：调用方以 nil 判断
         }
         session.addInput(input)
+        // 档位重放：MultiCam 下 preset 不可用，档位落在设备 activeFormat 上
+        //（新建的 input 必须重放一次，否则新设备走默认 format）。
+        if isMultiCamSession {
+            _ = applyFormatLocked(captureQuality, to: input.device)
+        }
         applyFrameRateLocked(frameRate, to: input.device)
         return input
     }
@@ -870,7 +956,7 @@ private final class PhotoRelay: NSObject, AVCapturePhotoCaptureDelegate, @unchec
         }
         // ⚠️ AVCapturePhoto.depthData 命名本机无 SDK 头可核（P48/P83 同族），
         // 构建机首编译如有出入按头文件对表（一行级）。
-        deliver(buffer, photo.depthData)
+        deliver(buffer, photo.depthData, photo.metadata)
     }
 }
 

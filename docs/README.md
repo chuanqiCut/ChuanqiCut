@@ -52,7 +52,7 @@ cat docs/handoff/HANDOFF-004-*.md      # 3. 最近交接（状态以最新一份
 | [`RESEARCH-008-对标 App移动端编辑页范式与框架选型.md`](research/RESEARCH-008-对标 App移动端编辑页范式与框架选型.md) | 对标 App移动端编辑页范式拆解 + SwiftUI/UIKit 框架选型，下游 ADR-0024 / BACKLOG §12（**原 006，2026-10-07 撞号让位改号**） |
 | [`RESEARCH-009-人像效果对标对标平台对标 AppINS与追平路线.md`](research/RESEARCH-009-人像效果对标对标平台对标 AppINS与追平路线.md) | 人像效果对标（对标平台/对标 App/Instagram）与追平路线；数字一律 [E]，验收以 baselines 实测为准 |
 | [`RESEARCH-010-编辑功能现状核验与对标 App对齐路线.md`](research/RESEARCH-010-编辑功能现状核验与对标 App对齐路线.md) | **只读代码核验**编辑功能真实现状（不采信完成标记）+ 对标 App对齐路线；关联 ADR-0034 / ADR-0024 |
-| [`RESEARCH-011-仓库布局与分层整改方案.md`](research/RESEARCH-011-仓库布局与分层整改方案.md) | 仓库布局与分层整改（磁盘实勘 + 业界布局惯例对照；**只出方案不动代码**，迁移待拍板），2026-10-10 22:10 |
+| [`RESEARCH-011-仓库布局与分层整改方案.md`](research/RESEARCH-011-仓库布局与分层整改方案.md) | 仓库布局与分层整改（磁盘实勘 + 业界布局惯例对照；**只出方案不动代码**），2026-10-10 22:10；**P0/P1/P2 已于 2026-10-11 执行完毕并提交**（见 ADR-0035 / HANDOFF-018），P3 未开工 |
 | [`RESEARCH-012-商用拍摄剪辑SDK对外Demo与UI调研.md`](research/RESEARCH-012-商用拍摄剪辑SDK对外Demo与UI调研.md) | 商用 SDK 竞品（该厂商 其创作 SDK × 阿里云 UGSV **iOS 端**）demo 获取门槛与 UI 功能清单；**UI 配置化（面板/色卡/尺寸 JSON）** 与 **公开 podspec 仓库 + CDN 直链可得性** 为主要增量 |
 | `legacy/`（7 份） | 第一代调研素材（2026-09-23 前）：6 份 `技术调研_*.md` + `技术方案决策书`。**只读**，每份头部有状态横幅；性能数字一律 [E]、结论已被评审修正 |
 
@@ -92,6 +92,9 @@ cat docs/handoff/HANDOFF-004-*.md      # 3. 最近交接（状态以最新一份
 | [0029](decisions/ADR-0029-双机分工与门禁跑批节奏.md) | 双机分工与门禁跑批节奏（模块归属表 / 开发机编码优先简化档 / 待办池 / 集成机日批；0025~0028 预占素材库多轨，下一号 0030） |
 | [0030](decisions/ADR-0030-模块册分册制与阶段批门禁节奏.md) | 模块册分册制与阶段批门禁节奏（调研/任务/进度/测试门禁记录按模块归口；全局册单写者；日批→阶段批，修订 0029） |
 | [0031](decisions/ADR-0031-主工程壳化与功能Pod分治.md) | 主工程壳化与功能 Pod 分治（草稿/素材管理/播放器/拍摄/素材导入各自 podspec；基座 SharedUI 瘦身；横向零依赖） |
+| [0033](decisions/ADR-0033-Engine源码共置与C-Swift双Pod边界.md) | Engine 源码共置与 C-Swift 双 Pod 边界（内核头与实现共置 `engine/core/cq/<功能>/`；拆 `CChuanqiCut` + `ChuanqiCutEngine` 双 Pod，唯一 public 头 `cq_sdk.h`） |
+| [0034](decisions/ADR-0034-分批推进与禁临时方案及署名台账.md) | 分批推进与禁临时方案及署名台账（七条硬规则：一批一闭环 / 质量下限 / **禁临时方案** / 台账六字段 / 问卷驱动真机验收 / Mac 与 iOS 分端形态 / 撤销 RESEARCH-008 非目标） |
+| [0035](decisions/ADR-0035-PAL统一改名为Platform.md) | **`PAL` 统一改名为 `Platform`**（目录 + 标识符 + 概念名 + 文档全量改名；含映射表、`PALA`/`PALD` 卡号保留裁定、三条红线） |
 
 **规则**：改变既有惯例/架构约束必须新增 ADR；取号前先 `git fetch`（双机并行撞号纪律见 ADR-0019 §4）。
 

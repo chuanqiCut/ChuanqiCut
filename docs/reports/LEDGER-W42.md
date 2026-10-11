@@ -435,3 +435,34 @@
   - `.workbuddy/memory/2026-*.md` 日期日志与台账历史条目中的 `PAL` **有意保留**，
     与 docs / 代码层处理不同（已在 ADR-0035 列表里写明）；
   - `PALA-xxx`(336) / `PALD-xxx`(39) 卡号保留，已在 BACKLOG 加注明。
+
+---
+
+## 2026-10-11 08:50（CST）· INFRA-022 P2 提交落地（三个提交）
+
+- **执行者**：WorkBuddy（对话引擎 Hy4 preview），集成机
+- **依据**：传哲 08:35 拍板「跑 ctest 闭环 P2，然后提交」
+- **决策**：拆三个提交而非一个 —— 文档治理 / 代码构建 / skill 定义各一批，
+  便于回溯时按性质定位。*放弃的替代选项*：合成一个大提交（227 文件，回溯时淹没重点）。
+- **写集**（提交内容，非文件改动）：
+  - `be669e3` 文档与治理层 —— **124 文件**（+3770 / -1052）
+  - `2dd4edd` 代码 / 构建 / 测试 —— **100 文件**（+1178 / -1018，29 个 rename 被 git 识别）
+  - `b5b2eec` skill 定义同步 —— **3 文件**（上一批漏掉，补交）
+- **验证**（均现场执行）：
+  - `git diff --cached --name-status | grep -c "^R"` → 代码批 **29 个 rename 被正确识别**（改名未丢失历史）
+  - 提交前敏感信息快检：`grep -iE "password|secret|token|api_key|PRIVATE KEY"` →
+    仅命中代码标识符 `CancelToken` / `api_key_ref`（设计如此：key 不落盘明文），**无密钥入库**
+  - 构建产物快检：`git status` 中 `.o` / `.d` / `.a` / `xcframework` / `.build` / `DerivedData` → **0 命中**
+  - 提交内容即上一条已验证通过的内容（46/46 ctest + 0 error/0 warning），**提交未引入新变更**
+  - **推送：未执行**（未要求；当前 main 领先 origin 3 个提交）
+- **交付物**：无
+- **拍板**：传哲已批准「跑 ctest 后提交」，已执行完毕。
+- **遗留**（**28 个文件仍未提交，均不属 INFRA-022 写集，待传哲决定去向**）：
+  - `apps/apple/packages/`（17）：相机模块既有改动（`CameraManager.swift` +122、
+    `MakeupParams.swift` +36、`MetalFXScaler.swift` +47 等）+ 新增 `CameraFormatSelector.swift` 及其测试
+  - `apps/apple/{ios,mac}/`（7）：壳工程 Podfile / Podfile.lock / project.yml / Info.plist
+  - `tools/build/make_ffmpeg_xcframework.sh`（1）：新增、未跟踪，属 DEPS/INFRA 线
+  - `third_party/manifest.toml`（1）：依赖清单改动，属热点文件
+  - `ChuanqiCut-AppIcon-Launch.miora` + `_assets/`（2）：图标设计源文件
+  - P3（根 README / `.clang-format` / `.editorconfig` / CODEOWNERS / 最小 CI）**未开工**
+  - 全量门禁 `tools/ci/run_gate.sh` **未跑**（只跑了 core 编译 + ctest）

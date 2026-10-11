@@ -545,3 +545,12 @@
 - **写集**：.gitignore（hunk 级，并行线 engine/vendor 行未动）、两工程 bundle（xcuserdata 未入库）、删 project.yml ×2、docs/COCOAPODS.md §4、ADR-0037、MEMORY.md 规则行（hunk 级）。
 - **验证**：macOS BUILD SUCCEEDED（x86_64/P96 口径）；iOS generic device BUILD SUCCEEDED（pod install 刷新过期清单后）；metallib 9391B/7123B 非 96B 空壳；pbxproj 零绝对路径。
 - **实施**：集成机会话（GLM-5.3-Flash），commit 73f7d04。
+
+## 2026-10-11 15:30 · B-02 真机批发起 + ADR-0038 实施 + DEPS-012 收口
+- **决策人**：传哲（「OK 现在有真机 开干吧」——授权收口 DEPS-012 写集并实施 ADR-0038）
+- **内容**：DEPS-012 收口（de5b625，集成机代提交，本机验证背书）；ADR-0038 实施
+  （f360257：ChuanqiCutCore 改名 + ChuanqiCutFFmpeg 独立 Pod + License 资源包）；
+  B-02 真机问卷出票（edc6a69）。
+- **实施踩坑**：CocoaPods 无源 vendored Pod 不产生链接产物（三处细节记 ADR-0038 附录）。
+- **真机证据**：iPhone 17 Pro 安装+启动成功；产物含音频符号与 FFmpegLicense bundle。
+- **待回填**：问卷 B-02 真机侧（A/B/C 三组）→ 回收后纠偏记入本台账；池 [12] 关闭条件 = A/B/C 全过。

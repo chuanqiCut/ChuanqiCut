@@ -16,6 +16,21 @@ struct EditorTransportBar: View {
 
     var body: some View {
         HStack(spacing: Theme.Space.m) {
+            #if DEBUG
+            // DEBUG 诊断浮层开关（B-02 批；后续由整体设置模块接管开关来源）。
+            Button {
+                viewModel.toggleDebugOverlay()
+            } label: {
+                Image(systemName: viewModel.debugOverlayVisible
+                      ? "antenna.radiowaves.left.and.right" : "antenna.radiowaves.left.and.right.slash")
+                    .font(.body)
+                    .foregroundStyle(viewModel.debugOverlayVisible
+                                      ? Theme.accentText : Theme.tertiaryText)
+                    .frame(width: 32, height: 32)
+            }
+            .buttonStyle(.plain)
+            .help("实时诊断浮层")
+            #endif
             Button {
                 viewModel.togglePlayback()
             } label: {

@@ -45,6 +45,14 @@ public struct EditorView: View {
                             showsEmptyState: viewModel.timeline.clips.isEmpty,
                             onTogglePlayback: { viewModel.togglePlayback() },
                             onOpenMedia: { showMediaSheet = true })
+                #if DEBUG
+                .overlay(alignment: .topLeading) {
+                    if viewModel.debugOverlayVisible,
+                       let snapshot = viewModel.debugSnapshot {
+                        DebugOverlayView(snapshot: snapshot)
+                    }
+                }
+                #endif
             },
             transport: {
                 EditorTransportBar()

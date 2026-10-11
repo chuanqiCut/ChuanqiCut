@@ -25,6 +25,30 @@ public enum EditorError: Error, Sendable {
 
 // MARK: - 视图模型
 
+// MARK: - DEBUG 诊断快照（B-02 批）
+
+#if DEBUG
+/// 一次诊断采样（全部差分值或累计值；播放/暂停两态都有意义）。
+/// 由 EditorViewModel 以 2Hz 采样发布，DebugOverlayView 只读渲染。
+public struct EditorDebugSnapshot: Equatable {
+    public let isPlaying: Bool
+    public let playheadSeconds: Double
+    public let pumpReqPerSec: Double
+    public let pumpRenderedPerSec: Double
+    public let pumpCoalescedPerSec: Double
+    public let pumpNonOkPerSec: Double
+    public let audioBlocksPerSec: Double
+    public let audioDropped: UInt64
+    public let audioUnderruns: UInt64
+    public let audioResyncs: UInt64
+    public let tickP95Ms: Int64
+    public let drawPerSec: Int
+    public let footprintMB: Double
+    public let trackCount: Int
+    public let clipCount: Int
+}
+#endif
+
 @MainActor
 public final class EditorViewModel: ObservableObject {
 
@@ -77,6 +101,25 @@ public final class EditorViewModel: ObservableObject {
     /// 失效，「模型变了」必须和「播放头变了」一样触发重渲染。预览视图据此装载
     /// 追帧（seq 判定，见 MetalPreviewView）。
     @Published public private(set) var renderEpoch: UInt64 = 0
+
+    // MARK: DEBUG 实时诊断浮层（B-02 批，2026-10-11；Release 不编译入口）
+    //
+    // 数据 = 泵/混音累计统计的差分（2Hz 采样，播放/暂停均可用）+ 内存足迹。
+    // 开关：传输条天线按钮（DEBUG only）；CQ_DEBUG_OVERLAY=1 时默认开。
+    // 后续整体设置模块接管开关来源（传哲 2026-10-11），本属性只暴露 toggle。
+
+    #if DEBUG
+    /// 浮层可见性（DEBUG only；传输条开关 + 环境变量默认值）。
+    @Published public private(set) var debugOverlayVisible = false
+    /// 最近一次采样（nil = 尚无样本，浮层显示占位）。
+    @Published public private(set) var debugSnapshot: EditorDebugSnapshot?
+
+    private var debugSampleTimer: Timer?
+    private var lastPumpStats: (req: UInt64, rendered: UInt64, coalesced: UInt64, nonOk: UInt64)?
+    private var lastAudioStats: (blocks: UInt64, dropped: UInt64, underruns: UInt64, resyncs: UInt64)?
+    private var lastSampleAt: DispatchTime?
+    private var lastDrawCount: Int = 0
+    #endif
 
     /// 素材库显示状态（UIA-009 子步骤 3）：内核素材表 + 本地存活标记。
     /// `exists == false` = 文件已不在原路径（D3：MVP 引用原路径，不拷贝入库）。
@@ -217,6 +260,14 @@ public final class EditorViewModel: ObservableObject {
         // 版本 0 不触发 observer 回流，初始时间线状态主动查一次。
         refreshTimeline()
         refreshHistoryFlags()
+        #if DEBUG
+        // DEBUG 浮层：CQ_DEBUG_OVERLAY=1 默认开（真机探针/走查免手点）；
+        // 采样器随可见性启停（2Hz，播放/暂停均可用）。
+        if ProcessInfo.processInfo.environment["CQ_DEBUG_OVERLAY"] == "1" {
+            debugOverlayVisible = true
+            startDebugSampler()
+        }
+        #endif
 
         // 订阅快照变更：内核 session 线程 → 绑定层 main queue → 本处 MainActor。
         session.setSnapshotObserver { [weak self] snap in
@@ -430,6 +481,93 @@ public final class EditorViewModel: ObservableObject {
     ///
     /// 同时向取帧泵请求该时刻的帧 —— 泵是异步的，视图会自驱重绘直到追上
     /// （见 MetalPreviewView 的 selfDrive 说明）。
+    #if DEBUG
+    /// DEBUG 浮层开关（传输条天线按钮；后续由设置模块驱动，2026-10-11）。
+    public func toggleDebugOverlay() {
+        debugOverlayVisible.toggle()
+        if debugOverlayVisible { startDebugSampler() } else { stopDebugSampler() }
+    }
+
+    /// 2Hz 诊断采样：泵/音频累计值差分 + 内存足迹。独立于播放 tick ——
+    /// 暂停态（拖拽/逐帧）同样有数。
+    private func startDebugSampler() {
+        guard debugSampleTimer == nil else { return }
+        if let st = previewPump?.stats {
+            lastPumpStats = (st.requested, st.rendered, st.coalesced, st.nonOk)
+        }
+        if let st = previewAudio?.stats {
+            lastAudioStats = (st.blocksRendered, st.blocksDropped, st.underruns, st.resyncs)
+        }
+        lastSampleAt = DispatchTime.now()
+        lastDrawCount = PlaybackDrawCounter.shared.count
+        let timer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) {
+            [weak self] _ in
+            Task { @MainActor [weak self] in self?.sampleDebugStats() }
+        }
+        debugSampleTimer = timer
+    }
+
+    private func stopDebugSampler() {
+        debugSampleTimer?.invalidate()
+        debugSampleTimer = nil
+    }
+
+    private func sampleDebugStats() {
+        let now = DispatchTime.now()
+        let elapsed = lastSampleAt.map {
+            max(Double(DispatchTime.now().uptimeNanoseconds &- $0.uptimeNanoseconds)
+                    / 1_000_000_000, 0.001)
+        } ?? 0.001
+        defer {
+            lastSampleAt = now
+            lastDrawCount = PlaybackDrawCounter.shared.count
+        }
+        var pumpReq = 0.0, pumpRendered = 0.0, pumpCoalesced = 0.0, pumpNonOk = 0.0
+        if let st = previewPump?.stats {
+            if let last = lastPumpStats {
+                pumpReq = Double(st.requested &- last.req) / elapsed
+                pumpRendered = Double(st.rendered &- last.rendered) / elapsed
+                pumpCoalesced = Double(st.coalesced &- last.coalesced) / elapsed
+                pumpNonOk = Double(st.nonOk &- last.nonOk) / elapsed
+            }
+            lastPumpStats = (st.requested, st.rendered, st.coalesced, st.nonOk)
+        }
+        var audioBlocks = 0.0
+        var audio: (UInt64, UInt64, UInt64, UInt64) = (0, 0, 0, 0)
+        if let st = previewAudio?.stats {
+            if let last = lastAudioStats {
+                audioBlocks = Double(st.blocksRendered &- last.blocks) / elapsed
+            }
+            audio = (st.blocksDropped, st.underruns, st.resyncs, 0)
+            lastAudioStats = (st.blocksRendered, st.blocksDropped, st.underruns, st.resyncs)
+        }
+        #if DEBUG
+        let p95: Int64 = debugTickCosts.isEmpty ? 0 : {
+            let sorted = debugTickCosts.sorted()
+            return Int64(sorted[sorted.count * 95 / 100] / 1_000_000)
+        }()
+        #else
+        let p95: Int64 = 0
+        #endif
+        debugSnapshot = EditorDebugSnapshot(
+            isPlaying: isPlaying,
+            playheadSeconds: Double(playhead.value) / Double(playhead.timescale),
+            pumpReqPerSec: pumpReq,
+            pumpRenderedPerSec: pumpRendered,
+            pumpCoalescedPerSec: pumpCoalesced,
+            pumpNonOkPerSec: pumpNonOk,
+            audioBlocksPerSec: audioBlocks,
+            audioDropped: audio.0,
+            audioUnderruns: audio.1,
+            audioResyncs: audio.2,
+            tickP95Ms: p95,
+            drawPerSec: PlaybackDrawCounter.shared.count &- lastDrawCount,
+            footprintMB: Self.memoryFootprintMB(),
+            trackCount: timeline.tracks.count,
+            clipCount: timeline.clips.count)
+    }
+    #endif
+
     public func setPlayhead(_ t: RationalTime) {
         playhead = t
         previewPump?.request(pts: t)

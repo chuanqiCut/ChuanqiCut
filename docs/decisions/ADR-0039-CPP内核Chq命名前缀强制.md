@@ -49,13 +49,16 @@ SharedUI 泛用名如 `Theme` 的防御冗余），本 ADR 记录裁决并固化
 `engine/platform/apple/**`（.mm/.cpp/.h）与 `tests/unit/*.cpp` 作为消费者：类型 token、
 include 路径、guard 引用机械跟改；自身类型与文件名不变。
 
-## 已知取舍（记录在案，不再辩论）
+## 已知取舍（记录在案，终态，不再留口）
 
 - 与 Apple Swift API Design Guidelines / Google C++ Style Guide 的"无前缀 + namespace"
   惯例偏离；防御冗余换来未来多库引入时的检索与识别收益。
-- `ChqI` 叠加观感差；后续若评审反感，可将 I 改为后缀（`ChqGfxDeviceInterface`），
-  属独立小任务，不在本 ADR 范围。
+- **接口命名终态 = `Chq` + `I` 叠加**（`ChqIGfxDevice`）：机械规则"原名加 Chq"零特例、
+  保留 I 的接口语义标记；不再考虑改后缀式（`ChqGfxDeviceInterface` 等），
+  本条为最终裁决，后续评审不再重开。
 - 注释中的旧类型名随机械替换同步更新（注释纪律要求引用真实存在的名字）。
+- **模块册与在飞文档同步义务**：`.ai/modules/*.md` 属于"活文档"，其中引用的类型名
+  随本 ADR 同步更新（历史任务卡/SPEC/RESEARCH 不回改，由 ADR 编号承载演进）。
 
 ## 验证
 

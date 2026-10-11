@@ -18,14 +18,26 @@ cmake_minimum_required(VERSION 3.21)
 set(CQ_FFMPEG_VERSION "9.0.2")
 set(CQ_FFMPEG_DEMUX_DIR "${CMAKE_CURRENT_SOURCE_DIR}/prebuilt/ffmpeg/${CQ_FFMPEG_VERSION}/demux")
 
-# 桌面单测运行在 macOS host 上；产物目录名与 build_ffmpeg_demux.sh 的 <sdk>-<arch> 一致
-if(NOT CMAKE_SYSTEM_NAME STREQUAL "Darwin")
-    message(FATAL_ERROR "cq_ffmpeg: 当前仅有 Apple host 产物（android/ohos 见 DEPS-011，未开工）")
-endif()
-if(CMAKE_SYSTEM_PROCESSOR STREQUAL "arm64")
-    set(CQ_FFMPEG_HOST_SLICE "macosx-arm64")
+# Apple 三 SDK 切片选择（DEPS-012 收口：build_ffmpeg_demux.sh 已产出全部切片，
+# 本门禁原先只认 Darwin host 是未跟上的半成品）。目录名 = <sdk>-<arch>。
+# Darwin host 单测会真实链接 → 产物必须存在；iOS 切片只编静态库装配 xcframework
+# （无可执行体），头文件参与编译、libffmpeg.a 由 ChuanqiCutFFmpeg Pod / 上层链接。
+# 注：sim 双 arch（arm64;x86_64）当前无可执行体链接场景，include 取 arm64 切片
+# （三切片头文件一致）；将来若在 sim 切片建可执行单测，需先 lipo 合一。
+if(CMAKE_SYSTEM_NAME STREQUAL "Darwin")
+    if(CMAKE_SYSTEM_PROCESSOR STREQUAL "arm64")
+        set(CQ_FFMPEG_HOST_SLICE "macosx-arm64")
+    else()
+        set(CQ_FFMPEG_HOST_SLICE "macosx-x86_64")
+    endif()
+elseif(CMAKE_SYSTEM_NAME STREQUAL "iOS")
+    if(CMAKE_OSX_SYSROOT MATCHES "iphonesimulator")
+        set(CQ_FFMPEG_HOST_SLICE "iphonesimulator-arm64")
+    else()
+        set(CQ_FFMPEG_HOST_SLICE "iphoneos-arm64")
+    endif()
 else()
-    set(CQ_FFMPEG_HOST_SLICE "macosx-x86_64")
+    message(FATAL_ERROR "cq_ffmpeg: 暂无 ${CMAKE_SYSTEM_NAME} 产物（android/ohos 见 DEPS-011，未开工）")
 endif()
 set(CQ_FFMPEG_HOST_LIB "${CQ_FFMPEG_DEMUX_DIR}/${CQ_FFMPEG_HOST_SLICE}/libffmpeg.a")
 set(CQ_FFMPEG_HOST_INCLUDE "${CQ_FFMPEG_DEMUX_DIR}/${CQ_FFMPEG_HOST_SLICE}/include")

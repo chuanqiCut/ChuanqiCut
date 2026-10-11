@@ -20,7 +20,7 @@
 #      avformat_* / avcodec_* 等
 #   4. 平台宏：#if __APPLE__ / __ANDROID__ / __OHOS__（能力必须运行时查询，不得编译期推断）
 #   5. 异常：throw（内核禁用异常，错误一律 Status）
-#   6. 裸 double：时间应走 RationalTime，Platform 头不应出现 double 类型
+#   6. 裸 double：时间应走 ChqRationalTime，Platform 头不应出现 double 类型
 #
 # 违规 → 退出码 1，并输出 文件:行号: 类别: 命中内容: 原始行。
 
@@ -228,7 +228,7 @@ def main(argv):
     #    这与 .gitignore 里裸 build/ 把 tools/build/ 一并忽略是同一种缺口
     #    （见 .ai/memory/pitfalls.md）。故改为自动遍历，新增目录默认纳入设防。
     #
-    # 唯一排除 base/：base/rational_time.h 提供**显式** ToSeconds() 转换。CORE-001 禁止的是
+    # 唯一排除 base/：base/chq_rational_time.h 提供**显式** ToSeconds() 转换。CORE-001 禁止的是
     # 隐式 operator double，显式命名方法是允许的，不该被本门禁的 double 规则误伤。
     #
     # ⚠️ 2026-10-09（ADR-0033）：扫描根由 core/include/cq 改为 engine/core/cq（头与实现

@@ -1841,3 +1841,30 @@ TASK-CAM-012 剩余风险栏其实预判了（"若真机上 CI 工作空间表�
    { target, membership_exceptions = ["Info.plist"] }` 挂到同步组的 exceptions。
 - 防复发规则：动 PBXFileSystemSynchronizedRootGroup 一律先核全工程 sourceTree casing；
   含 Info.plist 的目录转同步组时**默认**配成员例外。
+
+## P108（2026-10-11，TASK-INFRA-025 收尾，集成机）壳工程 Pods 远程依赖三件缺失 = 假绿之源
+
+- **现象**：清 DerivedData 后 mac 壳必炸——构建图只剩 App 1 个 target（"Target dependency
+  graph (1 target)"），Pod 模块 map 全 not found；而增量构建一直"成功"。
+- **根因（两层）**：①冻结壳工程（ADR-0037）对 Pods 只写了 xcconfig/manifest 脚本，
+  **containerPortal / PBXContainerItemProxy / PBXTargetDependency 三件被剥**（0 引用），
+  Pods 目标从未进构建图；②CocoaPods 1.17 把聚合 target（Pods-<App>）放进 **Pods 工程**
+  （非用户工程），用户工程的远程依赖缺失时 pod install 照样静默 no-op。此前所有
+  "BUILD SUCCEEDED" 都是旧 DerivedData 产物假绿（P85 假绿家族新形态）。
+- **修法**：`tools/build/edit_project.rb` 新增 **add-remote-dependency** 子命令（幂等，
+  写 portal+proxy+dependency 三件），双壳各补一条 → 聚合 target 进图，Pods 真构建。
+- **验证口径（防复发）**：①凡是"构建成功"结论，必须来自 **清过 DerivedData 的干净构建**
+  （增量成功不算数）；②pod install 后核 app 工程 `grep containerPortal project.pbxproj`
+  应 ≥1；③本机 mac 验证用 `-destination 'platform=macOS,arch=x86_64' ARCHS=x86_64
+  ONLY_ACTIVE_ARCH=YES`（通用双 arch 会被 CP 1.17 的 Swift Compatibility Header
+  共享路径坑——见池 [14]）；④iOS 设备验证用 `-destination 'generic/platform=iOS'`。
+
+## P109（2026-10-11，TASK-INFRA-025，集成机）发号水位必须现场 ls，台账/记忆水位永远落后
+
+- **现象**：凭"HANDOFF 下一号 = 015"的记忆立了 HANDOFF-015，实际 015~018 已被并行
+  会话当日占用（编辑域收口 / AIEDIT-001 / 两线收口 / INFRA-022 整改），撞号。
+- **规则**：HANDOFF / TASK / ADR / 池 / pitfalls **任何发号动作前必须 `ls` 现场目录
+  取真实下一号**，记忆里的"下一号"只作参考——并行会话同机节奏下，水位在会话进行中
+  就会前进（今天一天 ADR 从 0038 走到 0039、HANDOFF 从 014 走到 019）。
+- **处置惯例**：撞号方（后入库）让位改号并全文替换引用（本次 015→019，TASK 卡同步），
+  与 P63/P67/P70「先入库保留、后入库让位」一致。

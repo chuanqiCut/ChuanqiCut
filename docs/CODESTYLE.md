@@ -25,9 +25,9 @@
 | Swift 状态码 | 语义码一律命名 static（`extension Status` 落在绑定层），**禁止绑定层之外出现裸 `Status(rawValue: n)`** | `.decodeError` |
 | App 层（iOSApp/MacApp/SharedUI） | App target 内一律 internal（禁 `public`）；SharedUI 的 `public` 唯一判据 = 被 App target 消费 | |
 
-第三方冲突红线：公共头（`core/include/cq/`）零平台类型、零第三方类型
-（ffmpeg 的 `AV*`、`av_*` 宏等不得出现，机器门禁 `tools/platform/check_platform_headers.py`
-+ 未来 DEPS-004 符号扫描强制）。
+第三方冲突红线：公开 C ABI 头（`engine/core/cq/cq_sdk.h`，唯一 public 头）零平台类型、
+零第三方类型（ffmpeg 的 `AV*`、`av_*` 宏等不得出现，机器门禁
+`tools/platform/check_platform_headers.py` 扫全部内核头 + 未来 DEPS-004 符号扫描强制）。
 
 ## 2. C++ 内核
 
@@ -98,6 +98,7 @@
 
 - 已有机器门禁：`-Werror` 编译、`ctest`、`tools/platform/check_platform_headers.py`、
   `tools/deps/deps.py validate`、`tests/golden/verify.py`、smoke_link。
+  **golden verify 需 Python ≥ 3.11（tomllib）——本机系统 python3 不带，用 `python3.12` 跑。**
 - `tools/ci/run_gate.sh` = 本机总门禁入口（合并守门/提交前跑）。
 - `.clang-format`/`.clang-tidy` 待引入（INFRA-012）；引入前以本文件 +
   既有代码风格为准。

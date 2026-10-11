@@ -14,6 +14,12 @@
 #   edit_project.rb set-setting    <project> <target_name> <key> <value> [base|Debug|Release]
 #   edit_project.rb add-script-phase <project> <target_name> <name> <script_file> [--pre]
 #   edit_project.rb add-file       <project> <target_name> <path> [sources|resources]
+#   edit_project.rb add-remote-dependency <project> <target_name> <remote_project> <remote_target_name>
+#
+# add-remote-dependency：把本工程 target 依赖到另一个工程（Pods.xcodeproj）里的
+# target（如聚合 target Pods-<App>）。补齐 containerPortal + PBXContainerItemProxy +
+# PBXTargetDependency 三件（CocoaPods 1.17 把聚合 target 放进 Pods 工程后，用户工程
+# 只写 xcconfig 不写依赖曾致"Pods 永不构建"的假绿——2026-10-11 实录）。幂等。
 #
 # 注意：改完工程后直接 git commit（工程是源文件）；不需要任何重新生成步骤。
 
@@ -99,6 +105,36 @@ when 'add-file'
   phase.add_file_reference(file_ref)
   proj.save
   puts "OK: #{path} → #{target.name}.#{phase_kind}"
+
+when 'add-remote-dependency'
+  proj, target = load_target(project_path, ARGV.shift)
+  remote_project_path = ARGV.shift or abort 'ERROR: 缺 <remote_project>（如 Pods/Pods.xcodeproj）'
+  remote_target_name = ARGV.shift or abort 'ERROR: 缺 <remote_target_name>'
+  remote_proj = Xcodeproj::Project.open(remote_project_path)
+  remote_target = remote_proj.targets.find { |t| t.name == remote_target_name }
+  abort "ERROR: remote target '#{remote_target_name}' not found in #{remote_project_path}" unless remote_target
+
+  # 幂等：已有指向同一 remote uuid 的依赖就不重复加
+  already = target.dependencies.any? do |d|
+    d.target_proxy && d.target_proxy.remote_global_id_string == remote_target.uuid
+  end
+  if already
+    puts "SKIP: #{target.name} 已依赖 #{remote_target_name}（#{remote_project_path}）"
+  else
+    portal = proj.files.find { |f| f.path == remote_project_path } ||
+             proj.new_file(remote_project_path)
+    portal.last_known_file_type = 'wrapper.pb-project'
+    proxy = proj.new(Xcodeproj::Project::Object::PBXContainerItemProxy)
+    proxy.container_portal = portal.uuid
+    proxy.proxy_type = '1'
+    proxy.remote_global_id_string = remote_target.uuid
+    proxy.remote_info = remote_target.name
+    dep = proj.new(Xcodeproj::Project::Object::PBXTargetDependency)
+    dep.target_proxy = proxy
+    target.dependencies << dep
+    proj.save
+    puts "OK: #{target.name} → #{remote_target_name}（#{remote_project_path}, uuid #{remote_target.uuid}）"
+  end
 
 else
   abort "ERROR: 未知子命令 '#{command}'"

@@ -10,7 +10,74 @@
 		657D85FE8338F846F18D4669 /* libPods-ChuanqiCutMacApp.a in Frameworks */ = {isa = PBXBuildFile; fileRef = 8DDE717370DA38B374DC9CD0 /* libPods-ChuanqiCutMacApp.a */; };
 /* End PBXBuildFile section */
 
+/* Begin PBXContainerItemProxy section */
+		0F30F2E9CB8915F4596AC78F /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 5039C7B91FC65314AA750693 /* Pods.xcodeproj */;
+			proxyType = 2;
+			remoteGlobalIDString = 0A17AA4DFCDA5674C924C0D86C94A67E;
+			remoteInfo = Subproject;
+		};
+		40794E61ABF567B87696F58F /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 5039C7B91FC65314AA750693 /* Pods.xcodeproj */;
+			proxyType = 2;
+			remoteGlobalIDString = F3479E0D7CB6FC8BBE9E28FC39B3AEE9;
+			remoteInfo = Subproject;
+		};
+		4A813F2F3ED8941EA66378F2 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 5039C7B91FC65314AA750693 /* Pods.xcodeproj */;
+			proxyType = 1;
+			remoteGlobalIDString = FE8A6FE9FE9D2B824CEFACF0973EE054;
+			remoteInfo = "Pods-ChuanqiCutMacApp";
+		};
+		4BF22A5AF42F06A334A88A60 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 5039C7B91FC65314AA750693 /* Pods.xcodeproj */;
+			proxyType = 2;
+			remoteGlobalIDString = 1DF61DA1F9AC397EF265A9EC75BF3AE1;
+			remoteInfo = Subproject;
+		};
+		51586D212B50483582122400 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 5039C7B91FC65314AA750693 /* Pods.xcodeproj */;
+			proxyType = 2;
+			remoteGlobalIDString = 8B1EB8450CE24D9F97BA4BD33D70EC5B;
+			remoteInfo = Subproject;
+		};
+		6763E73FB8865AEA5CB5A91C /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 5039C7B91FC65314AA750693 /* Pods.xcodeproj */;
+			proxyType = 2;
+			remoteGlobalIDString = E5C28A5A29EA3B430B1A1BCFD37D2D79;
+			remoteInfo = Subproject;
+		};
+		864F077CE4570828EC8F0AE2 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 5039C7B91FC65314AA750693 /* Pods.xcodeproj */;
+			proxyType = 2;
+			remoteGlobalIDString = 641ECAC287AC4C075AC31217A53E0937;
+			remoteInfo = Subproject;
+		};
+		92990F5FCD0CBECFC327F435 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 5039C7B91FC65314AA750693 /* Pods.xcodeproj */;
+			proxyType = 2;
+			remoteGlobalIDString = A989F7AB3BEDBD22945D8C1F16764642;
+			remoteInfo = Subproject;
+		};
+		BB413A64DF8D5456F4025E0A /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 5039C7B91FC65314AA750693 /* Pods.xcodeproj */;
+			proxyType = 2;
+			remoteGlobalIDString = 929C7573A9378FCA612EB1ABA58F285B;
+			remoteInfo = Subproject;
+		};
+/* End PBXContainerItemProxy section */
+
 /* Begin PBXFileReference section */
+		5039C7B91FC65314AA750693 /* Pods.xcodeproj */ = {isa = PBXFileReference; lastKnownFileType = "wrapper.pb-project"; name = Pods.xcodeproj; path = Pods/Pods.xcodeproj; sourceTree = "<group>"; };
 		8DDE717370DA38B374DC9CD0 /* libPods-ChuanqiCutMacApp.a */ = {isa = PBXFileReference; explicitFileType = archive.ar; includeInIndex = 0; path = "libPods-ChuanqiCutMacApp.a"; sourceTree = BUILT_PRODUCTS_DIR; };
 		A343DEBDA728E3EC2AE58C73 /* ChuanqiCutMacApp.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = ChuanqiCutMacApp.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		AA71849CD5A138493F5DC61F /* Pods-ChuanqiCutMacApp.release.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-ChuanqiCutMacApp.release.xcconfig"; path = "Target Support Files/Pods-ChuanqiCutMacApp/Pods-ChuanqiCutMacApp.release.xcconfig"; sourceTree = "<group>"; };
@@ -72,6 +139,14 @@
 			isa = PBXGroup;
 			children = (
 				A343DEBDA728E3EC2AE58C73 /* ChuanqiCutMacApp.app */,
+				D6BBAB54C49965AAA384DF7C /* libChuanqiCutCore.a */,
+				2E66E67D76FF8D99231F6141 /* libChuanqiCutEditor.a */,
+				6D0AEB2A787F0190F3720F0C /* libChuanqiCutEngine.a */,
+				2A232770413893080AE575A2 /* ChuanqiCutFFmpegLicense.bundle */,
+				6961F3DF58B020F7E9D68259 /* libChuanqiCutImport.a */,
+				CEB1654C8B75179EE6DC9F5B /* libChuanqiCutPlayer.a */,
+				EDD92AD3B33E939E8A0F567A /* libPods-ChuanqiCutMacApp.a */,
+				A9CB845D6CDB34E39E7510E2 /* libSharedUI.a */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -83,6 +158,7 @@
 				E1D9F5250D1B55B927054886 /* Products */,
 				A14DC97E43002BC639B89E3B /* Pods */,
 				79243A68495F8D12D83A7A74 /* Frameworks */,
+				5039C7B91FC65314AA750693 /* Pods.xcodeproj */,
 			);
 			sourceTree = "<group>";
 		};
@@ -102,6 +178,7 @@
 			buildRules = (
 			);
 			dependencies = (
+				5A6F0EAB7D834DC3892D1E61 /* PBXTargetDependency */,
 			);
 			fileSystemSynchronizedGroups = (
 				B7E2AE6A0F88F69E781D4E6A /* MacApp */,
@@ -134,12 +211,77 @@
 			preferredProjectObjectVersion = 77;
 			productRefGroup = E1D9F5250D1B55B927054886 /* Products */;
 			projectDirPath = "";
+			projectReferences = (
+				{
+					ProductGroup = E1D9F5250D1B55B927054886 /* Products */;
+					ProjectRef = 5039C7B91FC65314AA750693 /* Pods.xcodeproj */;
+				},
+			);
 			projectRoot = "";
 			targets = (
 				DC4A700407F99C734469BD36 /* ChuanqiCutMacApp */,
 			);
 		};
 /* End PBXProject section */
+
+/* Begin PBXReferenceProxy section */
+		2A232770413893080AE575A2 /* ChuanqiCutFFmpegLicense.bundle */ = {
+			isa = PBXReferenceProxy;
+			fileType = "wrapper.plug-in";
+			path = ChuanqiCutFFmpegLicense.bundle;
+			remoteRef = 0F30F2E9CB8915F4596AC78F /* PBXContainerItemProxy */;
+			sourceTree = BUILT_PRODUCTS_DIR;
+		};
+		2E66E67D76FF8D99231F6141 /* libChuanqiCutEditor.a */ = {
+			isa = PBXReferenceProxy;
+			fileType = archive.ar;
+			path = libChuanqiCutEditor.a;
+			remoteRef = 51586D212B50483582122400 /* PBXContainerItemProxy */;
+			sourceTree = BUILT_PRODUCTS_DIR;
+		};
+		6961F3DF58B020F7E9D68259 /* libChuanqiCutImport.a */ = {
+			isa = PBXReferenceProxy;
+			fileType = archive.ar;
+			path = libChuanqiCutImport.a;
+			remoteRef = 864F077CE4570828EC8F0AE2 /* PBXContainerItemProxy */;
+			sourceTree = BUILT_PRODUCTS_DIR;
+		};
+		6D0AEB2A787F0190F3720F0C /* libChuanqiCutEngine.a */ = {
+			isa = PBXReferenceProxy;
+			fileType = archive.ar;
+			path = libChuanqiCutEngine.a;
+			remoteRef = 40794E61ABF567B87696F58F /* PBXContainerItemProxy */;
+			sourceTree = BUILT_PRODUCTS_DIR;
+		};
+		A9CB845D6CDB34E39E7510E2 /* libSharedUI.a */ = {
+			isa = PBXReferenceProxy;
+			fileType = archive.ar;
+			path = libSharedUI.a;
+			remoteRef = 4BF22A5AF42F06A334A88A60 /* PBXContainerItemProxy */;
+			sourceTree = BUILT_PRODUCTS_DIR;
+		};
+		CEB1654C8B75179EE6DC9F5B /* libChuanqiCutPlayer.a */ = {
+			isa = PBXReferenceProxy;
+			fileType = archive.ar;
+			path = libChuanqiCutPlayer.a;
+			remoteRef = BB413A64DF8D5456F4025E0A /* PBXContainerItemProxy */;
+			sourceTree = BUILT_PRODUCTS_DIR;
+		};
+		D6BBAB54C49965AAA384DF7C /* libChuanqiCutCore.a */ = {
+			isa = PBXReferenceProxy;
+			fileType = archive.ar;
+			path = libChuanqiCutCore.a;
+			remoteRef = 92990F5FCD0CBECFC327F435 /* PBXContainerItemProxy */;
+			sourceTree = BUILT_PRODUCTS_DIR;
+		};
+		EDD92AD3B33E939E8A0F567A /* libPods-ChuanqiCutMacApp.a */ = {
+			isa = PBXReferenceProxy;
+			fileType = archive.ar;
+			path = "libPods-ChuanqiCutMacApp.a";
+			remoteRef = 6763E73FB8865AEA5CB5A91C /* PBXContainerItemProxy */;
+			sourceTree = BUILT_PRODUCTS_DIR;
+		};
+/* End PBXReferenceProxy section */
 
 /* Begin PBXResourcesBuildPhase section */
 		DD14901DC8C0BDC99C022587 /* Resources */ = {
@@ -202,6 +344,13 @@
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		5A6F0EAB7D834DC3892D1E61 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			targetProxy = 4A813F2F3ED8941EA66378F2 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
 		0CEE0B440E00D326BC47A264 /* Debug */ = {

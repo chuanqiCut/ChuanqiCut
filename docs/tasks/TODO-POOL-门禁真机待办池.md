@@ -306,16 +306,27 @@ SPM 临时产物一律 `swift test --disable-sandbox --scratch-path "$ROOT/build
 - 来源：传哲裁决「只 C++ 内核加 Chq 前缀」；189 类型 + 83 文件改名，模块级验证已过
   （Debug+Release 双配置 -Werror、ctest 48/48、check_platform_headers 41 头 0 违规、
   golden 21/21；`cq_sdk.h` 声明区 diff=0，ABI 未动）。
-- 构建机/门禁（集成机）：
-  - [ ] Swift 窄检未跑——原因：engine/bindings/swift 正处 ADR-0038 在途状态
-    （Pod 重命名未收口），此时跑 swift build 无法归因失败方；本任务写集可证不含
-    .swift/.c（grep 全库 0 残留）。ADR-0038 收口时顺带跑 bindings swift build + 冒烟。
-  - [ ] `pod install` 后 Pods 工程 Copy Headers 布局验证——podspec
-    `source_files = 'core/cq/**/*.{h,cpp}'` 为 glob 自动纳新文件名，理论无影响；
-    下次真机趟顺带确认（注意 P96 噪音条目仍在：chq_gfx.h 双目录同名共存）。
-  - [ ] 全量门禁按阶段批（本任务已记模块级数字，见 .ai/modules/core.md 2026-10-11 行）。
-- 已知风险（写明）：`engine/bindings/swift/Frameworks/ChuanqiCut.xcframework` 内嵌
-  **旧 pal 时代头**（cq/pal/*，引用 cq/base/status.h 等旧路径）先于本任务即与源码树
-  脱节，本次改名后脱节加深；该 xcframework 重建（build_core_apple.sh + prepare.sh）
-  时自然消除——与池 [12] 的 xcframework 重建项同一趟做。
-- 验收回填：关池需 Swift 窄检 + pod install 布局两项勾掉。
+- 构建机/门禁（集成机）：**全部完成，2026-10-11 下午收尾批关池**
+  - [x] Swift 窄检：xcframework 重建（build_core_apple.sh --config=Release +
+    prepare.sh，三切片新鲜、16 个 ABI 符号含 cq_audio_preview 在位）→
+    **bindings swift test 26/26 通过**。
+  - [x] pod install（bundle exec 1.17.0）+ 双壳端到端：**macOS BUILD SUCCEEDED**
+    （x86_64 原生架构，清 DerivedData 干净构建）；**iOS generic device BUILD
+    SUCCEEDED**（arm64）。Headers 布局已收 chq_*（P96 双 chq_gfx.h 噪音仍在，无害）。
+    过程中发现并修复壳工程对 Pods 的远程依赖三件缺失（pitfalls P108）。
+  - [x] 全量门禁按阶段批照旧（模块级数字已记模块册）。
+- 拆出新池 **[14]**：mac 通用双架构构建被 CP 1.17 Swift Compatibility Header
+  共享路径坑（unsupported Swift architecture）——单 arch 验证口径见 P108④。
+
+## [14] macOS 通用双架构构建（CP 1.17 Swift Compatibility Header 共享路径）（2026-10-11，集成机）
+
+- **现象**：mac 壳默认 "Any Mac"（ARCHS=arm64;x86_64）构建，五个 Swift Pod 的
+  `Swift Compatibility Header/<Name>-Swift.h` 走非 arch 专属路径，双 arch 互相覆盖
+  → `error: unsupported Swift architecture`（-Swift.h:381，PCM 生成失败）。
+- **根因**：CocoaPods 1.17 modular-headers 的兼容头 ditto 进 BUILT_PRODUCTS_DIR 的
+  arch 无关路径，Xcode 26 显式模块构建下双 arch 并发互踩。单 arch（原生 x86_64 /
+  `ARCHS=x86_64 ONLY_ACTIVE_ARCH=YES`）不受影响，已按 P108④ 口径验证通过。
+- **待办（集成机，独立小任务）**：调研 CP 侧正确解法（per-arch 兼容头路径 /
+  `SWIFT_OBJC_INTERFACE_HEADER_NAME` / 升级 CP），或壳工程钉 `ARCHS=arm64 x86_64`
+  的官方发布口径与本地单 arch 验证口径分离；修完跑一次真通用构建作验收。
+- 关池条件：通用双 arch mac 构建 BUILD SUCCEEDED（清 DerivedData 口径）。

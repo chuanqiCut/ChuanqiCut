@@ -103,7 +103,7 @@ target_compile_definitions(cq_core PRIVATE
     CQ_VERSION_PATCH=${PROJECT_VERSION_PATCH})
 
 # CMake include root：保持 `#include "cq/..."`；真正对外发布的头仅 cq/cq_sdk.h，
-# 由 CChuanqiCut.podspec / XCFramework staging 控制。
+# 由 ChuanqiCutCore.podspec / XCFramework staging 控制。
 target_include_directories(cq_core PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR})
 # 内核源码与内部头按功能共置在 core/cq/**；对 CMake 内部消费者维持

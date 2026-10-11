@@ -3,11 +3,11 @@
 > **归属**：C 线（内核/媒体/渲染；platform/apple 媒体子域随 C） —— 归属表见 docs/tasks/PLAN-三线并行.md §1a / ADR-0029（双机分工与门禁跑批，2026-10-07）
 
 **边界**：
-- 接口定义（跨平台层，MEDIA-010）：`core/include/cq/media/frame_provider.h`
+- 接口定义（跨平台层，MEDIA-010）：`core/include/cq/media/chq_frame_provider.h`
 - 跨平台实现（MEDIA-011/012/020 阶段）：`core/src/media/`、`core/src/retime/`
 - 平台实现（PALA-/PALD-）：`platform/<platform>/media_*`
 
-**权威契约**：`docs/specs/Platform-接口契约.md` §4.2（Media demux + 精确 seek + IFrameProvider）、
+**权威契约**：`docs/specs/Platform-接口契约.md` §4.2（Media demux + 精确 seek + ChqIFrameProvider）、
 `docs/specs/ARCH-003` §3（零拷贝路径）。**本文件**：模块运行记录 + 设计取舍摘要
 （MEDIA-010 接口冻结于 2026-09-25）。
 
@@ -15,34 +15,34 @@
 
 | 层 | 类型 | 是什么 | 谁实现 |
 |---|---|---|---|
-| **Platform Media 后端** | `platform/media.h` 的 `IFrameProvider` | 平台解码后端：demux+解码之上「按 pts 取帧」，承诺精确 seek，lease 模型 | PALA-010/011 Apple、MEDIA-021 FFmpeg |
-| **跨平台媒体编排** | `media/frame_provider.h` 的 `FrameProvider` | 编辑侧帧接口：聚合 Platform 后端，收口精确 seek 策略 / 帧缓存 / 解码器池 | MEDIA-020 SystemFrameProvider |
+| **Platform Media 后端** | `platform/chq_media.h` 的 `ChqIFrameProvider` | 平台解码后端：demux+解码之上「按 pts 取帧」，承诺精确 seek，lease 模型 | PALA-010/011 Apple、MEDIA-021 FFmpeg |
+| **跨平台媒体编排** | `media/chq_frame_provider.h` 的 `ChqFrameProvider` | 编辑侧帧接口：聚合 Platform 后端，收口精确 seek 策略 / 帧缓存 / 解码器池 | MEDIA-020 ChqSystemFrameProvider |
 
-- Platform `IFrameProvider` = **平台能力**（系统/FFmpeg 解码进代码库）。
-- `FrameProvider` = **上层编排**（编辑侧消费的唯一帧接口，位于 Platform 之上）。
+- Platform `ChqIFrameProvider` = **平台能力**（系统/FFmpeg 解码进代码库）。
+- `ChqFrameProvider` = **上层编排**（编辑侧消费的唯一帧接口，位于 Platform 之上）。
 - 精确 seek 的*机制*由 Platform 后端 + MEDIA-020 实现；MEDIA-010 规定*正确性契约*与*策略 API*。
 
 ## 核心抽象（MEDIA-010 落地）
 
 ```cpp
-enum class SeekPolicy { kExact, kKeyframeBefore, kNearest };  // 精确 seek 策略
-struct FrameRequest { RationalTime at; SeekPolicy policy = kExact; bool proxy_quality; };
+enum class ChqSeekPolicy { kExact, kKeyframeBefore, kNearest };  // 精确 seek 策略
+struct ChqFrameRequest { ChqRationalTime at; ChqSeekPolicy policy = kExact; bool proxy_quality; };
 
-class FrameProvider {                 // 跨平台帧接口（抽象，MEDIA-020 实现）
-  Status Open(const MediaSource&);
-  Status Seek(t, SeekPolicy, CancelToken);
-  Status AcquireFrame(FrameRequest, MediaFrame&, CancelToken);  // lease 模型
-  void   ReleaseFrame(MediaFrame&);
-  Status GetDuration(RationalTime&) const;
-  void   SetFrameCache(IFrameCache*);      // MEDIA-011 钩子
-  void   SetDecoderPool(IDecoderPool*);    // MEDIA-012 钩子
+class ChqFrameProvider {                 // 跨平台帧接口（抽象，MEDIA-020 实现）
+  ChqStatus Open(const ChqMediaSource&);
+  ChqStatus Seek(t, ChqSeekPolicy, ChqCancelToken);
+  ChqStatus AcquireFrame(ChqFrameRequest, ChqMediaFrame&, ChqCancelToken);  // lease 模型
+  void   ReleaseFrame(ChqMediaFrame&);
+  ChqStatus GetDuration(ChqRationalTime&) const;
+  void   SetFrameCache(ChqIFrameCache*);      // MEDIA-011 钩子
+  void   SetDecoderPool(ChqIDecoderPool*);    // MEDIA-012 钩子
 };
 ```
 
 三个实现：
-- `SystemFrameProvider`（MEDIA-020，**已落地 2026-09-25**）：核心编排，聚合 Platform 解封装 +
-  解码接缝 `IFrameDecoder`；精确 seek 语义（kExact/kKeyframeBefore/kNearest）完整实现并经
-  B 帧 GOP 单测验证。Apple 解码后端经 `IFrameDecoder` 接缝接入（PALA-011 未做，见下）。
+- `ChqSystemFrameProvider`（MEDIA-020，**已落地 2026-09-25**）：核心编排，聚合 Platform 解封装 +
+  解码接缝 `ChqIFrameDecoder`；精确 seek 语义（kExact/kKeyframeBefore/kNearest）完整实现并经
+  B 帧 GOP 单测验证。Apple 解码后端经 `ChqIFrameDecoder` 接缝接入（PALA-011 未做，见下）。
 - `FFmpegFrameProvider`（MEDIA-021，规划）：精确 seek / 倒放 / 速度曲线，与系统后端**同 seek 同结果**。
 - 两者行为必须一致（同 seek 请求同帧，PSNR≥45dB，BACKLOG MEDIA-021 验收）。
 
@@ -56,7 +56,7 @@ class FrameProvider {                 // 跨平台帧接口（抽象，MEDIA-020
   t 的压缩包即返回。
 - `kKeyframeBefore`：返回 <=t 最近关键帧（快，非 t 展示帧），用于缩略图/占位。
 - `kNearest`：实现自行权衡速度/接近度，返回前或后最近可解码帧。
-- 取消：`Seek`/`AcquireFrame` 接受 CancelToken，取消返回 `kCancelled`（非错误）。
+- 取消：`Seek`/`AcquireFrame` 接受 ChqCancelToken，取消返回 `kCancelled`（非错误）。
 
 ## 平台差异（务必注意，与上版本一致）
 
@@ -64,23 +64,23 @@ class FrameProvider {                 // 跨平台帧接口（抽象，MEDIA-020
 |---|---|
 | Android seek 只能到关键帧 | 统一为「精确 seek 语义」：内部到关键帧后向前解码到目标帧 |
 | YUV stride 对齐不同 | 在 Platform 内统一，上层无感 |
-| 硬解实例数受限 | DecoderPool（MEDIA-012）调度 + 降级软解，超路数不崩溃 |
+| 硬解实例数受限 | ChqDecoderPool（MEDIA-012）调度 + 降级软解，超路数不崩溃 |
 | iOS 无 FFmpeg 也能跑 | FFmpeg 是可选后端，非必需 |
 
 ## 为下游留的接口位置（MEDIA-010 定义，后续实现）
 
-- **MEDIA-011（帧缓存 LRU）**：实现 `IFrameCache`（write_set core/src/media/cache.*），
-  内存上界接 CORE-004 TextureBudget/MemoryBudget（1080p≤400MB / 4K≤1.2GB）。
-- **MEDIA-012（DecoderPool）**：实现 `IDecoderPool`（core/src/media/decoder_pool.*），
-  用 opaque `DecoderHandle`；超硬解路数降级软解，返回 kResourceExhausted 而非崩溃。
-- **MEDIA-020（SystemFrameProvider）**：实现抽象 `FrameProvider`，实现精确 seek 机制。
-- **MEDIA-021（FFmpeg 后端）**：另一 `FrameProvider` 实现，与系统后端一致性自测。
+- **MEDIA-011（帧缓存 LRU）**：实现 `ChqIFrameCache`（write_set core/src/media/cache.*），
+  内存上界接 CORE-004 ChqTextureBudget/ChqMemoryBudget（1080p≤400MB / 4K≤1.2GB）。
+- **MEDIA-012（ChqDecoderPool）**：实现 `ChqIDecoderPool`（core/src/media/decoder_pool.*），
+  用 opaque `ChqDecoderHandle`；超硬解路数降级软解，返回 kResourceExhausted 而非崩溃。
+- **MEDIA-020（ChqSystemFrameProvider）**：实现抽象 `ChqFrameProvider`，实现精确 seek 机制。
+- **MEDIA-021（FFmpeg 后端）**：另一 `ChqFrameProvider` 实现，与系统后端一致性自测。
 
 ## 硬约束满足方式
 
 1. **零平台类型**：仅 base + Platform 类型；无平台类型、无平台头、无 AV* / ffmpeg 类型。
    门禁 `tools/platform/check_platform_headers.py` 已扩展覆盖 `cq/media/`（见 `platform_header_gate`）。
-2. **统一 base 类型**：RationalTime / Status / CancelToken；lease 模型与 Platform 一致。
+2. **统一 base 类型**：ChqRationalTime / ChqStatus / ChqCancelToken；lease 模型与 Platform 一致。
 3. **`-Werror` 零警告**：编译 TU `tests/unit/media_frame_provider_compile.cpp` 干净编译。
 4. **内核禁用异常**：无 throw。
 
@@ -90,7 +90,7 @@ class FrameProvider {                 // 跨平台帧接口（抽象，MEDIA-020
 - **实现文件**：`platform/apple/media_demux.mm`（类 `AppleDemuxer`，工厂 `CreateMediaDemuxer`）。
 - **机制**：`AVURLAsset` + `AVAssetReader` + `AVAssetReaderTrackOutput`（outputSettings=nil
   ⇒ passthrough 压缩数据，不含解码，符合「demux 不含解码」契约）。
-- **CMTime→RationalTime**：统一 `Rescale` 到项目网格 **120000**，非整除显式 `RoundMode`
+- **CMTime→ChqRationalTime**：统一 `Rescale` 到项目网格 **120000**，非整除显式 `ChqRoundMode`
   （时间戳用 `kRound`、关键帧锚点用 `kFloor`），绝不默认舍入（ADR-0009）。
 - **零该厂商样本过滤**：passthrough 会吐出 H.264 参数集/priming 等**零该厂商样本**，会破坏
   pts 单调性；`ReadPacket` 内部 `do/while` 跳过 `size==0` 的样本，只对外吐有效编码包。
@@ -104,19 +104,19 @@ class FrameProvider {                 // 跨平台帧接口（抽象，MEDIA-020
 - **红线**：零 FFmpeg 类型；平台类型（AV*/CM*/`__strong`）仅出现在本 `.mm`；core 头零平台类型。
 - **未做**：PALA-011（VideoToolbox 解码后端）不在本次范围。
 
-### MEDIA-020 — SystemFrameProvider（跨平台编排）✅ 完成
-- **实现文件**：`core/include/cq/media/system_frame_provider.h` + `core/src/media/system_frame_provider.cpp`
-  （类 `SystemFrameProvider : public FrameProvider`；工厂 `CreateSystemFrameProvider`）。
-- **解码接缝 `IFrameDecoder`**：把「压缩包→展示帧」抽象成平台无关接口，真实实现属 PALA-011；
-  `StubDecoder` 为真实链路占位（Feed 诚实返回 `kDecodeUnsupported`）；`MockDecoder`（带 B 帧 DPB
-  重排）用于单测。core 不反向依赖 Platform：demuxer（`PlatformPtr<IMediaDemuxer>`）与 decoder 均外部注入。
+### MEDIA-020 — ChqSystemFrameProvider（跨平台编排）✅ 完成
+- **实现文件**：`core/include/cq/media/chq_system_frame_provider.h` + `core/src/media/system_frame_provider.cpp`
+  （类 `ChqSystemFrameProvider : public ChqFrameProvider`；工厂 `CreateSystemFrameProvider`）。
+- **解码接缝 `ChqIFrameDecoder`**：把「压缩包→展示帧」抽象成平台无关接口，真实实现属 PALA-011；
+  `ChqStubDecoder` 为真实链路占位（Feed 诚实返回 `kDecodeUnsupported`）；`MockDecoder`（带 B 帧 DPB
+  重排）用于单测。core 不反向依赖 Platform：demuxer（`ChqPlatformPtr<ChqIMediaDemuxer>`）与 decoder 均外部注入。
 - **精确 seek 机制（kExact）**：先 `demuxer.Seek(<=t 最近关键帧)` + 重置 DPB，再从关键帧前向
   解码、丢弃显示序在 t 之前的帧，直到命中「显示区间归属」`pts <= t < pts+duration` 的帧；B 帧
   依赖（其后 P 帧）在其可重建前不会由解码器弹出，故 provider 自然「继续解码到 t 帧及其依赖
   可重建」才返回。
 - **kKeyframeBefore**：seek 后弹出的**首帧**即 <=t 关键帧（缩略图语义，不重建到 t）。
 - **kNearest**：解码窗口内返回 `|pts - t|` 最小的可解码帧。
-- **取消语义**：循环每轮检查 `CancelToken::IsCancelled()`，取消返回 `kCancelled`，`IsError()==false`。
+- **取消语义**：循环每轮检查 `ChqCancelToken::IsCancelled()`，取消返回 `kCancelled`，`IsError()==false`。
 - **钩子**：`SetFrameCache`/`SetDecoderPool` 为**空 stub 钩子**（MEDIA-011/012 后续接入）。
 - **单测真跑**（ctest `media_system_frame_provider`，MockDemuxer + MockDecoder，4 帧 GOP
   `I P B B` 解码序 dts 0,1,2,3 / 显示序 pts 0,1,2,3）：
@@ -125,12 +125,12 @@ class FrameProvider {                 // 跨平台帧接口（抽象，MEDIA-020
   - kKeyframeBefore t=2 → 返回关键帧 pts=0（非精确帧 pts=2）✅
   - kNearest t=2 → 返回 pts=2 ✅
   - 取消 → `kCancelled` 且 `IsError()==false` ✅（9/9 检查通过）
-- **真实链路冒烟**（ctest `media_smoke_apple`，真实 PALA-010 demux + `StubDecoder`）：
+- **真实链路冒烟**（ctest `media_smoke_apple`，真实 PALA-010 demux + `ChqStubDecoder`）：
   - demux 侧真实打通：Open/流=1/H.264/1920×1080/时长≈5.0s ✅
   - `AcquireFrame` 在解码后端缺失下**如实返回 `kDecodeUnsupported`**，阻塞点被识别在「解码」
     而非「解封装」，**未用 mock 伪造** ✅（7/7 检查通过）
 - **诚实报告**：真实视频解码被 PALA-011（VideoToolbox）阻塞；本任务 deliberately 不伪造，
-  解码接缝已就位，PALA-011 落地后只需实现 `IFrameDecoder` 适配器即可端到端打通。
+  解码接缝已就位，PALA-011 落地后只需实现 `ChqIFrameDecoder` 适配器即可端到端打通。
 
 ### MEDIA-020 真实 B 帧文件精确 seek（mock → 真实 golden 升级，2026-09-25 落地）
 - **背景纠正**：此前误判「golden 为全 I 帧、B 帧精确 seek 无法在真实文件上验证」并建议新增素材。
@@ -139,7 +139,7 @@ class FrameProvider {                 // 跨平台帧接口（抽象，MEDIA-020
   现有仓库里有没有**。本任务据此把 B 帧精确 seek 从「mock 小 GOP」升级到「真实文件」。
 - **新用例**：ctest `media_bframe_real`（`tests/unit/test_media_bframe_real_apple.cpp`，仅 Apple）。
   真实 `CreateMediaDemuxer` 读该文件 + **仅按 pts 网格重排**的 `ReorderingMockDecoder`（不预知 GOP，
-  刻意暴露并消化「解码序≠显示序」分离）驱动 `SystemFrameProvider::AcquireFrame(kExact, ...)`。
+  刻意暴露并消化「解码序≠显示序」分离）驱动 `ChqSystemFrameProvider::AcquireFrame(kExact, ...)`。
 - **真实文件 ground truth（ffprobe / AVFoundation 一致，仅参考基准，不进产物）**：300 帧；
   `pict_type` I=5/P=75/B=220。**关键帧(I)真实位置**：首个 IDR 样本 native pts=1024（15360
   timebase）= 第 2 帧 = 0.0667s，即本 golden 文件存在 **2 帧(8000 ticks)起始偏移**，故关键帧落在
@@ -176,7 +176,7 @@ class FrameProvider {                 // 跨平台帧接口（抽象，MEDIA-020
     `keyframe_times_`（依赖已修复的 `IsKeyframe`，与 ffprobe 吻合）吸附到 `<=target` 的最大关键帧，
     重建 `AVAssetReader`（timeRange.start=该关键帧），满足「精确 seek 必须自关键帧起解码」。
   - **修复中暴露并修复的第三处隐患（关键）**：`RebuildReader` 此前向 `tracks_` **追加**轨而不清空，
-    导致 `Open` 被重复调用时（如 `CreateMediaDemuxer` + `SystemFrameProvider::Open` 双开）累积失效
+    导致 `Open` 被重复调用时（如 `CreateMediaDemuxer` + `ChqSystemFrameProvider::Open` 双开）累积失效
     （`output=nil`）的旧轨；`ScanKeyframes` 命中失效轨后 `copyNextSampleBuffer` 立即返回 nil →
     扫到 0 样本 → `keyframe_times_` 为空 → `Seek` 吸附到 0。已修：`RebuildReader` 开头
     `tracks_.clear()`，使 `Open` 幂等；`ScanKeyframes` 稳定扫到 300 样本/5 关键帧。
@@ -185,7 +185,7 @@ class FrameProvider {                 // 跨平台帧接口（抽象，MEDIA-020
 
 - **mock 与真实一致性结论（保持）**：
   - 一致处：kExact 编排在「解码序≠显示序」分离下均正确取 t 处展示帧；本真实 MockDecoder 用
-    pts 网格重排，都证明了 SystemFrameProvider 的区间归属 + 前向解码逻辑正确。
+    pts 网格重排，都证明了 ChqSystemFrameProvider 的区间归属 + 前向解码逻辑正确。
   - 差异处（真实文件暴露、mock 掩盖的）：
     1. **解码序≠显示序是真实分离的**（真实 dts/pts 发散）；旧 mock 用 dts 0,1,2,3 / pts 0,1,2,3
        同序，根本没触发重排，掩盖了 passthrough 行为。**这是团队重点警示点的实证**。
@@ -194,12 +194,12 @@ class FrameProvider {                 // 跨平台帧接口（抽象，MEDIA-020
        （修复前为绕过缺陷曾用 ffprobe 真值核对，现已撤回归正）。
     3. **`kKeyframeBefore` 此前不回退关键帧**（真实不吸附）→ 已修复为吸附到 <=t 真实关键帧。
   - 结论：真实文件升级既证明 kExact 在真实分离下正确，又驱动了 PALA-010 两处缺陷（含双开累积隐患）修复。
-- **与冻结接口一致性**：`FrameProvider` 抽象（MEDIA-010）声明的虚函数全部实现；注意该冻结头
+- **与冻结接口一致性**：`ChqFrameProvider` 抽象（MEDIA-010）声明的虚函数全部实现；注意该冻结头
   **不含 `GetPosition`**（任务卡初始描述提到的 `GetPosition` 与实际冻结接口不符——以冻结头为准，
   未擅自修改 frozen 头）。
 
 ### MEDIA-020 待解 / 后续
-- PALA-011（VideoToolbox `IFrameDecoder` 适配器）→ 端到端真实解码。
+- PALA-011（VideoToolbox `ChqIFrameDecoder` 适配器）→ 端到端真实解码。
 - MEDIA-011 帧缓存 LRU（替换空 stub）、MEDIA-012 解码器池（替换空 stub）。
 - **已知、与本任务无关的既有失败（非 PALA-010 范围，特此标注）**：`platform_apple_demux` 与 `media_smoke_apple`
   的 `流数量=1` 断言失败——golden 样本 `gf_1080p_h264.mp4` 实为 **2 路流（video+audio）**，
@@ -211,9 +211,9 @@ class FrameProvider {                 // 跨平台帧接口（抽象，MEDIA-020
 
 - 「t 处帧」采用展示区间归属（pts<=t<pts+dur）还是 PTS 最近匹配——倒放/速度曲线下边界
   行为需评审拍板（hypothesis：默认区间归属）。
-- `FrameProvider` 抽象类（非 Platform 资源），生命周期由调用方 unique_ptr 持有；若后续 C ABI
+- `ChqFrameProvider` 抽象类（非 Platform 资源），生命周期由调用方 unique_ptr 持有；若后续 C ABI
   暴露需统一句柄语义（BIND 层处理）。
-- `DecoderHandle` 为 opaque 指针；MEDIA-012 在其后定义真实解码器包装（不暴露平台类型）。
+- `ChqDecoderHandle` 为 opaque 指针；MEDIA-012 在其后定义真实解码器包装（不暴露平台类型）。
 
 ## 验证（2026-09-25 落地；2026-09-26 PALA-010 修复后复跑）
 ```bash
@@ -236,31 +236,31 @@ ADR-0003、ARCH-003 §3、Platform-接口契约 §4.2、BACKLOG MEDIA-010/011/01
 
 ## MEDIA-011 / MEDIA-012 落地（2026-09-27，general-purpose-25）
 
-> 替换 MEDIA-020 中 `SetFrameCache` / `SetDecoderPool` 的两个空 stub，实现 `IFrameCache` /
-> `IDecoderPool` 并接入 `SystemFrameProvider`。全部 CTest 18/18 绿（含 `platform_header_gate`
+> 替换 MEDIA-020 中 `SetFrameCache` / `SetDecoderPool` 的两个空 stub，实现 `ChqIFrameCache` /
+> `ChqIDecoderPool` 并接入 `ChqSystemFrameProvider`。全部 CTest 18/18 绿（含 `platform_header_gate`
 > 对新增 `core/include/cq/media/` 头零违规）。
 
 ### Write Set（边界内）
 - 新增 `core/src/media/cache.cpp` + `core/include/cq/media/cache.h`（MEDIA-011）
-- 新增 `core/src/media/decoder_pool.cpp` + `core/include/cq/media/decoder_pool.h`（MEDIA-012）
-- 修改 `core/include/cq/media/system_frame_provider.h`：接入 `SetFrameCache` / `SetDecoderPool`
-  （仅用冻结接口，未改 `IFrameCache`/`IDecoderPool` 定义；未改 `core/platform/*`）
+- 新增 `core/src/media/decoder_pool.cpp` + `core/include/cq/media/chq_decoder_pool.h`（MEDIA-012）
+- 修改 `core/include/cq/media/chq_system_frame_provider.h`：接入 `SetFrameCache` / `SetDecoderPool`
+  （仅用冻结接口，未改 `ChqIFrameCache`/`ChqIDecoderPool` 定义；未改 `core/platform/*`）
 - 新增 `tests/unit/test_cache.cpp`（`media_cache`）、`tests/unit/test_decoder_pool.cpp`（`media_decoder_pool`）
 - 修改 `core/CMakeLists.txt`、`tests/CMakeLists.txt`（注册源与用例）
-- **未做**：PALA-012、FFmpeg 链接、PALA-011 真实解码、`ICapabilities`（CORE-007）、`git` 提交
+- **未做**：PALA-012、FFmpeg 链接、PALA-011 真实解码、`ChqICapabilities`（CORE-007）、`git` 提交
 
-### MEDIA-011 — LruFrameCache（帧缓存池 + LRU）
+### MEDIA-011 — ChqLruFrameCache（帧缓存池 + LRU）
 - **实现要点**：
-  - `LruFrameCache : public IFrameCache`。`std::map<RationalTime, Entry>`（key=pts/请求时间）
-    + `std::list<RationalTime>`（front=MRU、back=LRU），Entry 持 `lru_it` 实现 O(1) 移动/淘汰。
+  - `ChqLruFrameCache : public ChqIFrameCache`。`std::map<ChqRationalTime, Entry>`（key=pts/请求时间）
+    + `std::list<ChqRationalTime>`（front=MRU、back=LRU），Entry 持 `lru_it` 实现 O(1) 移动/淘汰。
   - `UsedBytes()` 统计「若常驻需多少内存」= 按像素格式估算的解码尺寸（video: w*h*bpp；
     YUV420/NV12=1.5bpp；audio: pcm.data_bytes）。上界由构造参数 / `SetMaxBytes` 给定。
   - 插入超上界时按 LRU 从尾部淘汰，保证 `UsedBytes() <= 上界`（`SetMaxBytes` 缩小时立即淘汰）。
   - **关键取舍：lease = move-out 模型**。`Find` 命中把帧**移出**缓存（move-out）交给调用方，
     缓存中不再保留该条目 → 借出的帧物理不在 LRU 中，淘汰循环永远碰不到它，从根本上杜绝
-    use-after-free（即使将来改深拷贝也安全）。调用方用毕经 `FrameProvider::ReleaseFrame`
+    use-after-free（即使将来改深拷贝也安全）。调用方用毕经 `ChqFrameProvider::ReleaseFrame`
     把帧交回（provider 调 `Insert` 重新入缓存，key = 借出时的请求时间）。
-  - 缓存只持 `MediaFrame` **浅拷贝句柄**（video.image / audio.pcm.data 归 provider 池所有），
+  - 缓存只持 `ChqMediaFrame` **浅拷贝句柄**（video.image / audio.pcm.data 归 provider 池所有），
     evict 不释放底层像素缓冲，避免 double free（注释固定所有权）。
 - **实测数字（ctest `media_cache`，43 检查全绿）**：
   - 上界：每帧 400B、上界 1000B，插入 10 帧后 `UsedBytes()==800`（保留最近 2 帧）且每步 ≤1000。
@@ -272,17 +272,17 @@ ADR-0003、ARCH-003 §3、Platform-接口契约 §4.2、BACKLOG MEDIA-010/011/01
   多轨并发对同一 provider 借出多帧（单 loaned_key_ 仅跟踪一帧，旧借出帧会滞留缓存外直至
   该 provider 重建）——单 playhead 预览无碍，多并发 lease 需冻结接口增 `Release(at)`。
 
-### MEDIA-012 — DecoderPool（解码器池 + 硬解路数降级）
+### MEDIA-012 — ChqDecoderPool（解码器池 + 硬解路数降级）
 - **实现要点**：
-  - `DecoderPool : public IDecoderPool`。`AcquireDecoder` 优先复用池中「已释放的同 codec 解码器」
-    （避免新建硬解 session）；否则 `active < max_hardware_paths` 经 `IDecoderFactory` 新建一路；
+  - `ChqDecoderPool : public ChqIDecoderPool`。`AcquireDecoder` 优先复用池中「已释放的同 codec 解码器」
+    （避免新建硬解 session）；否则 `active < max_hardware_paths` 经 `ChqIDecoderFactory` 新建一路；
     否则返回 `kResourceExhausted`（**不崩溃、不挂起**）。
   - `ReleaseDecoder` 仅置空闲（可复用，不销毁）；`ActiveCount()` / `MaxHardwarePaths()` 计数正确；
     内部 `std::mutex` 加锁但**非阻塞**，并发借/还不挂起。
-  - `CqDecoder` 在 `decoder_pool.h` 完整定义（含 `IFrameDecoder* decoder` + 诊断 id）；提供
-    `DecoderOf(DecoderHandle)` 供 provider 把解码路由到池中的解码器。
+  - `CqDecoder` 在 `chq_decoder_pool.h` 完整定义（含 `ChqIFrameDecoder* decoder` + 诊断 id）；提供
+    `DecoderOf(ChqDecoderHandle)` 供 provider 把解码路由到池中的解码器。
   - **硬解路数上限**：默认保守 `kDefaultMaxHardwarePaths = 1`，构造可配；**不写死 Apple 具体数字**
-    （VideoToolbox 并发数属 Platform 知识）。将来 CORE-007 `ICapabilities` 查到真值，调用方用
+    （VideoToolbox 并发数属 Platform 知识）。将来 CORE-007 `ChqICapabilities` 查到真值，调用方用
     `SetMaxHardwarePaths` 覆盖即可。core 层只认可配置上限。
   - **超路数降级策略选择**：返回 `kResourceExhausted` 让调用方背压/排队（不阻塞等待，规避
     CORE-005 条件变量挂死）；**不抢占最旧一路**（硬解 session 中途抢占可能损坏解码态）；
@@ -311,56 +311,56 @@ $(dirname $CMAKE_BIN)/ctest --test-dir build -R media_decoder_pool # MEDIA-012
 - 门禁：`platform_header_gate` 对 `core/include/cq/media/{cache,decoder_pool}.h` 零违规（EXIT=0）。
 - 现有 16 用例（现 18，含新增 2）全绿，未引入回归。
 
-### PALA-012 muxer 接缝：IMediaMuxer 跨平台封装接口 + Apple 适配（2026-09-27，general-purpose-28）
+### PALA-012 muxer 接缝：ChqIMediaMuxer 跨平台封装接口 + Apple 适配（2026-09-27，general-purpose-28）
 
 > 把「Apple 端已验证的 H.264 MP4 导出能力」从平台内部实现升级为可被上层平台无关调用的
-> 接口。不实现 EXPORT-001（导出控制器）；不接 FFmpeg；不改 `IMediaDemuxer`/`IFrameProvider` 签名。
+> 接口。不实现 EXPORT-001（导出控制器）；不接 FFmpeg；不改 `ChqIMediaDemuxer`/`ChqIFrameProvider` 签名。
 
 #### Write Set（边界内）
-- 修改 `core/include/cq/platform/media.h`：**新增** `IMediaMuxer` 接口、`VideoTrackConfig` /
-  `AudioTrackConfig` / `BitrateTier` 枚举、`CreateMediaMuxer` 工厂声明（**未改** 既有
-  `IMediaDemuxer`/`IFrameProvider` 任何签名，CO-006 冻结约束满足）。
-- 新增 `platform/apple/media_muxer.h` + `platform/apple/media_muxer.mm`：`AppleMediaMuxer : public IMediaMuxer`，
+- 修改 `core/include/cq/platform/chq_media.h`：**新增** `ChqIMediaMuxer` 接口、`ChqVideoTrackConfig` /
+  `ChqAudioTrackConfig` / `ChqBitrateTier` 枚举、`CreateMediaMuxer` 工厂声明（**未改** 既有
+  `ChqIMediaDemuxer`/`ChqIFrameProvider` 任何签名，CO-006 冻结约束满足）。
+- 新增 `platform/apple/media_muxer.h` + `platform/apple/media_muxer.mm`：`AppleMediaMuxer : public ChqIMediaMuxer`，
   组合 `AppleVideoEncoder`，经 `GetCvPixelBuffer(NativeImageHandle)` 把 opaque 句柄转回
   `CVPixelBufferRef` 委托编码；提供 `CreateMediaMuxer` 工厂。
 - 修改 `platform/apple/CMakeLists.txt`：把 `media_muxer.mm` 登记到 `add_library` 源列表 **与**
   `set_source_files_properties(... PROPERTIES COMPILE_FLAGS "-fobjc-arc")` 的 ARC 列表（两处都已登记）。
-- 新增 `tests/unit/test_media_muxer_apple.cpp`：仅经 `CreateMediaMuxer` + `IMediaMuxer` 完成一次
+- 新增 `tests/unit/test_media_muxer_apple.cpp`：仅经 `CreateMediaMuxer` + `ChqIMediaMuxer` 完成一次
   导出（全程不碰 `AppleVideoEncoder` / 不 include `media_encode.h`），ffprobe 验证 +
   首帧像素对照 + 取消路径；登记到 `tests/CMakeLists.txt`（仅 Apple）。
-- 修改 `tests/unit/platform_headers_compile.cpp`：新增 `IMediaMuxer` 的 `static_assert`
-  （继承 IPlatformResource、PlatformPtr move-only、WriteVideoFrame/ Finish/ Open 签名、码率档位枚举、
+- 修改 `tests/unit/platform_headers_compile.cpp`：新增 `ChqIMediaMuxer` 的 `static_assert`
+  （继承 ChqIPlatformResource、ChqPlatformPtr move-only、WriteVideoFrame/ Finish/ Open 签名、码率档位枚举、
   `CreateMediaMuxer` 工厂签名）。
 
-#### 接口完整签名（core/include/cq/platform/media.h）
+#### 接口完整签名（core/include/cq/platform/chq_media.h）
 ```cpp
-enum class BitrateTier : int32_t { kUnknown, kLow, kMedium, kHigh, kLossless };
-struct VideoTrackConfig {
-    CodecId codec = kH264; uint32_t width, height;
-    RationalTime frame_rate{30,1}; BitrateTier bitrate = kMedium;
+enum class ChqBitrateTier : int32_t { kUnknown, kLow, kMedium, kHigh, kLossless };
+struct ChqVideoTrackConfig {
+    ChqCodecId codec = kH264; uint32_t width, height;
+    ChqRationalTime frame_rate{30,1}; ChqBitrateTier bitrate = kMedium;
     int32_t max_keyframe_interval = 30; bool allow_hardware = true;
 };
-struct AudioTrackConfig { CodecId codec = kAac; uint32_t sample_rate=48000, channels=2;
-    BitrateTier bitrate = kMedium; };
-class IMediaMuxer : public IPlatformResource {
-    Status Open(const char* output_path, ContainerFormat container);
-    Status AddVideoTrack(const VideoTrackConfig&);
-    Status AddAudioTrack(const AudioTrackConfig&);          // 接口预留，Apple 返回 kEncodeUnsupported
-    Status WriteVideoFrame(NativeImageHandle, const RationalTime&, const CancelToken&);
-    Status Finish(const CancelToken&);
-    Status Cancel();
+struct ChqAudioTrackConfig { ChqCodecId codec = kAac; uint32_t sample_rate=48000, channels=2;
+    ChqBitrateTier bitrate = kMedium; };
+class ChqIMediaMuxer : public ChqIPlatformResource {
+    ChqStatus Open(const char* output_path, ChqContainerFormat container);
+    ChqStatus AddVideoTrack(const ChqVideoTrackConfig&);
+    ChqStatus AddAudioTrack(const ChqAudioTrackConfig&);          // 接口预留，Apple 返回 kEncodeUnsupported
+    ChqStatus WriteVideoFrame(NativeImageHandle, const ChqRationalTime&, const ChqCancelToken&);
+    ChqStatus Finish(const ChqCancelToken&);
+    ChqStatus Cancel();
     int64_t FrameCount() const;
     bool IsHardwareAccelerated() const;
 };
-Status CreateMediaMuxer(PlatformPtr<IMediaMuxer>&);
+ChqStatus CreateMediaMuxer(ChqPlatformPtr<ChqIMediaMuxer>&);
 ```
 
 #### 设计取舍
-- 码率用「档位」`BitrateTier` 而非精确 bps（避免把平台 bps 暴露到 core）；Apple 映射
+- 码率用「档位」`ChqBitrateTier` 而非精确 bps（避免把平台 bps 暴露到 core）；Apple 映射
   kLow=5M / kMedium=10M / kHigh=20M / kLossless→0（交平台默认）。
-- 帧以 opaque `NativeImageHandle` 传入（与 `IFrameProvider` 同源），实现内部 1:1 拷贝后
+- 帧以 opaque `NativeImageHandle` 传入（与 `ChqIFrameProvider` 同源），实现内部 1:1 拷贝后
   append，不做色彩转换（规避 PALA-002 通道交换 bug）。
-- 时间一律 `RationalTime`（timescale=120000，ADR-0009）；取消返回 `kCancelled`（非错误）。
+- 时间一律 `ChqRationalTime`（timescale=120000，ADR-0009）；取消返回 `kCancelled`（非错误）。
 - Apple 适配层只新增「opaque 句柄跨层转接」，复用 `AppleVideoEncoder` 已验证的 60 帧导出语义。
 
 #### 验证（真跑，Debug 构建；Release 下 test_log.cpp 有预存 NDEBUG 相关 -Wunused 问题，见下）
@@ -369,16 +369,16 @@ CMAKE_BIN=/Users/zhuning/.workbuddy/binaries/cmake/CMake.app/Contents/bin/cmake
 $CMAKE_BIN -S . -B build -DCMAKE_BUILD_TYPE=Debug   # 与前期「18/18 绿」同配置（无 NDEBUG）
 $CMAKE_BIN --build build -j4
 $(dirname $CMAKE_BIN)/ctest --test-dir build
-$(dirname $CMAKE_BIN)/ctest --test-dir build -R platform_header_gate   # 对新 media.h 零违规
+$(dirname $CMAKE_BIN)/ctest --test-dir build -R platform_header_gate   # 对新 chq_media.h 零违规
 $(dirname $CMAKE_BIN)/ctest --test-dir build -R platform_apple_muxer         # 平台无关调用证明
 $(dirname $CMAKE_BIN)/ctest --test-dir build -R platform_apple_encode        # 原 60 帧 ffprobe 不回归
 ```
 - **全绿 20/20**（原 19 + 新增 `platform_apple_muxer`）。关键：
   - `platform_apple_encode`：仍 60 帧 / 2.0s / H.264 ffprobe 验证通过（**不回归**）。
-  - `platform_apple_muxer`：仅经 `IMediaMuxer` 工厂完成导出；ffprobe 验证 codec=H.264 / 1920×1080 /
+  - `platform_apple_muxer`：仅经 `ChqIMediaMuxer` 工厂完成导出；ffprobe 验证 codec=H.264 / 1920×1080 /
     帧数=60 / 时长≈2.0s；首帧中心像素 ≈ (0,188,0,255) 且绿主导；取消经 `Cancel()` 删半成品文件。
-  - `platform_header_gate`：对 `core/include/cq/platform/media.h` 的 `IMediaMuxer` 新增内容零平台类型 / 零 FFmpeg 违规。
-  - `platform_headers_compile`：新增 `IMediaMuxer` 的 `static_assert` 全过。
+  - `platform_header_gate`：对 `core/include/cq/platform/chq_media.h` 的 `ChqIMediaMuxer` 新增内容零平台类型 / 零 FFmpeg 违规。
+  - `platform_headers_compile`：新增 `ChqIMediaMuxer` 的 `static_assert` 全过。
 - **-Werror 零警告**：`cq_platform_apple`（含 `media_muxer.mm`）与全部测试在 `-Werror` 下零警告
   （仅有 `ld: warning: ignoring duplicate libraries` 链接期提示，非编译警告、非 -Werror 范畴）。
 
@@ -386,56 +386,56 @@ $(dirname $CMAKE_BIN)/ctest --test-dir build -R platform_apple_encode        # �
 - **预存 Release 构建红**（非本次引入）：`build/` 被配置为 `CMAKE_BUILD_TYPE=Release`
   （`-DNDEBUG`），`CQ_LOG_FRAME` 在 NDEBUG 下展开为 `do{}while(0)`，导致 `tests/unit/test_log.cpp`
   中仅被宏使用的 `pts` 被判 `-Wunused-variable` 而 `-Werror` 失败。本任务未改 `test_log.cpp` /
-  `log.h` / 构建配置；验证在 Debug（与前期绿构建同配置）下完成。建议 `test_log.cpp` owner 在该
+  `chq_log.h` / 构建配置；验证在 Debug（与前期绿构建同配置）下完成。建议 `test_log.cpp` owner 在该
   用例加 `#ifndef NDEBUG` 守卫或 `(void)pts;`，使 Release 亦绿。
-- 后续：EXPORT-001（导出控制器状态机/进度/编排）落地时消费 `IMediaMuxer`；`AddAudioTrack` 实现音频轨。
+- 后续：EXPORT-001（导出控制器状态机/进度/编排）落地时消费 `ChqIMediaMuxer`；`AddAudioTrack` 实现音频轨。
 
 ### 后续任务
 - MEDIA-013（TimeMap：恒速/曲线/倒放）、MEDIA-021（FFmpeg 后端）、MEDIA-030（音画同步）。
-- PALA-011（VideoToolbox `IFrameDecoder` 适配器）→ 端到端真实解码；落地后 `DecoderPool` 的
-  `IDecoderFactory` 由 Platform 实现，并接 CORE-007 `ICapabilities` 覆盖 `max_hardware_paths`。
-- 多并发 lease 需求明确时，向冻结接口 `IFrameCache` 增 `Release(at)`（需 MEDIA-010 评审）。
+- PALA-011（VideoToolbox `ChqIFrameDecoder` 适配器）→ 端到端真实解码；落地后 `ChqDecoderPool` 的
+  `ChqIDecoderFactory` 由 Platform 实现，并接 CORE-007 `ChqICapabilities` 覆盖 `max_hardware_paths`。
+- 多并发 lease 需求明确时，向冻结接口 `ChqIFrameCache` 增 `Release(at)`（需 MEDIA-010 评审）。
 
 ---
 
 # 2026-10-02 追加（BIND-003 子步骤 5）
 
-## `PlatformFrameProvider` / `PlatformFrameProviderFactory`（新增）
+## `ChqPlatformFrameProvider` / `ChqPlatformFrameProviderFactory`（新增）
 
-- 头：`core/include/cq/media/platform_frame_provider.h`
+- 头：`core/include/cq/media/chq_platform_frame_provider.h`
 - 实现：`core/src/media/platform_frame_provider.cpp`（**独立 TU**，见 ADR-0011）
 
-作用：把 **Platform 的 `IFrameProvider`**（平台能力）适配成 **core 的 `FrameProvider`**
+作用：把 **Platform 的 `ChqIFrameProvider`**（平台能力）适配成 **core 的 `ChqFrameProvider`**
 （编辑侧抽象），使 core 的预览渲染器与 C ABI 门面能在不引用任何平台符号的前提下
 拿到取帧能力。
 
 ⚠️ 这是**形状适配**，不引入第二套取帧逻辑：Platform 侧实现内部仍用
-MEDIA-020 `SystemFrameProvider` 做编排（精确 seek / B 帧），
+MEDIA-020 `ChqSystemFrameProvider` 做编排（精确 seek / B 帧），
 Apple 侧 = PALA-010 demux + PALA-011 VideoToolbox。
 
 ### 适配不完美之处（写明，不要假装等价）
 
-- Platform 契约只承诺「精确 seek」，无 `SeekPolicy` 概念 → **非 `kExact` 策略一律拒绝**
+- Platform 契约只承诺「精确 seek」，无 `ChqSeekPolicy` 概念 → **非 `kExact` 策略一律拒绝**
   （返回 `kInvalidArgument`），不静默降级。真需要 `kKeyframeBefore`/`kNearest`
   （缩略图 / 快速 scrub）时，应先扩展 Platform 接口携带策略。
-- Platform `IFrameProvider` 未暴露帧缓存 / 解码器池注入点 → `SetFrameCache` /
+- Platform `ChqIFrameProvider` 未暴露帧缓存 / 解码器池注入点 → `SetFrameCache` /
   `SetDecoderPool` 在此**不生效**。预览若要接 MEDIA-011 缓存需先扩展 Platform 契约。
 
-## `SystemFrameProvider` 新增 `AdoptDecoder`
+## `ChqSystemFrameProvider` 新增 `AdoptDecoder`
 
-原构造签名收裸 `IFrameDecoder*` 且明确**不接管**。单测里 decoder 是栈对象没问题，
+原构造签名收裸 `ChqIFrameDecoder*` 且明确**不接管**。单测里 decoder 是栈对象没问题，
 但 Platform 装配时它是 `new` 出来的 —— 没有接管能力，装配方就得自己想办法让二者
 同生命周期，容易漏（pitfalls P15）。
 
 新增：
-- `void AdoptDecoder(std::unique_ptr<IFrameDecoder>)`
-- 工厂重载 `CreateSystemFrameProvider(PlatformPtr<IMediaDemuxer>, std::unique_ptr<IFrameDecoder>)`
+- `void AdoptDecoder(std::unique_ptr<ChqIFrameDecoder>)`
+- 工厂重载 `CreateSystemFrameProvider(ChqPlatformPtr<ChqIMediaDemuxer>, std::unique_ptr<ChqIFrameDecoder>)`
 
 Platform 装配走重载版本即可。
 
 ## MEDIA-021：顺序取帧快路径（2026-10-04 落地，ADR-0014）
 
-`SystemFrameProvider` 在不改变 kExact 语义（展示区间归属）的前提下，为顺序
+`ChqSystemFrameProvider` 在不改变 kExact 语义（展示区间归属）的前提下，为顺序
 前进取帧增加**跳过 seek 的快路径**：
 
 ```
@@ -482,7 +482,7 @@ AcquireFrame(req)
   pool，AVFoundation 的自动释放对象会攒到线程退出。实测桌面 soak 的 rss 增长由此
   从 +13.8MB/60s 降到 +0.5MB/60s。
 
-`SystemFrameProvider::AcquireExact` 新增**追帧上界 `kMaxChasePops = 600`**：单次调用
+`ChqSystemFrameProvider::AcquireExact` 新增**追帧上界 `kMaxChasePops = 600`**：单次调用
 解码帧数上限，超过如实返回 kIoNotFound。防「单次 AcquireExact 独占泵线程 8 秒以上」
 （真机实测形态：播放头按墙钟继续走，下一次请求目标更远，永不收敛）。
 
@@ -497,7 +497,7 @@ MEDIA-027 收尾时把散在的 32 处 `fprintf(stderr, ...)` 全部迁进了带
 |---|---|---|
 | `platform/apple/media_demux.mm` | `demux` | Open / ReadPacket / ScanKeyframes |
 | `platform/apple/media_decode.mm` | `decode`（Queue 闸门归 `mem`） | Feed / PopFrame / 显示序缺口 / Flush 超时 |
-| `core/.../system_frame_provider.h` | `framecache` | Seek / Finalize / 追帧探针与追帧上界 |
+| `core/.../chq_system_frame_provider.h` | `framecache` | Seek / Finalize / 追帧探针与追帧上界 |
 | `core/src/preview/preview_pump.cpp` | `preview`（统计归 `perf`） | 请求/合并/发布；看门狗归 `perf` |
 | `core/src/preview/preview_renderer.cpp` | `render`（复用命中归 `framecache`） | 分段耗时、纹理导入记录 |
 
@@ -550,7 +550,7 @@ CQ_LOG_LEVEL=debug  CQ_LOG_WORKFLOW=decode,mem,perf  CQ_LOG_WF_LEVEL=decode=trac
 ### 链路形状（五层，一次贯通）
 | 层 | 文件 | 职责 |
 |---|---|---|
-| core 契约 | `cq/audio/track_reader.{h,cpp}` | `IAudioTrackReader`（demux+解码→PCM 块，可重锚，AudioReaderPtr=Destroy 语义）+ 默认装配工厂 |
+| core 契约 | `cq/audio/track_reader.{h,cpp}` | `ChqIAudioTrackReader`（demux+解码→PCM 块，可重锚，ChqAudioReaderPtr=Destroy 语义）+ 默认装配工厂 |
 | core 编排 | `cq/audio/preview_mixer.{h,cpp}` | 时间线→PCM：快照命中、逐 clip 独立读位、求和混音+削波、漂移护栏、欠载重锚（自有 feed 线程 30Hz） |
 | Platform 解码 | `platform/apple/media/audio_track_reader.mm` | AVAssetReader PCM 输出（解码一体：AAC→PCM/重采样/上混）；P33 加载纪律 + 纯 C++ 线程 @autoreleasepool |
 | Platform 引擎 | `platform/apple/media/audio_engine.mm`（PALA-030） | AVAudioEngine + AVAudioSourceNode；SPSC 环=唯一无锁执行点；Flush=代数递增由回调侧落地（无锁清环） |
@@ -566,7 +566,7 @@ CQ_LOG_LEVEL=debug  CQ_LOG_WORKFLOW=decode,mem,perf  CQ_LOG_WF_LEVEL=decode=trac
   补 Flush 清尾（不可闻）。
 
 ### 契约变更（有意，向后兼容）
-- `platform/audio.h` `IAudioEngine` 增 `FlushOutput()` / `BufferedFrames()`（漂移护栏需要
+- `platform/chq_audio.h` `ChqIAudioEngine` 增 `FlushOutput()` / `BufferedFrames()`（漂移护栏需要
   引擎侧水位反馈；唯一实现=AppleAudioEngine，测试假实现同步）。
 - `spsc_ring` 增 `DropAllByConsumer()`（head 唯一写者=消费者，与生产者并发安全论证见头注释）。
 - 已知取舍（写明不藏着）：预览混音=求和+削波，无响度归一/限制器；变速/变声、音频主时钟
@@ -590,7 +590,7 @@ CQ_LOG_LEVEL=debug  CQ_LOG_WORKFLOW=decode,mem,perf  CQ_LOG_WF_LEVEL=decode=trac
 
 ### 任务与进度（在飞 + 近期；全量 DAG 见 TASK-BACKLOG）
 
-| Task ID | 标题 | 状态 |
+| ChqTask ID | 标题 | 状态 |
 |---|---|---|
 | MEDIA-021/022/023/025/027 | 顺序取帧/HEVC/降采样/HDR/冻结修复 | ✅ |
 | MEDIA-024 | 播放卡顿 GOP 重解码（真因已定案） | 待实施 |

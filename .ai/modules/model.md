@@ -5,17 +5,17 @@
 **边界**：`core/src/model/`、`core/src/command/`、`core/src/anim/`
 
 ## 职责
-Timeline / Track / Clip / Transition / EffectBinding 数据模型；Command 模式与 Undo/Redo；关键帧与插值引擎。
+ChqTimeline / ChqTrack / ChqClip / Transition / EffectBinding 数据模型；Command 模式与 Undo/Redo；关键帧与插值引擎。
 
 ## 入口
 - `TimelineModel` — 轨道、片段、转场、效果挂载
-- `EditorCommand` / `CommandHistory` — **所有模型变更的唯一入口**
+- `EditorCommand` / `ChqCommandHistory` — **所有模型变更的唯一入口**
 - `Keyframe<T>` / `AnimationChannel<T>` / 插值引擎 — Linear / Bezier / Hermite / Catmull-Rom
 
 ## 硬约束
 1. **UI 不得直接修改模型**，一律走 `Command`。这是 Undo/Redo 与三端一致性的前提。
 2. Command 只存"怎么撤销"（如 clipID + oldTime + newTime），不存数据拷贝。
-3. 时间字段一律 `RationalTime`。
+3. 时间字段一律 `ChqRationalTime`。
 4. 模型序列化必须能往返（serialize → deserialize → 相等）。
 
 ## 验证
@@ -31,13 +31,13 @@ ADR-0006、`docs/tasks/TASK-BACKLOG.md` 的 `MODEL-0xx` / `ANIM-0xx`
 
 ---
 
-# MODEL-002 落地（2026-10-03）：Command / CommandHistory
+# MODEL-002 落地（2026-10-03）：Command / ChqCommandHistory
 
 ## 位置与入口
 
-- `core/include/cq/command/command.h` + `core/src/command/command.cpp`
-- `ICommand`（Do / Undo / Redo / Name）+ `CommandHistory`（Execute/Undo/Redo/CanX/Depth/Clear）
-- 首批 6 个命令覆盖 Timeline 全部变更面：
+- `core/include/cq/command/chq_command.h` + `core/src/command/command.cpp`
+- `ChqICommand`（Do / Undo / Redo / Name）+ `ChqCommandHistory`（Execute/Undo/Redo/CanX/Depth/Clear）
+- 首批 6 个命令覆盖 ChqTimeline 全部变更面：
   `AddTrack / RemoveTrack / InsertClip / RemoveClip / MoveClip / TrimClip`
 
 ## 语义要点
@@ -51,16 +51,16 @@ ADR-0006、`docs/tasks/TASK-BACKLOG.md` 的 `MODEL-0xx` / `ANIM-0xx`
 | Redo 的 id | Add/Insert 重放会分配新 id → 必须走 `RestoreTrack/RestoreClip` 恢复**原 id**，否则历史里后续命令的引用悬空 |
 | 线程 | 非线程安全，在 session 线程用（CORE-009 已串行化） |
 
-## Timeline 最小扩展
+## ChqTimeline 最小扩展
 
-`RestoreTrack(const Track&)` / `RestoreClip(uint64_t track_id, const Clip&)`：
+`RestoreTrack(const ChqTrack&)` / `RestoreClip(uint64_t track_id, const ChqClip&)`：
 按实体自带 id 恢复，不分配新 id；校验与 Add/Insert 一致；`next_id_` 仍单调推进。
 **仅供 Command 回放 / 序列化载入**，业务代码不要直调。
 
 ## 不变量（破坏即 Undo 栈失效）
 
-1. Timeline 只能经 CommandHistory 变更（绕过直改会让历史 id 引用悬空）。
-2. 命令 Do/Undo/Redo 失败时不得改动模型（先校验后变更，与 Timeline 同风格）。
+1. ChqTimeline 只能经 ChqCommandHistory 变更（绕过直改会让历史 id 引用悬空）。
+2. 命令 Do/Undo/Redo 失败时不得改动模型（先校验后变更，与 ChqTimeline 同风格）。
 3. Undo/Redo 按栈序（LIFO）：相邻命令的实体引用靠顺序保持有效。
 
 ## 验证
@@ -73,8 +73,8 @@ ctest --test-dir build -R c_abi_edit      # UIA-005：move/trim/undo/redo 经 C 
 
 # UIA-005 落地（2026-10-03）：撤销链路接到 C ABI
 
-`CommandHistory` 此前只有 C++ 侧入口（MODEL-002 完成但**对外不可用**）。
-UIA-005 把它接到 `EditorModelState::Undo/Redo` 与 `cq_session_undo/redo`。
+`ChqCommandHistory` 此前只有 C++ 侧入口（MODEL-002 完成但**对外不可用**）。
+UIA-005 把它接到 `ChqEditorModelState::Undo/Redo` 与 `cq_session_undo/redo`。
 
 - **撤销也发布新快照**：`Undo/Redo` 成功后 `Publish()`（否则 UI 读到的还是旧
   时间线）+ `RefreshHistoryFlags()`（刷新 can_undo/can_redo 原子标志）。
@@ -92,7 +92,7 @@ UIA-005 把它接到 `EditorModelState::Undo/Redo` 与 `cq_session_undo/redo`。
 
 ### 任务与进度（在飞 + 近期；全量 DAG 见 TASK-BACKLOG）
 
-| Task ID | 标题 | 状态 |
+| ChqTask ID | 标题 | 状态 |
 |---|---|---|
 | MODEL-001/002 | 时间线模型 / Command+History | ✅（编辑链在用） |
 

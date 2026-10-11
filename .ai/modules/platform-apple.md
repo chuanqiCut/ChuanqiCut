@@ -42,10 +42,10 @@ xcodebuild -workspace apps/apple/ChuanqiCut.xcworkspace -scheme MacApp build
 **状态**：已完成并通过 ctest（`platform_apple_native_image`，31 项检查全绿；全量 16/16 通过）。
 
 **实现位置**：`platform/apple/gfx_metal.mm`
-- `CqNativeImageImporter : INativeImageImporter`（与 `CqDevice` 同文件，`cv_keepalive_` 字段已加在 `CqTexture` 上以延长 CVMetalTextureRef/IOSurface 生命周期）。
+- `CqNativeImageImporter : ChqINativeImageImporter`（与 `CqDevice` 同文件，`cv_keepalive_` 字段已加在 `CqTexture` 上以延长 CVMetalTextureRef/IOSurface 生命周期）。
 - 零拷贝关键：`CVMetalTextureCacheCreateTextureFromImage`（`MTLPixelFormatBGRA8Unorm`）+ `CVMetalTextureGetTexture`，**全程无 `replaceRegion`、无像素缓冲拷贝**。纹理与源 `CVPixelBuffer` 共享同一 IOSurface。
 - `CqDevice::CreateNativeImageImporter` 现已接上真实实现（PALA-001 里原为 `kInternal` 占位），按 `id<MTLDevice>` 创建并复用 `CVMetalTextureCacheRef`。
-- **退化路径（契约要求「导入失败仍可用」）**：当零拷贝不成立（如 buffer 未设 `kCVPixelBufferMetalCompatibilityKey`、或格式非 32BGRA）时，锁定基址 + `replaceRegion` 拷进 BGRA8Unorm 纹理，`out_cpu_fallback=true`。返回 `Status::kFormatUnsupported` 当格式不可接受。
+- **退化路径（契约要求「导入失败仍可用」）**：当零拷贝不成立（如 buffer 未设 `kCVPixelBufferMetalCompatibilityKey`、或格式非 32BGRA）时，锁定基址 + `replaceRegion` 拷进 BGRA8Unorm 纹理，`out_cpu_fallback=true`。返回 `ChqStatus::kFormatUnsupported` 当格式不可接受。
 - 辅助（apple 命名空间，纯 C++ 测试 TU 可调用，声明于 `gfx_metal_internal.h`）：
   - `GetImportedTextureIosurfaceId(TextureHandle)` —— 返回纹理背后 IOSurface ID（零拷贝证据）。
   - `BenchmarkNativeImageImport(dev, zero_handle, cpu_handle, iters, out_zero_ms, out_cpu_ms)` —— 耗时代差证明。
@@ -70,17 +70,17 @@ xcodebuild -workspace apps/apple/ChuanqiCut.xcworkspace -scheme MacApp build
 
 **状态**：已完成并通过 ctest（`platform_apple_encode` 14 项 + `platform_apple_muxer` 16 项 + `platform_apple_muxer_audio` 17 项全绿；全量 22/22 通过）。
 
-**跨平台接缝（已补齐）**：冻结契约 `core/include/cq/platform/media.h` 已定义 `IMediaMuxer`（含 `Open / AddVideoTrack / AddAudioTrack / WriteVideoFrame / WriteAudioFrame / Finish / Cancel`）。`AppleMediaMuxer`（`platform/apple/media_muxer.{h,mm}`）实现该接口，把 `NativeImageHandle` 经 `GetCvPixelBuffer` 转回 `CVPixelBufferRef` 委托给 `AppleVideoEncoder`；全程平台类型只出现在 `platform/apple/` 的 .mm，core 头零平台类型。`WriteAudioFrame` / `AddAudioTrack` 的 AAC 音频能力见下方「音频轨（AAC 封装）」小节。
+**跨平台接缝（已补齐）**：冻结契约 `core/include/cq/platform/chq_media.h` 已定义 `ChqIMediaMuxer`（含 `Open / AddVideoTrack / AddAudioTrack / WriteVideoFrame / WriteAudioFrame / Finish / Cancel`）。`AppleMediaMuxer`（`platform/apple/media_muxer.{h,mm}`）实现该接口，把 `NativeImageHandle` 经 `GetCvPixelBuffer` 转回 `CVPixelBufferRef` 委托给 `AppleVideoEncoder`；全程平台类型只出现在 `platform/apple/` 的 .mm，core 头零平台类型。`WriteAudioFrame` / `AddAudioTrack` 的 AAC 音频能力见下方「音频轨（AAC 封装）」小节。
 
 **实现位置**：`platform/apple/media_encode.{h,mm}`
 - `AppleVideoEncoder`（平台内部头，仅 Apple TU 包含；pImpl 隔离 AVFoundation ObjC 对象，使 `media_encode.h` 保持纯 C++）。
 - 编码+封装：`AVAssetWriter`（`AVFileTypeMPEG4` → .mp4，`AVVideoCodecTypeH264`）+ `AVAssetWriterInputPixelBufferAdaptor`。
 - **无色彩转换**：输入 `CVPixelBuffer`（BGRA 或 NV12）按**源格式 1:1 拷入 encoder 自管 buffer** 再 `appendPixelBuffer:withPresentationTime:`。刻意不做 RGB↔YUV 转换，从根上规避「通道交换类 bug」（PALA-002 教训：绿条 R==B 会让此类 bug 被掩盖）。
-- **无时间漂移**：每帧 PTS = `RationalTime` 直接转 `CMTime`（`CMTimeMake(pts.value, pts.timescale)`），`writer.movieTimeScale` 设为同一网格（120000，ADR-0009），样本 PTS 与项目时间轴同构，杜绝累积漂移。`startSessionAtSourceTime:` 在首个样本 append 前用首帧 PTS 启动。
-- **收尾/取消**：`Finish()` 阻塞等待 `finishWritingWithCompletionHandler:`；`Cancel()` 调 `cancelWriting` 并删除半成品文件（取消是独立停止信号，非错误，与 `Status::kCancelled` 语义闭合）。
-- 错误路径：writer 非 Writing 态 / `append` 返回 NO 且 writer Failed / Open 创建失败 / `canAddInput` / `startWriting` 失败 → 均返回 `kEncodeError` 等明确 `Status`；轨道已结束、写入器状态不对均有对应分支。
+- **无时间漂移**：每帧 PTS = `ChqRationalTime` 直接转 `CMTime`（`CMTimeMake(pts.value, pts.timescale)`），`writer.movieTimeScale` 设为同一网格（120000，ADR-0009），样本 PTS 与项目时间轴同构，杜绝累积漂移。`startSessionAtSourceTime:` 在首个样本 append 前用首帧 PTS 启动。
+- **收尾/取消**：`Finish()` 阻塞等待 `finishWritingWithCompletionHandler:`；`Cancel()` 调 `cancelWriting` 并删除半成品文件（取消是独立停止信号，非错误，与 `ChqStatus::kCancelled` 语义闭合）。
+- 错误路径：writer 非 Writing 态 / `append` 返回 NO 且 writer Failed / Open 创建失败 / `canAddInput` / `startWriting` 失败 → 均返回 `kEncodeError` 等明确 `ChqStatus`；轨道已结束、写入器状态不对均有对应分支。
 - **硬件编码探针**：Open 时用一次性 `VTCompressionSession`（带 `kVTVideoEncoderSpecification_EnableHardwareAcceleratedVideoEncoder`）查询本机是否真能硬件编码，`IsHardwareAccelerated()` 如实上报；不可用则 AVAssetWriter 走软件回退，仍能导出 H.264。
-- 接受 `const CancelToken&`：背压等待（`input.isReadyForMoreMediaData`）期间以 1ms 轮询响应取消，返回 `kCancelled`（非错误）。
+- 接受 `const ChqCancelToken&`：背压等待（`input.isReadyForMoreMediaData`）期间以 1ms 轮询响应取消，返回 `kCancelled`（非错误）。
 
 **CMake 登记（三处，防「符号未定义」链接陷阱）**：`platform/apple/CMakeLists.txt` 的 `add_library` 源列表、`set_source_files_properties(... -fobjc-arc)`、框架链接（AVFoundation/CoreMedia/VideoToolbox/CoreVideo 已在既有 `find_library`+`target_link_libraries` 中，AVAssetWriter 不需要新框架）。测试 `cq_tests_platform_apple_encode` 在 `tests/CMakeLists.txt` 的 `if(APPLE)` 块登记。
 
@@ -102,34 +102,34 @@ xcodebuild -workspace apps/apple/ChuanqiCut.xcworkspace -scheme MacApp build
 
 **状态**：已完成并通过 ctest（`platform_apple_muxer_audio`，17 项检查全绿）。ffprobe 实测产出文件含 `codec=aac / sample_rate=48000 / channels=2`，时长与写入吻合，端到端真打通。
 
-**接口**：`IMediaMuxer::AddAudioTrack(const AudioTrackConfig&)` + `WriteAudioFrame(const PcmBuffer&, const RationalTime&, const CancelToken&)`（`media.h` 既有签名，本任务只做实现，未改接口）。
+**接口**：`ChqIMediaMuxer::AddAudioTrack(const ChqAudioTrackConfig&)` + `WriteAudioFrame(const ChqPcmBuffer&, const ChqRationalTime&, const ChqCancelToken&)`（`chq_media.h` 既有签名，本任务只做实现，未改接口）。
 
 **实现位置**：`platform/apple/media_encode.{h,mm}`（`AppleVideoEncoder` 扩展，与视频共用同一 `AVAssetWriter`）。
 - **共用 writer、惰性 startWriting**：AVAssetWriter 要求所有 `AVAssetWriterInput` 在 `startWriting` 之前 `addInput`。原 `Open()` 内即 `startWriting` 会让事后 `AddAudioTrack` 失效，故改为「首个样本（视频或音频）写入时惰性 `startWriting`」。视频轨 `AddVideoTrack` 先于音频轨 `AddAudioTrack`（契约要求，writer 由视频轨建立），两者都在首个 append 前完成 `addInput`，不破坏 AVFoundation 时序约束。
-- **AAC 音频输入**：`AddAudioTrack` 按 `AudioTrackConfig`（采样率/声道/码率档位 `BitrateTier`）建 `AVAssetWriterInput`（`kAudioFormatMPEG4AAC`，码率 64k/128k/192k/256k 映射低/中/高/无损）。非 AAC codec 如实返回 `kEncodeUnsupported`。
-- **PCM → AAC**：`WriteAudioFrame` 按 `PcmBuffer` 实际格式（本期 `kFloat32` / `kInt16`）构造线性 PCM 的 `CMFormatDescription`（`AudioStreamBasicDescription`）+ `CMBlockBuffer`，产出 `CMSampleBuffer` 喂给 AAC 输入；AVFoundation 内部编码为 AAC。每样本时长 `CMTimeMake(1, sample_rate)`，首样本 PTS 经 `startSessionAtSourceTime:` 设定会话起点（取视频/音频首个样本 PTS 的 min，正常导出两轨均从 0 起）。调用方按 PTS 非递减喂块，音频块 PTS 用项目网格 120000、非整除须显式舍入。
+- **AAC 音频输入**：`AddAudioTrack` 按 `ChqAudioTrackConfig`（采样率/声道/码率档位 `ChqBitrateTier`）建 `AVAssetWriterInput`（`kAudioFormatMPEG4AAC`，码率 64k/128k/192k/256k 映射低/中/高/无损）。非 AAC codec 如实返回 `kEncodeUnsupported`。
+- **PCM → AAC**：`WriteAudioFrame` 按 `ChqPcmBuffer` 实际格式（本期 `kFloat32` / `kInt16`）构造线性 PCM 的 `CMFormatDescription`（`AudioStreamBasicDescription`）+ `CMBlockBuffer`，产出 `CMSampleBuffer` 喂给 AAC 输入；AVFoundation 内部编码为 AAC。每样本时长 `CMTimeMake(1, sample_rate)`，首样本 PTS 经 `startSessionAtSourceTime:` 设定会话起点（取视频/音频首个样本 PTS 的 min，正常导出两轨均从 0 起）。调用方按 PTS 非递减喂块，音频块 PTS 用项目网格 120000、非整除须显式舍入。
 - **背压/取消**：与视频一致，`audio_input.isReadyForMoreMediaData` 忙时 1ms 轮询，被取消返回 `kCancelled`（非错误）。`Finish` 同时 `markAsFinished` 视频与音频输入后 `finishWriting`。
-- 关键路径加 `CQ_PERF_SCOPE(PerfStage::kMux, pts)` 性能埋点。
+- 关键路径加 `CQ_PERF_SCOPE(ChqPerfStage::kMux, pts)` 性能埋点。
 
 **CMake 登记**：`platform/apple/CMakeLists.txt` 新增 `AudioToolbox` 框架链接（`AudioStreamBasicDescription` / `CMAudioFormatDescriptionCreate`）；测试 `cq_tests_platform_apple_muxer_audio` 在 `tests/CMakeLists.txt` 的 `if(APPLE)` 块登记，显式链接 CoreVideo。
 
 **端到端实测证据（本机 Intel Mac / macOS 15.4 / AppleClang 17）**：
-- 链路：合成 BGRA CVPixelBuffer（640×360 视频轨）+ 合成 float32 立体声 440 Hz 正弦 PCM（100 块 × 1024 样本 @48000 ≈ 2.133 s）→ `IMediaMuxer`（`AppleMediaMuxer` → `AppleVideoEncoder`）→ 落盘 `/tmp/cq_muxer_audio_out.mp4`。
+- 链路：合成 BGRA CVPixelBuffer（640×360 视频轨）+ 合成 float32 立体声 440 Hz 正弦 PCM（100 块 × 1024 样本 @48000 ≈ 2.133 s）→ `ChqIMediaMuxer`（`AppleMediaMuxer` → `AppleVideoEncoder`）→ 落盘 `/tmp/cq_muxer_audio_out.mp4`。
 - **ffprobe 验证产出**：`index=1 codec_name=aac codec_type=audio sample_rate=48000 channels=2`；视频轨 `codec=h264` 同时存在；`stream duration=2.133333` 与写入时长吻合。
 - **契约验证**：`AddVideoTrack` 前 `AddAudioTrack` → 错误（writer 未建立）；`AddAudioTrack(kMp3)` → `kEncodeUnsupported`；`AddAudioTrack` 前 `WriteAudioFrame` → 错误。均如实返回，不伪造。
 
 **已知限制（诚实报告，非「源音轨已打通」）**：
-- **源音频回路未打通**：仓库 `tests/golden/frames/gf_1080p_with_audio.mp4`（aac / 44100 Hz / mono）虽可被 PALA-010 解封装出音频包（`MediaPacket{codec=kAac}`），但 PALA-010 是 **passthrough demux，不含解码**，没有 AAC→PCM 解码器把压缩包转成 `PcmBuffer` 喂入 `WriteAudioFrame`。因此「从源文件取音频写回」卡在**解码环节（AUDIO-001 本期未实现）**，本任务只验证了「合成 PCM 能写出 AAC 音轨」。
+- **源音频回路未打通**：仓库 `tests/golden/frames/gf_1080p_with_audio.mp4`（aac / 44100 Hz / mono）虽可被 PALA-010 解封装出音频包（`ChqMediaPacket{codec=kAac}`），但 PALA-010 是 **passthrough demux，不含解码**，没有 AAC→PCM 解码器把压缩包转成 `ChqPcmBuffer` 喂入 `WriteAudioFrame`。因此「从源文件取音频写回」卡在**解码环节（AUDIO-001 本期未实现）**，本任务只验证了「合成 PCM 能写出 AAC 音轨」。
 - `WriteAudioFrame` 仅支持 `kFloat32` / `kInt16`；`kInt32` / `kFloat64` 返回 `kEncodeUnsupported`。
 
 **测试**：`tests/unit/test_media_muxer_audio_apple.cpp`（仅 `if(APPLE)` 构建），登记为 `platform_apple_muxer_audio`。无缓冲输出。
 
 **后续任务**：
-- AUDIO-001：实现 AAC→PCM 解码，打通「源文件音频 → WriteAudioFrame」回路（届时需把 44100/mono 源映射为对应 `AudioTrackConfig`）。
-- 多语言/多音轨、`AVChannelLayoutKey` 显式布局、采样率/声道与 `AudioTrackConfig` 不一致时的重采样策略。
+- AUDIO-001：实现 AAC→PCM 解码，打通「源文件音频 → WriteAudioFrame」回路（届时需把 44100/mono 源映射为对应 `ChqAudioTrackConfig`）。
+- 多语言/多音轨、`AVChannelLayoutKey` 显式布局、采样率/声道与 `ChqAudioTrackConfig` 不一致时的重采样策略。
 
 ## 相关
-ARCH-004 §3、`PALA-0xx` 任务、ADR-0009（RationalTime 网格）、EXPORT-001
+ARCH-004 §3、`PALA-0xx` 任务、ADR-0009（ChqRationalTime 网格）、EXPORT-001
 
 ## PALA-011 重排与 Flush 语义修正（MEDIA-021，2026-10-04，ADR-0014）
 
@@ -161,8 +161,8 @@ ARCH-004 §3、`PALA-0xx` 任务、ADR-0009（RationalTime 网格）、EXPORT-00
      随流参数集允许性）。iPhone 实拍 = 'hvc1' 不受影响。
 - 验收：`platform_apple_decode` 参数化为 H.264 + HEVC 双节（150 帧/pts 单调/像素/端到端）；
   probe（完整解码管线打开）对 HEVC golden 返回 0。
-- 绑定层：`probeMediaDurationDetailed`（失败透传原始状态码）+ `Status: Error`；
-  UI 文案按 1000/2000/2001 分级（SharedUI `Status.userText`）。
+- 绑定层：`probeMediaDurationDetailed`（失败透传原始状态码）+ `ChqStatus: Error`；
+  UI 文案按 1000/2000/2001 分级（SharedUI `ChqStatus.userText`）。
 
 ## PALA-011 增补（MEDIA-025，2026-10-06）：解码色彩空间管理
 
@@ -184,7 +184,7 @@ ARCH-004 §3、`PALA-0xx` 任务、ADR-0009（RationalTime 网格）、EXPORT-00
 
 ### 任务与进度（在飞 + 近期；全量 DAG 见 TASK-BACKLOG）
 
-| Task ID | 标题 | 状态 |
+| ChqTask ID | 标题 | 状态 |
 |---|---|---|
 | — | 首次落账于下一阶段批；历史状态见 TASK-BACKLOG | — |
 

@@ -108,3 +108,21 @@ open ChuanqiCut.xcworkspace  # 注意开 workspace，不是 xcodeproj
 | XCFramework 分发 | 产物不入库，需 CI 生成后随 pod 发布 | 依赖治理（ADR-0008） |
 | FFmpeg 产物本地构建 | **首次 pod install 前必须跑** `tools/build/build_ffmpeg_demux.sh` 5 个 slice（产物 `*.a` 不入 git，P84；缺失时 podspec 直接报错并给出指引） | —— |
 | SBOM / 公共头第三方符号扫描工具 | ARCH-002 §5.2 规划的 `tools/compliance/gen_sbom.py` / `scan_headers.py` **尚未实现**，现以 `tools/deps/deps.py check` + 手工 grep 代替（ADR-0036 登记） | 依赖治理 |
+
+## 附注（2026-10-11，TASK-INFRA-025 收尾实测）：Pods 集成三件与聚合 target 位置
+
+1. **CocoaPods 1.17 把聚合 target（`Pods-<App>`）放进 `Pods/Pods.xcodeproj`**，不在用户
+   工程。用户工程必须有「远程依赖三件」：`containerPortal`（指向 Pods.xcodeproj 的
+   PBXFileReference）+ `PBXContainerItemProxy` + `PBXTargetDependency`。缺件时
+   `pod install` **静默 no-op 不报错**，构建图只剩 App（`Target dependency graph
+   (1 target)`），Pods 永不构建——增量 DerivedData 有旧产物时表现为"假绿"（P85 家族，
+   详见 pitfalls **P108**）。
+2. 补件通道：`tools/build/edit_project.rb add-remote-dependency <project> <target>
+   <remote_project> <remote_target>`（幂等，本次新增子命令；ADR-0037 通道扩展）。
+   双壳已各补一条（MacApp→Pods-ChuanqiCutMacApp / App→Pods-ChuanqiCutApp）。
+3. **pod 一律 `bundle exec pod`**（Podfile 头部既有规则，本次裸跑 `pod` 踩过一遍）。
+4. pod install 后自查两条：`grep containerPortal ChuanqiCut.xcodeproj/project.pbxproj`
+   应 ≥1；干净构建（清 DerivedData）才算验收口径。
+5. mac 通用双架构构建当前被 CP 1.17 Swift Compatibility Header 共享路径坑
+   （`unsupported Swift architecture`，池 [14]）；本地验证口径 = 单原生架构
+   （`-destination 'platform=macOS,arch=x86_64' ARCHS=x86_64 ONLY_ACTIVE_ARCH=YES`）。

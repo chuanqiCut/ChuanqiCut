@@ -1,18 +1,18 @@
 # ChuanqiCutEngine.podspec — Swift 适配层
 #
-# ADR-0033：C/C++20 内核与 Apple Platform 已拆到 CChuanqiCut Pod；本 Pod 只编译 Swift
+# ADR-0033：C/C++20 内核与 Apple Platform 已拆到 ChuanqiCutCore Pod；本 Pod 只编译 Swift
 # binding，并保持 App/UI 侧 `import ChuanqiCutEngine` 不变。
 #
-# App 的 Podfile 必须同时以本地 path 声明 CChuanqiCut 与 ChuanqiCutEngine，避免
-# CocoaPods 为传递依赖去远端 spec repo 查找 CChuanqiCut。
+# App 的 Podfile 必须同时以本地 path 声明 ChuanqiCutCore 与 ChuanqiCutEngine，避免
+# CocoaPods 为传递依赖去远端 spec repo 查找 ChuanqiCutCore。
 
 Pod::Spec.new do |s|
   s.name        = 'ChuanqiCutEngine'
   s.version     = '0.1.0'
   s.summary     = 'Swift adapter for the ChuanqiCut C engine'
   s.description = <<-DESC
-    Native Swift API adapter over the CChuanqiCut public C ABI.
-    The C++ engine and Apple Platform are compiled by the separate CChuanqiCut Pod.
+    Native Swift API adapter over the ChuanqiCutCore public C ABI.
+    The C++ engine and Apple Platform are compiled by the separate ChuanqiCutCore Pod.
   DESC
 
   s.homepage = 'https://REPLACE_ME.invalid/ChuanqiCut'

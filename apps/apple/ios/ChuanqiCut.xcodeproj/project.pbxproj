@@ -10,7 +10,81 @@
 		FDBAE799AD888F6071E45CBF /* libPods-ChuanqiCutApp.a in Frameworks */ = {isa = PBXBuildFile; fileRef = DF7935539D481599BC0B0344 /* libPods-ChuanqiCutApp.a */; };
 /* End PBXBuildFile section */
 
+/* Begin PBXContainerItemProxy section */
+		562783518F8EACD9DEB0933B /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 09CD7C65A56D6AB28AF44011 /* Pods.xcodeproj */;
+			proxyType = 2;
+			remoteGlobalIDString = 0A17AA4DFCDA5674C924C0D86C94A67E;
+			remoteInfo = Subproject;
+		};
+		66FF2F318E53B08A6AEDA516 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 09CD7C65A56D6AB28AF44011 /* Pods.xcodeproj */;
+			proxyType = 2;
+			remoteGlobalIDString = 8B1EB8450CE24D9F97BA4BD33D70EC5B;
+			remoteInfo = Subproject;
+		};
+		69CB170C7C448D3E527E9EB2 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 09CD7C65A56D6AB28AF44011 /* Pods.xcodeproj */;
+			proxyType = 2;
+			remoteGlobalIDString = A989F7AB3BEDBD22945D8C1F16764642;
+			remoteInfo = Subproject;
+		};
+		8BADB68B1CBD4820DED96C05 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 09CD7C65A56D6AB28AF44011 /* Pods.xcodeproj */;
+			proxyType = 2;
+			remoteGlobalIDString = 929C7573A9378FCA612EB1ABA58F285B;
+			remoteInfo = Subproject;
+		};
+		9102712E2E39F578C4C865A0 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 09CD7C65A56D6AB28AF44011 /* Pods.xcodeproj */;
+			proxyType = 2;
+			remoteGlobalIDString = C33ABAC8CAE71C6EA7F3C9D9A6BC645F;
+			remoteInfo = Subproject;
+		};
+		D06EA3F9CDFE308B6B299CC5 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 09CD7C65A56D6AB28AF44011 /* Pods.xcodeproj */;
+			proxyType = 2;
+			remoteGlobalIDString = F3479E0D7CB6FC8BBE9E28FC39B3AEE9;
+			remoteInfo = Subproject;
+		};
+		D766627E30309EE1485554D6 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 09CD7C65A56D6AB28AF44011 /* Pods.xcodeproj */;
+			proxyType = 2;
+			remoteGlobalIDString = 641ECAC287AC4C075AC31217A53E0937;
+			remoteInfo = Subproject;
+		};
+		DC1548308AEA599EEA33F603 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 09CD7C65A56D6AB28AF44011 /* Pods.xcodeproj */;
+			proxyType = 2;
+			remoteGlobalIDString = C933FFFEB53EAA07F865407904CA87D3;
+			remoteInfo = Subproject;
+		};
+		DC4B80962C94AC3D1BBD695D /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 09CD7C65A56D6AB28AF44011 /* Pods.xcodeproj */;
+			proxyType = 2;
+			remoteGlobalIDString = 1DF61DA1F9AC397EF265A9EC75BF3AE1;
+			remoteInfo = Subproject;
+		};
+		F620B70199DE4DB6048B110E /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 09CD7C65A56D6AB28AF44011 /* Pods.xcodeproj */;
+			proxyType = 1;
+			remoteGlobalIDString = 20C3F405ADE84CDBD53963015851793D;
+			remoteInfo = "Pods-ChuanqiCutApp";
+		};
+/* End PBXContainerItemProxy section */
+
 /* Begin PBXFileReference section */
+		09CD7C65A56D6AB28AF44011 /* Pods.xcodeproj */ = {isa = PBXFileReference; lastKnownFileType = "wrapper.pb-project"; name = Pods.xcodeproj; path = Pods/Pods.xcodeproj; sourceTree = "<group>"; };
 		1A83AB2CF86A3C68FE357577 /* ChuanqiCutApp.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = ChuanqiCutApp.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		79B587049CC24173DD281F47 /* Pods-ChuanqiCutApp.debug.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-ChuanqiCutApp.debug.xcconfig"; path = "Target Support Files/Pods-ChuanqiCutApp/Pods-ChuanqiCutApp.debug.xcconfig"; sourceTree = "<group>"; };
 		AFEF0A2F58D62C4B42DDCD31 /* Pods-ChuanqiCutApp.release.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-ChuanqiCutApp.release.xcconfig"; path = "Target Support Files/Pods-ChuanqiCutApp/Pods-ChuanqiCutApp.release.xcconfig"; sourceTree = "<group>"; };
@@ -62,6 +136,15 @@
 			isa = PBXGroup;
 			children = (
 				1A83AB2CF86A3C68FE357577 /* ChuanqiCutApp.app */,
+				597842F3964D3555EBE8177C /* libChuanqiCutCamera.a */,
+				D5694EE3E3B4DFDE8C8F8F37 /* libChuanqiCutCore.a */,
+				791FC0B9D671D756CE8BB2F8 /* libChuanqiCutEditor.a */,
+				E1E4EB137B10D89DAF0500F7 /* libChuanqiCutEngine.a */,
+				826FB8D3ADB1A410FAD9E0E7 /* ChuanqiCutFFmpegLicense.bundle */,
+				6032B4D711ACA2D4520B631F /* libChuanqiCutImport.a */,
+				BE902EFDB44B9F543CCBCABC /* libChuanqiCutPlayer.a */,
+				624128502017F9199D9A6CF9 /* libPods-ChuanqiCutApp.a */,
+				4428DE663EDA879962F1BE63 /* libSharedUI.a */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -82,6 +165,7 @@
 				E1D9F5250D1B55B927054886 /* Products */,
 				E29FFB947FEE7EED7E288533 /* Pods */,
 				D58307585B309EB94C03F096 /* Frameworks */,
+				09CD7C65A56D6AB28AF44011 /* Pods.xcodeproj */,
 			);
 			sourceTree = "<group>";
 		};
@@ -102,6 +186,7 @@
 			buildRules = (
 			);
 			dependencies = (
+				2B9B3B6523CE3D62BB1416B3 /* PBXTargetDependency */,
 			);
 			fileSystemSynchronizedGroups = (
 				1DD4B5C7E9466EDDB9800FCB /* iOSApp */,
@@ -132,12 +217,84 @@
 			preferredProjectObjectVersion = 77;
 			productRefGroup = E1D9F5250D1B55B927054886 /* Products */;
 			projectDirPath = "";
+			projectReferences = (
+				{
+					ProductGroup = E1D9F5250D1B55B927054886 /* Products */;
+					ProjectRef = 09CD7C65A56D6AB28AF44011 /* Pods.xcodeproj */;
+				},
+			);
 			projectRoot = "";
 			targets = (
 				96BA5DDDBEF9FE363EFC7AEE /* ChuanqiCutApp */,
 			);
 		};
 /* End PBXProject section */
+
+/* Begin PBXReferenceProxy section */
+		4428DE663EDA879962F1BE63 /* libSharedUI.a */ = {
+			isa = PBXReferenceProxy;
+			fileType = archive.ar;
+			path = libSharedUI.a;
+			remoteRef = DC4B80962C94AC3D1BBD695D /* PBXContainerItemProxy */;
+			sourceTree = BUILT_PRODUCTS_DIR;
+		};
+		597842F3964D3555EBE8177C /* libChuanqiCutCamera.a */ = {
+			isa = PBXReferenceProxy;
+			fileType = archive.ar;
+			path = libChuanqiCutCamera.a;
+			remoteRef = DC1548308AEA599EEA33F603 /* PBXContainerItemProxy */;
+			sourceTree = BUILT_PRODUCTS_DIR;
+		};
+		6032B4D711ACA2D4520B631F /* libChuanqiCutImport.a */ = {
+			isa = PBXReferenceProxy;
+			fileType = archive.ar;
+			path = libChuanqiCutImport.a;
+			remoteRef = D766627E30309EE1485554D6 /* PBXContainerItemProxy */;
+			sourceTree = BUILT_PRODUCTS_DIR;
+		};
+		624128502017F9199D9A6CF9 /* libPods-ChuanqiCutApp.a */ = {
+			isa = PBXReferenceProxy;
+			fileType = archive.ar;
+			path = "libPods-ChuanqiCutApp.a";
+			remoteRef = 9102712E2E39F578C4C865A0 /* PBXContainerItemProxy */;
+			sourceTree = BUILT_PRODUCTS_DIR;
+		};
+		791FC0B9D671D756CE8BB2F8 /* libChuanqiCutEditor.a */ = {
+			isa = PBXReferenceProxy;
+			fileType = archive.ar;
+			path = libChuanqiCutEditor.a;
+			remoteRef = 66FF2F318E53B08A6AEDA516 /* PBXContainerItemProxy */;
+			sourceTree = BUILT_PRODUCTS_DIR;
+		};
+		826FB8D3ADB1A410FAD9E0E7 /* ChuanqiCutFFmpegLicense.bundle */ = {
+			isa = PBXReferenceProxy;
+			fileType = "wrapper.plug-in";
+			path = ChuanqiCutFFmpegLicense.bundle;
+			remoteRef = 562783518F8EACD9DEB0933B /* PBXContainerItemProxy */;
+			sourceTree = BUILT_PRODUCTS_DIR;
+		};
+		BE902EFDB44B9F543CCBCABC /* libChuanqiCutPlayer.a */ = {
+			isa = PBXReferenceProxy;
+			fileType = archive.ar;
+			path = libChuanqiCutPlayer.a;
+			remoteRef = 8BADB68B1CBD4820DED96C05 /* PBXContainerItemProxy */;
+			sourceTree = BUILT_PRODUCTS_DIR;
+		};
+		D5694EE3E3B4DFDE8C8F8F37 /* libChuanqiCutCore.a */ = {
+			isa = PBXReferenceProxy;
+			fileType = archive.ar;
+			path = libChuanqiCutCore.a;
+			remoteRef = 69CB170C7C448D3E527E9EB2 /* PBXContainerItemProxy */;
+			sourceTree = BUILT_PRODUCTS_DIR;
+		};
+		E1E4EB137B10D89DAF0500F7 /* libChuanqiCutEngine.a */ = {
+			isa = PBXReferenceProxy;
+			fileType = archive.ar;
+			path = libChuanqiCutEngine.a;
+			remoteRef = D06EA3F9CDFE308B6B299CC5 /* PBXContainerItemProxy */;
+			sourceTree = BUILT_PRODUCTS_DIR;
+		};
+/* End PBXReferenceProxy section */
 
 /* Begin PBXResourcesBuildPhase section */
 		8C57824A778917F7D014621D /* Resources */ = {
@@ -219,6 +376,13 @@
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		2B9B3B6523CE3D62BB1416B3 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			targetProxy = F620B70199DE4DB6048B110E /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
 		006103B3662A21DA21E9E52A /* Debug */ = {

@@ -8,7 +8,7 @@
 
 ## 为什么有这一层
 
-`core/include/cq/base/concurrency.h`（CORE-005）文件头明确划了边界：
+`core/include/cq/base/chq_concurrency.h`（CORE-005）文件头明确划了边界：
 
 > 并发原语提供「必要的最小集合」，**不**做成通用线程库（无自己的线程池…）。
 > 线程池/会话线程骨架属于 **CORE-008**，不在 base 层。
@@ -20,9 +20,9 @@
 
 | 文件 | 内容 |
 |---|---|
-| `core/include/cq/session/thread_model.h` | `ThreadRole` 枚举（7 类 + kUnknown）、角色标记/查询 |
+| `core/include/cq/session/chq_thread_model.h` | `ChqThreadRole` 枚举（7 类 + kUnknown）、角色标记/查询 |
 | `core/src/session/thread_model.cpp` | `thread_local` 角色状态实现 |
-| `core/include/cq/session/task_runner.h` | `TaskRunner`：串行任务执行器 |
+| `core/include/cq/session/chq_task_runner.h` | `ChqTaskRunner`：串行任务执行器 |
 | `core/src/session/task_runner.cpp` | worker 线程循环、投递与背压 |
 | `tests/unit/test_thread_model.cpp` | 含「主线程零阻塞」实测 |
 
@@ -37,14 +37,14 @@ kUnknown(默认) / kMain / kSession / kDecode / kRender / kEncode / kAudio / kIn
 - 默认 `kUnknown` 而非 `kMain`：**宁可"不知道"，不可把未标记线程误判成主线程**——
   误判会让"主线程零阻塞"的守卫形同虚设。
 - **主线程身份 SDK 无法自得知**（只有 App 知道哪根是 UI 线程）。
-  约定：宿主启动时在主线程调用 `SetCurrentThreadRole(ThreadRole::kMain)`。
+  约定：宿主启动时在主线程调用 `SetCurrentThreadRole(ChqThreadRole::kMain)`。
   ⚠️ 宿主忘了标记 → 一律 kUnknown，守卫失效。需 BIND-002 在 Swift 侧兜住。
 
-## TaskRunner（Session Thread 骨架）
+## ChqTaskRunner（Session Thread 骨架）
 
 ```cpp
-TaskRunner::Config cfg;
-cfg.role = ThreadRole::kSession;   // worker 对外呈现的角色
+ChqTaskRunner::Config cfg;
+cfg.role = ChqThreadRole::kSession;   // worker 对外呈现的角色
 cfg.queue_capacity = 64;           // 有界，背压
 runner.Start();
 runner.Post(task);                 // 非阻塞；满 -> kResourceExhausted
@@ -55,26 +55,26 @@ runner.Shutdown();                 // 请求停止 + join（会阻塞调用线�
 
 - **`Post()` 绝不阻塞**：队列满立即返回 `kResourceExhausted`，由调用方降速/丢帧
 - **不提供 `PostAndWait`**：那会让"主线程零阻塞"在 API 面被破坏得更隐蔽
-- 背压队列复用 CORE-005 的 `BoundedQueue<Task>`；其阻塞 `Pop` 已支持
-  `CancelToken` ≤ ~1ms 唤醒，正合 worker 循环需要
+- 背压队列复用 CORE-005 的 `ChqBoundedQueue<ChqTask>`；其阻塞 `Pop` 已支持
+  `ChqCancelToken` ≤ ~1ms 唤醒，正合 worker 循环需要
 - **任务内部禁止抛异常**：执行期抛出即 terminate，这是**调用方的责任契约**。
-  `TaskRunner` 刻意不 try/catch —— 捕获等于默许异常流向内核
+  `ChqTaskRunner` 刻意不 try/catch —— 捕获等于默许异常流向内核
 - **析构无条件 RequestCancel + join**：`std::thread` 在 joinable 状态析构会 terminate
 
-## EditorSession（CORE-009，对外唯一门面）
+## ChqEditorSession（CORE-009，对外唯一门面）
 
 ```cpp
-EditorSession session;                       // 或注入 ISessionState + Config
+ChqEditorSession session;                       // 或注入 ChqISessionState + Config
 session.SetSnapshotObserver(on_snapshot);    // 应在 Start 之前设置
 session.Start();
 session.Submit("add-clip", mutate_fn);       // 异步，不阻塞
-Snapshot s = session.CurrentSnapshot();      // {version, digest}，任意线程可读
+ChqSnapshot s = session.CurrentSnapshot();      // {version, digest}，任意线程可读
 session.ChangesSince(last_seen, &out);       // UI 增量刷新
 ```
 
 | 约束 | 说明 |
 |---|---|
-| 变更串行 | 复用 `TaskRunner`（kSession 线程）。这是 Undo/Redo 与三端一致性的前提（红线 #5） |
+| 变更串行 | 复用 `ChqTaskRunner`（kSession 线程）。这是 Undo/Redo 与三端一致性的前提（红线 #5） |
 | 版本推进 | **仅成功**推进；失败与取消都不推进（否则 UI 会以为状态变了而错刷） |
 | 不阻塞 | `Submit` 实测 0.005~0.010 ms；**刻意不提供 `SubmitAndWait`** |
 | 观察者线程 | 回调**在 session 线程**执行 —— BIND-002(Swift) 必须自己 dispatch 到主线程 |
@@ -82,7 +82,7 @@ session.ChangesSince(last_seen, &out);       // UI 增量刷新
 | 背压 | 队列满返回 `kResourceExhausted`，不内置重试（重试属交互层语义） |
 
 **边界（不越界）**：不定义 `TimelineModel`（MODEL-001）、不定义
-`Command`/`CommandHistory`/Undo-Redo（MODEL-002）。状态内容通过 `ISessionState`
+`Command`/`ChqCommandHistory`/Undo-Redo（MODEL-002）。状态内容通过 `ChqISessionState`
 扩展点注入 —— 本期用测试实现跑通机制，避免门面变成空壳（防"断接口"第三次复发）。
 
 ## 铁律落地情况
@@ -91,8 +91,8 @@ session.ChangesSince(last_seen, &out);       // UI 增量刷新
 |---|---|
 | 1. 主线程零阻塞 | ✅ **可测**：单测实测 `Post()` 返回 0.030ms（16ms 预算的 1/533） |
 | 2. 音频线程无锁无分配 | ⚠️ 仅提供 `IsAudioThread()` 判定；实际无锁路径待 AUDIO-001 落地 |
-| 3. 背压（有界队列） | ✅ `BoundedQueue` + `kResourceExhausted`，不提供无界模式 |
-| 4. 取消（CancelToken） | ✅ `RequestStop` → worker ≤ ~1ms 退出；`Shutdown` 保证 join |
+| 3. 背压（有界队列） | ✅ `ChqBoundedQueue` + `kResourceExhausted`，不提供无界模式 |
+| 4. 取消（ChqCancelToken） | ✅ `RequestStop` → worker ≤ ~1ms 退出；`Shutdown` 保证 join |
 
 ## 实测数据
 
@@ -103,7 +103,7 @@ session.ChangesSince(last_seen, &out);       // UI 增量刷新
 
 - Decode Pool 的 N 路并发调度（MEDIA 侧）
 - Render / Encode / Audio 线程的专属调度（PALA / EXPORT / AUDIO 侧）
-- `EditorSession` 门面与快照（**CORE-009**，本层的直接下游）
+- `ChqEditorSession` 门面与快照（**CORE-009**，本层的直接下游）
 - 主线程卡死的自动检测（watchdog 类机制，属 PERF 范畴）
 
 
@@ -111,20 +111,20 @@ session.ChangesSince(last_seen, &out);       // UI 增量刷新
 
 # UIA-009 子步骤 1（2026-10-03）：内建模型状态与查询 ABI
 
-## EditorModelState（ISessionState 的模型层实现）
+## ChqEditorModelState（ChqISessionState 的模型层实现）
 
-`core/include/cq/model/editor_model_state.h` —— Timeline + AssetRegistry +
-CommandHistory 组装为会话状态。`EditorSession` 默认构造即内建（注入自定义
-ISessionState 时类型化接口返回 kInternal）。
+`core/include/cq/model/chq_editor_model_state.h` —— ChqTimeline + ChqAssetRegistry +
+ChqCommandHistory 组装为会话状态。`ChqEditorSession` 默认构造即内建（注入自定义
+ChqISessionState 时类型化接口返回 kInternal）。
 
 - **变更**：仅 session 线程（经 Submit 投递）。类型化入口：
   `SubmitRegisterAsset / SubmitAddTrack / SubmitAddClip`（前两者/三者分别
-  走素材表与 CommandHistory，可撤销的是片段命令）。
-- **读**：每次成功变更后发布 `shared_ptr<const Timeline>` 不可变快照
+  走素材表与 ChqCommandHistory，可撤销的是片段命令）。
+- **读**：每次成功变更后发布 `shared_ptr<const ChqTimeline>` 不可变快照
   （mutex 保护的 shared_ptr，持锁 = 指针拷贝，纳秒级；⚠️ 本机 libc++ 未实现
   C++20 atomic<shared_ptr>，P0718，编译期即拒）。任意线程无阻塞读。
-- **digest**：真实的 Timeline 结构指纹（FNV-1a，字段集见
-  `EditorModelState::Fingerprint`）——「恒为 0」时代结束，CORE-009 旧断言
+- **digest**：真实的 ChqTimeline 结构指纹（FNV-1a，字段集见
+  `ChqEditorModelState::Fingerprint`）——「恒为 0」时代结束，CORE-009 旧断言
   已随语义更新。
 
 ## 新 C ABI（cq_sdk.h 会话级模型段）
@@ -146,16 +146,16 @@ undo/redo 的 C ABI 归 UIA-008。
 | `cq_session_asset_count` / `cq_session_query_assets` | 读快照（契约同其它查询）；`CQAssetInfo.path` 是 `char[512]` 值拷贝（NUL 结尾 + truncated 标记），**不是**指针 —— 快照发布后路径仍可读 |
 | `cq_media_probe_duration(path, out)` | **同步**探测媒体时长（打开容器→读 duration→关闭，毫秒级；用户导入动作、低频）。实现调 Platform 工厂链，**独立 TU** `core/src/media/media_probe_abi.cpp`（已登记 ADR-0011 §3 TU 表） |
 
-素材 id 由**调用方分配**（内核不生成）；AssetRegistry 新增 `ListAssets()` 遍历。
+素材 id 由**调用方分配**（内核不生成）；ChqAssetRegistry 新增 `ListAssets()` 遍历。
 
 ## 子步骤 2（2026-10-03）：预览收口，Session 成为模型唯一真源
 
 `cq_preview_create(CQSession*, w, h)` —— 预览不再有本地模型，渲染读
-`CurrentModelSnapshot()`（Timeline+AssetRegistry **配对**发布，model_snapshot.h）。
+`CurrentModelSnapshot()`（ChqTimeline+ChqAssetRegistry **配对**发布，chq_model_snapshot.h）。
 `cq_preview_register_asset / add_clip` 已删除。快照发布点从「仅时间线」扩为配对
 （RegisterAsset 也发布）。CQSession 的真实定义抽到内核私有头
-`core/src/cq_session_impl.h`（cq_sdk.cpp 与 cq_sdk_preview.cpp 共享；
-include 用相对路径 `../cq_session_impl.h`，pod 构建无私有 search path）。
+`core/src/chq_session_impl.h`（cq_sdk.cpp 与 cq_sdk_preview.cpp 共享；
+include 用相对路径 `../chq_session_impl.h`，pod 构建无私有 search path）。
 
 # UIA-005 落地（2026-10-03）：片段编辑与撤销的 C ABI
 
@@ -163,12 +163,12 @@ include 用相对路径 `../cq_session_impl.h`，pod 构建无私有 search path
 
 - **编辑类提交**：`SubmitMoveClip / SubmitTrimClip` —— 与 SubmitAddClip 同构
   （异步入队，校验在 session 线程：片段存在 / duration>0 / 同轨不重叠）。
-- **撤销也是 session 线程操作**：`SubmitUndo / SubmitRedo` —— CommandHistory
-  与 Timeline 都是 session 线程状态，UI 线程不能直接翻栈。空历史 → session
+- **撤销也是 session 线程操作**：`SubmitUndo / SubmitRedo` —— ChqCommandHistory
+  与 ChqTimeline 都是 session 线程状态，UI 线程不能直接翻栈。空历史 → session
   线程返回 kInvalidArgument（版本不推进）。
-- **撤销栈能力**：`EditorModelState` 维护 `atomic<bool> can_undo_/can_redo_`
+- **撤销栈能力**：`ChqEditorModelState` 维护 `atomic<bool> can_undo_/can_redo_`
   （Execute/Undo/Redo 成功后 `RefreshHistoryFlags()` 刷新），
-  `EditorSession::CanUndo/CanRedo` 读原子量 —— **不直读 CommandHistory**。
+  `ChqEditorSession::CanUndo/CanRedo` 读原子量 —— **不直读 ChqCommandHistory**。
 
 | 新 C ABI | 语义 |
 |---|---|
@@ -184,8 +184,8 @@ include 用相对路径 `../cq_session_impl.h`，pod 构建无私有 search path
 ## 读路径的下游
 
 - UIA-004 时间线视图：Session.queryTracks/queryClips（Swift 封装，主线程直读）
-- UIA-009 子步骤 2 预览收口：EditorModelState.CurrentTimeline() 即预览该用的
-  读路径（渲染时原子加载最新快照），替代 CQPreview 本地 Timeline
+- UIA-009 子步骤 2 预览收口：ChqEditorModelState.CurrentTimeline() 即预览该用的
+  读路径（渲染时原子加载最新快照），替代 CQPreview 本地 ChqTimeline
 
 ---
 
@@ -196,7 +196,7 @@ include 用相对路径 `../cq_session_impl.h`，pod 构建无私有 search path
 
 ### 任务与进度（在飞 + 近期；全量 DAG 见 TASK-BACKLOG）
 
-| Task ID | 标题 | 状态 |
+| ChqTask ID | 标题 | 状态 |
 |---|---|---|
 | — | 首次落账于下一阶段批；历史状态见 TASK-BACKLOG | — |
 
@@ -208,4 +208,4 @@ include 用相对路径 `../cq_session_impl.h`，pod 构建无私有 search path
 
 ### 调研 · 决策 · 池指针
 
-- CORE-008/009（线程模型与 EditorSession）· ADR-0016（共享命令队列）
+- CORE-008/009（线程模型与 ChqEditorSession）· ADR-0016（共享命令队列）

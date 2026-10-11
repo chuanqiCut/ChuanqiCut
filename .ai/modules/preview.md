@@ -4,18 +4,18 @@
 
 > 建立：2026-10-02
 > 位置：`core/include/cq/preview/` + `core/src/preview/`
-> 上游：MODEL-001（时间线）、AssetRegistry（素材表）、MEDIA-020（取帧）、Platform（GFX / 导入）
+> 上游：MODEL-001（时间线）、ChqAssetRegistry（素材表）、MEDIA-020（取帧）、Platform（GFX / 导入）
 
 ## 1. 职责
 
 回答一个问题：**时间线在 pts 这一刻，画面是什么。**
 
 ```
-Timeline::FindClipAt(pts)          → 哪个片段
-AssetRegistry::Find(asset_id)      → 片段指向哪个文件
-FrameProvider::AcquireFrame(src_t) → 取出该时刻的帧（精确 seek）
-INativeImageImporter::Import       → 零拷贝导入成纹理
-IBlitPass::Encode                  → 画到离屏 RenderTarget
+ChqTimeline::FindClipAt(pts)          → 哪个片段
+ChqAssetRegistry::Find(asset_id)      → 片段指向哪个文件
+ChqFrameProvider::AcquireFrame(src_t) → 取出该时刻的帧（精确 seek）
+ChqINativeImageImporter::Import       → 零拷贝导入成纹理
+ChqIBlitPass::Encode                  → 画到离屏 RenderTarget
                                    → 导出 RT 背后的纹理句柄给 UI
 ```
 
@@ -23,21 +23,21 @@ IBlitPass::Encode                  → 画到离屏 RenderTarget
 
 | 文件 | 作用 |
 |---|---|
-| `core/include/cq/preview/preview_renderer.h` + `src/preview/preview_renderer.cpp` | 预览渲染器本体（平台无关） |
+| `core/include/cq/preview/chq_preview_renderer.h` + `src/preview/preview_renderer.cpp` | 预览渲染器本体（平台无关） |
 | `core/src/preview/cq_sdk_preview.cpp` | 预览的 C ABI 实现（**独立 TU**，原因见 ADR-0011） |
-| `core/include/cq/preview/preview_frame_source.h` | `IPreviewFrameSource`：渲染一帧的接缝（供泵注入假实现测试） |
-| `core/include/cq/preview/preview_pump.h` + `src/preview/preview_pump.cpp` | **预览取帧泵**（UIA-010 子步骤 5，自有线程） |
-| `core/include/cq/preview/player_clock.h` + `src/...cpp` | 播放时钟（UIA-010，只算时间不取帧） |
+| `core/include/cq/preview/chq_preview_frame_source.h` | `ChqIPreviewFrameSource`：渲染一帧的接缝（供泵注入假实现测试） |
+| `core/include/cq/preview/chq_preview_pump.h` + `src/preview/preview_pump.cpp` | **预览取帧泵**（UIA-010 子步骤 5，自有线程） |
+| `core/include/cq/preview/chq_player_clock.h` + `src/...cpp` | 播放时钟（UIA-010，只算时间不取帧） |
 
 ## 3. 依赖全部是**注入的非拥有指针**
 
 ```cpp
-PreviewRenderer(IGfxDevice* gfx, IBlitPass* blit, IFrameProviderFactory* providers,
-                const Timeline* timeline, const AssetRegistry* assets, const Config& cfg);
+ChqPreviewRenderer(ChqIGfxDevice* gfx, ChqIBlitPass* blit, ChqIFrameProviderFactory* providers,
+                const ChqTimeline* timeline, const ChqAssetRegistry* assets, const Config& cfg);
 ```
 
-本类自己持有：importer（`PlatformPtr<INativeImageImporter>`）、离屏 RenderTarget、
-`asset_id → FrameProvider` 映射、**上一帧导入的纹理**（逐帧 `ReleaseTexture`）。
+本类自己持有：importer（`ChqPlatformPtr<ChqINativeImageImporter>`）、离屏 RenderTarget、
+`asset_id → ChqFrameProvider` 映射、**上一帧导入的纹理**（逐帧 `ReleaseTexture`）。
 
 ## 4. 返回值语义（不要伪造成功）
 
@@ -65,15 +65,15 @@ golden 素材 `gf_1080p_h264.mp4` 是**静态**彩条，不同时刻的像素完
 - **多轨合成** —— 只渲染第一条命中的视频轨；叠加 / 转场合成等 RenderGraph
   （RENDER-001）落地后再补。
 - **变速 / retime** —— MODEL-001 无该字段，时间线时长与素材时长 1:1。
-- ~~**宽高比适配**~~ —— **已支持（UIA-014，2026-10-04）**：`FitMode`
+- ~~**宽高比适配**~~ —— **已支持（UIA-014，2026-10-04）**：`ChqFitMode`
   stretch / contain / cover，见下文专节；片段级缩放/位移仍归 MODEL-003。
 
-## 6.5 宽高比适配 FitMode（UIA-014 / ADR-0018，2026-10-04）
+## 6.5 宽高比适配 ChqFitMode（UIA-014 / ADR-0018，2026-10-04）
 
-源帧与画布比例不同时的映射，**实现接缝 = 编码器视口**（`IGfxEncoder::SetViewport`
-→ Platform `ICommandEncoder::SetViewport`，ADR-0018）：
+源帧与画布比例不同时的映射，**实现接缝 = 编码器视口**（`ChqIGfxEncoder::SetViewport`
+→ Platform `ChqICommandEncoder::SetViewport`，ADR-0018）：
 
-| FitMode | 视口 | 效果 |
+| ChqFitMode | 视口 | 效果 |
 |---|---|---|
 | kStretch=0（默认） | 不设（整目标） | 拉伸铺满 —— 与引入前编码序列**逐该厂商一致** |
 | kContain=1 | 内切矩形居中 | letterbox/pillarbox，bar 区 = 清屏黑，不裁内容 |
@@ -92,10 +92,10 @@ golden 素材 `gf_1080p_h264.mp4` 是**静态**彩条，不同时刻的像素完
 ## 7. 零拷贝链路（不能退化的部分）
 
 ```
-MediaFrame.video.image (CVPixelBuffer)
-  → INativeImageImporter::Import   # Metal 兼容 → CVMetalTexture，共享 IOSurface
+ChqMediaFrame.video.image (CVPixelBuffer)
+  → ChqINativeImageImporter::Import   # Metal 兼容 → CVMetalTexture，共享 IOSurface
   → TextureHandle
-  → IBlitPass::Encode
+  → ChqIBlitPass::Encode
   → 离屏 RT
   → out_texture（中性句柄，Swift 侧 reinterpret 为 MTLTexture）
 ```
@@ -111,9 +111,9 @@ MediaFrame.video.image (CVPixelBuffer)
 ```
 CreateGraphicsDevice(Platform) → CreateGfxDevice(platform, gfx)   # GFX 接管 Platform 所有权
 CreateBlitPass(gfx->PlatformDevice(), kRGBA8, blit)
-PlatformFrameProviderFactory                                  # 内部经 CreateFrameProvider
+ChqPlatformFrameProviderFactory                                  # 内部经 CreateFrameProvider
         ↓
-PreviewRenderer(gfx, blit.get(), &factory, &timeline, &assets, cfg)
+ChqPreviewRenderer(gfx, blit.get(), &factory, &timeline, &assets, cfg)
 ```
 
 任一 Platform 后端缺失 → `cq_preview_create` 返回 `NULL`（运行时失败，不是崩溃）。
@@ -122,7 +122,7 @@ PreviewRenderer(gfx, blit.get(), &factory, &timeline, &assets, cfg)
 
 ```bash
 ./tools/build/build_core.sh --platform=apple --config=Debug --test
-ctest --test-dir build -R preview_renderer   # 51 项：像素真值 / 方向 / 零拷贝 / 空隙 / Resize / FitMode
+ctest --test-dir build -R preview_renderer   # 51 项：像素真值 / 方向 / 零拷贝 / 空隙 / Resize / ChqFitMode
 ctest --test-dir build -R c_abi_preview      # 78 项：真正的 C TU，契约与诊断量（含 set_fit_mode）
 
 cd bindings/swift && swift test --disable-sandbox          # Previewer 契约 + golden 帧
@@ -154,7 +154,7 @@ SwiftUI PreviewZone
 - 视图是「单帧按需渲染」；连续播放须由上层异步推进 pts，**不得**在视图内加渲染循环。
 - `GetColorTexture` 现在返回**裸原生纹理**（id<MTLTexture>），不是 CqTexture* 包装
   （接口缺陷修复，见 pitfalls P20）；「导出用」与「SetTexture 用」两种句柄语义已
-  在 platform/gfx.h 写清。
+  在 platform/chq_gfx.h 写清。
 - 设备一致性（hypothesis，2026-10-02 本机实测）：内核与 MTKView 的设备同为
   `MTLCreateSystemDefaultDevice()` 的进程内缓存实例。
 - 调试演示：`CQ_DEMO_VIDEO=<视频路径>` 环境变量（DEBUG 构建）启动即载入 5s 片段。
@@ -162,17 +162,17 @@ SwiftUI PreviewZone
 ## 11. 验证（UIA-003 之后）
 ## 12. 读路径收口（UIA-009 子步骤 2，2026-10-03 完成）
 
-**CQPreview 本地 Timeline/AssetRegistry 已退役。** 渲染输入 =
-`IModelSnapshotProvider`（preview_renderer.h 定义的接口），生产实现
-`SessionSnapshotProvider` 包装 `EditorSession::CurrentModelSnapshot()`。
+**CQPreview 本地 ChqTimeline/ChqAssetRegistry 已退役。** 渲染输入 =
+`ChqIModelSnapshotProvider`（chq_preview_renderer.h 定义的接口），生产实现
+`SessionSnapshotProvider` 包装 `ChqEditorSession::CurrentModelSnapshot()`。
 
 - **装配**：`cq_preview_create(CQSession*, w, h)` —— 挂 session；session 无内建
-  模型（注入自定义 ISessionState）返回 NULL。CQPreview **不拥有** session
+  模型（注入自定义 ChqISessionState）返回 NULL。CQPreview **不拥有** session
   （Swift 侧 Previewer 强持有 Session，对象图保证顺序）。
-- **一致性**：每次 RenderFrame 入口加载一次配对快照（Timeline+AssetRegistry
+- **一致性**：每次 RenderFrame 入口加载一次配对快照（ChqTimeline+ChqAssetRegistry
   同版本），本帧全程用同一快照渲染；session 线程再变更不影响本帧，下帧自然
   切新快照（最终一致）。
-- **provider 缓存失效**：`asset_id → (FrameProvider, opened_path)`；素材重注册
+- **provider 缓存失效**：`asset_id → (ChqFrameProvider, opened_path)`；素材重注册
   为新路径时关闭旧解码会话重建（防旧 demux/decoder 滞留）。
 - **已删除的 ABI**：`cq_preview_register_asset` / `cq_preview_add_clip`
   （Swift Previewer 同步删除；装配唯一入口 = cq_session_*）。
@@ -182,10 +182,10 @@ SwiftUI PreviewZone
 
 1. **线程**：渲染仍在调用方线程（主线程同步单帧，既有取舍）；新增快照读取
    mutex 持锁 = 指针拷贝（纳秒级）；session 线程变更 + 发布（拷贝量线性于实体数）。
-2. **时序**：RationalTime 全程不变；快照配对发布，无版本撕裂。
+2. **时序**：ChqRationalTime 全程不变；快照配对发布，无版本撕裂。
 3. **内存**：快照最多存活 2~3 份（渲染即取即用）；导入纹理逐帧释放不变；
    provider 缓存上界 = 素材数，路径变更即重建。
-4. **取消**：CancelToken 语义不变（本任务未触解码路径）。
+4. **取消**：ChqCancelToken 语义不变（本任务未触解码路径）。
 5. **错误码**：素材缺失 kInvalidArgument、快照缺失 create 返回 NULL（诚实暴露）。
 6. **一致性**：同 seek 请求结果不变；Android/ohos 无后端仍为 create 返回 NULL。
 
@@ -198,8 +198,8 @@ ADR-0011（core 调 Platform 工厂的隔离规则）、`docs/tasks/TASK-BIND-00
 
 # UIA-010 落地（2026-10-03）：播放时钟
 
-`core/include/cq/preview/player_clock.h` —— **只算时间，不取帧不渲染**。
-取帧渲染仍归 `PreviewRenderer`，两者由调用方串起来（`currentTime` → `render_frame`）。
+`core/include/cq/preview/chq_player_clock.h` —— **只算时间，不取帧不渲染**。
+取帧渲染仍归 `ChqPreviewRenderer`，两者由调用方串起来（`currentTime` → `render_frame`）。
 
 | 主题 | 约定 |
 |---|---|
@@ -208,7 +208,7 @@ ADR-0011（core 调 Platform 工厂的隔离规则）、`docs/tasks/TASK-BIND-00
 | 线程 | 内部 mutex，可跨线程读；**时钟自己不跑线程**，由调用方按帧 `Tick()` |
 | 状态 | kStopped / kPlaying / kPaused；**停止态时刻恒 0**（含播完自然结束） |
 | 边界 | `Tick()` 判定：到时长末尾 → loop 开则回绕，否则停止回 0 |
-| 边界来源 | `cq_session_timeline_duration`（Timeline::Duration）—— UI 不自己累加片段 |
+| 边界来源 | `cq_session_timeline_duration`（ChqTimeline::Duration）—— UI 不自己累加片段 |
 
 C ABI：`cq_player_create/destroy/set_duration/set_loop/play/pause/stop/seek/
 is_playing/current_time/tick` + `cq_session_timeline_duration`。
@@ -234,7 +234,7 @@ SharedUI：ViewModel 的 `togglePlayback/stopPlayback` + `Timer` 驱动（30Hz�
 ## 1. 装配形状（改后）
 
 ```
-主线程                          泵线程（PreviewPump）
+主线程                          泵线程（ChqPreviewPump）
 ──────────────────────────────  ────────────────────────────────────────
 Timer 60Hz → player.tick()
   → pump.request(pts)  ────────►  取 pts → Renderer::RenderFrame
@@ -249,9 +249,9 @@ MTKView.draw(in:)
 
 ## 2. 线程归属（硬约束）
 
-- 挂上泵后，`PreviewRenderer::RenderFrame` / `Resize` **只由泵线程调用**。
+- 挂上泵后，`ChqPreviewRenderer::RenderFrame` / `Resize` **只由泵线程调用**。
   解码会话与 `CVMetalTextureCache` 不可并发访问 —— 这不是"可能出错"是必然竞争。
-- `Resize` 会销毁离屏 RT，故只能经 `PreviewPump::RequestResize`；消费端取句柄
+- `Resize` 会销毁离屏 RT，故只能经 `ChqPreviewPump::RequestResize`；消费端取句柄
   走 `Lock → LatestLocked → blit → Unlock`（持锁期间泵不发布、不 resize）。
 - ⚠️ **持锁期间不要调 `Request`**（同一把锁 → 死锁，P36 实踩），也不要
   `waitUntilCompleted`（会把泵一起堵住）。
@@ -267,7 +267,7 @@ MTKView.draw(in:)
 ## 4. 共享命令队列（跨线程顺序的前提）
 
 `gfx_device.cpp` 由每帧 `CreateCommandQueue` 改为**按设备复用**；新增
-`ICommandQueue::NativeHandle()`（中性句柄）→ `IGfxDevice::SharedQueueHandle()`
+`ChqICommandQueue::NativeHandle()`（中性句柄）→ `ChqIGfxDevice::SharedQueueHandle()`
 → `cq_preview_shared_queue()` → Swift 侧 reinterpret 成 `MTLCommandQueue`。
 UI 的 blit 必须用这条，否则跨队列没有顺序保证（P37）。
 
@@ -286,7 +286,7 @@ UI 的 blit 必须用这条，否则跨队列没有顺序保证（P37）。
 ```bash
 ctest --test-dir build -R core_preview_pump    # 41 断言（假帧源，只链 cq_core）
 ctest --test-dir build -R c_abi_preview        # 78 断言（真实链路 + 泵段 + set_fit_mode 契约）
-ctest --test-dir build -R preview_renderer     # 51 断言（含单帧耗时实测段 + FitMode [8]）
+ctest --test-dir build -R preview_renderer     # 51 断言（含单帧耗时实测段 + ChqFitMode [8]）
 ctest --test-dir build -R gfx_device           # 30 断言（含视口原语用例 C）
 cd bindings/swift && swift test --disable-sandbox                 # 23 用例
 cd apps/apple/packages/SharedUI && swift test --disable-sandbox   # 20 用例
@@ -301,7 +301,7 @@ cd apps/apple/packages/SharedUI && swift test --disable-sandbox   # 20 用例
 
 ### 任务与进度（在飞 + 近期；全量 DAG 见 TASK-BACKLOG）
 
-| Task ID | 标题 | 状态 |
+| ChqTask ID | 标题 | 状态 |
 |---|---|---|
 | — | 首次落账于下一阶段批；历史状态见 TASK-BACKLOG | — |
 

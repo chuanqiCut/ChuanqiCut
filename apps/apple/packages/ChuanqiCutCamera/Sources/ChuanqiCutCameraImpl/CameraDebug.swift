@@ -18,6 +18,7 @@ final class CameraDebugStats {
     private var drawCount: UInt64 = 0
     private var processMsLast: Double = 0
     private var processMsWindowMax: Double = 0
+    private var beautyNoFaceFrames: UInt64 = 0
 
     func captureTick() {
         lock.lock()
@@ -38,13 +39,23 @@ final class CameraDebugStats {
         public let drawCount: UInt64
         public let processMsLast: Double
         public let processMsWindowMax: Double
+        public let beautyNoFaceFrames: UInt64
+    }
+
+    /// CAM-033 闪帧取证：美颜开启但该帧无脸框（直通）的渲染帧计数——
+    /// 每秒显著增长 = 蒙版断续（用户感知「闪」）的直接证据源。
+    func beautyNoFaceTick() {
+        lock.lock()
+        beautyNoFaceFrames += 1
+        lock.unlock()
     }
 
     func snapshot() -> Snapshot {
         lock.lock()
         defer { lock.unlock() }
         return Snapshot(captureCount: captureCount, drawCount: drawCount,
-                        processMsLast: processMsLast, processMsWindowMax: processMsWindowMax)
+                        processMsLast: processMsLast, processMsWindowMax: processMsWindowMax,
+                        beautyNoFaceFrames: beautyNoFaceFrames)
     }
 }
 

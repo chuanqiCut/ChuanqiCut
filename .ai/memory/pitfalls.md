@@ -1892,6 +1892,22 @@ TASK-CAM-012 剩余风险栏其实预判了（"若真机上 CI 工作空间表�
   默认路径，人工项（脸框标定受控数据/手点复现）才找传哲。
 - 验证状态：**verified**（iPhone 17 Pro 真机三轮）。
 
+## P118（2026-10-11，CAM-033 真机批二，集成机）检测队列回调里的 MainActor 隔离断言 = SIGTRAP 无消息崩
+
+- 来源：CAM-033 美颜开（探针 CQ_CAM_BEAUTY）必现 signal 5，CrashProbe 信号处理器
+  （tools/probe 沉淀）抓栈 + atos 定位：onResult 闭包（检测队列，非隔离上下文）里
+  的统计打印段（print/String(format:) 组合）触发 `dispatch_assert_queue` SIGTRAP。
+- **规则**：`VisionDetector.onResult`/`CameraManager.onVideoFrame` 等采集/检测队列
+  回调体内**零打印、零 MainActor 隔离访问**——任何统计取证移到主线程 Timer
+  （cam-stats 同源读 detector 属性天然安全）。iOS 26 Swift 6 下 print/String
+  interpolation 的并发检查在非隔离上下文触发 brk，且 fatal 消息走 os_log 异步流
+  **不进 devicectl console**（stderr 探针抓不到，crash report 延迟落盘）——
+  **信号处理器 backtrace 是唯一即时取证手段**（CrashProbe，CALIB 模式自装）。
+- 附：devicectl console 会话会引发 scenePhase 抖动 → onChange(.active) →
+  resumeIfNeeded 二次 configureAndStart（trace 栈实证）——探针环境特有，真机
+  手持场景不受影响，但 resumeIfNeeded 应视为可重入设计。
+- 验证状态：**verified**（iPhone 17 Pro D3~D13 十一轮，删段后 signal 5 归零）。
+
 ## P116（2026-10-11，壳工程图标/启动图，集成机）synchronized groups 自动编 xcassets ≠ 图标生效——ASSETCATALOG_COMPILER_APPICON_NAME 必须显式写
 
 > ⚠️ 原误记 **P110**，与录制死锁 P110 撞号；按 P109 惯例后入库方让位，2026-10-11

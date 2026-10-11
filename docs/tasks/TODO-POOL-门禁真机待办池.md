@@ -376,6 +376,21 @@ SPM 临时产物一律 `swift test --disable-sandbox --scratch-path "$ROOT/build
     ③性能稳态回填 baselines：处理 0.5-2ms / 60fps / 177MB；④`outputRectConverted`
     语义陷阱实证（P117 坑③）→ **标定闸门 metadataFacesCalibrated=false**，
     metadata 框未定标不消费、plan 回退 Vision faceRectangles（坐标已验证正确）。
+  - [x] **「磨皮美白开了会闪」三根因修复 + 美颜开 SIGTRAP 崩溃修复**（2026-10-11
+    深夜，传哲反馈驱动，CrashProbe 信号处理器 11 轮取证定位）：①metadata 乱坐标
+    进蒙版（闸门只关 plan 没挡回调→源头上挡，P118 前置）；②仅框模式检出丢帧 →
+    FaceBoxStore 清空 → 磨/不磨交替闪（dropout 保持 500ms 修复）；③activate
+    幂等分支绕过闸门（plan 以为 metadata 供框实为空→全直通闪，修复）；④美颜开
+    SIGTRAP 必崩 = onResult 非隔离上下文 cq.debug 打印段触发 MainActor 断言
+    （P118，删段+统计移 cam-stats 主线程）。**修复后磨皮0.5+美白0.5 真机：
+    处理 1.6-3.0ms / 60fps 满帧 / noface 停止增长（不闪）/ 磨皮引擎确认工作**。
+    检测耗时实证 **11.6-20.3ms/次**（baselines 已回填）→ **美颜脸框检测降频
+    （10-15Hz）列 P1 收尾优化**。
+  - [ ] **P1 收尾·检测降频**（本轮实证驱动）：美颜脸框（faceRectangles/metadata）
+    detectionHz 从 30Hz 降 10-15Hz（单次 12-20ms × 30Hz ≈ 半核，蒙版有 EMA 兜着
+    无需 30Hz）；仅美型/贴纸锚点保持 30Hz（跟手）。改 VisionDetector plan 分档。
+  - [ ] **后摄+美颜验证**（探针 back 分支未切摄待查 + 需真人对镜头）：后摄磨皮
+    目检 + 档位回归；同时跑 metadata 标定（见下）。
   - [ ] **CAM-033 标定收尾（需传哲 30 秒）**：人脸对镜头、居中静止，跑
     `CQ_CAM_FACE_CALIB=1`（SOP §一键流程），日志回传后反解 metadata↔vision 映射 →
     修 MetadataFaceGeometry → 闸门翻 true 零成本启用 metadata 路（远程采到的样本

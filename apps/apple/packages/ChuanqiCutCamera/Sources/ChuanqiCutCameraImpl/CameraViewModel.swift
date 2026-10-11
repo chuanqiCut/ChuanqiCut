@@ -277,10 +277,11 @@ final class CameraViewModel: ObservableObject {
                 faceBoxes.updateAnimalEyes(snapshot.animals.first.flatMap(StickerEyeAnchor.init(animal:)))
                 faceBoxes.updateBodyAnchors(snapshot.body.flatMap(BodyReshapeAnchors.init(body:)))
                 faceBoxes.updateMakeupAnchors(snapshot.face.flatMap(MakeupAnchors.init(face:)))
-                if ProcessInfo.processInfo.environment["CQ_DEBUG_PROFILE"] == "1", let detector {
-                    let ms = detector.lastDetectionDurationMs.map { String(format: "%.1f", $0) } ?? "nil"
-                    print("cq.debug: face detect lastMs=\(ms) total=\(detector.totalDetections) failed=\(detector.totalFailed) dropped=\(detector.totalDroppedByRate)")
-                }
+                // ⚠️ 本闭包在检测队列（非隔离上下文）执行：任何 MainActor 隔离访问都会
+                // 触发 dispatch_assert_queue SIGTRAP（CAM-033 真机栈实证：cq.debug 段
+                // 的 print/String(format:) 组合在 iOS 26 Swift 6 下必崩，D3~D12 十轮）。
+                // 检测统计取证统一走主线程 cam-stats（读 detector 属性天然安全），
+                // 此处零打印。
             }
         }
         // CAM-021：前摄检测桥 → renderer.frontFaceBoxes（PiP 路单一真源，同主路纪律）。
@@ -328,7 +329,25 @@ final class CameraViewModel: ObservableObject {
                     self?.errorMessage = "相机启动失败（设备被占用或不存在）"
                 }
                 #if DEBUG
-                if running { self?.runDeviceProbeIfRequested() }
+                if running {
+                    if CameraManager.faceCalib { CrashProbe.install() }
+                    // 探针强制美颜（CAM-033 远程验证：算法开着测性能与闪帧）——
+                    // CQ_CAM_BEAUTY="smoothing,brightening"（如 "0.5,0.5"）。
+                    if let env = ProcessInfo.processInfo.environment["CQ_CAM_BEAUTY"] {
+                        let parts = env.split(separator: ",").compactMap { Double($0) }
+                        if parts.count == 2 {
+                            self?.beauty = CameraBeautyParams(smoothing: parts[0], brightening: parts[1])
+                            self?.probeLog("beauty forced smoothing=\(parts[0]) brightening=\(parts[1])")
+                        } else {
+                            self?.probeLog("beauty forced FAIL: bad format \(env)")
+                        }
+                    }
+                    if ProcessInfo.processInfo.environment["CQ_CAM_NO_SEMANTIC"] == "1" {
+                        PortraitSemantics.uninstallSkinMask()
+                        self?.probeLog("semantic mask uninstalled (bisection)")
+                    }
+                    self?.runDeviceProbeIfRequested()
+                }
                 #endif
             }
         }
@@ -452,10 +471,15 @@ final class CameraViewModel: ObservableObject {
         //（processing ms / 双路 fps / 内存足迹 / 录制帧数）——性能基线回填的数据源。
         if CameraManager.faceCalib
             || ProcessInfo.processInfo.environment["CQ_DEBUG_PROFILE"] == "1" {
-            fputs(String(format: "[cam-stats] cap=%.1f draw=%.1f ms=%.1f/%.1f mem=%.0fMB rec=%d front=%d\n",
+            let noFace = renderer?.debugStats.snapshot().beautyNoFaceFrames ?? 0
+            let detMs = detector.lastDetectionDurationMs
+            let detTotal = detector.totalDetections
+            fputs(String(format: "[cam-stats] cap=%.1f draw=%.1f ms=%.1f/%.1f mem=%.0fMB rec=%d noface=%llu det=%.1fms/%d front=%d\n",
                          captureFps, drawFps, msLast, msMax,
                          debugSnapshot?.footprintMB ?? 0,
                          Int(debugSnapshot?.recordedFrames ?? 0),
+                         noFace,
+                         detMs ?? -1, Int(detTotal),
                          position == .front ? 1 : 0), stderr)
             fflush(stderr)
         }
@@ -994,6 +1018,11 @@ final class CameraViewModel: ObservableObject {
             for: flags,
             faceRectNeeded: !beauty.isOff,
             metadataFacesAvailable: metadataOK)
+        if CameraManager.faceCalib
+            || ProcessInfo.processInfo.environment["CQ_DEBUG_PROFILE"] == "1" {
+            fputs("[detect-plan] requests=[\(detector.requests.map(\.rawValue).sorted().joined(separator: ","))] faceRectNeeded=\(!beauty.isOff) metadataOK=\(metadataOK) front=\(position == .front)\n", stderr)
+            fflush(stderr)
+        }
     }
 }
 

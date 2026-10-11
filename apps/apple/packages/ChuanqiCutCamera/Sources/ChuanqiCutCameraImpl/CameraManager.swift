@@ -226,6 +226,7 @@ final class CameraManager: NSObject, @unchecked Sendable {
     func configureAndStart(onReady: @escaping @MainActor (_ isRunning: Bool) -> Void) {
         if Self.faceCalib {
             fputs("[cam-lifecycle] configureAndStart requested\n", stderr)
+            CrashProbe.traceNow("configureAndStart")
             fflush(stderr)
         }
         sessionQueue.async { [weak self] in
@@ -378,7 +379,11 @@ final class CameraManager: NSObject, @unchecked Sendable {
             return
         }
         guard metadataOutput.metadataObjectTypes.isEmpty else {
-            isMetadataFacesActive = true   // 已启用
+            // ⚠️ 幂等分支也必须过闸门（CAM-033 闪帧根因之三，D2 日志实锤）：
+            // 此前无条件置 true——types 已设但闸门关时，updateDetectionPlan 以为
+            // metadata 会供框 → plan 空集，而回调被闸门挡住不写 store →
+            // FaceBoxStore 永远空 → 磨皮/美白全直通 = 闪。
+            isMetadataFacesActive = Self.metadataFacesCalibrated
             return
         }
         if metadataOutput.availableMetadataObjectTypes.contains(.face) {
@@ -1066,6 +1071,18 @@ extension CameraManager: AVCaptureMetadataOutputObjectsDelegate {
     func metadataOutput(_ output: AVCaptureMetadataOutput,
                         didOutput metadataObjects: [AVMetadataObject],
                         from connection: AVCaptureConnection) {
+        // 闸门源头挡（CAM-033 闪帧根因之一）：未定标（metadataFacesCalibrated=false）
+        // 时 metadata 框为像素级乱坐标，**绝不能进 FaceBoxStore**（磨皮蒙版数据源）
+        // ——此前闸门只关了 Vision plan，回调仍无条件写 store，错乱框与 Vision 框
+        // 竞争写 = 磨皮/美白开启时蒙版乱跳闪帧。faceCalib 取证日志不受影响。
+        guard Self.metadataFacesCalibrated else {
+            if Self.faceCalib, let first = metadataObjects.compactMap({ ($0 as? AVMetadataObject)?.bounds }).first {
+                fputs(String(format: "[face-calib] meta(raw only, gate closed) (%.4f,%.4f,%.4f,%.4f)\n",
+                             first.minX, first.minY, first.width, first.height), stderr)
+                fflush(stderr)
+            }
+            return
+        }
         guard let callback = onMetadataFaces else { return }
         // rect 转换目标 = 主画面 videoOutput（磨皮蒙版只服务主画面；PiP 的人脸链
         // 走 VisionDetector 桥）。镜像读主 connection —— metadataQueue 读 connection

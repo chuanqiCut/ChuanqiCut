@@ -129,9 +129,11 @@ public struct CameraBeautyParams: Equatable, Sendable {
         // （mask 区=美白(磨皮图)、黑区=原图）≡ 一次（mask 区=美白(磨皮图)、
         // 黑区=原图）——混合是逐像素线性算子，嵌套可折叠。
         var processed = image
+        let segLog = ProcessInfo.processInfo.environment["CQ_CAM_BEAUTY_SEG"] == "1"
         if smoothing > 0 {
             processed = CameraBeautyEngine.smoothing?(processed, smoothing)
                 ?? defaultSmoothing(processed, strength: smoothing)
+            if segLog { fputs("[beauty-seg] smoothing done\n", stderr); fflush(stderr) }
         }
         if brightening > 0 {
             var brightened = processed.applyingFilter("CIExposureAdjust", parameters: [
@@ -143,9 +145,12 @@ public struct CameraBeautyParams: Equatable, Sendable {
                 kCIInputContrastKey: 1.0,
             ])
             processed = brightened
+            if segLog { fputs("[beauty-seg] brighten done\n", stderr); fflush(stderr) }
         }
         guard processed !== image else { return image }   // 理论不可达（isOff 已挡），防御
-        return blended(processed, over: image, mask: mask)
+        let out = blended(processed, over: image, mask: mask)
+        if segLog { fputs("[beauty-seg] blend done\n", stderr); fflush(stderr) }
+        return out
     }
 
     /// 蒙版混合：白（蒙版）区取处理结果、黑区取原图。mask = nil（含蒙版构造

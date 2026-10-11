@@ -120,6 +120,7 @@ usage，而 CI 的 CIRenderDestination 要求 ShaderWrite → destination nil �
 | **算法定则（传哲 2026-10-07）** | 美颜/美型/美体/美妆/道具/人脸跟踪/AR 一切人像能力必须算法驱动，无算法即无效果，**不得退化为滤镜式全画面修改** | 已落实：CameraBeauty.apply nil 语义 全画面兜底→**直通**（旧契约用例同步改） |
 | **CAM-033 P1 检测裁剪（2026-10-11，RESEARCH-015 拍板后一期）** | metadataOutput 系统脸框（零 Vision）+ Vision 按需开关（BeautyDetectionPlan 契约纯函数）+ 磨皮美白单次混合 | ✅ 代码落地 7082df3：Camera swift test **73/73**（+11）；iOS 壳 BUILD SUCCEEDED。真机标定/零 Vision 日志核验挂池 [15]。P2（CAM-034 磨皮内核）/P3（CAM-035 蒙版语义）待开工 |
 | **CAM-033 真机远程验证批（2026-10-11 深夜）** | metadataOutput 三坑（P117）+ 性能基线 + 标定闸门 | 远程 SOP 沉淀 **tools/probe/README.md**（upload_server 入库）：探针 30 秒抓出装配顺序 P0 崩溃；metadata 路修通（796 条回调）但 outputRectConverted 语义陷阱 → **闸门关，回退 Vision 兜底**；美颜全关 Vision 归零 ✓；**真机基线：处理 0.5-2ms / 60fps / 177MB 稳态**（baselines 已回填）。标定收尾需传哲 30 秒受控数据（池 [15]） |
+| **CAM-033 闪帧/崩溃修复轮（2026-10-11 深夜二）** | 「磨皮美白开了会闪」三根因（metadata 乱坐标/检出丢帧清空/幂等绕闸门）+ 美颜开 SIGTRAP（onResult 非隔离打印断言，P118） | ✅ 四案全修（CrashProbe 信号处理器 11 轮取证）：磨皮0.5+美白0.5 真机 **1.6-3.0ms / 60fps / noface 停止增长**；检测单次 12-20ms 实证 → 降频列 P1 收尾。CrashProbe 入库（CALIB 自装信号处理器抓栈） |
 | **MultiCam preset 崩溃（2026-10-09，P93/P94）** | `AVCaptureMultiCamSession` 不支持 `sessionPreset`（设了抛 NSException）+ 其 activeFormat 必须落在 `isMultiCamSupported` 子集 | ✅ 已修并入库（fdb4e97，2026-10-11 收口轮）：multiCam 走逐设备 activeFormat；选择规则抽成契约层纯函数 `CameraFormatSelector.bestIndex`（5 例单测）；新增 input 重放档位。真机复验挂池 [15] |
 
 ### 测试与门禁记录（阶段批）

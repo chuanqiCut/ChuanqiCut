@@ -105,6 +105,9 @@ final class VisionDetector: @unchecked Sendable {
     private var lastPtsSeconds: Double?         // stateLock 保护（降频闸门）
     // 平滑状态：检测队列独占，无锁
     private var prevFaceFlat: [CGPoint?]?
+    // 仅框模式 dropout 保持（CAM-033 闪帧修复）：检测队列独占，无锁
+    private var lastRectBox: CGRect?
+    private var lastRectBoxPtsSeconds: Double?
     private var prevBodyFlat: [CGPoint?]?
     private var prevAnimalPoseFlat: [CGPoint?]?
 
@@ -155,6 +158,10 @@ final class VisionDetector: @unchecked Sendable {
         // CAM-033：请求集合按需装配（BeautyDetectionPlan），不再全家桶常开。
         let plan = requests
         guard !plan.isEmpty else { return }   // offer 已挡，防御（读到旧空集合）
+        if CameraManager.faceCalib {
+            fputs("[face-calib] detect enter plan=\(plan.map(\.rawValue).sorted())\n", stderr)
+            fflush(stderr)
+        }
         let handler = VNImageRequestHandler(cvPixelBuffer: pixelBuffer, orientation: .up, options: [:])
         var faceRequest: VNRequest?
         if plan.contains(.faceLandmarks) {
@@ -177,7 +184,15 @@ final class VisionDetector: @unchecked Sendable {
         }
 
         do {
+            if CameraManager.faceCalib {
+                fputs("[face-calib] detect perform begin n=\(requests.count)\n", stderr)
+                fflush(stderr)
+            }
             try handler.perform(requests)
+            if CameraManager.faceCalib {
+                fputs("[face-calib] detect perform done\n", stderr)
+                fflush(stderr)
+            }
         } catch {
             configLock.lock()
             _totalFailed &+= 1
@@ -188,11 +203,24 @@ final class VisionDetector: @unchecked Sendable {
 
         // 人脸转换按请求档位：landmarks（锚点级）或仅框（磨皮蒙版兜底）。
         // 请求集合互斥（faceLandmarks / faceRectangles 二选一，BeautyDetectionPlan 保证）。
+        // CAM-033 闪帧根因之二：仅框模式检出失败帧直接 update(nil) → FaceBoxStore
+        // 清空 → 该渲染帧磨皮直通 → 与前后帧「磨/不磨」交替 = 用户感知闪。
+        // 修：dropout 保持（500ms [E] 内沿用上帧框），超时才如实清空。
         var face: FaceObservation?
         if plan.contains(.faceLandmarks) {
             face = convertFace(faceRequest?.results as? [VNFaceObservation])
         } else if plan.contains(.faceRectangles) {
-            face = convertFaceBox(faceRequest?.results as? [VNFaceObservation])
+            if let converted = convertFaceBox(faceRequest?.results as? [VNFaceObservation]) {
+                face = converted
+                lastRectBox = converted.box
+                lastRectBoxPtsSeconds = ptsSeconds
+            } else if let box = lastRectBox,
+                      let lastPts = lastRectBoxPtsSeconds,
+                      ptsSeconds - lastPts < 0.5 {
+                face = Self.boxOnlyObservation(box: box)
+            } else {
+                face = nil
+            }
         }
         var body = convertBody(bodyRequest?.results as? [VNHumanBodyPoseObservation])
         // poseResults 传基类型数组：iOS17 具体类型 cast 在 convertAnimals 门控分支内。
@@ -286,16 +314,22 @@ final class VisionDetector: @unchecked Sendable {
             $0.boundingBox.width * $0.boundingBox.height <
             $1.boundingBox.width * $1.boundingBox.height
         }) else { return nil }
+        return Self.boxOnlyObservation(
+            box: visionRectToImageNormalized(main.boundingBox),
+            yaw: main.yaw?.doubleValue, pitch: main.pitch?.doubleValue,
+            roll: main.roll?.doubleValue, confidence: Double(main.confidence))
+    }
+
+    /// 仅框观测构造（无关键点）：检出与 dropout 保持（CAM-033）共用。
+    static func boxOnlyObservation(box: CGRect, yaw: Double? = nil, pitch: Double? = nil,
+                                   roll: Double? = nil, confidence: Double = 1) -> FaceObservation {
         let empty = LandmarkRegion(points: [])
         return FaceObservation(
             contour: empty, leftEyebrow: empty, rightEyebrow: empty,
             leftEye: empty, rightEye: empty, nose: empty, noseCrest: empty,
             medianLine: empty, outerLips: empty, innerLips: empty,
             leftPupil: nil, rightPupil: nil,
-            box: visionRectToImageNormalized(main.boundingBox),
-            yaw: main.yaw?.doubleValue, pitch: main.pitch?.doubleValue,
-            roll: main.roll?.doubleValue,
-            confidence: Double(main.confidence))
+            box: box, yaw: yaw, pitch: pitch, roll: roll, confidence: confidence)
     }
 
     /// 区域点在 Vision 空间合成到整图归一化（先入框内插值，再统一翻转+夹取）。

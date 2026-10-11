@@ -592,7 +592,12 @@ final class CameraPreviewRenderer: NSObject, MTKViewDelegate {
         // CameraBeauty 也没有 skinMask 重载 → ChuanqiCutCamera Pod 整包编不过。
         // CAM-027 卡要求「API 形状保持 `apply(to:faces:)` 不变、调用方零改动」——
         // 正确做法是改 CameraBeauty **内部**取语义蒙版，而不是给调用方加参数。
-        var result = currentBeauty().apply(to: image, faces: faces)
+        // 闪帧取证（CAM-033）：美颜开启但无脸框（直通帧）计数——cam-stats noface=。
+        let beautyNow = currentBeauty()
+        if !beautyNow.isOff, faces == nil || faces?.isEmpty == true {
+            debugStats.beautyNoFaceTick()
+        }
+        var result = beautyNow.apply(to: image, faces: faces)
         if let warp = FaceWarp.shared {
             if let anchors {
                 result = warp.apply(to: result, anchors: anchors, params: currentReshape())

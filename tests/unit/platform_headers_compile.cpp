@@ -1,0 +1,134 @@
+// ChuanqiCut — Platform 头文件编译期自洽验证（CORE-006）
+//
+// 目的：
+//   1. 证明 Platform 头文件自洽——能独立编译，不依赖隐藏的 include 顺序
+//      （先 include 各独立域头再 include 聚合头，验证顺序无关）。
+//   2. 证明零平台类型：所有跨层资源都是 common.h 的 opaque 指针句柄，
+//      编译单元内不出现任何平台类型（平台类型即便在 AppleClang 下能编译通过，
+//      也由 DEPS-004 符号扫描 + 评审兜底——本 TU 固化「接口只含 opaque 指针」这一事实）。
+//   3. 证明统一使用 base 层类型：时间走 RationalTime（timescale=120000）、
+//      错误走 Status、长任务接受 CancelToken、资源用 PlatformPtr 生命周期管理。
+//
+// 注册为 ctest 用例（tests/CMakeLists.txt）。
+
+#include <cstddef>
+#include <type_traits>
+
+// —— 顺序无关性：先单独包含各域头，再包含聚合头 ——
+#include "cq/platform/audio.h"
+#include "cq/platform/capabilities.h"
+#include "cq/platform/clock.h"
+#include "cq/platform/common.h"
+#include "cq/platform/fs.h"
+#include "cq/platform/gfx.h"
+#include "cq/platform/inference.h"
+#include "cq/platform/log.h"
+#include "cq/platform/media.h"
+
+// 聚合头（再次包含，验证幂等）。
+#include "cq/platform/platform.h"
+
+#include "cq/base/rational_time.h"  // kProjectTimeScale
+
+namespace cq {
+namespace {
+
+// ---- 1. opaque 句柄都是指针（零平台类型的事实固化）----
+static_assert(std::is_pointer_v<DeviceHandle>, "DeviceHandle must be an opaque pointer");
+static_assert(std::is_pointer_v<TextureHandle>, "TextureHandle must be an opaque pointer");
+static_assert(std::is_pointer_v<BufferHandle>, "BufferHandle must be an opaque pointer");
+static_assert(std::is_pointer_v<NativeImageHandle>, "NativeImageHandle must be an opaque pointer");
+static_assert(sizeof(NativeImageHandle) == sizeof(void*),
+              "NativeImageHandle must be pointer-sized (no platform struct leaked)");
+
+// ---- 1b. 文件句柄也是 PlatformPtr 管理的资源（生命周期全接口统一）----
+static_assert(std::is_base_of_v<IPlatformResource, IFile>, "IFile must be a PlatformPtr-managed resource");
+static_assert(!std::is_copy_constructible_v<PlatformPtr<IFile>>, "PlatformPtr<IFile> must be move-only");
+
+// ---- 2. 所有资源接口继承 IPlatformResource（统一生命周期契约）----
+static_assert(std::is_base_of_v<IPlatformResource, IGraphicsDevice>, "");
+static_assert(std::is_base_of_v<IPlatformResource, ITexture>, "");
+static_assert(std::is_base_of_v<IPlatformResource, IAudioEngine>, "");
+static_assert(std::is_base_of_v<IPlatformResource, IMediaDemuxer>, "");
+static_assert(std::is_base_of_v<IPlatformResource, IMediaMuxer>, "");
+static_assert(std::is_base_of_v<IPlatformResource, IInferenceBackend>, "");
+static_assert(std::is_base_of_v<IPlatformResource, IFileSystem>, "");
+static_assert(std::is_base_of_v<IPlatformResource, IMonotonicClock>, "");
+
+// ---- 3. PlatformPtr 是 move-only RAII（禁止拷贝，避免跨模块重复 Destroy）----
+static_assert(!std::is_copy_constructible_v<PlatformPtr<IGraphicsDevice>>, "");
+static_assert(!std::is_copy_assignable_v<PlatformPtr<IGraphicsDevice>>, "");
+static_assert(std::is_move_constructible_v<PlatformPtr<IGraphicsDevice>>, "");
+static_assert(std::is_move_assignable_v<PlatformPtr<IGraphicsDevice>>, "");
+// muxer 同样走 PlatformPtr + Destroy() 生命周期（与 demuxer 对称）。
+static_assert(!std::is_copy_constructible_v<PlatformPtr<IMediaMuxer>>, "");
+static_assert(std::is_move_constructible_v<PlatformPtr<IMediaMuxer>>, "");
+
+// ---- 4. 时间一律 RationalTime（项目 timescale=120000），禁止浮点秒 ----
+static_assert(kProjectTimeScale == 120000, "Platform must align with ADR-0009 timescale 120000");
+static_assert(std::is_same_v<RationalTime, decltype(std::declval<IMonotonicClock>().Now())>,
+              "Clock must return RationalTime, not double seconds");
+// GetDuration 以 RationalTime& 作为出参（而非 double 秒 / 裸 int64 毫秒）。
+static_assert(std::is_same_v<Status (IMediaDemuxer::*)(RationalTime&) const,
+                             decltype(&IMediaDemuxer::GetDuration)>,
+              "GetDuration must take RationalTime& out-param");
+
+// ---- 5. 错误一律 Status（无异常路径）----
+static_assert(std::is_same_v<Status, decltype(std::declval<IGraphicsDevice>().CreateTexture(
+                  std::declval<const TextureDesc&>(), std::declval<PlatformPtr<ITexture>&>()))>,
+              "All fallible Platform ops return Status");
+
+// ---- 6. 长任务接口接受 CancelToken（协作取消，kCancelled 非错误）----
+static_assert(std::is_same_v<Status (IMediaDemuxer::*)(const RationalTime&, const CancelToken&),
+                             decltype(&IMediaDemuxer::Seek)>,
+              "Seek(RationalTime, CancelToken) signature must match");
+
+// ---- 6b. IMediaMuxer 对称契约：写帧/收尾接受 CancelToken，帧为 opaque 句柄 ----
+// WriteVideoFrame 必须以平台无关的 NativeImageHandle 传帧（零平台类型：绝不出现
+// CVPixelBufferRef / jobject 等），且 PTS 为 RationalTime、长任务接受 CancelToken。
+static_assert(
+    std::is_same_v<Status (IMediaMuxer::*)(NativeImageHandle, const RationalTime&, const CancelToken&),
+                   decltype(&IMediaMuxer::WriteVideoFrame)>,
+    "WriteVideoFrame(NativeImageHandle, RationalTime, CancelToken) signature must match");
+// Finish 接受 CancelToken（取消返回 kCancelled 非错误）。
+static_assert(std::is_same_v<Status (IMediaMuxer::*)(const CancelToken&),
+                             decltype(&IMediaMuxer::Finish)>,
+              "Finish(CancelToken) signature must match");
+// Open 以输出路径 + 容器枚举表达，不泄漏平台文件/容器类型。
+static_assert(std::is_same_v<Status (IMediaMuxer::*)(const char*, ContainerFormat),
+                             decltype(&IMediaMuxer::Open)>,
+              "Open(const char*, ContainerFormat) signature must match");
+// 工厂返回 Status + PlatformPtr<IMediaMuxer>&（与 CreateMediaDemuxer 对称）。
+static_assert(
+    std::is_same_v<Status (*)(PlatformPtr<IMediaMuxer>&), decltype(&CreateMediaMuxer)>,
+    "CreateMediaMuxer(PlatformPtr<IMediaMuxer>&) signature must match");
+// 码率以档位枚举表达（避免把平台特定 bps 暴露到 core）。
+static_assert(std::is_same_v<BitrateTier, decltype(VideoTrackConfig{}.bitrate)>,
+              "VideoTrackConfig.bitrate must be BitrateTier (not raw bps)");
+static_assert(sizeof(BitrateTier) == sizeof(int32_t), "BitrateTier must be int32_t stable");
+// muxer 与 demuxer 同属媒体领域，接口对称：都继承 IPlatformResource、都用 RationalTime。
+// FrameCount 返回帧计数（int64_t），不是时间，避免语义混淆。
+static_assert(!std::is_same_v<RationalTime, decltype(std::declval<IMediaMuxer>().FrameCount())>,
+              "FrameCount returns int64_t count, not RationalTime");
+
+// ---- 7. 枚举底层位宽稳定（跨端一致，不依赖编译器自动编号）----
+static_assert(sizeof(Capability) == sizeof(int32_t), "Capability must be int32_t stable");
+static_assert(sizeof(CapabilityValue) == sizeof(int32_t), "CapabilityValue must be int32_t stable");
+static_assert(sizeof(CodecId) == sizeof(int32_t), "CodecId must be int32_t stable");
+
+// ---- 8. TextureUsage bitmask 编译期可组合（验证 constexpr 运算符无 -Wconversion）----
+constexpr TextureUsage kRt = TextureUsage::kSampled | TextureUsage::kRenderTarget;
+static_assert(HasUsage(kRt, TextureUsage::kRenderTarget), "bitmask OR/AND must compose");
+static_assert(!HasUsage(kRt, TextureUsage::kStorage), "bitmask check must be exact");
+
+// ---- 9. 能力查询返回枚举（运行时查询，非编译期宏推断）----
+static_assert(std::is_same_v<CapabilityValue, decltype(QueryCapability(Capability::kHwDecodeH264))>,
+              "QueryCapability returns CapabilityValue");
+
+}  // namespace
+}  // namespace cq
+
+int main() {
+    // 编译期全部 static_assert 通过即代表头文件自洽、零平台类型、类型契约成立。
+    return 0;
+}

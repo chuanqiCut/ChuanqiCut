@@ -1,41 +1,41 @@
-// ChuanqiCut — GFX 抽象层（GFX-001，位于 PAL 之上）
+// ChuanqiCut — GFX 抽象层（GFX-001，位于 Platform 之上）
 //
 // ┌────────────────────────────────────────────────────────────────────────┐
-// │ 本文件与 pal/gfx.h 的关系（架构边界，务必先读）                          │
+// │ 本文件与 platform/gfx.h 的关系（架构边界，务必先读）                          │
 // ├────────────────────────────────────────────────────────────────────────┤
-// │ PAL 的 `IGraphicsDevice` 及其 11 个兄弟接口（pal/gfx.h，CORE-006 冻结）  │
+// │ Platform 的 `IGraphicsDevice` 及其 11 个兄弟接口（platform/gfx.h，CORE-006 冻结）  │
 // │ 是**平台能力 HAL**：逐概念 1:1 映射到 Metal / Vulkan / GLES，由各平台后端 │
 // │ （PALA-001 Metal / PALD-001 GLES / PALD-002 Vulkan）直接实现。这是平台   │
 // │ 原生 API 进入代码库的**唯一入口**，越薄越好（ARCH-003 §2.1/§2.3）。      │
 // │                                                                        │
 // │ 本文件（gfx/，GFX-001）是**RenderGraph 之上的编排层**：不重新定义那 12   │
-// │ 个 PAL 概念，而是持有一个 PAL 设备并向 RenderGraph 暴露“渲染编排”API。   │
+// │ 个 Platform 概念，而是持有一个 Platform 设备并向 RenderGraph 暴露“渲染编排”API。   │
 // │ 把“池化 / 预算 / 帧执行 / 导入编排”这类**跨平台**逻辑放在此处，避免每个   │
 // │ 平台后端各自重复实现（ARCH-003 §2.3 硬约束 2：显存分配不隐藏，TexturePool │
 // │ 在 core 层统一池化，后端只负责真实分配）。                               │
 // │                                                                        │
 // │ RenderGraph（RENDER-001）只依赖本层的 `IGfxDevice` / `IGfxEncoder` /     │
-// │ `FrameContext`，**不直接依赖 PAL 类型**（除句柄外）——这是分层的关键。    │
+// │ `FrameContext`，**不直接依赖 Platform 类型**（除句柄外）——这是分层的关键。    │
 // └────────────────────────────────────────────────────────────────────────┘
 //
-// 12 概念映射（对齐 ARCH-003 §2.2 概念映射表，GFX 层如何呈现每个 PAL 概念）：
-//   PAL 概念 (pal/gfx.h)            │ GFX 层呈现 (本文件)
+// 12 概念映射（对齐 ARCH-003 §2.2 概念映射表，GFX 层如何呈现每个 Platform 概念）：
+//   Platform 概念 (platform/gfx.h)            │ GFX 层呈现 (本文件)
 //   ────────────────────────────────┼──────────────────────────────────────────
-//   Device        IGraphicsDevice   │ IGfxDevice::PalDevice() 持有并复用 PAL 设备
+//   Device        IGraphicsDevice   │ IGfxDevice::PlatformDevice() 持有并复用 Platform 设备
 //   CommandQueue  ICommandQueue     │ 由 IGfxDevice 在 RenderFrame 内隐式管理
 //   CommandBuffer ICommandBuffer    │ 同上（帧执行 seam 不向 RenderGraph 暴露）
-//   Encoder       ICommandEncoder   │ IGfxEncoder（RenderNode 只绑定到此，不碰 PAL）
+//   Encoder       ICommandEncoder   │ IGfxEncoder（RenderNode 只绑定到此，不碰 Platform）
 //   Texture       ITexture          │ IGfxDevice::AcquireTexture（经 ITexturePool 池化）
-//   Buffer        IBuffer           │ 经 PAL 创建后由 RenderNode 直接绑定
+//   Buffer        IBuffer           │ 经 Platform 创建后由 RenderNode 直接绑定
 //   RenderTarget  IRenderTarget     │ IGfxDevice::CreateRenderTarget（1:1 复用）
-//   Pipeline      IPipeline         │ IGfxDevice::CreatePipeline（委托 PAL）
-//   ShaderModule  IShaderModule     │ IGfxDevice::CreateShaderModule（委托 PAL）
-//   Sampler       ISampler          │ IGfxDevice::CreateSampler（委托 PAL）
+//   Pipeline      IPipeline         │ IGfxDevice::CreatePipeline（委托 Platform）
+//   ShaderModule  IShaderModule     │ IGfxDevice::CreateShaderModule（委托 Platform）
+//   Sampler       ISampler          │ IGfxDevice::CreateSampler（委托 Platform）
 //   Fence         IFence            │ 帧执行 seam 内 WaitFence，不向 RenderGraph 暴露
 //   ExternalImage INativeImageImporter │ IGfxDevice::CreateNativeImageImporter（GFX-003 接入点）
 //
 // 硬约束（与 CORE-006 一致）：
-//   * 零平台类型：本文件只使用 base 层 + PAL 的 opaque 指针句柄，绝不出现任何
+//   * 零平台类型：本文件只使用 base 层 + Platform 的 opaque 指针句柄，绝不出现任何
 //     Metal/Vulkan/GLES/AVFoundation 专有类型，也不 include 任何平台头。
 //   * 零 FFmpeg 类型：不出现 AV* 类型、不 include 任何 ffmpeg 头。
 //   * 统一 base 类型：时间用 RationalTime、错误用 Status、长任务接受 CancelToken。
@@ -52,8 +52,8 @@
 #include "cq/base/concurrency.h"  // CancelToken
 #include "cq/base/status.h"       // Status / StatusCode
 #include "cq/base/rational_time.h"         // RationalTime
-#include "cq/pal/pal_common.h"        // opaque 句柄、IPalResource、PalPtr、平台无关枚举
-#include "cq/pal/gfx.h"           // PAL IGraphicsDevice 及其 12 概念（本层之下）
+#include "cq/platform/common.h"        // opaque 句柄、IPlatformResource、PlatformPtr、平台无关枚举
+#include "cq/platform/gfx.h"           // Platform IGraphicsDevice 及其 12 概念（本层之下）
 
 namespace cq {
 
@@ -64,35 +64,35 @@ namespace cq {
 // 不在此耦合具体 RenderGraph 类型（避免 GFX 反向依赖 RENDER 层）。
 struct FrameContext {
     RationalTime pts;  // 该帧在项目时间轴上的位置（RationalTime 网格，timescale=120000）
-    RenderTargetHandle target = nullptr;  // 当前 pass 输出目标（PAL 资源句柄）
+    RenderTargetHandle target = nullptr;  // 当前 pass 输出目标（Platform 资源句柄）
 };
 
 // ===========================================================================
 // 2. IGfxEncoder — 渲染编码器抽象（RenderNode 只绑定到此）
 // ===========================================================================
-// 与 PAL ICommandEncoder 方法一一对应，但位于 GFX 层。GFX 后端（未来 core 实现）
-// 把对 IGfxEncoder 的调用翻译到 PAL ICommandEncoder。这样 RenderNode（RENDER-001）
-// 不碰 PAL 编码器类型，保持 RenderGraph 平台无关。
-class IGfxEncoder : public IPalResource {
+// 与 Platform ICommandEncoder 方法一一对应，但位于 GFX 层。GFX 后端（未来 core 实现）
+// 把对 IGfxEncoder 的调用翻译到 Platform ICommandEncoder。这样 RenderNode（RENDER-001）
+// 不碰 Platform 编码器类型，保持 RenderGraph 平台无关。
+class IGfxEncoder : public IPlatformResource {
 public:
     virtual void SetPipeline(PipelineHandle pipeline) = 0;
     virtual void SetVertexBuffer(BufferHandle buffer, uint32_t slot) = 0;
     virtual void SetTexture(TextureHandle texture, uint32_t binding) = 0;
     virtual void SetSampler(SamplerHandle sampler, uint32_t binding) = 0;
-    // 视口矩形（像素，原点 = target 左上）。1:1 转发到 PAL ICommandEncoder::SetViewport，
-    // 语义（含「矩形可大于目标」「不调用 = 整目标」两条不变式）见 pal/gfx.h 同名方法。
+    // 视口矩形（像素，原点 = target 左上）。1:1 转发到 Platform ICommandEncoder::SetViewport，
+    // 语义（含「矩形可大于目标」「不调用 = 整目标」两条不变式）见 platform/gfx.h 同名方法。
     // 引入缘由（预览宽高比适配）与备选取舍见 ADR-0018。
     virtual void SetViewport(float x, float y, float width, float height) = 0;
     virtual void Draw(uint32_t vertex_count) = 0;
     virtual void DrawIndexed(uint32_t index_count) = 0;
     virtual void End() = 0;
 
-    // 底层 PAL 编码器（逃生口）。
+    // 底层 Platform 编码器（逃生口）。
     // 为什么需要：某些 pass（如 IBlitPass）**必然**由平台原生 shader 实现，按红线 #6
-    // 只能落在 PAL 层；而 PAL 不能反向依赖本层的 IGfxEncoder。故这类 pass 收 PAL 的
-    // ICommandEncoder，由本方法取出后传入（与 IGfxDevice::PalDevice() 同一套路）。
+    // 只能落在 Platform 层；而 Platform 不能反向依赖本层的 IGfxEncoder。故这类 pass 收 Platform 的
+    // ICommandEncoder，由本方法取出后传入（与 IGfxDevice::PlatformDevice() 同一套路）。
     // 日常 RenderNode 仍应只用上面的 GFX 方法，不要绕过。
-    virtual ICommandEncoder* PalEncoder() = 0;
+    virtual ICommandEncoder* PlatformEncoder() = 0;
 };
 
 // ===========================================================================
@@ -122,9 +122,9 @@ class ITexturePool {
 public:
     virtual ~ITexturePool() = default;
 
-    // 从池取一张符合 desc 的纹理；池命中则复用，未命中则经 PAL 真实分配并登记预算。
+    // 从池取一张符合 desc 的纹理；池命中则复用，未命中则经 Platform 真实分配并登记预算。
     // 任一预算维度（该厂商/张数）超限返回 kResourceExhausted 且不分配。
-    virtual Status Acquire(const TextureDesc& desc, PalPtr<ITexture>& out) = 0;
+    virtual Status Acquire(const TextureDesc& desc, PlatformPtr<ITexture>& out) = 0;
 
     // 归还（池可复用，不立即释放底层平台资源）。
     virtual void Release(ITexture* tex) = 0;
@@ -135,48 +135,48 @@ public:
 };
 
 // ===========================================================================
-// 5. IGfxDevice — 渲染后端门面（GFX-001 核心，位于 PAL 之上）
+// 5. IGfxDevice — 渲染后端门面（GFX-001 核心，位于 Platform 之上）
 // ===========================================================================
-// RenderGraph 消费的唯一 GFX 类型。持有一个 PAL 设备，向上提供：
+// RenderGraph 消费的唯一 GFX 类型。持有一个 Platform 设备，向上提供：
 //   * 受池管理的纹理取还（GFX-002 接入点）
-//   * 管线 / 着色器 / 采样器创建（委托 PAL 设备）
-//   * 原生图像导入（GFX-003 接入点，委托 PAL CreateNativeImageImporter）
-//   * 帧执行（把 RenderGraph 编码进 PAL 命令缓冲并提交，封装 CommandQueue/Buffer 生命周期）
+//   * 管线 / 着色器 / 采样器创建（委托 Platform 设备）
+//   * 原生图像导入（GFX-003 接入点，委托 Platform CreateNativeImageImporter）
+//   * 帧执行（把 RenderGraph 编码进 Platform 命令缓冲并提交，封装 CommandQueue/Buffer 生命周期）
 // 默认实现为跨平台 core 代码（RENDER-001 / GFX-002 阶段落地），本任务只定义接口。
 class IGfxDevice {
 public:
     virtual ~IGfxDevice() = default;
 
-    // 底层 PAL 设备（高级用法 / 平台特化 shader 直接走 PAL；日常 RenderGraph 不需要）。
-    virtual IGraphicsDevice* PalDevice() = 0;
+    // 底层 Platform 设备（高级用法 / 平台特化 shader 直接走 Platform；日常 RenderGraph 不需要）。
+    virtual IGraphicsDevice* PlatformDevice() = 0;
 
-    // 渲染目标（复用 PAL 概念，1:1 映射表 RenderTarget）。
+    // 渲染目标（复用 Platform 概念，1:1 映射表 RenderTarget）。
     virtual Status CreateRenderTarget(const RenderTargetDesc& desc,
-                                      PalPtr<IRenderTarget>& out) = 0;
+                                      PlatformPtr<IRenderTarget>& out) = 0;
 
-    // 受池管理的纹理（GFX-002 接入点）。未注入 ITexturePool 时直接走 PAL CreateTexture。
-    virtual Status AcquireTexture(const TextureDesc& desc, PalPtr<ITexture>& out) = 0;
+    // 受池管理的纹理（GFX-002 接入点）。未注入 ITexturePool 时直接走 Platform CreateTexture。
+    virtual Status AcquireTexture(const TextureDesc& desc, PlatformPtr<ITexture>& out) = 0;
     virtual void ReleaseTexture(ITexture* tex) = 0;
 
-    // 着色器 / 管线 / 采样器（委托 PAL）。GPU 内存该厂商数由 PAL ITexture::GetMemoryBytes
+    // 着色器 / 管线 / 采样器（委托 Platform）。GPU 内存该厂商数由 Platform ITexture::GetMemoryBytes
     // 暴露，供 ITexturePool 预算记账（不隐藏显存分配）。
     virtual Status CreateShaderModule(const ShaderModuleDesc& desc,
-                                      PalPtr<IShaderModule>& out) = 0;
-    virtual Status CreatePipeline(const PipelineDesc& desc, PalPtr<IPipeline>& out) = 0;
-    virtual Status CreateSampler(const SamplerDesc& desc, PalPtr<ISampler>& out) = 0;
+                                      PlatformPtr<IShaderModule>& out) = 0;
+    virtual Status CreatePipeline(const PipelineDesc& desc, PlatformPtr<IPipeline>& out) = 0;
+    virtual Status CreateSampler(const SamplerDesc& desc, PlatformPtr<ISampler>& out) = 0;
 
-    // 原生图像导入（GFX-003 接入点）。委托 PAL 设备 CreateNativeImageImporter，
-    // 导入出的纹理属于本设备上下文（Metal/Vulkan 要求，见 PAL 契约 §5.3）。
-    // 失败退化为 CPU 拷贝的语义在 PAL INativeImageImporter::Import 内表达（out_cpu_fallback）。
-    virtual Status CreateNativeImageImporter(PalPtr<INativeImageImporter>& out) = 0;
+    // 原生图像导入（GFX-003 接入点）。委托 Platform 设备 CreateNativeImageImporter，
+    // 导入出的纹理属于本设备上下文（Metal/Vulkan 要求，见 Platform 契约 §5.3）。
+    // 失败退化为 CPU 拷贝的语义在 Platform INativeImageImporter::Import 内表达（out_cpu_fallback）。
+    virtual Status CreateNativeImageImporter(PlatformPtr<INativeImageImporter>& out) = 0;
 
     // 执行一帧（flush 模式）：内部 CreateCommandBuffer/Encoder、调用
     // client.Encode 填充命令、提交并等待完成。长任务接受 CancelToken；取消返回 kCancelled。
-    // 此 seam 封装了 PAL CommandQueue/CommandBuffer/Fence 生命周期，RenderGraph 不感知。
+    // 此 seam 封装了 Platform CommandQueue/CommandBuffer/Fence 生命周期，RenderGraph 不感知。
     //
     // ⚠️ 线程：UIA-010 子步骤 5 起，预览渲染改由 `PreviewPump` 的泵线程调用本方法。
     //    它内部会触碰解码会话与原生纹理缓存，故**同一时刻只能有一个线程**在渲染，
-    //    且不得与任何直接调 PAL 编码器的路径并发。
+    //    且不得与任何直接调 Platform 编码器的路径并发。
     virtual Status RenderFrame(const FrameContext& ctx, IRenderTarget* target,
                                IFrameEncoderClient& client, const CancelToken& token) = 0;
 
@@ -187,13 +187,13 @@ public:
     // 「泵线程写完 → UI 线程读」的先后。未创建 / 后端不支持时返回 nullptr。
     virtual void* SharedQueueHandle() = 0;
 
-    // 注入纹理池（GFX-002）。不注入时 AcquireTexture 退化为 PAL 直分配。
+    // 注入纹理池（GFX-002）。不注入时 AcquireTexture 退化为 Platform 直分配。
     virtual void SetTexturePool(ITexturePool* pool) = 0;
 };
 
 // 工厂签名（实现由 RENDER-001 / GFX-002 阶段的 core/src/gfx 提供，本任务不实现）：
-// 用已构造的 PAL 设备构造 GFX 门面。out 为跨平台对象，由调用方以 unique_ptr 等持有。
-Status CreateGfxDevice(PalPtr<IGraphicsDevice>& pal_device, IGfxDevice*& out_device);
+// 用已构造的 Platform 设备构造 GFX 门面。out 为跨平台对象，由调用方以 unique_ptr 等持有。
+Status CreateGfxDevice(PlatformPtr<IGraphicsDevice>& platform_device, IGfxDevice*& out_device);
 
 }  // namespace cq
 

@@ -1,8 +1,8 @@
 // ChuanqiCut — 音频共享类型（AUDIO-001）
 //
-// core 层音频线的公共描述结构。与 PAL `PcmBuffer`（cq/pal/audio.h）字段对齐，
+// core 层音频线的公共描述结构。与 Platform `PcmBuffer`（cq/platform/audio.h）字段对齐，
 // 唯一差异：`data` 可变 —— 效果/混音节点（AUDIO-004/010）要原位写样本，
-// PAL 侧 const 语义由 PALA-030 在边界做 AudioBuffer↔PcmBuffer 平凡适配。
+// Platform 侧 const 语义由 PALA-030 在边界做 AudioBuffer↔PcmBuffer 平凡适配。
 //
 // 红线：
 //   * 零平台类型、零 FFmpeg 类型（头文件只含 C++ 基础类型与 cq 类型）。
@@ -15,7 +15,7 @@
 #include <cstdint>
 
 #include "cq/base/rational_time.h"      // RationalTime（已含 status.h）
-#include "cq/pal/pal_common.h"     // SampleFormat
+#include "cq/platform/common.h"     // SampleFormat
 
 namespace cq {
 

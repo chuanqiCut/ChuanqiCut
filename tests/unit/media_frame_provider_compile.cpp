@@ -2,9 +2,9 @@
 //
 // 目的：
 //   1. 证明 FrameProvider 头文件自洽——能独立编译，include 顺序无关。
-//   2. 证明零平台类型：只使用 base 层 + PAL 类型，编译单元内不出现任何平台类型
-//      （由 check_pal_headers.py 门禁 + 评审兜底，本 TU 固化事实）。
-//   3. 证明与 PAL IFrameProvider 的分层：FrameProvider 位于 PAL 之上，复用 PAL 的
+//   2. 证明零平台类型：只使用 base 层 + Platform 类型，编译单元内不出现任何平台类型
+//      （由 check_platform_headers.py 门禁 + 评审兜底，本 TU 固化事实）。
+//   3. 证明与 Platform IFrameProvider 的分层：FrameProvider 位于 Platform 之上，复用 Platform 的
 //      MediaSource / MediaFrame / lease 模型与 base 的 RationalTime / Status / CancelToken。
 //   4. 证明精确 seek 策略（SeekPolicy）与取帧请求（FrameRequest）契约成立。
 //   5. 为下游留的钩子接口（IFrameCache / IDecoderPool）抽象、DecoderHandle 为 opaque 指针。
@@ -17,9 +17,9 @@
 // —— MEDIA 层头 ——
 #include "cq/media/frame_provider.h"
 
-// PAL 与 base（FrameProvider 之下依赖）。
-#include "cq/pal/pal_common.h"
-#include "cq/pal/media.h"
+// Platform 与 base（FrameProvider 之下依赖）。
+#include "cq/platform/common.h"
+#include "cq/platform/media.h"
 #include "cq/base/rational_time.h"
 #include "cq/base/status.h"
 #include "cq/base/concurrency.h"
@@ -36,16 +36,16 @@ static_assert(std::is_same_v<SeekPolicy, decltype(FrameRequest{}.policy)>,
 static_assert(std::is_same_v<RationalTime, decltype(FrameRequest{}.at)>,
               "FrameRequest.at must be RationalTime, not double seconds");
 
-// ---- 3. FrameProvider 抽象、位于 PAL 之上、复用 PAL 类型 ----
+// ---- 3. FrameProvider 抽象、位于 Platform 之上、复用 Platform 类型 ----
 static_assert(!std::is_default_constructible_v<FrameProvider>,
               "FrameProvider is abstract, implemented by MEDIA-020 SystemFrameProvider");
-// 复用 PAL MediaSource / MediaFrame（lease 模型一致）。
+// 复用 Platform MediaSource / MediaFrame（lease 模型一致）。
 static_assert(std::is_same_v<Status (FrameProvider::*)(const MediaSource&),
                   decltype(&FrameProvider::Open)>,
-              "Open(MediaSource&) must reuse PAL MediaSource");
+              "Open(MediaSource&) must reuse Platform MediaSource");
 static_assert(std::is_same_v<void (FrameProvider::*)(MediaFrame&),
                   decltype(&FrameProvider::ReleaseFrame)>,
-              "ReleaseFrame(MediaFrame&) matches PAL lease model");
+              "ReleaseFrame(MediaFrame&) matches Platform lease model");
 
 // ---- 4. 精确 seek 语义签名：Seek(t, policy, token) ----
 static_assert(std::is_same_v<Status (FrameProvider::*)(const RationalTime&, SeekPolicy,

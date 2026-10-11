@@ -3,11 +3,11 @@
 // 目的：证明「给定素材 + 时间戳 → 拿到真实解码帧」这条链路是通的。
 // 走 **core 编排层**：SystemFrameProvider(PALA-010 demuxer + PALA-011 VideoToolboxDecoder)。
 //
-// ⚠️ 本文件最初的写法是直接用 PAL 的 `CreateFrameProvider` —— **那是错的**：
-//    该函数在 pal/media.h 里只有声明，Apple 后端并未实现（链接期
+// ⚠️ 本文件最初的写法是直接用 Platform 的 `CreateFrameProvider` —— **那是错的**：
+//    该函数在 platform/media.h 里只有声明，Apple 后端并未实现（链接期
 //    "symbol(s) not found for architecture x86_64"）。
 //    真正实现的是 core 层的 `IFrameDecoder`（VideoToolboxDecoder），
-//    所以要走 core 的 SystemFrameProvider 编排，而不是 PAL 的工厂。
+//    所以要走 core 的 SystemFrameProvider 编排，而不是 Platform 的工厂。
 //
 // 验收：不只是"调用成功"，而是帧本身可验证 ——
 //   * 类型是视频、宽高非零、image 句柄非空（可直接零拷贝导入 GPU）
@@ -21,7 +21,7 @@
 #include "cq/base/status.h"
 #include "cq/base/rational_time.h"
 #include "cq/media/system_frame_provider.h"
-#include "cq/pal/media.h"
+#include "cq/platform/media.h"
 #include "media_decode.h"  // PALA-011 VideoToolboxDecoder（仅 Apple TU 可见）
 
 namespace {
@@ -93,7 +93,7 @@ int main() {
     src.path_len = path.size();
 
     // PALA-010：解封装
-    cq::PalPtr<cq::IMediaDemuxer> demuxer;
+    cq::PlatformPtr<cq::IMediaDemuxer> demuxer;
     if (!cq::CreateMediaDemuxer(src, demuxer).IsOk() || !demuxer) {
         std::printf("  FAIL: CreateMediaDemuxer 失败\n");
         std::printf("\nFAILED: 1 checks, 1 failures\n");

@@ -1,6 +1,6 @@
 // ChuanqiCut — GFX 设备实现（GFX-002 最小落地）
 //
-// 范围：**只**实现 IGfxDevice / IGfxEncoder，直连 PAL，**不引入 RenderGraph**。
+// 范围：**只**实现 IGfxDevice / IGfxEncoder，直连 Platform，**不引入 RenderGraph**。
 //
 // 为什么不做 RenderGraph（RENDER-001）：
 //   预览只需要"渲染一帧"。RenderGraph 的节点图 / 依赖分析 / pass 调度是更重的机制，
@@ -8,11 +8,11 @@
 //   届时本文件的 RenderFrame 应改为走 RenderGraph，IGfxDevice 接口不变。
 //
 // 硬约束（与 gfx_device.h 一致）：
-//   * 零平台类型：只调 PAL 接口，不出现 Metal/Vulkan/GLES 类型。
+//   * 零平台类型：只调 Platform 接口，不出现 Metal/Vulkan/GLES 类型。
 //   * 内核禁用异常：错误一律 Status。
 //
 // 尚未实现（明确留白，不要假装已有）：
-//   * ITexturePool 池化（GFX-002 的一部分） —— 未注入池时 AcquireTexture 直连 PAL，
+//   * ITexturePool 池化（GFX-002 的一部分） —— 未注入池时 AcquireTexture 直连 Platform，
 //     不做任何预算记账。注入后才走池。
 
 #include "cq/gfx/gfx_device.h"
@@ -23,9 +23,9 @@ namespace cq {
 namespace {
 
 // ===========================================================================
-// IGfxEncoder 实现：1:1 转发到 PAL ICommandEncoder
+// IGfxEncoder 实现：1:1 转发到 Platform ICommandEncoder
 // ===========================================================================
-// 生命周期由 RenderFrame 内的 PalPtr<ICommandEncoder> 持有，本类**不拥有**它。
+// 生命周期由 RenderFrame 内的 PlatformPtr<ICommandEncoder> 持有，本类**不拥有**它。
 class GfxEncoderImpl final : public IGfxEncoder {
 public:
     explicit GfxEncoderImpl(ICommandEncoder* enc) : enc_(enc) {}
@@ -47,7 +47,7 @@ public:
     void DrawIndexed(uint32_t index_count) override { enc_->DrawIndexed(index_count); }
 
     // End 幂等：client 可能自己调 End，RenderFrame 收尾时也会调一次。
-    // PAL 层的重复 End 语义未定义，故在这里兜底，避免出现"取决于调用方"的行为。
+    // Platform 层的重复 End 语义未定义，故在这里兜底，避免出现"取决于调用方"的行为。
     void End() override {
         if (!ended_) {
             enc_->End();
@@ -55,7 +55,7 @@ public:
         }
     }
 
-    ICommandEncoder* PalEncoder() override { return enc_; }
+    ICommandEncoder* PlatformEncoder() override { return enc_; }
 
     void Destroy() override {}
 
@@ -69,13 +69,13 @@ private:
 // ===========================================================================
 class GfxDeviceImpl final : public IGfxDevice {
 public:
-    explicit GfxDeviceImpl(PalPtr<IGraphicsDevice> pal) : pal_(std::move(pal)) {}
+    explicit GfxDeviceImpl(PlatformPtr<IGraphicsDevice> platform) : platform_(std::move(platform)) {}
 
-    IGraphicsDevice* PalDevice() override { return pal_.get(); }
+    IGraphicsDevice* PlatformDevice() override { return platform_.get(); }
 
     Status CreateRenderTarget(const RenderTargetDesc& desc,
-                              PalPtr<IRenderTarget>& out) override {
-        return pal_->CreateRenderTarget(desc, out);
+                              PlatformPtr<IRenderTarget>& out) override {
+        return platform_->CreateRenderTarget(desc, out);
     }
 
     // 命令队列**按设备复用**（UIA-010 子步骤 5 改）。
@@ -86,7 +86,7 @@ public:
     //       跨队列的资源先后又得显式同步。复用之后，顺序由 commit 顺序天然保证。
     Status EnsureQueue() {
         if (queue_) return Status::Ok();
-        return pal_->CreateCommandQueue(queue_);
+        return platform_->CreateCommandQueue(queue_);
     }
 
     void* SharedQueueHandle() override {
@@ -94,10 +94,10 @@ public:
         return queue_->NativeHandle();
     }
 
-    Status AcquireTexture(const TextureDesc& desc, PalPtr<ITexture>& out) override {
-        // 未注入池 → 直连 PAL。**不做预算记账**（池化与预算属 GFX-002 余下部分）。
+    Status AcquireTexture(const TextureDesc& desc, PlatformPtr<ITexture>& out) override {
+        // 未注入池 → 直连 Platform。**不做预算记账**（池化与预算属 GFX-002 余下部分）。
         if (pool_ != nullptr) return pool_->Acquire(desc, out);
-        return pal_->CreateTexture(desc, out);
+        return platform_->CreateTexture(desc, out);
     }
 
     void ReleaseTexture(ITexture* tex) override {
@@ -110,17 +110,17 @@ public:
     }
 
     Status CreateShaderModule(const ShaderModuleDesc& desc,
-                              PalPtr<IShaderModule>& out) override {
-        return pal_->CreateShaderModule(desc, out);
+                              PlatformPtr<IShaderModule>& out) override {
+        return platform_->CreateShaderModule(desc, out);
     }
-    Status CreatePipeline(const PipelineDesc& desc, PalPtr<IPipeline>& out) override {
-        return pal_->CreatePipeline(desc, out);
+    Status CreatePipeline(const PipelineDesc& desc, PlatformPtr<IPipeline>& out) override {
+        return platform_->CreatePipeline(desc, out);
     }
-    Status CreateSampler(const SamplerDesc& desc, PalPtr<ISampler>& out) override {
-        return pal_->CreateSampler(desc, out);
+    Status CreateSampler(const SamplerDesc& desc, PlatformPtr<ISampler>& out) override {
+        return platform_->CreateSampler(desc, out);
     }
-    Status CreateNativeImageImporter(PalPtr<INativeImageImporter>& out) override {
-        return pal_->CreateNativeImageImporter(out);
+    Status CreateNativeImageImporter(PlatformPtr<INativeImageImporter>& out) override {
+        return platform_->CreateNativeImageImporter(out);
     }
 
     Status RenderFrame(const FrameContext& ctx, IRenderTarget* target,
@@ -132,11 +132,11 @@ public:
         Status st = EnsureQueue();
         if (!st.IsOk()) return st;
 
-        PalPtr<ICommandBuffer> cb;
+        PlatformPtr<ICommandBuffer> cb;
         st = queue_->CreateCommandBuffer(cb);
         if (!st.IsOk()) return st;
 
-        PalPtr<ICommandEncoder> enc;
+        PlatformPtr<ICommandEncoder> enc;
         st = cb->CreateEncoder(enc);
         if (!st.IsOk()) return st;
 
@@ -162,8 +162,8 @@ public:
     void SetTexturePool(ITexturePool* pool) override { pool_ = pool; }
 
 private:
-    PalPtr<IGraphicsDevice> pal_;
-    PalPtr<ICommandQueue> queue_;  // 复用（UIA-010 子步骤 5）；同时供 UI 侧 blit 共享
+    PlatformPtr<IGraphicsDevice> platform_;
+    PlatformPtr<ICommandQueue> queue_;  // 复用（UIA-010 子步骤 5）；同时供 UI 侧 blit 共享
     ITexturePool* pool_ = nullptr;
 
     // 清屏色。IGfxDevice 接口没有清屏色参数（GFX-001 定接口时未考虑），
@@ -173,13 +173,13 @@ private:
 
 }  // namespace
 
-Status CreateGfxDevice(PalPtr<IGraphicsDevice>& pal_device, IGfxDevice*& out_device) {
-    if (!pal_device) return Status(StatusCode::kInvalidArgument);
+Status CreateGfxDevice(PlatformPtr<IGraphicsDevice>& platform_device, IGfxDevice*& out_device) {
+    if (!platform_device) return Status(StatusCode::kInvalidArgument);
 
-    // 接管 PAL 设备所有权：调用方传进来的 PalPtr 会被移空，
-    // 避免"GFX 设备还活着但底层 PAL 设备已被销毁"的悬垂。
+    // 接管 Platform 设备所有权：调用方传进来的 PlatformPtr 会被移空，
+    // 避免"GFX 设备还活着但底层 Platform 设备已被销毁"的悬垂。
     // 内核 -fno-exceptions：分配必须 nothrow，失败按资源不足返回（CODESTYLE §2）。
-    out_device = new (std::nothrow) GfxDeviceImpl(std::move(pal_device));
+    out_device = new (std::nothrow) GfxDeviceImpl(std::move(platform_device));
     if (!out_device) return Status(StatusCode::kResourceExhausted);
     return Status::Ok();
 }

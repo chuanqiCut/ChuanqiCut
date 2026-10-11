@@ -54,7 +54,7 @@
 
 #include "cq/base/status.h"
 #include "cq/base/rational_time.h"
-#include "cq/pal/pal_common.h"  // TextureHandle
+#include "cq/platform/common.h"  // TextureHandle
 #include "cq/preview/preview_frame_source.h"
 
 namespace cq {

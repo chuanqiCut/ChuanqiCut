@@ -22,7 +22,7 @@
 
 #include "cq/base/status.h"
 #include "cq/base/rational_time.h"
-#include "cq/pal/media.h"
+#include "cq/platform/media.h"
 #include "media_decode.h"
 #include "media_encode.h"
 
@@ -96,7 +96,7 @@ int main() {
     src.path_len = src_path.size();
 
     // ---- 真实 PALA-010 解封装 + PALA-011 硬解 ----
-    cq::PalPtr<cq::IMediaDemuxer> demuxer;
+    cq::PlatformPtr<cq::IMediaDemuxer> demuxer;
     cq::Status s = cq::CreateMediaDemuxer(src, demuxer);
     Check(s.IsOk() && demuxer, "PALA-010 CreateMediaDemuxer 打开成功");
     if (!demuxer) {
@@ -120,7 +120,7 @@ int main() {
                 decoder.IsHardwareAccelerated() ? "YES" : "NO(软解回退)");
 
     // ---- 打开 AppleVideoEncoder ----
-    const std::string out_path = "/tmp/cq_pala_encode_out.mp4";
+    const std::string out_path = "/tmp/cq_platform_apple_encode_out.mp4";
     cq::EncodeConfig cfg;
     cfg.width = info.width;
     cfg.height = info.height;
@@ -240,7 +240,7 @@ int main() {
         cq::MediaSource o_src;
         o_src.path = out_path.c_str();
         o_src.path_len = out_path.size();
-        cq::PalPtr<cq::IMediaDemuxer> o_demux;
+        cq::PlatformPtr<cq::IMediaDemuxer> o_demux;
         cq::Status os = cq::CreateMediaDemuxer(o_src, o_demux);
         cq::StreamInfo o_info{};
         if (os.IsOk()) o_demux->GetStreamInfo(0, o_info);
@@ -288,7 +288,7 @@ int main() {
     // ---- 取消路径冒烟（独立用例）：打开后 Cancel 应删除半成品文件 ----
     std::printf("\n[取消路径] 打开后 Cancel 应安全中止并删除半成品文件\n");
     {
-        const std::string cancel_path = "/tmp/cq_pala_encode_cancel.mp4";
+        const std::string cancel_path = "/tmp/cq_platform_apple_encode_cancel.mp4";
         std::remove(cancel_path.c_str());
         cq::EncodeConfig ccfg = cfg;
         cq::AppleVideoEncoder cenc;

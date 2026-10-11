@@ -4,7 +4,7 @@
 // 预览拿到 pts 后需要「asset_id → 媒体源」才能去解码。
 //
 // ⚠️ 为什么必须自己持有路径字符串：
-//    PAL 的 `MediaSource` 只存 `const char* path` **裸指针**，不拥有内存。
+//    Platform 的 `MediaSource` 只存 `const char* path` **裸指针**，不拥有内存。
 //    若本表直接存 MediaSource 而路径由调用方持有，调用方那边一释放就是悬垂指针。
 //    故这里用堆上的 shared_ptr<string> 保管 —— 且**必须放堆上**：
 //    若放栈/对象内，unordered_map 重哈希移动 Entry 时，短字符串 SSO 缓冲区
@@ -30,7 +30,7 @@
 #include <vector>
 
 #include "cq/base/status.h"
-#include "cq/pal/media.h"
+#include "cq/platform/media.h"
 
 namespace cq {
 

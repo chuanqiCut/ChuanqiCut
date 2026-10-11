@@ -30,14 +30,14 @@
 #include "cq/base/status.h"
 #include "cq/base/rational_time.h"                        // RationalTime
 #include "cq/gfx/gfx_device.h"                   // IGfxDevice / IGfxEncoder
-#include "cq/pal/gfx.h"                          // IBlitPass（PAL 层，平台原生 shader 实现）
+#include "cq/platform/gfx.h"                          // IBlitPass（Platform 层，平台原生 shader 实现）
 #include "cq/media/asset_registry.h"             // AssetRegistry
 #include "cq/media/frame_provider.h"             // FrameProvider
 #include "cq/media/frame_provider_factory.h"     // IFrameProviderFactory
 #include "cq/model/model_snapshot.h"             // ModelSnapshot / IModelSnapshotProvider
 #include "cq/model/timeline.h"                   // Timeline
-#include "cq/pal/pal_common.h"                       // TextureHandle / TextureFormat / PalPtr
-#include "cq/pal/gfx.h"                          // IRenderTarget / INativeImageImporter
+#include "cq/platform/common.h"                       // TextureHandle / TextureFormat / PlatformPtr
+#include "cq/platform/gfx.h"                          // IRenderTarget / INativeImageImporter
 #include "cq/preview/preview_frame_source.h"      // IPreviewFrameSource（预览泵的接缝）
 
 namespace cq {
@@ -171,8 +171,8 @@ private:
     IModelSnapshotProvider* snapshots_ = nullptr;
     Config cfg_{};
 
-    PalPtr<INativeImageImporter> importer_;
-    PalPtr<IRenderTarget> target_;
+    PlatformPtr<INativeImageImporter> importer_;
+    PlatformPtr<IRenderTarget> target_;
 
     // asset_id → 已打开的 FrameProvider + 打开时的素材路径。
     // 路径与快照素材表不一致 = 素材被重注册替换 → 重建 provider（关闭旧解码会话）。

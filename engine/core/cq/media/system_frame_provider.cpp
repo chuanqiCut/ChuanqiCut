@@ -10,13 +10,13 @@
 namespace cq {
 
 std::unique_ptr<FrameProvider> CreateSystemFrameProvider(
-    PalPtr<IMediaDemuxer> demuxer, IFrameDecoder* decoder) {
+    PlatformPtr<IMediaDemuxer> demuxer, IFrameDecoder* decoder) {
     return std::unique_ptr<FrameProvider>(
         new SystemFrameProvider(std::move(demuxer), decoder));
 }
 
 std::unique_ptr<FrameProvider> CreateSystemFrameProvider(
-    PalPtr<IMediaDemuxer> demuxer, std::unique_ptr<IFrameDecoder> owned_decoder) {
+    PlatformPtr<IMediaDemuxer> demuxer, std::unique_ptr<IFrameDecoder> owned_decoder) {
     IFrameDecoder* raw = owned_decoder.get();
     auto provider = std::unique_ptr<FrameProvider>(
         new SystemFrameProvider(std::move(demuxer), raw));

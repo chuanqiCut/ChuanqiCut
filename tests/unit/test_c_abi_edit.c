@@ -1,7 +1,7 @@
 /* ChuanqiCut — 片段编辑与撤销 C ABI 验收（UIA-005）
  *
  * 真正的 C 翻译单元（同 test_c_abi_session.c）：cq_sdk.h 混进任何 C++ 类型，
- * 本 TU 立即编译失败。只链 cq_core —— 新 ABI 不得引入 PAL 依赖（ADR-0011）。
+ * 本 TU 立即编译失败。只链 cq_core —— 新 ABI 不得引入 Platform 依赖（ADR-0011）。
  *
  * 同步手法（重要，别退化成 sleep）：
  *   提交是**异步**的（Ok = 已入队），校验在 session 线程发生 —— 而「校验

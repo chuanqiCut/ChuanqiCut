@@ -18,8 +18,8 @@
 #include "cq/base/concurrency.h"  // CancelToken
 #include "cq/base/status.h"
 #include "cq/base/rational_time.h"  // RationalTime
-#include "cq/pal/pal_common.h"  // TextureHandle
-#include "cq/pal/gfx.h"  // IRenderTarget
+#include "cq/platform/common.h"  // TextureHandle
+#include "cq/platform/gfx.h"  // IRenderTarget
 
 namespace cq {
 

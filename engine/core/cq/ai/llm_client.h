@@ -1,8 +1,8 @@
 // ChuanqiCut — LLM 客户端抽象（AIEDIT-001 冻结；实现 AIEDIT-004）
 //
 // 分层边界（ADR-0020 决策 2）：本接口在 core（三端共享），传输实现走
-// pal/<platform>/net（Apple = URLSession 原生，不引第三方）；core 只见
-// cq/pal/net.h 的 INetTransport 抽象。协议收敛 OpenAI-compatible
+// platform/<platform>/net（Apple = URLSession 原生，不引第三方）；core 只见
+// cq/platform/net.h 的 INetTransport 抽象。协议收敛 OpenAI-compatible
 // chat/completions（决策 5）——同一客户端代码可切供应商，只换 LlmConfig。
 //
 // key 不落盘明文：LlmConfig.api_key_ref 是**引用**（如 iOS Keychain 条目），
@@ -24,8 +24,8 @@
 
 #include "cq/base/concurrency.h"  // CancelToken
 #include "cq/base/status.h"
-#include "cq/pal/net.h"
-#include "cq/pal/pal_common.h"
+#include "cq/platform/net.h"
+#include "cq/platform/common.h"
 
 namespace cq {
 
@@ -72,9 +72,9 @@ public:
 };
 
 // 工厂：注入传输与配置。config 非法（endpoint/model 空）→ kInvalidArgument。
-// transport 以 PalPtr 移入（客户端独占其生命周期）。
-Status CreateLlmClient(const LlmConfig& config, PalPtr<pal::INetTransport> transport,
-                       PalPtr<ILlmClient>& out_client);
+// transport 以 PlatformPtr 移入（客户端独占其生命周期）。
+Status CreateLlmClient(const LlmConfig& config, PlatformPtr<platform::INetTransport> transport,
+                       PlatformPtr<ILlmClient>& out_client);
 
 }  // namespace cq
 

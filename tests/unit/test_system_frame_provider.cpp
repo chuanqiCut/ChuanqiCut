@@ -20,8 +20,8 @@
 #include "cq/base/status.h"
 #include "cq/base/rational_time.h"
 #include "cq/media/system_frame_provider.h"
-#include "cq/pal/pal_common.h"
-#include "cq/pal/media.h"
+#include "cq/platform/common.h"
+#include "cq/platform/media.h"
 
 namespace {
 
@@ -222,7 +222,7 @@ int main() {
     MockDecoder decoder(MakeSpec());
     cq::MediaSource src{};
     auto provider = cq::CreateSystemFrameProvider(
-        cq::PalPtr<cq::IMediaDemuxer>(demuxer.release()), &decoder);
+        cq::PlatformPtr<cq::IMediaDemuxer>(demuxer.release()), &decoder);
     cq::Status s = provider->Open(src);
     Check(s.IsOk(), "Open 成功（demuxer + decoder 注入）");
     if (!s.IsOk()) {

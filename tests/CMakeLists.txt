@@ -85,13 +85,13 @@ add_test(NAME core_concurrency COMMAND cq_tests_core_concurrency)
 
 # ---- CORE-007：能力查询内核侧（注入 / 分发 / 未注入返回 kNo）----
 # ⚠️ 存在的理由：CORE-006 冻结头文件后，SetCapabilitiesBackend / QueryCapability
-#    长期只有声明无定义，而 pal_headers_compile.cpp 的 static_assert 是编译期检查、
+#    长期只有声明无定义，而 platform_headers_compile.cpp 的 static_assert 是编译期检查、
 #    不链接 —— CTest 一直全绿也看不出接口是断的。本用例**链接并运行**这两个函数。
 #    平台无关：用 FixedBackend 注入固定值，不依赖任何真实设备能力。
 add_executable(cq_tests_core_capabilities
     unit/test_capabilities.cpp)
 target_include_directories(cq_tests_core_capabilities PRIVATE
-    ${CMAKE_SOURCE_DIR}/engine/core/include)
+    ${CMAKE_SOURCE_DIR}/engine/core)
 target_link_libraries(cq_tests_core_capabilities PRIVATE cq_core)
 cq_require_cxx20(cq_tests_core_capabilities)
 apply_cq_warnings(cq_tests_core_capabilities)
@@ -104,7 +104,7 @@ add_test(NAME core_capabilities COMMAND cq_tests_core_capabilities)
 add_executable(cq_tests_core_thread_model
     unit/test_thread_model.cpp)
 target_include_directories(cq_tests_core_thread_model PRIVATE
-    ${CMAKE_SOURCE_DIR}/engine/core/include)
+    ${CMAKE_SOURCE_DIR}/engine/core)
 target_link_libraries(cq_tests_core_thread_model PRIVATE cq_core)
 cq_require_cxx20(cq_tests_core_thread_model)
 apply_cq_warnings(cq_tests_core_thread_model)
@@ -118,7 +118,7 @@ add_test(NAME core_thread_model COMMAND cq_tests_core_thread_model)
 add_executable(cq_tests_core_editor_session
     unit/test_editor_session.cpp)
 target_include_directories(cq_tests_core_editor_session PRIVATE
-    ${CMAKE_SOURCE_DIR}/engine/core/include)
+    ${CMAKE_SOURCE_DIR}/engine/core)
 target_link_libraries(cq_tests_core_editor_session PRIVATE cq_core)
 cq_require_cxx20(cq_tests_core_editor_session)
 apply_cq_warnings(cq_tests_core_editor_session)
@@ -131,19 +131,19 @@ add_executable(cq_tests_c_abi
     unit/test_c_abi.c)
 set_target_properties(cq_tests_c_abi PROPERTIES LINKER_LANGUAGE CXX)
 target_include_directories(cq_tests_c_abi PRIVATE
-    ${CMAKE_SOURCE_DIR}/engine/core/include)
+    ${CMAKE_SOURCE_DIR}/engine/core)
 target_link_libraries(cq_tests_c_abi PRIVATE cq_core)
 add_test(NAME c_abi COMMAND cq_tests_c_abi)
 
 # ---- UIA-009 子步骤 1：会话级模型 C ABI（素材表 / 时间线 / 查询快照）----
-# 只链 cq_core：新 ABI 全部落在内建模型状态上，**不得**引入 PAL 依赖 ——
-# 这是 ADR-0011 隔离规则的回归守卫之一（session TU 不碰 PAL 工厂）。
+# 只链 cq_core：新 ABI 全部落在内建模型状态上，**不得**引入 Platform 依赖 ——
+# 这是 ADR-0011 隔离规则的回归守卫之一（session TU 不碰 Platform 工厂）。
 # 异步提交语义：测试靠「轮询快照版本 + 查询」等最终一致。
 add_executable(cq_tests_c_abi_session
     unit/test_c_abi_session.c)
 set_target_properties(cq_tests_c_abi_session PROPERTIES LINKER_LANGUAGE CXX)
 target_include_directories(cq_tests_c_abi_session PRIVATE
-    ${CMAKE_SOURCE_DIR}/engine/core/include)
+    ${CMAKE_SOURCE_DIR}/engine/core)
 target_link_libraries(cq_tests_c_abi_session PRIVATE cq_core)
 add_test(NAME c_abi_session COMMAND cq_tests_c_abi_session)
 
@@ -154,28 +154,28 @@ add_executable(cq_tests_c_abi_edit
     unit/test_c_abi_edit.c)
 set_target_properties(cq_tests_c_abi_edit PROPERTIES LINKER_LANGUAGE CXX)
 target_include_directories(cq_tests_c_abi_edit PRIVATE
-    ${CMAKE_SOURCE_DIR}/engine/core/include)
+    ${CMAKE_SOURCE_DIR}/engine/core)
 target_link_libraries(cq_tests_c_abi_edit PRIVATE cq_core)
 add_test(NAME c_abi_edit COMMAND cq_tests_c_abi_edit)
 
 # ---- UIA-010：播放时钟（时刻 = 墙钟的函数，非帧数累加；帧网格量化）----
-# 平台无关（只用 steady_clock + 有理数），不依赖任何 PAL / Metal。
+# 平台无关（只用 steady_clock + 有理数），不依赖任何 Platform / Metal。
 add_executable(cq_tests_core_player_clock
     unit/test_player_clock.cpp)
 target_include_directories(cq_tests_core_player_clock PRIVATE
-    ${CMAKE_SOURCE_DIR}/engine/core/include)
+    ${CMAKE_SOURCE_DIR}/engine/core)
 target_link_libraries(cq_tests_core_player_clock PRIVATE cq_core)
 cq_require_cxx20(cq_tests_core_player_clock)
 apply_cq_warnings(cq_tests_core_player_clock)
 add_test(NAME core_player_clock COMMAND cq_tests_core_player_clock)
 
 # ---- UIA-010 子步骤 5：预览取帧泵（并发语义；假帧源，只链 cq_core）----
-# 只链 cq_core：泵是平台无关的（std::thread + mutex + condvar），不需要 PAL 后端，
-# 故本用例在没有 Metal / 硬解后端的环境里也能跑 —— 这条是刻意的，别顺手加 cq_pal_apple。
+# 只链 cq_core：泵是平台无关的（std::thread + mutex + condvar），不需要 Platform 后端，
+# 故本用例在没有 Metal / 硬解后端的环境里也能跑 —— 这条是刻意的，别顺手加 cq_platform_apple。
 add_executable(cq_tests_core_preview_pump
     unit/test_preview_pump.cpp)
 target_include_directories(cq_tests_core_preview_pump PRIVATE
-    ${CMAKE_SOURCE_DIR}/engine/core/include)
+    ${CMAKE_SOURCE_DIR}/engine/core)
 target_link_libraries(cq_tests_core_preview_pump PRIVATE cq_core)
 cq_require_cxx20(cq_tests_core_preview_pump)
 apply_cq_warnings(cq_tests_core_preview_pump)
@@ -186,30 +186,30 @@ add_executable(cq_tests_c_abi_player
     unit/test_c_abi_player.c)
 set_target_properties(cq_tests_c_abi_player PROPERTIES LINKER_LANGUAGE CXX)
 target_include_directories(cq_tests_c_abi_player PRIVATE
-    ${CMAKE_SOURCE_DIR}/engine/core/include)
+    ${CMAKE_SOURCE_DIR}/engine/core)
 target_link_libraries(cq_tests_c_abi_player PRIVATE cq_core)
 add_test(NAME c_abi_player COMMAND cq_tests_c_abi_player)
 
-# ---- CORE-006：PAL 头文件编译期自洽验证（零平台类型 / 零 FFmpeg 类型 / base 类型契约）----
-# 仅包含 PAL 头文件 + static_assert，不链接任何 PAL 实现（接口冻结阶段无实现）。
+# ---- CORE-006：Platform 头文件编译期自洽验证（零平台类型 / 零 FFmpeg 类型 / base 类型契约）----
+# 仅包含 Platform 头文件 + static_assert，不链接任何 Platform 实现（接口冻结阶段无实现）。
 # 证明：头文件自洽（include 顺序无关）、跨层资源均为 opaque 指针（零平台类型）、
-# 时间用 RationalTime、错误用 Status、长任务接受 CancelToken、资源用 PalPtr 生命周期。
-add_executable(cq_tests_pal_headers_compile
-    unit/pal_headers_compile.cpp)
-# 不链接 cq_core：本 TU 只验证 core/include 下的接口头自洽，无需内核实现。
-# 但需指向内核头目录，使 "cq/pal/*.h" 可被找到。
-target_include_directories(cq_tests_pal_headers_compile PRIVATE
-    ${CMAKE_SOURCE_DIR}/engine/core/include)
-cq_require_cxx20(cq_tests_pal_headers_compile)
-apply_cq_warnings(cq_tests_pal_headers_compile)
-add_test(NAME pal_headers_compile COMMAND cq_tests_pal_headers_compile)
+# 时间用 RationalTime、错误用 Status、长任务接受 CancelToken、资源用 PlatformPtr 生命周期。
+add_executable(cq_tests_platform_headers_compile
+    unit/platform_headers_compile.cpp)
+# 不链接 cq_core：本 TU 只验证 core/cq 下的接口头自洽，无需内核实现。
+# 但需指向内核头目录，使 "cq/platform/*.h" 可被找到。
+target_include_directories(cq_tests_platform_headers_compile PRIVATE
+    ${CMAKE_SOURCE_DIR}/engine/core)
+cq_require_cxx20(cq_tests_platform_headers_compile)
+apply_cq_warnings(cq_tests_platform_headers_compile)
+add_test(NAME platform_headers_compile COMMAND cq_tests_platform_headers_compile)
 
 # ---- GFX-001：GFX 层头文件编译期自洽验证（零平台类型 / 分层边界 / base 类型契约）----
 # 仅包含 cq/gfx/*.h + static_assert，不链接实现（接口定义阶段无实现）。
 add_executable(cq_tests_gfx_headers_compile
     unit/gfx_headers_compile.cpp)
 target_include_directories(cq_tests_gfx_headers_compile PRIVATE
-    ${CMAKE_SOURCE_DIR}/engine/core/include)
+    ${CMAKE_SOURCE_DIR}/engine/core)
 cq_require_cxx20(cq_tests_gfx_headers_compile)
 apply_cq_warnings(cq_tests_gfx_headers_compile)
 add_test(NAME gfx_headers_compile COMMAND cq_tests_gfx_headers_compile)
@@ -219,7 +219,7 @@ add_test(NAME gfx_headers_compile COMMAND cq_tests_gfx_headers_compile)
 add_executable(cq_tests_media_frame_provider_compile
     unit/media_frame_provider_compile.cpp)
 target_include_directories(cq_tests_media_frame_provider_compile PRIVATE
-    ${CMAKE_SOURCE_DIR}/engine/core/include)
+    ${CMAKE_SOURCE_DIR}/engine/core)
 cq_require_cxx20(cq_tests_media_frame_provider_compile)
 apply_cq_warnings(cq_tests_media_frame_provider_compile)
 add_test(NAME media_frame_provider_compile COMMAND cq_tests_media_frame_provider_compile)
@@ -231,7 +231,7 @@ add_test(NAME media_frame_provider_compile COMMAND cq_tests_media_frame_provider
 add_executable(cq_tests_media_system_frame_provider
     unit/test_system_frame_provider.cpp)
 target_include_directories(cq_tests_media_system_frame_provider PRIVATE
-    ${CMAKE_SOURCE_DIR}/engine/core/include)
+    ${CMAKE_SOURCE_DIR}/engine/core)
 target_link_libraries(cq_tests_media_system_frame_provider PRIVATE cq_core)
 cq_require_cxx20(cq_tests_media_system_frame_provider)
 apply_cq_warnings(cq_tests_media_system_frame_provider)
@@ -245,7 +245,7 @@ add_test(NAME media_system_frame_provider COMMAND cq_tests_media_system_frame_pr
 add_executable(cq_tests_media_sequential_acquire
     unit/test_media_sequential_acquire.cpp)
 target_include_directories(cq_tests_media_sequential_acquire PRIVATE
-    ${CMAKE_SOURCE_DIR}/engine/core/include)
+    ${CMAKE_SOURCE_DIR}/engine/core)
 target_link_libraries(cq_tests_media_sequential_acquire PRIVATE cq_core)
 cq_require_cxx20(cq_tests_media_sequential_acquire)
 apply_cq_warnings(cq_tests_media_sequential_acquire)
@@ -257,7 +257,7 @@ add_test(NAME media_sequential_acquire COMMAND cq_tests_media_sequential_acquire
 add_executable(cq_tests_media_cache
     unit/test_cache.cpp)
 target_include_directories(cq_tests_media_cache PRIVATE
-    ${CMAKE_SOURCE_DIR}/engine/core/include)
+    ${CMAKE_SOURCE_DIR}/engine/core)
 target_link_libraries(cq_tests_media_cache PRIVATE cq_core)
 cq_require_cxx20(cq_tests_media_cache)
 apply_cq_warnings(cq_tests_media_cache)
@@ -269,68 +269,68 @@ add_test(NAME media_cache COMMAND cq_tests_media_cache)
 add_executable(cq_tests_media_decoder_pool
     unit/test_decoder_pool.cpp)
 target_include_directories(cq_tests_media_decoder_pool PRIVATE
-    ${CMAKE_SOURCE_DIR}/engine/core/include)
+    ${CMAKE_SOURCE_DIR}/engine/core)
 target_link_libraries(cq_tests_media_decoder_pool PRIVATE cq_core)
 cq_require_cxx20(cq_tests_media_decoder_pool)
 apply_cq_warnings(cq_tests_media_decoder_pool)
 add_test(NAME media_decoder_pool COMMAND cq_tests_media_decoder_pool)
 
-# ---- CORE-006：PAL 头文件「零平台类型 / 零 FFmpeg 类型」静态门禁 ----
+# ---- CORE-006：Platform 头文件「零平台类型 / 零 FFmpeg 类型」静态门禁 ----
 # 纯 stdlib python3 脚本：先剥离注释与字符串字面量（避免评论/字符串误报），
 # 再匹配平台类型 / 平台头文件 / FFmpeg 类型 / throw / 裸 double（time 统一用 RationalTime）。
 # 违规时非零退出（EXIT=1）。已自测证明有效：临时插入 jobject 必被捕获，回退后恢复绿。
-# 脚本默认扫描 core/include/cq/pal（按脚本自身位置做路径推导），故无需额外参数。
+# 脚本默认扫描 engine/core/cq/platform（按脚本自身位置做路径推导），故无需额外参数。
 find_package(Python3 COMPONENTS Interpreter)
 if(Python3_Interpreter_FOUND)
-    add_test(NAME pal_header_gate
+    add_test(NAME platform_header_gate
         COMMAND ${Python3_EXECUTABLE}
-                ${CMAKE_SOURCE_DIR}/tools/pal/check_pal_headers.py)
+                ${CMAKE_SOURCE_DIR}/tools/platform/check_platform_headers.py)
 endif()
 
 # ---- PALA-001：Apple Metal 后端离屏渲染 + 读回像素验证 ----
-# 仅在 Apple 平台构建。链接 cq_pal_apple（Metal 实现）与 cq_core，证明：
+# 仅在 Apple 平台构建。链接 cq_platform_apple（Metal 实现）与 cq_core，证明：
 #   * 用例 A：清屏红 -> 读回中心像素 = (255,0,0,255)
 #   * 用例 B：全屏采样四色纹理 -> 读回四角 = 红/绿/蓝/黄（采样管线真的通）
-# 测试 TU 为纯 C++，只通过 pal/apple 内部辅助（ReadRenderTargetPixels / UploadTextureData）
+# 测试 TU 为纯 C++，只通过 platform/apple 内部辅助（ReadRenderTargetPixels / UploadTextureData）
 # 接触 Metal，不污染内核头。
 if(APPLE)
-    add_executable(cq_tests_pala_metal
+    add_executable(cq_tests_platform_apple_metal
         unit/test_gfx_metal.cpp)
-    target_include_directories(cq_tests_pala_metal PRIVATE
-        ${CMAKE_SOURCE_DIR}/engine/core/include
-        ${CMAKE_SOURCE_DIR}/pal/apple)
-    target_link_libraries(cq_tests_pala_metal PRIVATE cq_core cq_pal_apple)
-    cq_require_cxx20(cq_tests_pala_metal)
-    apply_cq_warnings(cq_tests_pala_metal)
-    add_test(NAME pala_metal_render COMMAND cq_tests_pala_metal)
+    target_include_directories(cq_tests_platform_apple_metal PRIVATE
+        ${CMAKE_SOURCE_DIR}/engine/core
+        ${CMAKE_SOURCE_DIR}/engine/platform/apple)
+    target_link_libraries(cq_tests_platform_apple_metal PRIVATE cq_core cq_platform_apple)
+    cq_require_cxx20(cq_tests_platform_apple_metal)
+    apply_cq_warnings(cq_tests_platform_apple_metal)
+    add_test(NAME platform_apple_metal_render COMMAND cq_tests_platform_apple_metal)
 
-    # ---- GFX-002：IGfxDevice 直连 PAL（渲染结果读回断言，不只查返回值）----
+    # ---- GFX-002：IGfxDevice 直连 Platform（渲染结果读回断言，不只查返回值）----
     add_executable(cq_tests_gfx_device
         unit/test_gfx_device.cpp)
     target_include_directories(cq_tests_gfx_device PRIVATE
-        ${CMAKE_SOURCE_DIR}/engine/core/include
-        ${CMAKE_SOURCE_DIR}/pal/apple)
-    target_link_libraries(cq_tests_gfx_device PRIVATE cq_core cq_pal_apple)
+        ${CMAKE_SOURCE_DIR}/engine/core
+        ${CMAKE_SOURCE_DIR}/engine/platform/apple)
+    target_link_libraries(cq_tests_gfx_device PRIVATE cq_core cq_platform_apple)
     cq_require_cxx20(cq_tests_gfx_device)
     apply_cq_warnings(cq_tests_gfx_device)
     add_test(NAME gfx_device COMMAND cq_tests_gfx_device)
 
     # ---- PALA-010：Apple 解封装后端真实文件验证 ----
-    add_executable(cq_tests_pala_demux
+    add_executable(cq_tests_platform_apple_demux
         unit/test_media_demux_apple.cpp)
-    target_include_directories(cq_tests_pala_demux PRIVATE
-        ${CMAKE_SOURCE_DIR}/engine/core/include)
-    target_compile_definitions(cq_tests_pala_demux PRIVATE
+    target_include_directories(cq_tests_platform_apple_demux PRIVATE
+        ${CMAKE_SOURCE_DIR}/engine/core)
+    target_compile_definitions(cq_tests_platform_apple_demux PRIVATE
         CQ_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
-    target_link_libraries(cq_tests_pala_demux PRIVATE cq_core cq_pal_apple)
-    cq_require_cxx20(cq_tests_pala_demux)
-    apply_cq_warnings(cq_tests_pala_demux)
-    add_test(NAME pala_demux COMMAND cq_tests_pala_demux)
+    target_link_libraries(cq_tests_platform_apple_demux PRIVATE cq_core cq_platform_apple)
+    cq_require_cxx20(cq_tests_platform_apple_demux)
+    apply_cq_warnings(cq_tests_platform_apple_demux)
+    add_test(NAME platform_apple_demux COMMAND cq_tests_platform_apple_demux)
 
     # demux 测试直接用到的 Apple 框架（确保最终可执行链接到 CoreMedia/AVFoundation）。
     find_library(AVFOUNDATION_T_LIB AVFoundation REQUIRED)
     find_library(COREMEDIA_T_LIB   CoreMedia    REQUIRED)
-    target_link_libraries(cq_tests_pala_demux PRIVATE
+    target_link_libraries(cq_tests_platform_apple_demux PRIVATE
         ${AVFOUNDATION_T_LIB} ${COREMEDIA_T_LIB})
 
     # ---- MEDIA-020 真实链路冒烟：PALA-010 真实 demux + SystemFrameProvider ----
@@ -339,11 +339,11 @@ if(APPLE)
     add_executable(cq_tests_media_smoke_apple
         unit/test_media_smoke_apple.cpp)
     target_include_directories(cq_tests_media_smoke_apple PRIVATE
-        ${CMAKE_SOURCE_DIR}/engine/core/include)
+        ${CMAKE_SOURCE_DIR}/engine/core)
     target_compile_definitions(cq_tests_media_smoke_apple PRIVATE
         CQ_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
     target_link_libraries(cq_tests_media_smoke_apple PRIVATE
-        cq_core cq_pal_apple ${AVFOUNDATION_T_LIB} ${COREMEDIA_T_LIB})
+        cq_core cq_platform_apple ${AVFOUNDATION_T_LIB} ${COREMEDIA_T_LIB})
     cq_require_cxx20(cq_tests_media_smoke_apple)
     apply_cq_warnings(cq_tests_media_smoke_apple)
     add_test(NAME media_smoke_apple COMMAND cq_tests_media_smoke_apple)
@@ -355,11 +355,11 @@ if(APPLE)
     add_executable(cq_tests_media_bframe_real
         unit/test_media_bframe_real_apple.cpp)
     target_include_directories(cq_tests_media_bframe_real PRIVATE
-        ${CMAKE_SOURCE_DIR}/engine/core/include)
+        ${CMAKE_SOURCE_DIR}/engine/core)
     target_compile_definitions(cq_tests_media_bframe_real PRIVATE
         CQ_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
     target_link_libraries(cq_tests_media_bframe_real PRIVATE
-        cq_core cq_pal_apple ${AVFOUNDATION_T_LIB} ${COREMEDIA_T_LIB})
+        cq_core cq_platform_apple ${AVFOUNDATION_T_LIB} ${COREMEDIA_T_LIB})
     cq_require_cxx20(cq_tests_media_bframe_real)
     apply_cq_warnings(cq_tests_media_bframe_real)
     add_test(NAME media_bframe_real COMMAND cq_tests_media_bframe_real)
@@ -370,20 +370,20 @@ if(APPLE)
     # 测试 TU 直接调用 CoreVideo/IOSurface C API，需显式链接（避免链接期符号未定义）。
     find_library(COREVIDEO_T2_LIB CoreVideo REQUIRED)
     find_library(IOSURFACE_T2_LIB IOSurface REQUIRED)
-    add_executable(cq_tests_pala_native_image
+    add_executable(cq_tests_platform_apple_native_image
         unit/test_native_image_importer_apple.cpp)
-    target_include_directories(cq_tests_pala_native_image PRIVATE
-        ${CMAKE_SOURCE_DIR}/engine/core/include
-        ${CMAKE_SOURCE_DIR}/pal/apple)
-    target_compile_definitions(cq_tests_pala_native_image PRIVATE
+    target_include_directories(cq_tests_platform_apple_native_image PRIVATE
+        ${CMAKE_SOURCE_DIR}/engine/core
+        ${CMAKE_SOURCE_DIR}/engine/platform/apple)
+    target_compile_definitions(cq_tests_platform_apple_native_image PRIVATE
         CQ_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
-    target_link_libraries(cq_tests_pala_native_image PRIVATE
-        cq_core cq_pal_apple
+    target_link_libraries(cq_tests_platform_apple_native_image PRIVATE
+        cq_core cq_platform_apple
         ${AVFOUNDATION_T_LIB} ${COREMEDIA_T_LIB}
         ${COREVIDEO_T2_LIB} ${IOSURFACE_T2_LIB})
-    cq_require_cxx20(cq_tests_pala_native_image)
-    apply_cq_warnings(cq_tests_pala_native_image)
-    add_test(NAME pala_native_image COMMAND cq_tests_pala_native_image)
+    cq_require_cxx20(cq_tests_platform_apple_native_image)
+    apply_cq_warnings(cq_tests_platform_apple_native_image)
+    add_test(NAME platform_apple_native_image COMMAND cq_tests_platform_apple_native_image)
 
     # ---- BIND-003 子步骤 4：预览渲染器端到端（Timeline+素材表 → 取帧 → 零拷贝 → 离屏 RT）----
     # 验收不是「返回 kOk」而是「画面真的是时间线在该时刻的内容」：
@@ -393,12 +393,12 @@ if(APPLE)
     add_executable(cq_tests_preview_renderer
         unit/test_preview_renderer.cpp)
     target_include_directories(cq_tests_preview_renderer PRIVATE
-        ${CMAKE_SOURCE_DIR}/engine/core/include
-        ${CMAKE_SOURCE_DIR}/pal/apple)
+        ${CMAKE_SOURCE_DIR}/engine/core
+        ${CMAKE_SOURCE_DIR}/engine/platform/apple)
     target_compile_definitions(cq_tests_preview_renderer PRIVATE
         CQ_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
     target_link_libraries(cq_tests_preview_renderer PRIVATE
-        cq_core cq_pal_apple
+        cq_core cq_platform_apple
         ${AVFOUNDATION_T_LIB} ${COREMEDIA_T_LIB} ${COREVIDEO_T6_LIB})
     cq_require_cxx20(cq_tests_preview_renderer)
     apply_cq_warnings(cq_tests_preview_renderer)
@@ -412,82 +412,82 @@ if(APPLE)
         unit/test_c_abi_preview.c)
     set_target_properties(cq_tests_c_abi_preview PROPERTIES LINKER_LANGUAGE CXX)
     target_include_directories(cq_tests_c_abi_preview PRIVATE
-        ${CMAKE_SOURCE_DIR}/engine/core/include)
+        ${CMAKE_SOURCE_DIR}/engine/core)
     target_compile_definitions(cq_tests_c_abi_preview PRIVATE
         CQ_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
-    # 链 cq_pal_apple：预览 ABI 的创建路径要经 PAL 的图形设备 / blit pass / 帧提供器。
+    # 链 cq_platform_apple：预览 ABI 的创建路径要经 Platform 的图形设备 / blit pass / 帧提供器。
     target_link_libraries(cq_tests_c_abi_preview PRIVATE
-        cq_core cq_pal_apple
+        cq_core cq_platform_apple
         ${AVFOUNDATION_T_LIB} ${COREMEDIA_T_LIB})
     add_test(NAME c_abi_preview COMMAND cq_tests_c_abi_preview)
 
     # ---- PALA-012：Apple 编码与封装验收（AVAssetWriter + PixelBufferAdaptor）----
     # 端到端：PALA-010 真实 demux + PALA-011 硬解 -> AppleVideoEncoder 写 H.264 MP4 ->
     # 重解码输出首帧中心像素对照 (0,188,0,255) + popen ffprobe 验证 codec/分辨率/帧数/时长。
-    # 测试 TU 直接调用 CoreVideo C API 读像素，需显式链接 CoreVideo（经 cq_pal_apple PUBLIC 传递）。
+    # 测试 TU 直接调用 CoreVideo C API 读像素，需显式链接 CoreVideo（经 cq_platform_apple PUBLIC 传递）。
     find_library(COREVIDEO_T3_LIB CoreVideo REQUIRED)
-    add_executable(cq_tests_pala_encode
+    add_executable(cq_tests_platform_apple_encode
         unit/test_media_encode_apple.cpp)
-    target_include_directories(cq_tests_pala_encode PRIVATE
-        ${CMAKE_SOURCE_DIR}/engine/core/include
-        ${CMAKE_SOURCE_DIR}/pal/apple)
-    target_compile_definitions(cq_tests_pala_encode PRIVATE
+    target_include_directories(cq_tests_platform_apple_encode PRIVATE
+        ${CMAKE_SOURCE_DIR}/engine/core
+        ${CMAKE_SOURCE_DIR}/engine/platform/apple)
+    target_compile_definitions(cq_tests_platform_apple_encode PRIVATE
         CQ_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
-    target_link_libraries(cq_tests_pala_encode PRIVATE
-        cq_core cq_pal_apple
+    target_link_libraries(cq_tests_platform_apple_encode PRIVATE
+        cq_core cq_platform_apple
         ${AVFOUNDATION_T_LIB} ${COREMEDIA_T_LIB} ${COREVIDEO_T3_LIB})
-    cq_require_cxx20(cq_tests_pala_encode)
-    apply_cq_warnings(cq_tests_pala_encode)
-    add_test(NAME pala_encode COMMAND cq_tests_pala_encode)
+    cq_require_cxx20(cq_tests_platform_apple_encode)
+    apply_cq_warnings(cq_tests_platform_apple_encode)
+    add_test(NAME platform_apple_encode COMMAND cq_tests_platform_apple_encode)
 
     # ---- muxer 接缝：平台无关 IMediaMuxer 经工厂调用导出 H.264 MP4 ----
     # 全程只通过 core 冻结接口 IMediaMuxer + CreateMediaMuxer 完成导出（不碰 AppleVideoEncoder），
     # 证明导出能力可被上层平台无关调用；ffprobe 验证 codec/分辨率/帧数/时长 + 首帧像素。
     find_library(COREVIDEO_T4_LIB CoreVideo REQUIRED)
-    add_executable(cq_tests_pala_muxer
+    add_executable(cq_tests_platform_apple_muxer
         unit/test_media_muxer_apple.cpp)
-    target_include_directories(cq_tests_pala_muxer PRIVATE
-        ${CMAKE_SOURCE_DIR}/engine/core/include
-        ${CMAKE_SOURCE_DIR}/pal/apple)
-    target_compile_definitions(cq_tests_pala_muxer PRIVATE
+    target_include_directories(cq_tests_platform_apple_muxer PRIVATE
+        ${CMAKE_SOURCE_DIR}/engine/core
+        ${CMAKE_SOURCE_DIR}/engine/platform/apple)
+    target_compile_definitions(cq_tests_platform_apple_muxer PRIVATE
         CQ_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
-    target_link_libraries(cq_tests_pala_muxer PRIVATE
-        cq_core cq_pal_apple
+    target_link_libraries(cq_tests_platform_apple_muxer PRIVATE
+        cq_core cq_platform_apple
         ${AVFOUNDATION_T_LIB} ${COREMEDIA_T_LIB} ${COREVIDEO_T4_LIB})
-    cq_require_cxx20(cq_tests_pala_muxer)
-    apply_cq_warnings(cq_tests_pala_muxer)
-    add_test(NAME pala_muxer COMMAND cq_tests_pala_muxer)
+    cq_require_cxx20(cq_tests_platform_apple_muxer)
+    apply_cq_warnings(cq_tests_platform_apple_muxer)
+    add_test(NAME platform_apple_muxer COMMAND cq_tests_platform_apple_muxer)
 
     # ---- muxer 接缝：AAC 音频轨封装验收（合成 PCM -> AAC 音轨，ffprobe 验证）----
     # 端到端验证 IMediaMuxer::AddAudioTrack / WriteAudioFrame 真能产出含 aac 音轨的 MP4，
     # 且 codec=aac / 采样率 / 声道与 AudioTrackConfig 一致。仅 Apple 平台。
     find_library(COREVIDEO_T5_LIB CoreVideo REQUIRED)
-    add_executable(cq_tests_pala_muxer_audio
+    add_executable(cq_tests_platform_apple_muxer_audio
         unit/test_media_muxer_audio_apple.cpp)
-    target_include_directories(cq_tests_pala_muxer_audio PRIVATE
-        ${CMAKE_SOURCE_DIR}/engine/core/include
-        ${CMAKE_SOURCE_DIR}/pal/apple)
-    target_compile_definitions(cq_tests_pala_muxer_audio PRIVATE
+    target_include_directories(cq_tests_platform_apple_muxer_audio PRIVATE
+        ${CMAKE_SOURCE_DIR}/engine/core
+        ${CMAKE_SOURCE_DIR}/engine/platform/apple)
+    target_compile_definitions(cq_tests_platform_apple_muxer_audio PRIVATE
         CQ_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
-    target_link_libraries(cq_tests_pala_muxer_audio PRIVATE
-        cq_core cq_pal_apple
+    target_link_libraries(cq_tests_platform_apple_muxer_audio PRIVATE
+        cq_core cq_platform_apple
         ${AVFOUNDATION_T_LIB} ${COREMEDIA_T_LIB} ${COREVIDEO_T5_LIB})
-    cq_require_cxx20(cq_tests_pala_muxer_audio)
-    apply_cq_warnings(cq_tests_pala_muxer_audio)
-    add_test(NAME pala_muxer_audio COMMAND cq_tests_pala_muxer_audio)
+    cq_require_cxx20(cq_tests_platform_apple_muxer_audio)
+    apply_cq_warnings(cq_tests_platform_apple_muxer_audio)
+    add_test(NAME platform_apple_muxer_audio COMMAND cq_tests_platform_apple_muxer_audio)
 
     # ---- CORE-007：Apple 能力后端（Metal / VideoToolbox 真实查询）----
     # 验证后端真的被装上、每项返回值合法，并打印全部结果供真机核对。
     # ⚠️ 本机 Intel Mac 无 ANE / 无 ProRes 硬编，本机结果不代表 iPhone 17 Pro。
-    add_executable(cq_tests_pala_capabilities
+    add_executable(cq_tests_platform_apple_capabilities
         unit/test_capabilities_apple.cpp)
-    target_include_directories(cq_tests_pala_capabilities PRIVATE
-        ${CMAKE_SOURCE_DIR}/engine/core/include
-        ${CMAKE_SOURCE_DIR}/pal/apple)
-    target_link_libraries(cq_tests_pala_capabilities PRIVATE cq_core cq_pal_apple)
-    cq_require_cxx20(cq_tests_pala_capabilities)
-    apply_cq_warnings(cq_tests_pala_capabilities)
-    add_test(NAME pala_capabilities COMMAND cq_tests_pala_capabilities)
+    target_include_directories(cq_tests_platform_apple_capabilities PRIVATE
+        ${CMAKE_SOURCE_DIR}/engine/core
+        ${CMAKE_SOURCE_DIR}/engine/platform/apple)
+    target_link_libraries(cq_tests_platform_apple_capabilities PRIVATE cq_core cq_platform_apple)
+    cq_require_cxx20(cq_tests_platform_apple_capabilities)
+    apply_cq_warnings(cq_tests_platform_apple_capabilities)
+    add_test(NAME platform_apple_capabilities COMMAND cq_tests_platform_apple_capabilities)
 endif()
 # ---- MODEL-001：时间线数据模型（Timeline / Track / Clip / Transition）----
 # 先于 UIA-003 落地：没有它，预览就不知道"播放头在哪、该显示哪个片段"。
@@ -495,7 +495,7 @@ endif()
 add_executable(cq_tests_model_timeline
     unit/test_model_timeline.cpp)
 target_include_directories(cq_tests_model_timeline PRIVATE
-    ${CMAKE_SOURCE_DIR}/engine/core/include)
+    ${CMAKE_SOURCE_DIR}/engine/core)
 target_link_libraries(cq_tests_model_timeline PRIVATE cq_core)
 cq_require_cxx20(cq_tests_model_timeline)
 apply_cq_warnings(cq_tests_model_timeline)
@@ -507,7 +507,7 @@ add_test(NAME model_timeline COMMAND cq_tests_model_timeline)
 add_executable(cq_tests_model_command
     unit/test_model_command.cpp)
 target_include_directories(cq_tests_model_command PRIVATE
-    ${CMAKE_SOURCE_DIR}/engine/core/include)
+    ${CMAKE_SOURCE_DIR}/engine/core)
 target_link_libraries(cq_tests_model_command PRIVATE cq_core)
 cq_require_cxx20(cq_tests_model_command)
 apply_cq_warnings(cq_tests_model_command)
@@ -518,24 +518,24 @@ add_test(NAME model_command COMMAND cq_tests_model_command)
 add_executable(cq_tests_asset_registry
     unit/test_asset_registry.cpp)
 target_include_directories(cq_tests_asset_registry PRIVATE
-    ${CMAKE_SOURCE_DIR}/engine/core/include)
+    ${CMAKE_SOURCE_DIR}/engine/core)
 target_link_libraries(cq_tests_asset_registry PRIVATE cq_core)
 cq_require_cxx20(cq_tests_asset_registry)
 apply_cq_warnings(cq_tests_asset_registry)
 add_test(NAME asset_registry COMMAND cq_tests_asset_registry)
 
-# ---- BIND-003 子步骤 2：取帧链路真实验证（PAL + 硬解）----
+# ---- BIND-003 子步骤 2：取帧链路真实验证（Platform + 硬解）----
 # 用 golden 真实文件证明"给定素材+时间戳 → 真实解码帧"可用，
 # 并断言不同时刻 pts 不同（暴露"假 seek"：反复返回同一帧）。
 if(APPLE)
     add_executable(cq_tests_frame_provider_apple
         unit/test_frame_provider_apple.cpp)
     target_include_directories(cq_tests_frame_provider_apple PRIVATE
-        ${CMAKE_SOURCE_DIR}/engine/core/include
-        ${CMAKE_SOURCE_DIR}/pal/apple)
+        ${CMAKE_SOURCE_DIR}/engine/core
+        ${CMAKE_SOURCE_DIR}/engine/platform/apple)
     target_compile_definitions(cq_tests_frame_provider_apple PRIVATE
         CQ_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
-    target_link_libraries(cq_tests_frame_provider_apple PRIVATE cq_core cq_pal_apple)
+    target_link_libraries(cq_tests_frame_provider_apple PRIVATE cq_core cq_platform_apple)
     cq_require_cxx20(cq_tests_frame_provider_apple)
     apply_cq_warnings(cq_tests_frame_provider_apple)
     add_test(NAME frame_provider_apple COMMAND cq_tests_frame_provider_apple)
@@ -547,11 +547,11 @@ if(APPLE)
     add_executable(cq_tests_media_sequential_real
         unit/test_media_sequential_real_apple.cpp)
     target_include_directories(cq_tests_media_sequential_real PRIVATE
-        ${CMAKE_SOURCE_DIR}/engine/core/include
-        ${CMAKE_SOURCE_DIR}/pal/apple)
+        ${CMAKE_SOURCE_DIR}/engine/core
+        ${CMAKE_SOURCE_DIR}/engine/platform/apple)
     target_compile_definitions(cq_tests_media_sequential_real PRIVATE
         CQ_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
-    target_link_libraries(cq_tests_media_sequential_real PRIVATE cq_core cq_pal_apple)
+    target_link_libraries(cq_tests_media_sequential_real PRIVATE cq_core cq_platform_apple)
     cq_require_cxx20(cq_tests_media_sequential_real)
     apply_cq_warnings(cq_tests_media_sequential_real)
     add_test(NAME media_sequential_real COMMAND cq_tests_media_sequential_real)
@@ -562,17 +562,17 @@ endif()
 #    属于"只声明未接入"的老毛病（等同 cq_build_anchor / 能力查询 / BIND-001 实现那几次）。
 #    此处补齐注册，让它真正跑起来。
 if(APPLE)
-    add_executable(cq_tests_pala_decode
+    add_executable(cq_tests_platform_apple_decode
         unit/test_media_decode_apple.cpp)
-    target_include_directories(cq_tests_pala_decode PRIVATE
-        ${CMAKE_SOURCE_DIR}/engine/core/include
-        ${CMAKE_SOURCE_DIR}/pal/apple)
-    target_compile_definitions(cq_tests_pala_decode PRIVATE
+    target_include_directories(cq_tests_platform_apple_decode PRIVATE
+        ${CMAKE_SOURCE_DIR}/engine/core
+        ${CMAKE_SOURCE_DIR}/engine/platform/apple)
+    target_compile_definitions(cq_tests_platform_apple_decode PRIVATE
         CQ_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
-    target_link_libraries(cq_tests_pala_decode PRIVATE cq_core cq_pal_apple)
-    cq_require_cxx20(cq_tests_pala_decode)
-    apply_cq_warnings(cq_tests_pala_decode)
-    add_test(NAME pala_decode COMMAND cq_tests_pala_decode)
+    target_link_libraries(cq_tests_platform_apple_decode PRIVATE cq_core cq_platform_apple)
+    cq_require_cxx20(cq_tests_platform_apple_decode)
+    apply_cq_warnings(cq_tests_platform_apple_decode)
+    add_test(NAME platform_apple_decode COMMAND cq_tests_platform_apple_decode)
 endif()
 
 # ---- AUDIO-001：音频缓冲池 + SPSC 无锁样本环 + AudioGraph 骨架 ----
@@ -582,7 +582,7 @@ endif()
 add_executable(cq_tests_core_audio_pcm
     unit/test_audio_pcm.cpp)
 target_include_directories(cq_tests_core_audio_pcm PRIVATE
-    ${CMAKE_SOURCE_DIR}/engine/core/include)
+    ${CMAKE_SOURCE_DIR}/engine/core)
 target_link_libraries(cq_tests_core_audio_pcm PRIVATE cq_core)
 cq_require_cxx20(cq_tests_core_audio_pcm)
 apply_cq_warnings(cq_tests_core_audio_pcm)
@@ -591,7 +591,7 @@ add_test(NAME core_audio_pcm COMMAND cq_tests_core_audio_pcm)
 add_executable(cq_tests_core_audio_graph
     unit/test_audio_graph.cpp)
 target_include_directories(cq_tests_core_audio_graph PRIVATE
-    ${CMAKE_SOURCE_DIR}/engine/core/include)
+    ${CMAKE_SOURCE_DIR}/engine/core)
 target_link_libraries(cq_tests_core_audio_graph PRIVATE cq_core)
 cq_require_cxx20(cq_tests_core_audio_graph)
 apply_cq_warnings(cq_tests_core_audio_graph)
@@ -604,10 +604,10 @@ add_executable(cq_tests_ai_edit_plan
     unit/test_edit_plan_validator.cpp)
 # 私有头 edit_plan_validator.h 在 core/src 下（cq_core 的 PRIVATE include 不传播）。
 target_include_directories(cq_tests_ai_edit_plan PRIVATE
-    ${CMAKE_SOURCE_DIR}/engine/core/include
-    ${CMAKE_SOURCE_DIR}/engine/core/src)
+    ${CMAKE_SOURCE_DIR}/engine/core
+    ${CMAKE_SOURCE_DIR}/engine/core/cq)
 target_compile_definitions(cq_tests_ai_edit_plan PRIVATE
-    CQ_EDIT_PLAN_GOLDEN_DIR="${CMAKE_SOURCE_DIR}/engine/core/src/ai/plan/edit_plan_golden")
+    CQ_EDIT_PLAN_GOLDEN_DIR="${CMAKE_SOURCE_DIR}/engine/core/cq/ai/plan/edit_plan_golden")
 target_link_libraries(cq_tests_ai_edit_plan PRIVATE cq_core)
 cq_require_cxx20(cq_tests_ai_edit_plan)
 apply_cq_warnings(cq_tests_ai_edit_plan)

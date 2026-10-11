@@ -23,7 +23,7 @@
 #include "cq/base/status.h"
 #include "cq/base/rational_time.h"
 #include "cq/media/system_frame_provider.h"
-#include "cq/pal/media.h"
+#include "cq/platform/media.h"
 
 #ifndef CQ_SOURCE_DIR
 #define CQ_SOURCE_DIR "."
@@ -153,7 +153,7 @@ int main() {
     src.path = path.c_str();
     src.path_len = path.size();
 
-    cq::PalPtr<cq::IMediaDemuxer> demuxer;
+    cq::PlatformPtr<cq::IMediaDemuxer> demuxer;
     cq::Status s = cq::CreateMediaDemuxer(src, demuxer);
     Check(s.IsOk() && demuxer, "CreateMediaDemuxer（真实 B 帧文件）打开成功");
     if (!demuxer) {
@@ -283,7 +283,7 @@ int main() {
     std::printf("\n[验收 2 — kKeyframeBefore 返回 demuxer 关键帧（修复后）]\n");
     for (double bt : kBTargetSec) {
         int64_t target = static_cast<int64_t>(bt * kTs + 0.5);
-        cq::PalPtr<cq::IMediaDemuxer> d2;
+        cq::PlatformPtr<cq::IMediaDemuxer> d2;
         cq::CreateMediaDemuxer(src, d2);
         ReorderingMockDecoder dec2(kFrameTicks);
         auto p2 = cq::CreateSystemFrameProvider(std::move(d2), &dec2);

@@ -8,12 +8,12 @@
 //
 // ⚠️ 这些用例的本质是**防"断接口"复发**：CORE-006 冻结头文件后，
 //    SetCapabilitiesBackend / QueryCapability 长期只有声明无定义，而
-//    pal_headers_compile.cpp 的 static_assert 是编译期检查、不链接，
+//    platform_headers_compile.cpp 的 static_assert 是编译期检查、不链接，
 //    所以 CTest 全绿也看不出来。本用例**链接并运行**这两个函数。
 
 #include <cstdio>
 
-#include "cq/pal/capabilities.h"
+#include "cq/platform/capabilities.h"
 
 namespace {
 

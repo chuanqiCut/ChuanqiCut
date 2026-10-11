@@ -6,7 +6,7 @@
 #
 # 检查项（按序执行，任一失败立即非零退出 = 一票否决）：
 #   1. deps      依赖治理 manifest 校验（需 Python >= 3.11 / tomllib）
-#   2. headers   PAL/公共头纯净性（tools/pal/check_pal_headers.py）
+#   2. headers   Platform/公共头纯净性（tools/platform/check_platform_headers.py）
 #   2b. artifacts 产物入库检查（P84：.build/、根 build/、DerivedData 等一律不得被 git 跟踪）
 #   3. core-dbg  内核 Debug 构建 + 全量单测（-Werror）
 #   4. core-rel  内核 Release 构建 + 全量单测（-Werror + LTO）
@@ -109,8 +109,8 @@ else
     skip_step "deps" "未找到 Python 3.11+（tomllib）。可用 PYTHON_BIN=... 指定。"
 fi
 
-# 2. PAL/公共头纯净性
-run_step "headers" python3 tools/pal/check_pal_headers.py
+# 2. Platform/公共头纯净性
+run_step "headers" python3 tools/platform/check_platform_headers.py
 
 # 2b. 产物入库检查（P84 规则兜底：构建产物永不入库；SPM 产物统一 --scratch-path 到 /build/spm/）
 artifacts_bad="$(git ls-files | grep -E '(^|/)\.build/|^build/|/DerivedData/|\.xcuserstate$|\.DS_Store$' || true)"

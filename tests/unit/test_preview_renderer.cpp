@@ -31,8 +31,8 @@
 #include "cq/gfx/gfx_device.h"
 #include "cq/media/asset_registry.h"
 #include "cq/model/timeline.h"
-#include "cq/media/pal_frame_provider.h"  // PalFrameProviderFactory（经 PAL 工厂取帧）
-#include "cq/pal/gfx.h"                   // IBlitPass / CreateBlitPass
+#include "cq/media/platform_frame_provider.h"  // PlatformFrameProviderFactory（经 Platform 工厂取帧）
+#include "cq/platform/gfx.h"                   // IBlitPass / CreateBlitPass
 #include "cq/preview/preview_renderer.h"
 #include "gfx_metal_internal.h"  // ReadRenderTargetPixels
 #include "media_decode.h"        // cq::CqNativeImage（合成帧包装，仅 Apple TU 可见）
@@ -147,25 +147,25 @@ int main() {
     std::setvbuf(stdout, nullptr, _IONBF, 0);
     std::printf("== ChuanqiCut 预览渲染器验收（BIND-003 子步骤 4）==\n");
 
-    // ---- 装配：PAL 设备 → GFX 设备 → blit pass / provider 工厂 ----
+    // ---- 装配：Platform 设备 → GFX 设备 → blit pass / provider 工厂 ----
     cq::GraphicsDeviceDesc dd;
     dd.prefer_low_power = false;
-    cq::PalPtr<cq::IGraphicsDevice> pal_device;
-    Check(cq::CreateGraphicsDevice(dd, pal_device).IsOk(), "CreateGraphicsDevice(Metal)");
-    if (!pal_device) return 1;
+    cq::PlatformPtr<cq::IGraphicsDevice> platform_device;
+    Check(cq::CreateGraphicsDevice(dd, platform_device).IsOk(), "CreateGraphicsDevice(Metal)");
+    if (!platform_device) return 1;
 
     cq::IGfxDevice* gfx = nullptr;
-    Check(cq::CreateGfxDevice(pal_device, gfx).IsOk() && gfx != nullptr,
+    Check(cq::CreateGfxDevice(platform_device, gfx).IsOk() && gfx != nullptr,
           "CreateGfxDevice（GFX-002 门面）");
     if (gfx == nullptr) return 1;
 
-    // blit pass 走 **PAL 工厂**：它必然由平台原生 shader 实现，属于平台能力。
-    cq::PalPtr<cq::IBlitPass> blit;
-    Check(cq::CreateBlitPass(gfx->PalDevice(), cq::TextureFormat::kRGBA8, blit).IsOk() && blit,
-          "CreateBlitPass（PAL 工厂 → Apple MSL 全屏拷贝）");
-    // 取帧工厂走 core 默认实现：内部经 PAL 的 CreateFrameProvider，
+    // blit pass 走 **Platform 工厂**：它必然由平台原生 shader 实现，属于平台能力。
+    cq::PlatformPtr<cq::IBlitPass> blit;
+    Check(cq::CreateBlitPass(gfx->PlatformDevice(), cq::TextureFormat::kRGBA8, blit).IsOk() && blit,
+          "CreateBlitPass（Platform 工厂 → Apple MSL 全屏拷贝）");
+    // 取帧工厂走 core 默认实现：内部经 Platform 的 CreateFrameProvider，
     // 再适配成 core 的 FrameProvider（不引用任何 Apple 符号）。
-    cq::PalFrameProviderFactory factory;
+    cq::PlatformFrameProviderFactory factory;
     if (!blit) return 1;
 
     // =========================================================================
@@ -177,7 +177,7 @@ int main() {
         CVPixelBufferRef pb = MakeHalfRedHalfBlue(S, S);
         Check(pb != nullptr, "合成 64x64 半红半蓝帧");
         if (pb != nullptr) {
-            cq::PalPtr<cq::INativeImageImporter> importer;
+            cq::PlatformPtr<cq::INativeImageImporter> importer;
             Check(gfx->CreateNativeImageImporter(importer).IsOk() && importer,
                   "CreateNativeImageImporter");
             if (importer) {
@@ -192,7 +192,7 @@ int main() {
                 rd.width = S;
                 rd.height = S;
                 rd.color_format = cq::TextureFormat::kRGBA8;
-                cq::PalPtr<cq::IRenderTarget> rt;
+                cq::PlatformPtr<cq::IRenderTarget> rt;
                 Check(gfx->CreateRenderTarget(rd, rt).IsOk() && rt, "创建 64x64 离屏 RT");
 
                 if (rt && tex != nullptr) {
@@ -202,10 +202,10 @@ int main() {
                         cq::TextureHandle src = nullptr;
                         cq::Status Encode(cq::IGfxEncoder& enc, const cq::FrameContext&,
                                           const cq::CancelToken&) override {
-                            // IBlitPass 在 PAL 层，收 PAL 的 ICommandEncoder。
-                            cq::ICommandEncoder* pal_enc = enc.PalEncoder();
-                            if (pal_enc == nullptr) return cq::Status(cq::StatusCode::kInternal);
-                            return blit_pass->Encode(*pal_enc, src);
+                            // IBlitPass 在 Platform 层，收 Platform 的 ICommandEncoder。
+                            cq::ICommandEncoder* platform_enc = enc.PlatformEncoder();
+                            if (platform_enc == nullptr) return cq::Status(cq::StatusCode::kInternal);
+                            return blit_pass->Encode(*platform_enc, src);
                         }
                     } client;
                     client.blit_pass = blit.get();

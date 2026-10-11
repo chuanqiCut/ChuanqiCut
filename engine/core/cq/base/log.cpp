@@ -291,7 +291,7 @@ LogLevel EffectiveLogLevel(Workflow wf) { return Logger::Instance().EffectiveLev
 // 环境变量配置
 //
 // 真机排查时重编译成本极高，所以这一层是刚需而不是糖。注意：这里**只用
-// std::getenv**（标准 C++），不引入任何平台 API —— PAL 将来要做各自的
+// std::getenv**（标准 C++），不引入任何平台 API —— Platform 将来要做各自的
 // 配置源（iOS 的 UserDefaults / Android 的 system property）另行叠加，
 // 不得把平台代码塞进 core。
 // ---------------------------------------------------------------------------

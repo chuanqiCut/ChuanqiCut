@@ -15,7 +15,7 @@
 #include <vector>
 
 #include "cq/base/status.h"
-#include "cq/pal/gfx.h"
+#include "cq/platform/gfx.h"
 #include "gfx_metal_internal.h"
 
 namespace {
@@ -46,7 +46,7 @@ const uint8_t kTex2x2[2 * 2 * 4] = {
 //    而 Metal NDC 的 clip(-1,-1) 是**屏幕左下**。若按 uv=(clip+1)/2 直给，
 //    图像左上角会被画到屏幕左下 —— 画面整体上下颠倒。
 //    翻转后：屏幕左上(clip -1,+1) → uv(0,0) → 图像左上，画面正立。
-//    该约定须由 PAL 契约定死并由各后端保证（GLES/Vulkan 纹理原点在左下，
+//    该约定须由 Platform 契约定死并由各后端保证（GLES/Vulkan 纹理原点在左下，
 //    需自行翻转以对齐同一约定），否则同一 RenderGraph 跨端渲染会上下颠倒。
 const float kVerts[3 * 4] = {
     -1.0f, -1.0f, 0.0f, 1.0f,
@@ -93,11 +93,11 @@ fragment float4 fs_main(VOut in [[stage_in]],
 
 void RunCaseA(cq::IGraphicsDevice* dev, cq::IRenderTarget* rt) {
     std::printf("\n[用例 A] 清屏红 + 读回中心像素\n");
-    cq::PalPtr<cq::ICommandQueue> q;
+    cq::PlatformPtr<cq::ICommandQueue> q;
     Check(dev->CreateCommandQueue(q).IsOk(), "CreateCommandQueue");
-    cq::PalPtr<cq::ICommandBuffer> cb;
+    cq::PlatformPtr<cq::ICommandBuffer> cb;
     Check(q->CreateCommandBuffer(cb).IsOk(), "CreateCommandBuffer");
-    cq::PalPtr<cq::ICommandEncoder> enc;
+    cq::PlatformPtr<cq::ICommandEncoder> enc;
     Check(cb->CreateEncoder(enc).IsOk(), "CreateEncoder");
 
     const float clear[4] = {1.0f, 0.0f, 0.0f, 1.0f};
@@ -123,7 +123,7 @@ void RunCaseB(cq::IGraphicsDevice* dev, cq::IRenderTarget* rt) {
     td.width = 2;
     td.height = 2;
     td.usage = cq::TextureUsage::kSampled;
-    cq::PalPtr<cq::ITexture> tex;
+    cq::PlatformPtr<cq::ITexture> tex;
     Check(dev->CreateTexture(td, tex).IsOk(), "CreateTexture(2x2)");
     Check(cq::apple::UploadTextureData(tex.get(), kTex2x2, sizeof(kTex2x2)).IsOk(),
           "UploadTextureData(四色)");
@@ -132,7 +132,7 @@ void RunCaseB(cq::IGraphicsDevice* dev, cq::IRenderTarget* rt) {
     cq::BufferDesc bd;
     bd.usage = cq::BufferUsage::kVertex;
     bd.size_bytes = sizeof(kVerts);
-    cq::PalPtr<cq::IBuffer> vbuf;
+    cq::PlatformPtr<cq::IBuffer> vbuf;
     Check(dev->CreateBuffer(bd, vbuf).IsOk(), "CreateBuffer(vertex)");
     void* mapped = nullptr;
     Check(vbuf->Map(mapped).IsOk(), "Map(vertex)");
@@ -145,14 +145,14 @@ void RunCaseB(cq::IGraphicsDevice* dev, cq::IRenderTarget* rt) {
     vmd.code = static_cast<const void*>(kVertMSL);
     vmd.code_size = std::strlen(kVertMSL);
     vmd.is_platform_native = true;
-    cq::PalPtr<cq::IShaderModule> vs;
+    cq::PlatformPtr<cq::IShaderModule> vs;
     Check(dev->CreateShaderModule(vmd, vs).IsOk(), "CreateShaderModule(vertex MSL)");
 
     cq::ShaderModuleDesc fmd = vmd;
     fmd.stage = cq::ShaderStage::kFragment;
     fmd.code = static_cast<const void*>(kFragMSL);
     fmd.code_size = std::strlen(kFragMSL);
-    cq::PalPtr<cq::IShaderModule> fs;
+    cq::PlatformPtr<cq::IShaderModule> fs;
     Check(dev->CreateShaderModule(fmd, fs).IsOk(), "CreateShaderModule(fragment MSL)");
 
     // 失败防御：着色器或管线没建成就不要往下走。
@@ -172,22 +172,22 @@ void RunCaseB(cq::IGraphicsDevice* dev, cq::IRenderTarget* rt) {
     pd.vertex_layout.attr_count = 2;
     pd.vertex_layout.attrs[0] = cq::VertexAttribute{0, 0, cq::VertexFormat::kFloat32x2};
     pd.vertex_layout.attrs[1] = cq::VertexAttribute{1, 8, cq::VertexFormat::kFloat32x2};
-    cq::PalPtr<cq::IPipeline> pipe;
+    cq::PlatformPtr<cq::IPipeline> pipe;
     Check(dev->CreatePipeline(pd, pipe).IsOk(), "CreatePipeline");
 
     // Sampler：最近邻 + 边缘钳制（四角精确落在四个 texel）
     cq::SamplerDesc sd;
     sd.linear_filter = false;
     sd.clamp_to_edge = true;
-    cq::PalPtr<cq::ISampler> samp;
+    cq::PlatformPtr<cq::ISampler> samp;
     Check(dev->CreateSampler(sd, samp).IsOk(), "CreateSampler");
 
     // 录制：清屏黑 -> 画全屏三角形采样纹理
-    cq::PalPtr<cq::ICommandQueue> q;
+    cq::PlatformPtr<cq::ICommandQueue> q;
     Check(dev->CreateCommandQueue(q).IsOk(), "CreateCommandQueue");
-    cq::PalPtr<cq::ICommandBuffer> cb;
+    cq::PlatformPtr<cq::ICommandBuffer> cb;
     Check(q->CreateCommandBuffer(cb).IsOk(), "CreateCommandBuffer");
-    cq::PalPtr<cq::ICommandEncoder> enc;
+    cq::PlatformPtr<cq::ICommandEncoder> enc;
     Check(cb->CreateEncoder(enc).IsOk(), "CreateEncoder");
 
     const float clear[4] = {0.0f, 0.0f, 0.0f, 1.0f};
@@ -243,7 +243,7 @@ int main() {
 
     cq::GraphicsDeviceDesc dd;
     dd.prefer_low_power = false;
-    cq::PalPtr<cq::IGraphicsDevice> dev;
+    cq::PlatformPtr<cq::IGraphicsDevice> dev;
     cq::Status s = cq::CreateGraphicsDevice(dd, dev);
     Check(s.IsOk(), "CreateGraphicsDevice(Metal)");
     if (!dev) {
@@ -255,7 +255,7 @@ int main() {
     rd.width = 64;
     rd.height = 64;
     rd.color_format = cq::TextureFormat::kRGBA8;
-    cq::PalPtr<cq::IRenderTarget> rt;
+    cq::PlatformPtr<cq::IRenderTarget> rt;
     Check(dev->CreateRenderTarget(rd, rt).IsOk(), "CreateRenderTarget(64x64)");
     if (!rt) {
         std::printf("\n无法创建 RenderTarget，用例终止。\n");

@@ -8,7 +8,7 @@
 //   * Seek 到中间某时间后再读，pts 从该处继续（非从头）。
 // 所有真实数字打印出来（含首末 pts、seek 后 pts）。
 //
-// 仅在 Apple 平台编译（tests/CMakeLists.txt 用 if(APPLE) 包裹，链接 cq_pal_apple）。
+// 仅在 Apple 平台编译（tests/CMakeLists.txt 用 if(APPLE) 包裹，链接 cq_platform_apple）。
 
 #include <cstdint>
 #include <cstdio>
@@ -18,7 +18,7 @@
 
 #include "cq/base/status.h"
 #include "cq/base/rational_time.h"
-#include "cq/pal/media.h"
+#include "cq/platform/media.h"
 
 #ifndef CQ_SOURCE_DIR
 #define CQ_SOURCE_DIR "."
@@ -62,7 +62,7 @@ int main() {
     src.path = path.c_str();
     src.path_len = path.size();
 
-    cq::PalPtr<cq::IMediaDemuxer> demuxer;
+    cq::PlatformPtr<cq::IMediaDemuxer> demuxer;
     cq::Status s = cq::CreateMediaDemuxer(src, demuxer);
     Check(s.IsOk() && demuxer, "CreateMediaDemuxer 打开成功");
     if (!demuxer) {

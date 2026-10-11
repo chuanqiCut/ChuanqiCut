@@ -27,8 +27,8 @@
 
 #include "cq/base/status.h"
 #include "cq/base/rational_time.h"
-#include "cq/pal/gfx.h"
-#include "cq/pal/media.h"
+#include "cq/platform/gfx.h"
+#include "cq/platform/media.h"
 #include "cq/media/system_frame_provider.h"
 #include "media_decode.h"  // cq::VideoToolboxDecoder / cq::CqNativeImage / cq::GetCvPixelBuffer
 #include "gfx_metal_internal.h"  // cq::apple::* 辅助（零平台类型签名，纯 C++ 可调用）
@@ -148,13 +148,13 @@ bool RenderImported(cq::IGraphicsDevice* dev, cq::TextureHandle tex,
     rd.width = kRT;
     rd.height = kRT;
     rd.color_format = cq::TextureFormat::kRGBA8;
-    cq::PalPtr<cq::IRenderTarget> rt;
+    cq::PlatformPtr<cq::IRenderTarget> rt;
     if (!dev->CreateRenderTarget(rd, rt).IsOk() || !rt) return false;
 
     cq::BufferDesc bd;
     bd.usage = cq::BufferUsage::kVertex;
     bd.size_bytes = sizeof(kVerts);
-    cq::PalPtr<cq::IBuffer> vbuf;
+    cq::PlatformPtr<cq::IBuffer> vbuf;
     if (!dev->CreateBuffer(bd, vbuf).IsOk() || !vbuf) return false;
     void* mapped = nullptr;
     if (!vbuf->Map(mapped).IsOk()) return false;
@@ -166,14 +166,14 @@ bool RenderImported(cq::IGraphicsDevice* dev, cq::TextureHandle tex,
     vmd.code = static_cast<const void*>(kVertMSL);
     vmd.code_size = std::strlen(kVertMSL);
     vmd.is_platform_native = true;
-    cq::PalPtr<cq::IShaderModule> vs;
+    cq::PlatformPtr<cq::IShaderModule> vs;
     if (!dev->CreateShaderModule(vmd, vs).IsOk() || !vs) return false;
 
     cq::ShaderModuleDesc fmd = vmd;
     fmd.stage = cq::ShaderStage::kFragment;
     fmd.code = static_cast<const void*>(kFragMSL);
     fmd.code_size = std::strlen(kFragMSL);
-    cq::PalPtr<cq::IShaderModule> fs;
+    cq::PlatformPtr<cq::IShaderModule> fs;
     if (!dev->CreateShaderModule(fmd, fs).IsOk() || !fs) return false;
 
     cq::PipelineDesc pd;
@@ -184,20 +184,20 @@ bool RenderImported(cq::IGraphicsDevice* dev, cq::TextureHandle tex,
     pd.vertex_layout.attr_count = 2;
     pd.vertex_layout.attrs[0] = cq::VertexAttribute{0, 0, cq::VertexFormat::kFloat32x2};
     pd.vertex_layout.attrs[1] = cq::VertexAttribute{1, 8, cq::VertexFormat::kFloat32x2};
-    cq::PalPtr<cq::IPipeline> pipe;
+    cq::PlatformPtr<cq::IPipeline> pipe;
     if (!dev->CreatePipeline(pd, pipe).IsOk() || !pipe) return false;
 
     cq::SamplerDesc sd;
     sd.linear_filter = false;  // 最近邻，读回命中精确 texel
     sd.clamp_to_edge = true;
-    cq::PalPtr<cq::ISampler> samp;
+    cq::PlatformPtr<cq::ISampler> samp;
     if (!dev->CreateSampler(sd, samp).IsOk() || !samp) return false;
 
-    cq::PalPtr<cq::ICommandQueue> q;
+    cq::PlatformPtr<cq::ICommandQueue> q;
     if (!dev->CreateCommandQueue(q).IsOk()) return false;
-    cq::PalPtr<cq::ICommandBuffer> cb;
+    cq::PlatformPtr<cq::ICommandBuffer> cb;
     if (!q->CreateCommandBuffer(cb).IsOk()) return false;
-    cq::PalPtr<cq::ICommandEncoder> enc;
+    cq::PlatformPtr<cq::ICommandEncoder> enc;
     if (!cb->CreateEncoder(enc).IsOk()) return false;
     const float clear[4] = {0.0f, 0.0f, 0.0f, 1.0f};
     if (!enc->BeginRenderPass(cq::apple::ToRenderTargetHandle(rt.get()), clear).IsOk()) return false;
@@ -249,14 +249,14 @@ int main() {
 
     cq::GraphicsDeviceDesc dd;
     dd.prefer_low_power = false;
-    cq::PalPtr<cq::IGraphicsDevice> dev;
+    cq::PlatformPtr<cq::IGraphicsDevice> dev;
     Check(cq::CreateGraphicsDevice(dd, dev).IsOk(), "CreateGraphicsDevice(Metal)");
     if (!dev) {
         std::printf("\n无法创建 Metal 设备，用例终止。\n");
         return 1;
     }
 
-    cq::PalPtr<cq::INativeImageImporter> importer;
+    cq::PlatformPtr<cq::INativeImageImporter> importer;
     Check(dev->CreateNativeImageImporter(importer).IsOk() && importer,
           "CreateNativeImageImporter 返回可用导入器");
     if (!importer) {
@@ -365,7 +365,7 @@ int main() {
     src.path = path.c_str();
     src.path_len = path.size();
 
-    cq::PalPtr<cq::IMediaDemuxer> demuxer;
+    cq::PlatformPtr<cq::IMediaDemuxer> demuxer;
     Check(cq::CreateMediaDemuxer(src, demuxer).IsOk() && demuxer, "CreateMediaDemuxer 打开成功");
     if (!demuxer) {
         std::printf("\n真实解封装打开失败，跳过真实链路（合成验证仍有效）。\n");

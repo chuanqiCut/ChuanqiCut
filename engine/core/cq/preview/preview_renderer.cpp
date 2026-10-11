@@ -4,10 +4,10 @@
 //   Timeline::FindClipAt(pts)            → model_timeline
 //   AssetRegistry::Find(asset_id)        → asset_registry
 //   FrameProvider::AcquireFrame(src_t)   → frame_provider_apple（真实硬解）
-//   INativeImageImporter::Import         → pala_native_image（零拷贝，IOSurface 一致）
+//   INativeImageImporter::Import         → platform_apple_native_image（零拷贝，IOSurface 一致）
 //   IBlitPass::Encode + IGfxDevice::RenderFrame → gfx_device（读回像素断言）
 //
-// 硬约束：零平台类型（本 TU 只经 PAL/GFX 的 opaque 句柄工作）、禁用异常。
+// 硬约束：零平台类型（本 TU 只经 Platform/GFX 的 opaque 句柄工作）、禁用异常。
 
 #include "cq/preview/preview_renderer.h"
 
@@ -85,13 +85,13 @@ public:
 
     Status Encode(IGfxEncoder& encoder, const FrameContext&, const CancelToken&) override {
         if (blit_ == nullptr) return Status(StatusCode::kInvalidArgument);
-        // IBlitPass 在 PAL 层，收的是 PAL 的 ICommandEncoder（PAL 不能反向依赖 GFX）。
-        ICommandEncoder* pal_encoder = encoder.PalEncoder();
-        if (pal_encoder == nullptr) return Status(StatusCode::kInternal);
+        // IBlitPass 在 Platform 层，收的是 Platform 的 ICommandEncoder（Platform 不能反向依赖 GFX）。
+        ICommandEncoder* platform_encoder = encoder.PlatformEncoder();
+        if (platform_encoder == nullptr) return Status(StatusCode::kInternal);
         if (viewport_ != nullptr) {
             encoder.SetViewport(viewport_[0], viewport_[1], viewport_[2], viewport_[3]);
         }
-        return blit_->Encode(*pal_encoder, tex_);
+        return blit_->Encode(*platform_encoder, tex_);
     }
 
 private:

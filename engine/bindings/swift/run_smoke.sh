@@ -53,7 +53,7 @@ DEPLOY="15.4"
 # 此前叫 ChuanqiCut.a 时 `-lChuanqiCut` 找不到 —— `-lNAME` 只匹配 `libNAME.a`。
 # -lc++ 仍然需要：内核是 C++20。
 # 系统框架同样要显式列出（与 ChuanqiCut.podspec 的 ss.frameworks 一致）：
-# smoke 现在会创建 Preview → 拉入 cq_sdk_preview.o → 传递拉入 PAL 图形/解码
+# smoke 现在会创建 Preview → 拉入 cq_sdk_preview.o → 传递拉入 Platform 图形/解码
 # TU → VideoToolbox / CoreMedia / Metal 等符号必须有归属（2026-10-02 实测）。
 FRAMEWORKS="Foundation Metal AVFoundation CoreMedia VideoToolbox CoreVideo \
 CoreGraphics AudioToolbox QuartzCore IOSurface"

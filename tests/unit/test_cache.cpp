@@ -18,8 +18,8 @@
 #include "cq/base/rational_time.h"
 #include "cq/media/media_cache.h"
 #include "cq/media/system_frame_provider.h"
-#include "cq/pal/pal_common.h"
-#include "cq/pal/media.h"
+#include "cq/platform/common.h"
+#include "cq/platform/media.h"
 
 namespace {
 
@@ -263,7 +263,7 @@ void TestProviderIntegration() {
     cq::LruFrameCache cache(1024 * 1024 * 64);  // 大上界，不淘汰
     cq::MediaSource src{};
     auto provider = cq::CreateSystemFrameProvider(
-        cq::PalPtr<cq::IMediaDemuxer>(demuxer.release()), &decoder);
+        cq::PlatformPtr<cq::IMediaDemuxer>(demuxer.release()), &decoder);
     provider->SetFrameCache(&cache);
     cq::Status s = provider->Open(src);
     Check(s.IsOk(), "Open 成功");

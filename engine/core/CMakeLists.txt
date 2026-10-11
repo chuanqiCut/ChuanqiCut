@@ -28,7 +28,7 @@ add_library(cq_core STATIC
     # CORE-007：能力查询内核侧实现（SetCapabilitiesBackend / QueryCapability）。
     # CORE-006 只冻结了头文件，这两个函数长期只有声明无定义；单测里的 static_assert
     # 是编译期检查、不链接，所以 CTest 全绿也看不出来。此处补上实现。
-    cq/pal/capabilities.cpp
+    cq/platform/capabilities.cpp
     # CORE-008：线程角色体系 + 串行任务执行器（Session Thread 骨架，ARCH-001 §6）。
     # base 层的 concurrency.h 明确不提供线程池，这里接住。
     cq/session/thread_model.cpp
@@ -50,24 +50,24 @@ add_library(cq_core STATIC
     # BIND-003 子步骤 1：素材表（asset_id → MediaSource）。
     # 补上 MODEL-001 留下的那一环：MediaRef 只有 asset_id，预览要解码必须先查到媒体源。
     cq/media/asset_registry.cpp
-    # GFX-002 最小落地：IGfxDevice / IGfxEncoder 直连 PAL。
+    # GFX-002 最小落地：IGfxDevice / IGfxEncoder 直连 Platform。
     # 不做 RenderGraph（RENDER-001）—— 预览只需要"渲染一帧"，
     # 节点图/依赖分析/pass 调度等真有多 pass 合成需求时再补。
     cq/gfx/gfx_device.cpp
     # BIND-003 子步骤 4：预览渲染器（Timeline + AssetRegistry + 取帧 + 零拷贝导入 → 离屏 RT）。
     # 平台无关：取帧走 IFrameProviderFactory 接缝、绘制走 IBlitPass 接缝。
     cq/preview/preview_renderer.cpp
-    # BIND-003 子步骤 5：把 PAL 的 IFrameProvider 适配成 core 的 FrameProvider。
-    # ⚠️ 本 TU 是 core 中首个调用 PAL 工厂者，**必须单独成 TU**：静态库按 archive
-    #    member 粒度拉符号，独立 TU 才能保证「不用预览的目标」不牵出 PAL 依赖。
-    cq/media/pal_frame_provider.cpp
+    # BIND-003 子步骤 5：把 Platform 的 IFrameProvider 适配成 core 的 FrameProvider。
+    # ⚠️ 本 TU 是 core 中首个调用 Platform 工厂者，**必须单独成 TU**：静态库按 archive
+    #    member 粒度拉符号，独立 TU 才能保证「不用预览的目标」不牵出 Platform 依赖。
+    cq/media/platform_frame_provider.cpp
     # BIND-003 子步骤 5：预览的 C ABI 实现。同理必须单独成 TU（同上）。
     cq/preview/cq_sdk_preview.cpp
-    # UIA-009 子步骤 3：媒体时长探测 C ABI。调 PAL 工厂链路
-    # （PalFrameProviderFactory::Create），单独成 TU（ADR-0011 规则 1）。
+    # UIA-009 子步骤 3：媒体时长探测 C ABI。调 Platform 工厂链路
+    # （PlatformFrameProviderFactory::Create），单独成 TU（ADR-0011 规则 1）。
     cq/media/media_probe_abi.cpp
     # UIA-010：播放时钟 —— 时刻 = 墙钟的函数（非帧数累加），帧网格量化。
-    # 平台无关（只用 steady_clock + 有理数），不碰 PAL / Metal。
+    # 平台无关（只用 steady_clock + 有理数），不碰 Platform / Metal。
     cq/preview/player_clock.cpp
     # UIA-010 子步骤 5：预览取帧泵 —— 把 seek+解码+导入+离屏绘制搬到自有线程，
     # 主线程只做 blit + present。平台无关（只用 std::thread / mutex / condvar），

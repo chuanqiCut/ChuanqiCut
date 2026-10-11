@@ -19,7 +19,7 @@
 
 #include "cq/base/logging.h"  // CORE-010：workflow 日志（cq_log_configure_from_env）
 #include "cq/base/status.h"
-#include "cq/pal/capabilities.h"
+#include "cq/platform/capabilities.h"
 #include "cq_session_impl.h"
 #include "cq/model/timeline.h"
 #include "cq/preview/player_clock.h"

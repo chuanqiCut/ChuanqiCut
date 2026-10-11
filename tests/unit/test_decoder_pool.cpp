@@ -22,8 +22,8 @@
 #include "cq/base/rational_time.h"
 #include "cq/media/decoder_pool.h"
 #include "cq/media/system_frame_provider.h"
-#include "cq/pal/pal_common.h"
-#include "cq/pal/media.h"
+#include "cq/platform/common.h"
+#include "cq/platform/media.h"
 
 namespace {
 
@@ -225,7 +225,7 @@ void TestProviderIntegration() {
     // provider1：Open 从池借 1 路并解码
     auto demuxer1 = std::make_unique<MockDemuxer>(MakeGop());
     auto provider1 = cq::CreateSystemFrameProvider(
-        cq::PalPtr<cq::IMediaDemuxer>(demuxer1.release()), nullptr);
+        cq::PlatformPtr<cq::IMediaDemuxer>(demuxer1.release()), nullptr);
     provider1->SetDecoderPool(&pool);
     cq::MediaSource src{};
     cq::Status so1 = provider1->Open(src);
@@ -242,7 +242,7 @@ void TestProviderIntegration() {
     // provider2：池已满 → Open 如实返回 kResourceExhausted（不崩溃）
     auto demuxer2 = std::make_unique<MockDemuxer>(MakeGop());
     auto provider2 = cq::CreateSystemFrameProvider(
-        cq::PalPtr<cq::IMediaDemuxer>(demuxer2.release()), nullptr);
+        cq::PlatformPtr<cq::IMediaDemuxer>(demuxer2.release()), nullptr);
     provider2->SetDecoderPool(&pool);
     cq::Status so2 = provider2->Open(src);
     Check(so2.code == cq::StatusCode::kResourceExhausted,

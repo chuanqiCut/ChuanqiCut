@@ -17,7 +17,7 @@
 //   H. 显式 Seek + Acquire 契约用法：不双重 seek；重复 Acquire 同目标会重新 seek。
 //
 // Mock 与 test_system_frame_provider.cpp 的差异（本文件必须自带，不复用）：
-//   * 多 GOP 结构（4 个 GOP），Seek 落到 <= t 的最近关键帧（对齐 PAL 语义）；
+//   * 多 GOP 结构（4 个 GOP），Seek 落到 <= t 的最近关键帧（对齐 Platform 语义）；
 //   * demuxer 记 seek 次数、decoder 记 flush 次数（断言快路径不触发）；
 //   * decoder 的 DPB 压帧规则限定同 GOP（closed-GOP seek 语义：seek 后前一个
 //     GOP 的帧不在 DPB 里，不得阻塞本 GOP 输出）。
@@ -32,8 +32,8 @@
 #include "cq/base/status.h"
 #include "cq/base/rational_time.h"
 #include "cq/media/system_frame_provider.h"
-#include "cq/pal/pal_common.h"
-#include "cq/pal/media.h"
+#include "cq/platform/common.h"
+#include "cq/platform/media.h"
 
 namespace {
 
@@ -89,7 +89,7 @@ public:
     }
     cq::Status Seek(const cq::RationalTime& t, const cq::CancelToken&) override {
         ++seek_calls_;
-        // 与 PAL 语义一致：落到 <= t 的最近关键帧。
+        // 与 Platform 语义一致：落到 <= t 的最近关键帧。
         size_t target = 0;
         bool found = false;
         for (size_t i = 0; i < packets_.size(); ++i) {
@@ -228,7 +228,7 @@ std::vector<CountingDecoder::Spec> MakeSpecs() {
 
 // 被测对象：provider + 两个 mock 的组合（seek/flush 计数从 mock 读）。
 struct Rig {
-    CountingDemuxer* demuxer = nullptr;  // 所有权在 provider（PalPtr）
+    CountingDemuxer* demuxer = nullptr;  // 所有权在 provider（PlatformPtr）
     CountingDecoder* decoder = nullptr;  // 栈对象生命周期由调用方保证
     std::unique_ptr<cq::FrameProvider> provider;
 };
@@ -240,7 +240,7 @@ Rig MakeRig() {
     (void)s_decoder_anchor;
     rig.decoder = new CountingDecoder(MakeSpecs());
     rig.provider = cq::CreateSystemFrameProvider(
-        cq::PalPtr<cq::IMediaDemuxer>(rig.demuxer), rig.decoder);
+        cq::PlatformPtr<cq::IMediaDemuxer>(rig.demuxer), rig.decoder);
     cq::MediaSource src{};
     cq::Status s = rig.provider->Open(src);
     if (!s.IsOk()) {

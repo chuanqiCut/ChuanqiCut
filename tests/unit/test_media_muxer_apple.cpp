@@ -23,7 +23,7 @@
 
 #include "cq/base/status.h"
 #include "cq/base/rational_time.h"
-#include "cq/pal/media.h"     // IMediaMuxer / CreateMediaMuxer（平台无关接缝）
+#include "cq/platform/media.h"     // IMediaMuxer / CreateMediaMuxer（平台无关接缝）
 #include "media_decode.h"     // VideoToolboxDecoder / GetCvPixelBuffer（仅帧源，Apple TU）
 
 #ifndef CQ_SOURCE_DIR
@@ -95,7 +95,7 @@ int main() {
     src.path_len = src_path.size();
 
     // ---- 真实 PALA-010 解封装 ----
-    cq::PalPtr<cq::IMediaDemuxer> demuxer;
+    cq::PlatformPtr<cq::IMediaDemuxer> demuxer;
     cq::Status s = cq::CreateMediaDemuxer(src, demuxer);
     Check(s.IsOk() && demuxer, "PALA-010 CreateMediaDemuxer 打开成功");
     if (!demuxer) {
@@ -119,7 +119,7 @@ int main() {
                 decoder.IsHardwareAccelerated() ? "YES" : "NO(软解回退)");
 
     // ---- 平台无关地拿到 muxer（IMediaMuxer，不碰 AppleVideoEncoder）----
-    cq::PalPtr<cq::IMediaMuxer> muxer;
+    cq::PlatformPtr<cq::IMediaMuxer> muxer;
     s = cq::CreateMediaMuxer(muxer);
     Check(s.IsOk() && muxer, "CreateMediaMuxer 拿到平台无关 IMediaMuxer");
     if (!muxer) {
@@ -199,7 +199,7 @@ int main() {
         return 1;
     }
 
-    // muxer 句柄离开作用域即经 PalPtr 析构 Destroy()（不泄漏）。下面用独立 muxer 验证释放。
+    // muxer 句柄离开作用域即经 PlatformPtr 析构 Destroy()（不泄漏）。下面用独立 muxer 验证释放。
 
     // ---- ffprobe 验证产出文件 ----
     const char* ffprobe = std::getenv("CQ_FFPROBE_BIN");
@@ -250,7 +250,7 @@ int main() {
         cq::MediaSource o_src;
         o_src.path = out_path.c_str();
         o_src.path_len = out_path.size();
-        cq::PalPtr<cq::IMediaDemuxer> o_demux;
+        cq::PlatformPtr<cq::IMediaDemuxer> o_demux;
         cq::Status os = cq::CreateMediaDemuxer(o_src, o_demux);
         cq::StreamInfo o_info{};
         if (os.IsOk()) o_demux->GetStreamInfo(0, o_info);
@@ -297,7 +297,7 @@ int main() {
     {
         const std::string cancel_path = "/tmp/cq_muxer_cancel.mp4";
         std::remove(cancel_path.c_str());
-        cq::PalPtr<cq::IMediaMuxer> cmuxer;
+        cq::PlatformPtr<cq::IMediaMuxer> cmuxer;
         cq::Status cs = cq::CreateMediaMuxer(cmuxer);
         bool cancel_ok = false;
         if (cs.IsOk() && cmuxer) {

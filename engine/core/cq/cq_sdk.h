@@ -251,7 +251,7 @@ int32_t cq_session_query_assets(const CQSession* session, CQAssetInfo* out,
 /* 媒体时长探测（UIA-009 子步骤 3；**同步**：打开容器读时长后立即关闭。
  * 导入流程用于确定片段时长 —— 用户动作、低频，非逐帧路径）。
  *   0 = 成功；7000 = 参数非法；其它 = 打开/解析失败原样透传。
- * ⚠️ 实现调用 PAL 工厂，隔离在独立 TU（ADR-0011 规则 1）。 */
+ * ⚠️ 实现调用 Platform 工厂，隔离在独立 TU（ADR-0011 规则 1）。 */
 int32_t cq_media_probe_duration(const char* path, int64_t* out_value,
                                 int32_t* out_timescale);
 
@@ -269,7 +269,7 @@ int32_t cq_media_probe_duration(const char* path, int64_t* out_value,
  * ⚠️ 生命周期：CQPreview **不拥有** CQSession —— 必须 session 先活后死
  *    （Swift 绑定由对象图保证：Previewer 强持有 Session）。
  *
- * ⚠️ 平台能力依赖：预览需要 PAL 的图形设备 / 全屏拷贝 pass / 帧提供器三项后端。
+ * ⚠️ 平台能力依赖：预览需要 Platform 的图形设备 / 全屏拷贝 pass / 帧提供器三项后端。
  *    缺失任一后端、或 session 未内建模型时 cq_preview_create 返回 NULL ——
  *    这是**运行时**失败，上层据此走「预览不可用」路径。
  *    **不要**用编译期宏判断平台能力（红线 #3）。

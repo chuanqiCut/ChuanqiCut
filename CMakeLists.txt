@@ -32,9 +32,9 @@ set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 # 测试，导致 `ctest --test-dir build` 找不到用例。各子目录（tests/）自行 add_test。
 enable_testing()
 
-# ---- 聚合各层（按写集：core / pal / apps / third_party / tools / tests）----
+# ---- 聚合各层（按写集：core / platform / apps / third_party / tools / tests）----
 add_subdirectory(engine/core)
-add_subdirectory(engine/pal)
+add_subdirectory(engine/platform)
 add_subdirectory(apps)
 add_subdirectory(third_party)
 add_subdirectory(tools)

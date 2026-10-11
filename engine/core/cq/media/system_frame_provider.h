@@ -1,12 +1,12 @@
 // ChuanqiCut — MEDIA-020 SystemFrameProvider（跨平台「按时间戳取帧」编排实现）
 //
 // 位置：core 层（`cq::FrameProvider` 抽象由 MEDIA-010 在 frame_provider.h 定义并冻结）。
-// 本文件是 MEDIA-010 抽象的**具体落地**：聚合 PAL 解封装后端（IMediaDemuxer，
+// 本文件是 MEDIA-010 抽象的**具体落地**：聚合 Platform 解封装后端（IMediaDemuxer，
 // 由 PALA-010 提供真实 Apple 实现，或单测注入 Mock），在 demux + 解码之上实现
 // 精确 seek 的*编排*——即「t 处真正的展示帧」的选取语义。
 //
 // 硬约束（与 MEDIA-010 一致）：
-//   * 零平台类型：本文件只使用 base 层 + PAL 的 opaque 句柄与平台无关类型，绝不
+//   * 零平台类型：本文件只使用 base 层 + Platform 的 opaque 句柄与平台无关类型，绝不
 //     出现 AV* / ffmpeg / 平台头。
 //   * 统一 base 类型：RationalTime / Status / CancelToken。
 //   * 内核禁用异常。
@@ -15,8 +15,8 @@
 // 真实实现由 PALA-011（VideoToolbox / MediaCodec）落地。本期提供：
 //   * MockDecoder —— 单测用，带 B 帧 DPB 重排，验证精确 seek 语义。
 //   * StubDecoder —— 真实链路冒烟占位，诚实返回「解码后端未实现」（PALA-011 未做）。
-// SystemFrameProvider 不持有解码器实现，由注入方（PAL 层 / 单测）提供，满足
-// core 不反向依赖 PAL 的分层。
+// SystemFrameProvider 不持有解码器实现，由注入方（Platform 层 / 单测）提供，满足
+// core 不反向依赖 Platform 的分层。
 
 #ifndef CQ_MEDIA_SYSTEM_FRAME_PROVIDER_H_
 #define CQ_MEDIA_SYSTEM_FRAME_PROVIDER_H_
@@ -30,8 +30,8 @@
 #include "cq/base/rational_time.h"         // RationalTime
 #include "cq/media/frame_provider.h"  // FrameProvider（MEDIA-010 抽象）
 #include "cq/media/decoder_pool.h"   // IDecoderPool / DecoderOf（MEDIA-012 接入）
-#include "cq/pal/pal_common.h"        // NativeImageHandle / PalPtr
-#include "cq/pal/media.h"         // IMediaDemuxer / MediaPacket / MediaFrame / MediaSource
+#include "cq/platform/common.h"        // NativeImageHandle / PlatformPtr
+#include "cq/platform/media.h"         // IMediaDemuxer / MediaPacket / MediaFrame / MediaSource
 
 namespace cq {
 
@@ -84,12 +84,12 @@ public:
 // ===========================================================================
 // SystemFrameProvider — MEDIA-010 抽象的具体编排实现
 // ===========================================================================
-// 构造时注入：PAL 解封装器（PalPtr<IMediaDemuxer>，所有权被接管）+ 解码接缝
-// （IFrameDecoder*，不接管，由注入方所有）。core 不反向依赖 PAL，故 demuxer 与
-// decoder 均由外部注入；真实使用时由 PAL 层用 CreateMediaDemuxer + PALA-011 解码器装配。
+// 构造时注入：Platform 解封装器（PlatformPtr<IMediaDemuxer>，所有权被接管）+ 解码接缝
+// （IFrameDecoder*，不接管，由注入方所有）。core 不反向依赖 Platform，故 demuxer 与
+// decoder 均由外部注入；真实使用时由 Platform 层用 CreateMediaDemuxer + PALA-011 解码器装配。
 class SystemFrameProvider : public FrameProvider {
 public:
-    SystemFrameProvider(PalPtr<IMediaDemuxer> demuxer, IFrameDecoder* decoder)
+    SystemFrameProvider(PlatformPtr<IMediaDemuxer> demuxer, IFrameDecoder* decoder)
         : demuxer_(std::move(demuxer)), decoder_(decoder) {}
 
     ~SystemFrameProvider() override {
@@ -136,7 +136,7 @@ public:
         return Status::Ok();
     }
 
-    // 精确 seek（编辑核心）。先定位到 <= target 的最近关键帧（PAL 吸收平台差异），
+    // 精确 seek（编辑核心）。先定位到 <= target 的最近关键帧（Platform 吸收平台差异），
     // 重置解码器 DPB；具体「解码到 t 帧」发生在 AcquireFrame。
     Status Seek(const RationalTime& target, SeekPolicy policy,
                 const CancelToken& token) override {
@@ -253,9 +253,9 @@ public:
 
     // 接管解码器所有权（可选）。
     // 为什么需要：本类的构造签名收的是裸 `IFrameDecoder*` 且明确「不接管」，这在单测里
-    // 没问题（decoder 是栈对象），但 PAL 装配时解码器是 new 出来的——没有接管能力，
+    // 没问题（decoder 是栈对象），但 Platform 装配时解码器是 new 出来的——没有接管能力，
     // 装配方就得自己想办法让 provider 与 decoder 同生命周期，容易漏。
-    // 装配方（pal/<platform>/）用带 `unique_ptr<IFrameDecoder>` 的工厂重载即可。
+    // 装配方（platform/<platform>/）用带 `unique_ptr<IFrameDecoder>` 的工厂重载即可。
     void AdoptDecoder(std::unique_ptr<IFrameDecoder> decoder) {
         owned_decoder_ = std::move(decoder);
         decoder_ = owned_decoder_.get();
@@ -538,7 +538,7 @@ private:
         return Status{StatusCode::kIoNotFound};
     }
 
-    PalPtr<IMediaDemuxer> demuxer_;
+    PlatformPtr<IMediaDemuxer> demuxer_;
     IFrameDecoder* decoder_ = nullptr;  // 不接管（Open 时可能被子解码器池覆盖）
     std::unique_ptr<IFrameDecoder> owned_decoder_;  // AdoptDecoder 后持有，保证同生命周期
     IFrameCache* cache_ = nullptr;      // 帧缓存钩子（MEDIA-011）
@@ -563,13 +563,13 @@ private:
 // 工厂：构造 SystemFrameProvider（调用方持有 unique_ptr<FrameProvider>）。
 // 定义在 system_frame_provider.cpp（out-of-line），使 cq_core 携带真实符号。
 std::unique_ptr<FrameProvider> CreateSystemFrameProvider(
-    PalPtr<IMediaDemuxer> demuxer, IFrameDecoder* decoder);
+    PlatformPtr<IMediaDemuxer> demuxer, IFrameDecoder* decoder);
 
 // 工厂重载：**接管解码器所有权**（内部转调 AdoptDecoder）。
-// PAL 装配用这条——真实解码器（PALA-011 VideoToolboxDecoder 等）是堆对象，
+// Platform 装配用这条——真实解码器（PALA-011 VideoToolboxDecoder 等）是堆对象，
 // 交给 provider 持有即可保证二者同生命周期，装配方无需另设持有结构。
 std::unique_ptr<FrameProvider> CreateSystemFrameProvider(
-    PalPtr<IMediaDemuxer> demuxer, std::unique_ptr<IFrameDecoder> owned_decoder);
+    PlatformPtr<IMediaDemuxer> demuxer, std::unique_ptr<IFrameDecoder> owned_decoder);
 
 }  // namespace cq
 

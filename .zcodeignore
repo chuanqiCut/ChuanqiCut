@@ -39,8 +39,9 @@ tmp*/
 
 # Swift 绑定：xcframework 副本与 SPM 构建目录（均为构建产物，clone 后自行生成）
 # 生成方式：tools/build/build_core_apple.sh --config=Release && bindings/swift/prepare.sh
-bindings/swift/Frameworks/
-bindings/swift/.build/
+# ⚠️ 路径随 INFRA-022 改为 engine/bindings/swift/（2026-10-10 同步）
+engine/bindings/swift/Frameworks/
+engine/bindings/swift/.build/
 
 # Apple App 工程（UIA-002 建，INFRA-009 拆为 ios/ 与 mac/ 两个独立工程）
 # Xcode 工程与 workspace 均为生成产物，不入库：
@@ -51,8 +52,10 @@ apps/apple/ios/ChuanqiCut.xcodeproj/
 apps/apple/ios/ChuanqiCut.xcworkspace/
 apps/apple/mac/ChuanqiCut.xcodeproj/
 apps/apple/mac/ChuanqiCut.xcworkspace/
-# SPM 构建目录（SharedUI 包仅保留作 swift test 测试宿主，同 bindings/swift/.build）
-apps/apple/packages/SharedUI/.build/
+# SPM 构建目录（P84 规则：包内 .build 一律不入库；临时编译统一走 /build/spm/
+# 用 `swift test --scratch-path "$ROOT/build/spm/<包名>"` 重定向）
+apps/apple/packages/*/.build/
+/.build/
 # Xcode 用户态状态与索引
 xcuserdata/
 DerivedData/

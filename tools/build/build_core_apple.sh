@@ -6,14 +6,14 @@
 #   - iOS simulator(arm64 + x86_64, SDK iphonesimulator)
 #   - macOS        (arm64 + x86_64, SDK macosx)
 #
-# 每个切片先分别用 CMake 构建出 cq_core.a + cq_pal_apple.a，再用 libtool 合并成
+# 每个切片先分别用 CMake 构建出 cq_core.a + cq_platform_apple.a，再用 libtool 合并成
 # 单一静态库 libChuanqiCut.a（保留各 .o 的 LC_BUILD_VERSION 平台标记），最后由
 # `xcodebuild -create-xcframework` 合并成 .xcframework。
 #
 # 设计要点（沿用 build_core.sh 的约定）：
 #   - cmake 不在 PATH，CMAKE_BIN 默认绝对路径，允许环境变量覆盖。
 #   - 每步显式打印在做什么；任何一步失败立即非零退出（set -e + 显式检查），不静默继续。
-#   - 只构建静态库 target（cq_core cq_pal_apple），不构建 tests/apps 可执行文件：
+#   - 只构建静态库 target（cq_core cq_platform_apple），不构建 tests/apps 可执行文件：
 #     iOS device 链接可执行文件需要签名，本任务不涉签名；切片只交付静态库。
 #   - iOS 交叉编译必须设 CMAKE_TRY_COMPILE_TARGET_TYPE=STATIC_LIBRARY，否则 CMake
 #     在 configure 期的 try_compile 会去链接可执行文件而失败（device 需签名）。
@@ -33,7 +33,7 @@
 #   tools/build/build_core_apple.sh [--config=Debug|Release] [--clean] [--output=<dir>]
 #                                   [--lto=off|on]
 #
-# 说明：本脚本不修改任何 C++/ObjC++ 业务代码；若 PAL 某 API 仅在 macOS 可用导致 iOS
+# 说明：本脚本不修改任何 C++/ObjC++ 业务代码；若 Platform 某 API 仅在 macOS 可用导致 iOS
 # 切片编译失败，脚本会如实非零退出，具体失败文件/API 由构建日志给出，交 owner 裁决。
 
 set -euo pipefail
@@ -113,7 +113,8 @@ BUILD_BASE="$ROOT_DIR/build/apple"
 IOS_DEVICE_DIR="$BUILD_BASE/ios-device"
 IOS_SIM_DIR="$BUILD_BASE/ios-sim"
 MACOS_DIR="$BUILD_BASE/macos"
-HEADERS_DIR="$ROOT_DIR/engine/core/include"
+# XCFramework 只发布唯一 public C ABI 头；内部 C++ 头与实现虽物理共置，绝不打包。
+HEADERS_DIR="$BUILD_BASE/public-headers"
 
 echo "==> ChuanqiCut Apple XCFramework build"
 echo "    cmake : $CMAKE_BIN"
@@ -131,6 +132,10 @@ if [ "$CLEAN" -eq 1 ]; then
     echo "==> moving $BUILD_BASE to trash: $TRASH_DEST"
     mv "$BUILD_BASE" "$TRASH_DEST"
 fi
+
+# ---- public headers staging（只允许 cq_sdk.h）----
+mkdir -p "$HEADERS_DIR"
+cp "$ROOT_DIR/engine/core/cq/cq_sdk.h" "$HEADERS_DIR/cq_sdk.h"
 
 # ---- 单切片构建：configure + build(仅静态库) + libtool 合并 ----
 # 参数：label sysroot sysname archs deploy bdir
@@ -168,21 +173,21 @@ build_slice() {
 
     echo "    LTO(IPO, Release) = $IPO_VALUE"
 
-    echo "==> [$label] build (targets: cq_core cq_pal_apple)"
-    "$CMAKE_BIN" --build "$bdir" --config "$CONFIG" --target cq_core cq_pal_apple
+    echo "==> [$label] build (targets: cq_core cq_platform_apple)"
+    "$CMAKE_BIN" --build "$bdir" --config "$CONFIG" --target cq_core cq_platform_apple
 
     local core_a="$bdir/lib/libcq_core.a"
-    local pal_a="$bdir/lib/libcq_pal_apple.a"
+    local platform_a="$bdir/lib/libcq_platform_apple.a"
     if [ ! -f "$core_a" ]; then
         echo "error: [$label] cq_core.a not produced at $core_a" >&2
         exit 6
     fi
-    if [ ! -f "$pal_a" ]; then
-        echo "error: [$label] cq_pal_apple.a not produced at $pal_a" >&2
+    if [ ! -f "$platform_a" ]; then
+        echo "error: [$label] cq_platform_apple.a not produced at $platform_a" >&2
         exit 6
     fi
     echo "==> [$label] combine static libs -> $bdir/libChuanqiCut.a"
-    "$XCRUN_BIN" libtool -static -o "$bdir/libChuanqiCut.a" "$core_a" "$pal_a"
+    "$XCRUN_BIN" libtool -static -o "$bdir/libChuanqiCut.a" "$core_a" "$platform_a"
     echo "    done: $(wc -c < "$bdir/libChuanqiCut.a") bytes"
 }
 
@@ -296,7 +301,7 @@ if [ "$SMOKE_LINK" -eq 1 ]; then
                 smoke_tmp="$(mktemp -d)/cq_smoke_link"
                 echo "    host  : macOS $smoke_host_ver ($smoke_host_arch)"
                 echo "    lib   : $(basename "$smoke_lib")"
-                # PAL/Apple 后端依赖这些系统框架；缺一个都会在 link 期炸出来，
+                # Platform/Apple 后端依赖这些系统框架；缺一个都会在 link 期炸出来，
                 # 这正是“只打不验”发现不了的问题。
                 if ! clang++ -std=c++20 -arch "$smoke_host_arch" \
                         -mmacosx-version-min="$MACOS_DEPLOY" \
@@ -311,7 +316,7 @@ if [ "$SMOKE_LINK" -eq 1 ]; then
                 fi
                 smoke_out="$("$smoke_tmp")"
                 echo "    output: $smoke_out"
-                if [ "$smoke_out" != "StatusToString(kOk) = OK" ]; then
+                if [ "$smoke_out" != "ChuanqiCut version = 0.1.0" ]; then
                     echo "error: unexpected smoke output" >&2
                     exit 9
                 fi

@@ -86,7 +86,7 @@ guard let previewSession = Session() else {
     exit(1)
 }
 guard let preview = Previewer(session: previewSession, width: 64, height: 64) else {
-    print("FAIL: Preview 创建失败（PAL 预览后端缺失或设备创建失败）")
+    print("FAIL: Preview 创建失败（Platform 预览后端缺失或设备创建失败）")
     exit(1)
 }
 check(preview.renderFrame(pts: RationalTime(value: 60000, timescale: 120000)) == .ioNotFound,

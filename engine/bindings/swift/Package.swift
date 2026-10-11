@@ -45,7 +45,7 @@ let package = Package(
             //    即：编译绿 ≠ 能链接（又一次"绿灯≠可用"）。
             //
             // ⚠️ 系统框架清单与 ChuanqiCut.podspec 的 ss.frameworks 一致：一旦链接
-            //    拉入预览 / 媒体 TU（cq_sdk_preview.o → PAL 图形 + 解码），VideoToolbox /
+            //    拉入预览 / 媒体 TU（cq_sdk_preview.o → Platform 图形 + 解码），VideoToolbox /
             //    CoreMedia / Metal 等符号就必须有归属（2026-10-02 UIA-003 实测）。
             //    libc++ 同理 —— 内核是 C++20，之前测试碰不到 C++ TU 所以没暴露。
             linkerSettings: [

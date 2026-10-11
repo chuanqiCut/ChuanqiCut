@@ -8,7 +8,7 @@
 //      「哪一帧（pts，用 RationalTime 表示，禁止裸 int64 / double 秒）、哪个环节
 //      （demux / decode / render / encode）」追溯。帧标识一律走已冻结的
 //      `RationalTime`（CORE-001），与项目「时间一律有理数」红线一致。
-//   3. 输出路径可注入（sink 抽象）：绝不直接写 stdout/stderr。PAL 层（CORE-006）
+//   3. 输出路径可注入（sink 抽象）：绝不直接写 stdout/stderr。Platform 层（CORE-006）
 //      将来提供平台实现（iOS -> os_log、Android -> logcat）。本模块只定义
 //      `ILogSink` 接口 + 一个默认 `FileLogSink`（写入 FILE*，可指向磁盘文件落盘）。
 //      **不实现任何平台特后端**。
@@ -111,7 +111,7 @@ const char* PipelineStageName(PipelineStage stage);
 const char* LogLevelName(LogLevel level);
 
 // ---- Sink 抽象（输出路径可注入）----
-// 一条已经格式化好的消息通过 Emit 交给具体后端。PAL 层将来实现此接口
+// 一条已经格式化好的消息通过 Emit 交给具体后端。Platform 层将来实现此接口
 // （os_log / logcat），本模块只提供默认 FILE* 实现。
 class ILogSink {
 public:

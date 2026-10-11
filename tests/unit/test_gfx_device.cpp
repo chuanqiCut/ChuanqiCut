@@ -9,7 +9,7 @@
 //   * 用例 B：client 在 Encode 里画一个全屏三角形采样四色纹理 → 读回四角
 //             分别是 红/绿/蓝/黄（证明 SetTexture/Draw 真的生效，而非只清屏）
 //
-// 仅在 Apple 平台编译（PAL 后端是 Metal）。
+// 仅在 Apple 平台编译（Platform 后端是 Metal）。
 
 #include <cstdint>
 #include <cstdio>
@@ -18,7 +18,7 @@
 
 #include "cq/base/status.h"
 #include "cq/gfx/gfx_device.h"
-#include "cq/pal/gfx.h"
+#include "cq/platform/gfx.h"
 #include "gfx_metal_internal.h"
 
 namespace {
@@ -121,30 +121,30 @@ private:
 }  // namespace
 
 int main() {
-    std::printf("=== GFX-002：IGfxDevice 直连 PAL（Metal）===\n");
+    std::printf("=== GFX-002：IGfxDevice 直连 Platform（Metal）===\n");
 
-    // ---- PAL 设备 ----
+    // ---- Platform 设备 ----
     cq::GraphicsDeviceDesc dev_desc;
-    cq::PalPtr<cq::IGraphicsDevice> pal_dev;
-    Check(cq::CreateGraphicsDevice(dev_desc, pal_dev).IsOk(), "PAL CreateGraphicsDevice");
-    if (!pal_dev) {
+    cq::PlatformPtr<cq::IGraphicsDevice> platform_dev;
+    Check(cq::CreateGraphicsDevice(dev_desc, platform_dev).IsOk(), "Platform CreateGraphicsDevice");
+    if (!platform_dev) {
         std::printf("\nPASSED: 0 checks\n");
         return 0;
     }
 
-    // ---- GFX 设备（接管 pal_dev 所有权）----
+    // ---- GFX 设备（接管 platform_dev 所有权）----
     cq::IGfxDevice* gfx = nullptr;
-    Check(cq::CreateGfxDevice(pal_dev, gfx).IsOk(), "CreateGfxDevice");
+    Check(cq::CreateGfxDevice(platform_dev, gfx).IsOk(), "CreateGfxDevice");
     Check(gfx != nullptr, "GFX 设备非空");
-    Check(pal_dev.get() == nullptr, "PAL 设备所有权已移交给 GFX（避免悬垂）");
-    Check(gfx->PalDevice() != nullptr, "可取回底层 PAL 设备");
+    Check(platform_dev.get() == nullptr, "Platform 设备所有权已移交给 GFX（避免悬垂）");
+    Check(gfx->PlatformDevice() != nullptr, "可取回底层 Platform 设备");
 
     // ---- 离屏渲染目标 ----
     cq::RenderTargetDesc rt_desc;
     rt_desc.width = 64;
     rt_desc.height = 64;
     rt_desc.color_format = cq::TextureFormat::kRGBA8;
-    cq::PalPtr<cq::IRenderTarget> rt;
+    cq::PlatformPtr<cq::IRenderTarget> rt;
     Check(gfx->CreateRenderTarget(rt_desc, rt).IsOk(), "CreateRenderTarget(64x64)");
 
     // =====================================================================
@@ -174,7 +174,7 @@ int main() {
     // =====================================================================
     std::printf("\n[用例 B] 采样四色纹理绘制 + 读回四角像素\n");
     {
-        cq::IGraphicsDevice* pal = gfx->PalDevice();
+        cq::IGraphicsDevice* platform = gfx->PlatformDevice();
 
         // 纹理
         cq::TextureDesc td;
@@ -182,8 +182,8 @@ int main() {
         td.width = 2;
         td.height = 2;
         td.usage = cq::TextureUsage::kSampled;
-        cq::PalPtr<cq::ITexture> tex;
-        Check(pal->CreateTexture(td, tex).IsOk(), "CreateTexture(2x2)");
+        cq::PlatformPtr<cq::ITexture> tex;
+        Check(platform->CreateTexture(td, tex).IsOk(), "CreateTexture(2x2)");
         Check(cq::apple::UploadTextureData(tex.get(), kTex2x2, sizeof(kTex2x2)).IsOk(),
               "UploadTextureData(四色)");
 
@@ -191,8 +191,8 @@ int main() {
         cq::BufferDesc bd;
         bd.usage = cq::BufferUsage::kVertex;
         bd.size_bytes = sizeof(kVerts);
-        cq::PalPtr<cq::IBuffer> vbuf;
-        Check(pal->CreateBuffer(bd, vbuf).IsOk(), "CreateBuffer(vertex)");
+        cq::PlatformPtr<cq::IBuffer> vbuf;
+        Check(platform->CreateBuffer(bd, vbuf).IsOk(), "CreateBuffer(vertex)");
         void* mapped = nullptr;
         Check(vbuf->Map(mapped).IsOk(), "Map(vertex)");
         std::memcpy(mapped, kVerts, sizeof(kVerts));
@@ -204,15 +204,15 @@ int main() {
         vmd.code = static_cast<const void*>(kVertMSL);
         vmd.code_size = std::strlen(kVertMSL);
         vmd.is_platform_native = true;
-        cq::PalPtr<cq::IShaderModule> vs;
-        Check(pal->CreateShaderModule(vmd, vs).IsOk(), "CreateShaderModule(vertex)");
+        cq::PlatformPtr<cq::IShaderModule> vs;
+        Check(platform->CreateShaderModule(vmd, vs).IsOk(), "CreateShaderModule(vertex)");
 
         cq::ShaderModuleDesc fmd = vmd;
         fmd.stage = cq::ShaderStage::kFragment;
         fmd.code = static_cast<const void*>(kFragMSL);
         fmd.code_size = std::strlen(kFragMSL);
-        cq::PalPtr<cq::IShaderModule> fs;
-        Check(pal->CreateShaderModule(fmd, fs).IsOk(), "CreateShaderModule(fragment)");
+        cq::PlatformPtr<cq::IShaderModule> fs;
+        Check(platform->CreateShaderModule(fmd, fs).IsOk(), "CreateShaderModule(fragment)");
 
         // 管线
         cq::PipelineDesc pd;
@@ -227,15 +227,15 @@ int main() {
         pd.vertex_layout.attrs[0] = cq::VertexAttribute{0, 0, cq::VertexFormat::kFloat32x2};
         pd.vertex_layout.attrs[1] =
             cq::VertexAttribute{1, 2 * sizeof(float), cq::VertexFormat::kFloat32x2};
-        cq::PalPtr<cq::IPipeline> pipeline;
-        Check(pal->CreatePipeline(pd, pipeline).IsOk(), "CreatePipeline");
+        cq::PlatformPtr<cq::IPipeline> pipeline;
+        Check(platform->CreatePipeline(pd, pipeline).IsOk(), "CreatePipeline");
 
         // 采样器
         cq::SamplerDesc sd;
         sd.linear_filter = false;  // 最近邻，四色要能明确区分
         sd.clamp_to_edge = true;
-        cq::PalPtr<cq::ISampler> sampler;
-        Check(pal->CreateSampler(sd, sampler).IsOk(), "CreateSampler(nearest)");
+        cq::PlatformPtr<cq::ISampler> sampler;
+        Check(platform->CreateSampler(sd, sampler).IsOk(), "CreateSampler(nearest)");
 
         if (pipeline && sampler && tex && vbuf) {
             DrawClient client(cq::apple::ToPipelineHandle(pipeline.get()),

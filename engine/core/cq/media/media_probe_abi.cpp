@@ -1,7 +1,7 @@
 // ChuanqiCut — 媒体时长探测的 C ABI（UIA-009 子步骤 3）
 //
-// ⚠️ 单独成 TU（ADR-0011 规则 1）：本 TU 调用 PAL 工厂链路
-//    （PalFrameProviderFactory::Create → CreateFrameProvider）。
+// ⚠️ 单独成 TU（ADR-0011 规则 1）：本 TU 调用 Platform 工厂链路
+//    （PlatformFrameProviderFactory::Create → CreateFrameProvider）。
 //    cq_tests_c_abi / c_abi_session 只链 cq_core，不引用本 TU 的符号，
 //    链接器不拉入本 archive member —— 隔离成立。新增此类 TU 时须登记
 //    ADR-0011 §3 的 TU 表。
@@ -16,7 +16,7 @@
 
 #include "cq/base/status.h"
 #include "cq/base/rational_time.h"
-#include "cq/pal/media.h"
+#include "cq/platform/media.h"
 
 int32_t cq_media_probe_duration(const char* path, int64_t* out_value,
                                 int32_t* out_timescale) {
@@ -28,12 +28,12 @@ int32_t cq_media_probe_duration(const char* path, int64_t* out_value,
 
     cq::MediaSource src;
     src.path = path;
-    src.path_len = std::strlen(path);  // PAL 侧拒绝 path_len==0（demuxer 校验）
+    src.path_len = std::strlen(path);  // Platform 侧拒绝 path_len==0（demuxer 校验）
 
     // MEDIA-026：探测走 **demuxer OpenLight**（只读容器时长），不再走完整
     // provider 打开 —— 全量 Open 对大文件做逐样本关键帧扫描（秒级），而探测
     // 只需要 duration。解码会话/VT/扫描全部不触碰。
-    cq::PalPtr<cq::IMediaDemuxer> demuxer;
+    cq::PlatformPtr<cq::IMediaDemuxer> demuxer;
     cq::Status s = cq::CreateMediaDemuxer(src, demuxer);
     if (!s.IsOk()) return static_cast<int32_t>(s.code);
     if (!demuxer) return static_cast<int32_t>(cq::StatusCode::kInternal);

@@ -26,7 +26,7 @@
 #include "cq/base/concurrency.h"
 #include "cq/base/status.h"
 #include "cq/base/rational_time.h"
-#include "cq/pal/pal_common.h"
+#include "cq/platform/common.h"
 #include "cq/preview/preview_frame_source.h"
 #include "cq/preview/preview_pump.h"
 

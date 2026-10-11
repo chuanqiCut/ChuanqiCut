@@ -1,15 +1,15 @@
 // ChuanqiCut — 跨平台 FrameProvider 抽象与精确 seek 语义（MEDIA-010）
 //
 // ┌────────────────────────────────────────────────────────────────────────┐
-// │ 与 PAL `IFrameProvider` 的关系（务必先读，避免与 PAL 混淆）                │
+// │ 与 Platform `IFrameProvider` 的关系（务必先读，避免与 Platform 混淆）                │
 // ├────────────────────────────────────────────────────────────────────────┤
-// │ PAL `IFrameProvider`（pal/media.h，CORE-006 冻结）是**平台解码后端**：      │
+// │ Platform `IFrameProvider`（platform/media.h，CORE-006 冻结）是**平台解码后端**：      │
 // │ 在 demux+解码之上提供「按 pts 取帧」，承诺精确 seek，采用 lease 模型        │
 // │ （AcquireFrame / ReleaseFrame）。由各平台实现（PALA-010/011 Apple、       │
 // │ MEDIA-021 FFmpeg）落地，是「平台能力」层。                                │
 // │                                                                        │
-// │ 本文件的 `FrameProvider`（MEDIA-010）是**跨平台媒体编排层**，位于 PAL 之上：│
-// │   * 持有（或聚合）一个 PAL `IFrameProvider`，把「精确 seek 策略选择」       │
+// │ 本文件的 `FrameProvider`（MEDIA-010）是**跨平台媒体编排层**，位于 Platform 之上：│
+// │   * 持有（或聚合）一个 Platform `IFrameProvider`，把「精确 seek 策略选择」       │
 // │     （精确 / 最近关键帧 / 最近帧）、帧缓存（MEDIA-011）、解码器池          │
 // │     （MEDIA-012）的*编排*收口到一处，供编辑侧（retiming / 预览 / 导出）使用。│
 // │   * 规定「精确 seek 的正确性契约」：返回帧必须是 target 处**真正的展示帧**， │
@@ -18,7 +18,7 @@
 // └────────────────────────────────────────────────────────────────────────┘
 //
 // 硬约束（与 CORE-006 一致）：
-//   * 零平台类型：只使用 base 层 + PAL 的 opaque 句柄与类型，绝不出现任何平台类型、
+//   * 零平台类型：只使用 base 层 + Platform 的 opaque 句柄与类型，绝不出现任何平台类型、
 //     不 include 平台头、不出现 AV* / ffmpeg 类型。
 //   * 统一 base 类型：时间 RationalTime、错误 Status、长任务 CancelToken。
 //   * 内核禁用异常：无 throw。
@@ -34,8 +34,8 @@
 #include "cq/base/concurrency.h"  // CancelToken
 #include "cq/base/status.h"       // Status
 #include "cq/base/rational_time.h"         // RationalTime
-#include "cq/pal/pal_common.h"        // opaque 句柄、平台无关枚举
-#include "cq/pal/media.h"         // PAL IFrameProvider / MediaSource / MediaFrame（本层之下）
+#include "cq/platform/common.h"        // opaque 句柄、平台无关枚举
+#include "cq/platform/media.h"         // Platform IFrameProvider / MediaSource / MediaFrame（本层之下）
 
 namespace cq {
 
@@ -70,9 +70,9 @@ struct FrameRequest {
 // （duration 取自该帧显示时长；末帧用流时长收尾）。这是编辑侧最自然的语义：
 // 时间轴上的点落在哪一帧的展示区间内，就取哪一帧。
 //
-// kExact 的内部机制（交由 PAL 后端 + MEDIA-020 实现，此处规定契约）：
-//   1. 把 demuxer seek 到「<= t 的最近关键帧」（PAL 吸收各平台差异：Android
-//      MediaCodec 只能关键帧级 seek、AVFoundation/VB 可更细，PAL 统一为「先到关键帧」）。
+// kExact 的内部机制（交由 Platform 后端 + MEDIA-020 实现，此处规定契约）：
+//   1. 把 demuxer seek 到「<= t 的最近关键帧」（Platform 吸收各平台差异：Android
+//      MediaCodec 只能关键帧级 seek、AVFoundation/VB 可更细，Platform 统一为「先到关键帧」）。
 //   2. 从关键帧起前向解码，**丢弃**显示顺序在 t 之前的所有帧。
 //   3. 解码到「展示区间为 t 的那个帧」：由于 B 帧可能引用其后帧，必须继续解码到
 //      t 帧及其解码依赖（参考帧）全部可重建为止，才返回 t 帧的展示结果。
@@ -103,7 +103,7 @@ class IFrameCache {
 public:
     virtual ~IFrameCache() = default;
 
-    // 查找 at 处是否已有缓存帧；命中写入 out 并返回 true（out 复用 PAL lease 语义，
+    // 查找 at 处是否已有缓存帧；命中写入 out 并返回 true（out 复用 Platform lease 语义，
     // 内存归缓存所有，调用方用毕须经缓存归还，不重复释放）。
     virtual bool Find(const RationalTime& at, MediaFrame& out) = 0;
 
@@ -140,15 +140,15 @@ public:
 // ===========================================================================
 // 5. FrameProvider — 跨平台「按时间戳取帧」编排抽象（MEDIA-010 核心）
 // ===========================================================================
-// 编辑侧消费的唯一媒体帧接口。位于 PAL IFrameProvider 之上：聚合平台解码后端，
+// 编辑侧消费的唯一媒体帧接口。位于 Platform IFrameProvider 之上：聚合平台解码后端，
 // 收口精确 seek 策略、帧缓存（MEDIA-011）、解码器池（MEDIA-012）编排。
 // 抽象类：具体实现 = MEDIA-020 SystemFrameProvider（系统解码后端）。
-// 生命周期：跨平台对象，由调用方以 std::unique_ptr 等持有（非 PAL 资源，不用 PalPtr）。
+// 生命周期：跨平台对象，由调用方以 std::unique_ptr 等持有（非 Platform 资源，不用 PlatformPtr）。
 class FrameProvider {
 public:
     virtual ~FrameProvider() = default;
 
-    // 打开媒体源（复用 PAL MediaSource；图片走 GFX 导入，不在此）。
+    // 打开媒体源（复用 Platform MediaSource；图片走 GFX 导入，不在此）。
     virtual Status Open(const MediaSource& src) = 0;
 
     // 精确 seek（编辑核心能力）。语义见文件头「精确 seek 语义」一节。
@@ -156,7 +156,7 @@ public:
     virtual Status Seek(const RationalTime& target, SeekPolicy policy,
                         const CancelToken& token) = 0;
 
-    // 取 target 处帧（lease 模型，与 PAL 一致）：video.image / audio.pcm 由 provider
+    // 取 target 处帧（lease 模型，与 Platform 一致）：video.image / audio.pcm 由 provider
     // 内部池所有，调用方使用期间不得释放；用毕必须 ReleaseFrame 归还，供 MEDIA-011 LRU 回收。
     virtual Status AcquireFrame(const FrameRequest& req, MediaFrame& out_frame,
                                 const CancelToken& token) = 0;

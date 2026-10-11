@@ -76,12 +76,12 @@ int main(void) {
 
     /* ---- 创建 ---- */
     CQPreview* p = cq_preview_create(session, 256, 256);
-    Check(p != NULL, "cq_preview_create(session,256,256) 返回非 NULL（PAL 后端齐备）");
+    Check(p != NULL, "cq_preview_create(session,256,256) 返回非 NULL（Platform 后端齐备）");
     Check(cq_preview_create(NULL, 256, 256) == NULL,
           "cq_preview_create(NULL,...) 返回 NULL");
     Check(cq_preview_create(session, 0, 0) == NULL, "cq_preview_create(0,0) 返回 NULL（尺寸非法）");
     if (p == NULL) {
-        printf("\n无法创建预览器（PAL 后端缺失），用例终止。\n");
+        printf("\n无法创建预览器（Platform 后端缺失），用例终止。\n");
         return 1;
     }
 

@@ -1,12 +1,12 @@
 // ChuanqiCut — 预览的 C ABI 实现（BIND-003 子步骤 5）
 //
 // ⚠️ 为什么单独一个 TU（而不是并进 core/src/cq_sdk.cpp）：
-//   本文件是 core 中**第一个调用 PAL 工厂**的翻译单元（CreateGraphicsDevice /
+//   本文件是 core 中**第一个调用 Platform 工厂**的翻译单元（CreateGraphicsDevice /
 //   CreateBlitPass / CreateFrameProvider）。静态库按 archive member 粒度拉符号，
 //   只有真正引用了本 TU 符号的目标才会把它链进来 —— 因此「不使用预览能力的目标」
-//   （例如尚无 PAL 后端的 Android 构建）不会因为 core 引用了 PAL 符号而链接失败。
+//   （例如尚无 Platform 后端的 Android 构建）不会因为 core 引用了 Platform 符号而链接失败。
 //   若把这段代码并入 cq_sdk.cpp，则任何用到 session ABI 的目标都会连带拉入
-//   PAL 依赖，把「不用预览就不该有依赖」这条隔离彻底破坏。
+//   Platform 依赖，把「不用预览就不该有依赖」这条隔离彻底破坏。
 //
 // 内核禁用异常（ARCH-001）：分配一律 `new (std::nothrow)`，失败返回 NULL。
 
@@ -21,9 +21,9 @@
 #include "cq/base/status.h"
 #include "cq/base/rational_time.h"
 #include "cq/gfx/gfx_device.h"
-#include "cq/media/pal_frame_provider.h"
+#include "cq/media/platform_frame_provider.h"
 #include "cq/model/model_snapshot.h"
-#include "cq/pal/gfx.h"
+#include "cq/platform/gfx.h"
 #include "cq/preview/preview_pump.h"
 #include "cq/preview/preview_renderer.h"
 #include "../cq_session_impl.h"
@@ -49,8 +49,8 @@ int32_t CodeOfEnum(cq::StatusCode code) { return static_cast<int32_t>(code); }
 //    （Swift 侧 Previewer 强持有 Session，顺序由对象图保证）。
 struct CQPreview {
     cq::IGfxDevice* gfx = nullptr;              // 拥有（CreateGfxDevice 内部 new）
-    cq::PalPtr<cq::IBlitPass> blit;             // 拥有
-    cq::PalFrameProviderFactory provider_factory;
+    cq::PlatformPtr<cq::IBlitPass> blit;             // 拥有
+    cq::PlatformFrameProviderFactory provider_factory;
     cq::EditorSession* session = nullptr;       // 非拥有（见上）
     std::unique_ptr<cq::IModelSnapshotProvider> snapshot_provider;  // 拥有
     std::unique_ptr<cq::PreviewRenderer> renderer;
@@ -85,25 +85,25 @@ CQPreview* cq_preview_create(CQSession* session, uint32_t width, uint32_t height
         return nullptr;
     }
 
-    // PAL：图形设备 → GFX 门面（GFX 接管 PAL 设备所有权）
+    // Platform：图形设备 → GFX 门面（GFX 接管 Platform 设备所有权）
     cq::GraphicsDeviceDesc dd;
     dd.prefer_low_power = false;
-    cq::PalPtr<cq::IGraphicsDevice> pal;
-    if (!cq::CreateGraphicsDevice(dd, pal).IsOk() || !pal) {
+    cq::PlatformPtr<cq::IGraphicsDevice> platform;
+    if (!cq::CreateGraphicsDevice(dd, platform).IsOk() || !platform) {
         cq_preview_destroy(p);
         return nullptr;
     }
     cq::IGfxDevice* gfx = nullptr;
-    if (!cq::CreateGfxDevice(pal, gfx).IsOk() || gfx == nullptr) {
-        // pal 已被 CreateGfxDevice 接管（成功时）；失败路径下它仍持有所有权，
-        // 随本函数栈上 PalPtr 析构自动释放。
+    if (!cq::CreateGfxDevice(platform, gfx).IsOk() || gfx == nullptr) {
+        // platform 已被 CreateGfxDevice 接管（成功时）；失败路径下它仍持有所有权，
+        // 随本函数栈上 PlatformPtr 析构自动释放。
         cq_preview_destroy(p);
         return nullptr;
     }
     p->gfx = gfx;
 
-    // PAL：全屏拷贝 pass（平台原生 shader）。缺失即预览不可用 —— 如实返回 NULL。
-    if (!cq::CreateBlitPass(gfx->PalDevice(), cq::TextureFormat::kRGBA8, p->blit).IsOk() ||
+    // Platform：全屏拷贝 pass（平台原生 shader）。缺失即预览不可用 —— 如实返回 NULL。
+    if (!cq::CreateBlitPass(gfx->PlatformDevice(), cq::TextureFormat::kRGBA8, p->blit).IsOk() ||
         !p->blit) {
         cq_preview_destroy(p);
         return nullptr;

@@ -19,7 +19,7 @@
 #include "cq/base/status.h"
 #include "cq/base/rational_time.h"
 #include "cq/media/system_frame_provider.h"
-#include "cq/pal/media.h"
+#include "cq/platform/media.h"
 #include "media_decode.h"
 
 #ifndef CQ_SOURCE_DIR
@@ -64,7 +64,7 @@ int main() {
     src.path_len = path.size();
 
     // 真实 PALA-010 解封装后端。
-    cq::PalPtr<cq::IMediaDemuxer> demuxer;
+    cq::PlatformPtr<cq::IMediaDemuxer> demuxer;
     cq::Status s = cq::CreateMediaDemuxer(src, demuxer);
     Check(s.IsOk() && demuxer, "CreateMediaDemuxer（真实 Apple 后端）打开成功");
     if (!demuxer) {

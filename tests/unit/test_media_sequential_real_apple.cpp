@@ -24,7 +24,7 @@
 #include "cq/base/status.h"
 #include "cq/base/rational_time.h"
 #include "cq/media/system_frame_provider.h"
-#include "cq/pal/media.h"
+#include "cq/platform/media.h"
 #include "media_decode.h"  // PALA-011 VideoToolboxDecoder（仅 Apple TU 可见）
 
 #ifndef CQ_SOURCE_DIR
@@ -77,7 +77,7 @@ struct RunStats {
 // 每个实例独立（对照实验不能共享解码器状态）。
 std::unique_ptr<cq::FrameProvider> MakeProvider(const cq::MediaSource& src,
                                                 cq::VideoToolboxDecoder** out_decoder) {
-    cq::PalPtr<cq::IMediaDemuxer> demuxer;
+    cq::PlatformPtr<cq::IMediaDemuxer> demuxer;
     if (!cq::CreateMediaDemuxer(src, demuxer).IsOk() || !demuxer) return nullptr;
     auto* decoder = new cq::VideoToolboxDecoder(src.path);
     auto provider = cq::CreateSystemFrameProvider(

@@ -25,8 +25,8 @@
 
 #include "cq/base/status.h"
 #include "cq/base/rational_time.h"
-#include "cq/pal/media.h"   // IMediaMuxer / CreateMediaMuxer / AudioTrackConfig / PcmBuffer
-#include "cq/pal/pal_common.h"
+#include "cq/platform/media.h"   // IMediaMuxer / CreateMediaMuxer / AudioTrackConfig / PcmBuffer
+#include "cq/platform/common.h"
 #include "media_decode.h"   // CqNativeImage（仅帧源包装，Apple TU）
 
 #ifndef CQ_SOURCE_DIR
@@ -103,7 +103,7 @@ int main() {
     cq::NativeImageHandle video_handle = &img;
 
     // ---- 平台无关拿到 muxer ----
-    cq::PalPtr<cq::IMediaMuxer> muxer;
+    cq::PlatformPtr<cq::IMediaMuxer> muxer;
     cq::Status s = cq::CreateMediaMuxer(muxer);
     Check(s.IsOk() && muxer, "CreateMediaMuxer 拿到平台无关 IMediaMuxer");
     if (!muxer) {
@@ -135,7 +135,7 @@ int main() {
     // ---- 契约验证：AddVideoTrack 之前 AddAudioTrack 应失败（writer 未建立）----
     {
         cq::AudioTrackConfig early{};
-        cq::PalPtr<cq::IMediaMuxer> m2;
+        cq::PlatformPtr<cq::IMediaMuxer> m2;
         cq::Status s2 = cq::CreateMediaMuxer(m2);
         Check(s2.IsOk() && m2, "早期 muxer 创建成功（用于验证 AddVideoTrack 前置约束）");
         std::string p2 = "/tmp/cq_muxer_audio_early.mp4";

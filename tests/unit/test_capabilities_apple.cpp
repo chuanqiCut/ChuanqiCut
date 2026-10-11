@@ -11,7 +11,7 @@
 #include <cstdio>
 
 #include "capabilities_apple.h"
-#include "cq/pal/capabilities.h"
+#include "cq/platform/capabilities.h"
 
 namespace {
 

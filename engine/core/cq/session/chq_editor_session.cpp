@@ -182,6 +182,26 @@ ChqStatus ChqEditorSession::SubmitTrimClipIn(const char* name, uint64_t clip_id,
     });
 }
 
+ChqStatus ChqEditorSession::SubmitMoveClipToTrack(const char* name, uint64_t clip_id,
+                                            uint64_t target_track_id,
+                                            const ChqRationalTime& new_start) {
+    ChqEditorModelState* model = BuiltinModel();
+    if (model == nullptr) return ChqStatus{ChqStatusCode::kInternal};
+    if (new_start.timescale <= 0) return ChqStatus{ChqStatusCode::kInvalidArgument};
+    return Submit(name, [model, clip_id, target_track_id, new_start]() -> ChqStatus {
+        return model->Execute(
+            std::make_unique<ChqMoveClipToTrackCommand>(clip_id, target_track_id, new_start));
+    });
+}
+
+ChqStatus ChqEditorSession::SubmitSetCanvas(const char* name, int32_t width, int32_t height) {
+    ChqEditorModelState* model = BuiltinModel();
+    if (model == nullptr) return ChqStatus{ChqStatusCode::kInternal};
+    return Submit(name, [model, width, height]() -> ChqStatus {
+        return model->Execute(std::make_unique<ChqSetCanvasCommand>(width, height));
+    });
+}
+
 ChqStatus ChqEditorSession::SubmitUndo(const char* name) {
     ChqEditorModelState* model = BuiltinModel();
     if (model == nullptr) return ChqStatus{ChqStatusCode::kInternal};

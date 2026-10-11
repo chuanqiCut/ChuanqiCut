@@ -259,6 +259,72 @@ const ChqClip* ChqTimeline::FindClipAt(uint64_t track_id, const ChqRationalTime&
 }
 
 // ===========================================================================
+// 画布（UIA-040）
+// ===========================================================================
+
+ChqStatus ChqTimeline::SetCanvas(int32_t width, int32_t height) {
+    if (width <= 0 || width > 8192 || height <= 0 || height > 8192) {
+        return ChqStatus(ChqStatusCode::kInvalidArgument);
+    }
+    canvas_width_ = width;
+    canvas_height_ = height;
+    return ChqStatus::Ok();
+}
+
+// ===========================================================================
+// 跨轨移动（UIA-040 多轨操作）
+// ===========================================================================
+
+ChqStatus ChqTimeline::MoveClipToTrack(uint64_t clip_id, uint64_t target_track_id,
+                                       const ChqRationalTime& new_start) {
+    ChqTrack* source = nullptr;
+    ChqClip* clip = find_clip_mut(clip_id, source);
+    if (clip == nullptr) return ChqStatus(ChqStatusCode::kInvalidArgument);
+
+    ChqTrack* target = nullptr;
+    for (ChqTrack& t : tracks_) {
+        if (t.id == target_track_id) { target = &t; break; }
+    }
+    if (target == nullptr) return ChqStatus(ChqStatusCode::kInvalidArgument);
+
+    // 类型匹配：音频片段不能上视频轨（与 Insert 同规则）。
+    const ChqClipKind expected = (target->kind == ChqTrackKind::kVideo) ? ChqClipKind::kVideo
+                                                                  : ChqClipKind::kAudio;
+    if (clip->kind != expected) return ChqStatus(ChqStatusCode::kInvalidArgument);
+
+    // 先校验后变更：同轨 = 排除自身（等价 MoveClip）；跨轨 = 片段还不在目标轨，
+    // 全量判重叠。任一失败模型不动。
+    ChqClip candidate = *clip;
+    candidate.start = new_start;
+    const bool same_track = (source == target);
+    if (overlaps_in_track(*target, candidate, same_track ? clip : nullptr)) {
+        return ChqStatus(ChqStatusCode::kInvalidArgument);
+    }
+
+    if (same_track) {
+        clip->start = new_start;
+        std::sort(source->clips.begin(), source->clips.end(),
+                  [](const ChqClip& a, const ChqClip& b) {
+                      return CompareRational(a.start, b.start) < 0;
+                  });
+        return ChqStatus::Ok();
+    }
+
+    // 跨轨：从源轨摘除 → 插入目标轨（保序）。片段 id 不变，历史里的引用不失效。
+    // ⚠️ 用 candidate（已带新起点），不是 *clip —— P119 同族：双变量就近取用是坑。
+    ChqClip moved = candidate;
+    for (auto it = source->clips.begin(); it != source->clips.end(); ++it) {
+        if (it->id == clip_id) { source->clips.erase(it); break; }
+    }
+    auto pos = target->clips.begin();
+    while (pos != target->clips.end() && CompareRational(pos->start, moved.start) <= 0) {
+        ++pos;
+    }
+    target->clips.insert(pos, moved);
+    return ChqStatus::Ok();
+}
+
+// ===========================================================================
 // 总时长
 // ===========================================================================
 

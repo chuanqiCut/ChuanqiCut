@@ -97,6 +97,7 @@ UIA-005 把它接到 `ChqEditorModelState::Undo/Redo` 与 `cq_session_undo/redo`
 | MODEL-001/002 | 时间线模型 / Command+History | ✅（编辑链在用） |
 | EDIT-007 | Split/Remove C ABI（B1，RESEARCH-010 §5.2） | ✅ 2026-10-11（SplitClip/ReplaceClip 入模型层；48/48） |
 | EDIT-008 | 左缘裁剪 trim-clip-in（B1） | ✅ 2026-10-11（ChqTrimClipInCommand + ReplaceClip 基座；48/48） |
+| EDIT-009/010 | 跨轨移动 + 画布属性（UIA-040 内核面） | ✅ 2026-10-12（MoveClipToTrack/SetCanvas + 命令×2 + ABI×3；指纹纳入画布；全量 48/48） |
 
 ### 测试与门禁记录（阶段批）
 

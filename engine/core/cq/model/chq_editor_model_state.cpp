@@ -83,6 +83,9 @@ uint64_t ChqEditorModelState::Digest() const { return Fingerprint(timeline_); }
 
 uint64_t ChqEditorModelState::Fingerprint(const ChqTimeline& timeline) {
     uint64_t h = 0xcbf29ce484222325ull;  // FNV offset basis
+    // 画布是项目级结构属性：改动必须推进 digest（UI 增量刷新与撤销判定都靠它）。
+    Mix(h, static_cast<uint64_t>(timeline.CanvasWidth()));
+    Mix(h, static_cast<uint64_t>(timeline.CanvasHeight()));
     Mix(h, timeline.Tracks().size());
     for (const ChqTrack& track : timeline.Tracks()) {
         Mix(h, track.id);

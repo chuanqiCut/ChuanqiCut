@@ -104,6 +104,21 @@ public:
     // 命中测试：返回覆盖时刻 t 的 clip（同轨最多一个，因为不重叠）
     const ChqClip* FindClipAt(uint64_t track_id, const ChqRationalTime& t) const;
 
+    // ---- 画布（UIA-040；项目级属性，预览/导出的取景基准）----
+    // 默认 1080×1920（9:16，竖屏短视频基准）。宽高只是**比例语义**（渲染侧按
+    // 适配模式把内容装进画布），不是像素承诺；上界 8192 防呆。
+    // 校验：w/h ∈ (0, 8192]。失败返回 kInvalidArgument，模型不动。
+    int32_t CanvasWidth() const { return canvas_width_; }
+    int32_t CanvasHeight() const { return canvas_height_; }
+    ChqStatus SetCanvas(int32_t width, int32_t height);
+
+    // ---- 跨轨移动（UIA-040 多轨操作；片段 id 不变）----
+    // 把片段移到目标轨道的 new_start 处（画中画拖拽的模型语义）。
+    // 校验：片段存在、目标轨道存在、片段 kind 与目标轨类型匹配、
+    // 目标轨无重叠（同轨移动排除自身）。校验全过才变更，失败模型不动。
+    ChqStatus MoveClipToTrack(uint64_t clip_id, uint64_t target_track_id,
+                              const ChqRationalTime& new_start);
+
     // 总时长 = 所有轨道中最大的「clip 结束时刻 + 出转场时长」
     ChqRationalTime Duration() const;
 
@@ -126,6 +141,8 @@ private:
 
     std::vector<ChqTrack> tracks_;
     uint64_t next_id_ = 1;
+    int32_t canvas_width_ = 1080;   // 9:16 竖屏基准（对标 App默认）
+    int32_t canvas_height_ = 1920;
 };
 
 }  // namespace cq

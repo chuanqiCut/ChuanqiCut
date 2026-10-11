@@ -36,13 +36,20 @@ import SharedUI  // 基座：Theme/注入点（ADR-0031）
 public struct TimelineState: Equatable {
     public var tracks: [TrackInfo] = []
     public var clips: [ClipInfo] = []
+    /// 项目画布（UIA-040；比例语义，预览取景与导出的基准）。
+    public var canvasWidth: Int32 = 1080
+    public var canvasHeight: Int32 = 1920
     /// 快照版本（观察者回流的 version，UI 据此判断要不要重查询）。
     public var version: UInt64 = 0
 
     /// 手写全默认参构造（声明任意 init 会抑制成员逐项构造器）。
-    public init(tracks: [TrackInfo] = [], clips: [ClipInfo] = [], version: UInt64 = 0) {
+    public init(tracks: [TrackInfo] = [], clips: [ClipInfo] = [],
+                canvasWidth: Int32 = 1080, canvasHeight: Int32 = 1920,
+                version: UInt64 = 0) {
         self.tracks = tracks
         self.clips = clips
+        self.canvasWidth = canvasWidth
+        self.canvasHeight = canvasHeight
         self.version = version
     }
 }
@@ -59,8 +66,22 @@ struct ClipDrag {
     /// 拖拽起点：片段原本的 start / duration（秒）。
     let originStart: Double
     let originDuration: Double
+    /// 片段原本所在轨道行（显示顺序；跨轨拖拽的起点，UIA-040）。
+    /// 默认 0：单轨/非跨轨场景可省略（测试与既有调用点兼容）。
+    var originTrackRow: Int = 0
     /// 当前时间位移（秒）。
     var deltaSeconds: Double = 0
+    /// 跨轨拖拽的目标行（UIA-040；== originTrackRow = 未跨轨）。
+    var targetTrackRow: Int = 0
+
+    /// 跨轨落点行（纯函数）：Δy 按行距取整 + 夹取到 [0, rowCount)。
+    /// 行距与 TimelineLayout 一致（trackHeight + trackSpacing）。
+    static func dropTrackRow(originRow: Int, deltaY: CGFloat, rowPitch: CGFloat,
+                             rowCount: Int) -> Int {
+        guard rowCount > 0, rowPitch > 0 else { return originRow }
+        let row = originRow + Int((deltaY / rowPitch).rounded())
+        return min(max(row, 0), rowCount - 1)
+    }
 
     /// 最短片段时长（秒）：防止裁剪到 0（内核会拒绝，但 UI 先夹住更直观）。
     static let minDurationSeconds: Double = 0.05
@@ -146,11 +167,16 @@ public struct EditorTimelineView: View {
                 clips: viewModel.timeline.clips,
                 anchorX: geo.size.width / 2)
             let override = drag?.override
+            // 跨轨预览（UIA-040）：目标行 ≠ 起始行时，片段画在目标行上。
+            let rowOverride: Int? = drag.flatMap {
+                $0.targetTrackRow != $0.originTrackRow ? $0.targetTrackRow : nil
+            }
             // Canvas 是转义闭包：读 revision 建立重绘依赖（图到达 → 重画）。
             let revision = thumbnails.revision
 
             Canvas { context, size in
-                draw(layout: layout, override: override, size: size, context: &context)
+                draw(layout: layout, override: override, rowOverride: rowOverride,
+                     size: size, context: &context)
                 _ = revision
             }
             .clipped()
@@ -165,6 +191,12 @@ public struct EditorTimelineView: View {
                     .onChanged { value in
                         if drag != nil {
                             drag?.deltaSeconds = Double(value.translation.width / pixelsPerSecond)
+                            // 跨轨落点（UIA-040）：Δy 按行距取整夹取（纯函数）。
+                            drag?.targetTrackRow = ClipDrag.dropTrackRow(
+                                originRow: drag?.originTrackRow ?? 0,
+                                deltaY: value.translation.height,
+                                rowPitch: 44 + TimelineLayout.trackSpacing,
+                                rowCount: layout.tracks.count)
                         } else if scrubAnchorSeconds != nil {
                             // scrub：拖动 = 拖播放头（帧栅格取整，UIA-038）
                             let t = max(0, (scrubAnchorSeconds ?? 0)
@@ -244,8 +276,10 @@ public struct EditorTimelineView: View {
         }
         let startSeconds = Double(hit.clip.start.value) / Double(hit.clip.start.timescale)
         let durationSeconds = Double(hit.clip.duration.value) / Double(hit.clip.duration.timescale)
+        let originRow = layout.trackRow(forTrackId: hit.clip.trackId) ?? 0
         drag = ClipDrag(clipId: hit.clip.clipId, region: hit.region,
-                        originStart: startSeconds, originDuration: durationSeconds)
+                        originStart: startSeconds, originDuration: durationSeconds,
+                        originTrackRow: originRow, targetTrackRow: originRow)
     }
 
     /// scrub：推播放头（帧栅格取整已在调用方做）。播放中不抢播放头。
@@ -259,29 +293,38 @@ public struct EditorTimelineView: View {
     /// 松手：提交**一条**命令，并主动回到内核真值（防幽灵位置，见文件头）。
     private func commit(_ d: ClipDrag) {
         let ts = RationalTime.projectTimescale
-        switch d.region {
-        case .trimEnd:
-            let ticks = Int64((d.previewDuration * Double(ts)).rounded())
-            viewModel.trimClip(clipId: d.clipId,
-                               duration: RationalTime(value: ticks, timescale: ts))
-        case .trimStart:
-            // 左缘裁剪（EDIT-008）：提交新起点，start / sourceIn / duration
-            // 由内核按「右缘不动」联动推导。
+        let tracks = viewModel.timeline.tracks
+        // 跨轨（UIA-040）：落点行解析回 trackId；行越界/类型不匹配由内核拒绝，
+        // refreshFromKernel 回真值。
+        if d.targetTrackRow != d.originTrackRow, d.targetTrackRow < tracks.count {
             let ticks = Int64((d.previewStart * Double(ts)).rounded())
-            viewModel.trimClipIn(clipId: d.clipId,
-                                 start: RationalTime(value: ticks, timescale: ts))
-        case .move:
-            let ticks = Int64((d.previewStart * Double(ts)).rounded())
-            viewModel.moveClip(clipId: d.clipId,
-                               to: RationalTime(value: ticks, timescale: ts))
+            viewModel.moveClipToTrack(clipId: d.clipId, to: tracks[d.targetTrackRow].trackId,
+                                      start: RationalTime(value: ticks, timescale: ts))
+        } else {
+            switch d.region {
+            case .trimEnd:
+                let ticks = Int64((d.previewDuration * Double(ts)).rounded())
+                viewModel.trimClip(clipId: d.clipId,
+                                   duration: RationalTime(value: ticks, timescale: ts))
+            case .trimStart:
+                // 左缘裁剪（EDIT-008）：提交新起点，start / sourceIn / duration
+                // 由内核按「右缘不动」联动推导。
+                let ticks = Int64((d.previewStart * Double(ts)).rounded())
+                viewModel.trimClipIn(clipId: d.clipId,
+                                     start: RationalTime(value: ticks, timescale: ts))
+            case .move:
+                let ticks = Int64((d.previewStart * Double(ts)).rounded())
+                viewModel.moveClip(clipId: d.clipId,
+                                   to: RationalTime(value: ticks, timescale: ts))
+            }
         }
         viewModel.refreshFromKernel()
     }
 
     // MARK: 绘制（全部几何来自 TimelineLayout）
 
-    private func draw(layout: TimelineLayout, override: ClipPreviewOverride?, size: CGSize,
-                      context: inout GraphicsContext) {
+    private func draw(layout: TimelineLayout, override: ClipPreviewOverride?,
+                      rowOverride: Int?, size: CGSize, context: inout GraphicsContext) {
         // 轨道背景行（交替底色区分轨道）
         for (index, _) in layout.tracks.enumerated() {
             let y = layout.rulerHeight
@@ -311,9 +354,10 @@ public struct EditorTimelineView: View {
             }
         }
 
-        // 片段（视口外的已在布局层裁剪；拖拽中的片段用本地预览几何）
+        // 片段（视口外的已在布局层裁剪；拖拽中的片段用本地预览几何 + 预览行）
         for clip in layout.clips {
-            guard let rect = layout.rect(for: clip, override: override) else { continue }
+            guard let rect = layout.rect(for: clip, override: override,
+                                         rowOverride: rowOverride) else { continue }
             let isDragging = (override?.clipId == clip.clipId)
             let isSelected = (viewModel.selectedClipId == clip.clipId)
             let path = Path(roundedRect: rect, cornerRadius: 4)

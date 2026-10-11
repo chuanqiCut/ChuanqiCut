@@ -50,6 +50,8 @@ cq::ChqClip MakeClip(int64_t start_ms, int64_t dur_ms, uint64_t asset_id = 1) {
 std::string Fingerprint(const cq::ChqTimeline& tl) {
     std::string fp;
     char buf[128];
+    std::snprintf(buf, sizeof(buf), "CV|%d|%d;", tl.CanvasWidth(), tl.CanvasHeight());
+    fp += buf;
     for (const cq::ChqTrack& t : tl.Tracks()) {
         std::snprintf(buf, sizeof(buf), "T|%llu|%d|%d|%d;",
                       static_cast<unsigned long long>(t.id),
@@ -369,6 +371,63 @@ void TestSplitClipCommand() {
 }
 
 // ---------------------------------------------------------------------------
+// UIA-040：set-canvas / move-clip-to-track 命令
+// ---------------------------------------------------------------------------
+
+void TestCanvasAndCrossTrackCommands() {
+    cq::ChqTimeline tl;
+    cq::ChqCommandHistory hist;
+    uint64_t track_id = 0, clip_id = 0;
+    hist.Execute(std::make_unique<cq::ChqAddTrackCommand>(cq::ChqTrackKind::kVideo), tl);
+    track_id = tl.Tracks().front().id;
+    uint64_t overlay = 0;
+    hist.Execute(std::make_unique<cq::ChqAddTrackCommand>(cq::ChqTrackKind::kVideo), tl);
+    overlay = tl.Tracks().back().id;
+    hist.Execute(std::make_unique<cq::ChqInsertClipCommand>(track_id, MakeClip(0, 4000)), tl);
+    clip_id = tl.FindClipAt(track_id, Ms(1000))->id;
+    const std::string fp_initial = Fingerprint(tl);
+
+    // ---- set-canvas：往返 + 指纹 ----
+    Check(hist.Execute(std::make_unique<cq::ChqSetCanvasCommand>(1080, 1080), tl).IsOk(),
+          "Execute SetCanvas");
+    Check(tl.CanvasHeight() == 1080, "画布生效");
+    Check(hist.Undo(tl).IsOk() && tl.CanvasHeight() == 1920, "Undo 回 9:16");
+    Check(hist.Redo(tl).IsOk() && tl.CanvasHeight() == 1080, "Redo 重放");
+    Check(Fingerprint(tl) != fp_initial, "画布改动推进指纹");
+    // 画布改动已入历史：后续往返的「初始态」基线 = 画布 1080×1080 的状态。
+    const std::string fp_canvas_changed = Fingerprint(tl);
+
+    // ---- move-clip-to-track：跨轨 → undo 回原轨原位 → redo 回目标轨 ----
+    Check(hist.Execute(
+        std::make_unique<cq::ChqMoveClipToTrackCommand>(clip_id, overlay, Ms(500)), tl).IsOk(),
+        "Execute MoveClipToTrack");
+    Check(tl.FindClipAt(overlay, Ms(1000)) != nullptr && tl.FindTrack(track_id)->clips.empty(),
+          "片段上了画中画轨（id 不变）");
+    const std::string fp_moved = Fingerprint(tl);
+    hist.Undo(tl);
+    Check(Fingerprint(tl) == fp_canvas_changed, "Undo 回原轨原位");
+    hist.Redo(tl);
+    Check(Fingerprint(tl) == fp_moved, "Redo 回目标轨");
+
+    // ---- LIFO 引用：跨轨后的片段可继续编辑，连撤回初始态 ----
+    hist.Execute(std::make_unique<cq::ChqTrimClipCommand>(clip_id, Ms(1000)), tl);
+    Check(tl.FindClip(clip_id)->duration == Ms(1000), "跨轨后可继续编辑（引用有效）");
+    hist.Undo(tl);
+    hist.Undo(tl);
+    Check(Fingerprint(tl) == fp_canvas_changed, "连撤两条回跨轨前状态");
+
+    // ---- 失败语义：类型不匹配不入栈不改模型 ----
+    uint64_t audio_track = 0;
+    hist.Execute(std::make_unique<cq::ChqAddTrackCommand>(cq::ChqTrackKind::kAudio), tl);
+    audio_track = tl.Tracks().back().id;
+    const int depth = static_cast<int>(hist.UndoDepth());
+    Check(!hist.Execute(
+        std::make_unique<cq::ChqMoveClipToTrackCommand>(clip_id, audio_track, Ms(0)), tl).IsOk(),
+        "视频片段上音频轨失败");
+    Check(static_cast<int>(hist.UndoDepth()) == depth, "失败的跨轨不入栈");
+}
+
+// ---------------------------------------------------------------------------
 // EDIT-008：trim-clip-in 命令（左缘裁剪）
 // ---------------------------------------------------------------------------
 
@@ -421,6 +480,7 @@ int main() {
     TestOrderInvariantAfterUndoRedo();
     TestSplitClipCommand();
     TestTrimClipInCommand();
+    TestCanvasAndCrossTrackCommands();
 
     std::printf("== %d checks, %d failures ==\n", g_checks, g_failures);
     return g_failures == 0 ? 0 : 1;

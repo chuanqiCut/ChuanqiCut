@@ -171,6 +171,32 @@ extension Session {
         return Status(rawValue: cq_session_remove_track(h, trackId))
     }
 
+    /// 跨轨移动（UIA-040 多轨操作；异步提交，可撤销）：片段 id 不变，
+    /// 落到目标轨道 start 处。目标轨不存在 / 类型不匹配 / 重叠 → 校验失败。
+    @discardableResult
+    public func moveClipToTrack(clipId: UInt64, trackId: UInt64, start: RationalTime) -> Status {
+        guard let h = handle else { return .invalidArgument }
+        let code = cq_session_move_clip_to_track(h, clipId, trackId, start.value, start.timescale)
+        return Status(rawValue: code)
+    }
+
+    /// 当前画布比例（UIA-040；**同步读**已发布快照）。默认 1080×1920（9:16）。
+    /// 失败返回 (0, 0)（调用方按默认比例兜底）。
+    public func canvasSize() -> (width: Int32, height: Int32) {
+        guard let h = handle else { return (0, 0) }
+        var w: Int32 = 0
+        var height: Int32 = 0
+        guard cq_status_is_ok(cq_session_get_canvas(h, &w, &height)) != 0 else { return (0, 0) }
+        return (w, height)
+    }
+
+    /// 设置画布比例（UIA-040；异步提交，可撤销）。宽高只是比例语义，取值 (0, 8192]。
+    @discardableResult
+    public func setCanvas(width: Int32, height: Int32) -> Status {
+        guard let h = handle else { return .invalidArgument }
+        return Status(rawValue: cq_session_set_canvas(h, width, height))
+    }
+
     // MARK: 撤销 / 重做（UIA-005）
 
     /// 撤销最近一条命令。**异步**：命令历史是 session 线程状态，

@@ -218,6 +218,46 @@ private:
 };
 
 // ---------------------------------------------------------------------------
+// 编辑类：画布比例（UIA-040）。项目级属性，只存新旧宽高（增量）。
+// ---------------------------------------------------------------------------
+class ChqSetCanvasCommand : public ChqICommand {
+public:
+    ChqSetCanvasCommand(int32_t width, int32_t height)
+        : new_width_(width), new_height_(height) {}
+
+    ChqStatus Do(ChqTimeline& model) override;
+    ChqStatus Undo(ChqTimeline& model) override;
+    const char* Name() const override { return "set-canvas"; }
+
+private:
+    int32_t new_width_;
+    int32_t new_height_;
+    int32_t old_width_ = 0;   // 首次 Do 时捕获
+    int32_t old_height_ = 0;
+};
+
+// ---------------------------------------------------------------------------
+// 编辑类：跨轨移动（UIA-040 多轨操作）。id 不变，只存起止（轨 + 起点）增量。
+// ---------------------------------------------------------------------------
+class ChqMoveClipToTrackCommand : public ChqICommand {
+public:
+    ChqMoveClipToTrackCommand(uint64_t clip_id, uint64_t target_track_id,
+                              const ChqRationalTime& new_start)
+        : clip_id_(clip_id), target_track_id_(target_track_id), new_start_(new_start) {}
+
+    ChqStatus Do(ChqTimeline& model) override;
+    ChqStatus Undo(ChqTimeline& model) override;
+    const char* Name() const override { return "move-clip-to-track"; }
+
+private:
+    uint64_t clip_id_;
+    uint64_t target_track_id_;
+    ChqRationalTime new_start_;
+    uint64_t old_track_id_ = 0;         // 首次 Do 时捕获
+    ChqRationalTime old_start_{0, 1};
+};
+
+// ---------------------------------------------------------------------------
 // 编辑类：移动片段（只存增量 —— model.md 硬约束 #2 的原型）。
 // ---------------------------------------------------------------------------
 class ChqMoveClipCommand : public ChqICommand {

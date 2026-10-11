@@ -105,6 +105,11 @@ public:
     ChqStatus SubmitRemoveClip(const char* name, uint64_t clip_id);
     ChqStatus SubmitRemoveTrack(const char* name, uint64_t track_id);
     ChqStatus SubmitTrimClipIn(const char* name, uint64_t clip_id, const ChqRationalTime& new_start);
+    // 跨轨移动（UIA-040）：片段 id 不变，落到目标轨道 new_start 处。
+    ChqStatus SubmitMoveClipToTrack(const char* name, uint64_t clip_id, uint64_t target_track_id,
+                                    const ChqRationalTime& new_start);
+    // 画布比例（UIA-040）：项目级属性，可撤销。
+    ChqStatus SubmitSetCanvas(const char* name, int32_t width, int32_t height);
     ChqStatus SubmitUndo(const char* name);
     ChqStatus SubmitRedo(const char* name);
 

@@ -289,6 +289,57 @@ void TestReplaceClip() {
     Check(sorted, "替换后仍按 start 升序");
 }
 
+// ---------------------------------------------------------------------------
+// UIA-040：画布属性 + 跨轨移动
+// ---------------------------------------------------------------------------
+
+void TestCanvasAndCrossTrack() {
+    cq::ChqTimeline tl;
+    uint64_t vt = 0, vt2 = 0, at = 0;
+    tl.AddTrack(cq::ChqTrackKind::kVideo, vt);
+    tl.AddTrack(cq::ChqTrackKind::kVideo, vt2);
+    tl.AddTrack(cq::ChqTrackKind::kAudio, at);
+    uint64_t c1 = 0;
+    tl.InsertClip(vt, MakeClip(cq::ChqClipKind::kVideo, 0, 4000), c1);
+
+    // ---- 画布：默认 9:16，合法改写，越界拒绝 ----
+    Check(tl.CanvasWidth() == 1080 && tl.CanvasHeight() == 1920, "默认画布 1080×1920");
+    Check(tl.SetCanvas(1920, 1080).IsOk(), "画布改 16:9");
+    Check(tl.CanvasWidth() == 1920 && tl.CanvasHeight() == 1080, "画布生效");
+    Check(!tl.SetCanvas(0, 1080).IsOk(), "宽 0 被拒绝");
+    Check(!tl.SetCanvas(8193, 1080).IsOk(), "宽超上界被拒绝");
+    Check(tl.CanvasWidth() == 1920, "拒绝后画布不动");
+
+    // ---- 跨轨移动：同类型轨成功，id 不变 ----
+    Check(tl.MoveClipToTrack(c1, vt2, Ms(1000)).IsOk(), "跨轨移动成功");
+    const cq::ChqClip* moved = tl.FindClip(c1);
+    Check(moved != nullptr && moved->start == Ms(1000), "片段 id 不变、新起点生效");
+    Check(tl.FindTrack(vt)->clips.empty(), "源轨已空");
+    Check(tl.FindTrack(vt2)->clips.size() == 1, "目标轨收到片段");
+
+    // ---- 拒绝矩阵：目标轨缺失 / 类型不匹配 / 目标轨重叠 / 不存在的片段 ----
+    Check(!tl.MoveClipToTrack(c1, 9999, Ms(0)).IsOk(), "目标轨不存在被拒");
+    Check(!tl.MoveClipToTrack(c1, at, Ms(0)).IsOk(), "视频片段上音频轨被拒");
+    uint64_t c2 = 0;
+    tl.InsertClip(vt2, MakeClip(cq::ChqClipKind::kVideo, 5000, 2000), c2);
+    Check(!tl.MoveClipToTrack(c2, vt2, Ms(1000)).IsOk(), "目标轨与 c1 重叠被拒");
+    Check(!tl.MoveClipToTrack(9999, vt, Ms(0)).IsOk(), "不存在的片段被拒");
+    Check(tl.FindTrack(vt2)->clips.size() == 2, "拒绝不改模型");
+
+    // ---- 同轨移动经同一入口（排除自身语义）----
+    Check(tl.MoveClipToTrack(c2, vt2, Ms(9000)).IsOk(), "同轨移动允许");
+    Check(tl.FindClip(c2)->start == Ms(9000), "同轨移动生效");
+
+    // ---- 跨轨后总时长与有序性保持 ----
+    bool sorted = true;
+    int64_t prev = -1;
+    for (const cq::ChqClip& c : tl.FindTrack(vt2)->clips) {
+        if (c.start.value < prev) sorted = false;
+        prev = c.start.value;
+    }
+    Check(sorted, "跨轨插入维持目标轨 start 升序");
+}
+
 }  // namespace
 
 int main() {
@@ -299,6 +350,7 @@ int main() {
     TestEditOperations();
     TestSplitClip();
     TestReplaceClip();
+    TestCanvasAndCrossTrack();
 
     std::printf("\n%s: %d checks, %d failures\n", g_failures == 0 ? "PASSED" : "FAILED",
                 g_checks, g_failures);

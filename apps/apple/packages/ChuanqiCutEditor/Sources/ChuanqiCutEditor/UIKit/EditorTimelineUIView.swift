@@ -417,19 +417,29 @@ final class TimelineContentView: UIView {
             guard let hit = layout.hitTest(location) else { return }
             let startSeconds = Double(hit.clip.start.value) / Double(hit.clip.start.timescale)
             let durationSeconds = Double(hit.clip.duration.value) / Double(hit.clip.duration.timescale)
+            let originRow = layout.trackRow(forTrackId: hit.clip.trackId) ?? 0
             drag = ClipDrag(clipId: hit.clip.clipId, region: hit.region,
-                            originStart: startSeconds, originDuration: durationSeconds)
+                            originStart: startSeconds, originDuration: durationSeconds,
+                            originTrackRow: originRow, targetTrackRow: originRow)
             dragClip = hit.clip
         case .changed:
             guard var d = drag else { return }
             d.deltaSeconds = Double(gesture.translation(in: self).x / layout.pixelsPerSecond)
+            // 跨轨落点（UIA-040）：Δy 按行距取整夹取（纯函数，与 SwiftUI 版同源）。
+            d.targetTrackRow = ClipDrag.dropTrackRow(
+                originRow: d.originTrackRow,
+                deltaY: gesture.translation(in: self).y,
+                rowPitch: layout.trackHeight + TimelineLayout.trackSpacing,
+                rowCount: layout.tracks.count)
             drag = d
-            // 本地预览：直接挪片段层（不提交内核，ADR-0012）
+            // 本地预览：直接挪片段层（不提交内核，ADR-0012）；跨轨时预览行随目标行。
             guard let clip = dragClip else { return }
             let preview = ClipPreviewOverride(clipId: d.clipId,
                                               startSeconds: d.previewStart,
                                               durationSeconds: d.previewDuration)
-            if let rect = layout.rect(for: clip, override: preview), let layer = clipLayers[d.clipId] {
+            let rowOverride = (d.targetTrackRow != d.originTrackRow) ? d.targetTrackRow : nil
+            if let rect = layout.rect(for: clip, override: preview, rowOverride: rowOverride),
+               let layer = clipLayers[d.clipId] {
                 layer.frame = rect
                 layer.backgroundColor = UIColor(Theme.timelineClipDragging).cgColor
             }

@@ -20,6 +20,8 @@
  *     remove_track 的删除与原 id 恢复
  *   * EDIT-008：trim_clip_in（start / source_in / duration 三字段联动、右缘
  *     不动、越界拒绝）
+ *   * UIA-040：set_canvas / get_canvas（默认 9:16、可撤销）+ move_clip_to_track
+ *     （id 不变上画中画轨、undo 回原轨）
  */
 
 #include <stdio.h>
@@ -298,6 +300,35 @@ int main(void) {
               clips[0].clip_id == a_id && clips[1].clip_id == right_id,
           "轨道内片段原 id 全部恢复");
 
+    /* ---- UIA-040：画布比例 + 跨轨移动 ---- */
+    int32_t cw = 0, ch = 0;
+    Check(cq_session_get_canvas(s2, &cw, &ch) == 0 && cw == 1080 && ch == 1920,
+          "get_canvas 默认 1080×1920（9:16）");
+    Check(cq_session_set_canvas(s2, 1080, 1080) == 0, "set_canvas 1:1 入队");
+    DrainAfter(s2, 1);
+    Check(cq_session_get_canvas(s2, &cw, &ch) == 0 && cw == 1080 && ch == 1080, "画布生效");
+    Check(cq_session_undo(s2) == 0, "undo 画布入队");
+    DrainAfter(s2, 1);
+    Check(cq_session_get_canvas(s2, &cw, &ch) == 0 && ch == 1920, "undo 画布回 9:16（画布可撤销）");
+
+    Check(cq_session_add_track(s2, 0) == 0, "add_track 画中画轨入队");
+    DrainAfter(s2, 1);
+    n_tracks = -1;
+    Check(cq_session_query_tracks(s2, tracks, 4, &n_tracks) == 0 && n_tracks == 2, "两条轨道");
+    const uint64_t overlay_track = tracks[1].track_id;
+    Check(cq_session_move_clip_to_track(s2, right_id, overlay_track, 0, TS) == 0,
+          "跨轨移动入队");
+    DrainAfter(s2, 1);
+    Check(QueryClips(s2, clips, 8, &n_clips) == 0 && n_clips == 2, "跨轨后仍 2 片段");
+    Check(clips[1].track_id == overlay_track && clips[1].clip_id == right_id &&
+              clips[1].start_value == 0,
+          "右半上画中画轨：id 不变、新起点生效");
+    Check(cq_session_undo(s2) == 0, "undo 跨轨入队");
+    DrainAfter(s2, 1);
+    Check(QueryClips(s2, clips, 8, &n_clips) == 0 && n_clips == 2 &&
+              clips[1].track_id == tracks[0].track_id,
+          "undo 跨轨回原轨原位");
+
     /* ---- 新 ABI 参数校验（同步，调用侧）---- */
     Check(cq_session_split_clip(s2, a_id, 100, 0) == 7000, "split timescale=0 → 同步拒绝");
     Check(cq_session_trim_clip_in(s2, a_id, 100, 0) == 7000, "trim_in timescale=0 → 同步拒绝");
@@ -305,6 +336,9 @@ int main(void) {
     Check(cq_session_trim_clip_in(NULL, a_id, 100, TS) == 7000, "NULL session trim_in → 7000");
     Check(cq_session_remove_clip(NULL, a_id) == 7000, "NULL session remove_clip → 7000");
     Check(cq_session_remove_track(NULL, 1) == 7000, "NULL session remove_track → 7000");
+    Check(cq_session_move_clip_to_track(NULL, 1, 1, 0, TS) == 7000, "NULL session 跨轨 → 7000");
+    Check(cq_session_set_canvas(NULL, 100, 100) == 7000, "NULL session set_canvas → 7000");
+    Check(cq_session_get_canvas(NULL, &cw, &ch) == 7000, "NULL session get_canvas → 7000");
 
     cq_session_destroy(s2);
 

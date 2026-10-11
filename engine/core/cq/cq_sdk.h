@@ -200,6 +200,23 @@ int32_t cq_session_remove_clip(CQSession* session, uint64_t clip_id);
 
 int32_t cq_session_remove_track(CQSession* session, uint64_t track_id);
 
+/* 跨轨移动（UIA-040 多轨操作；异步提交，可撤销）。片段 id 不变，落到目标轨道
+ * start 处；目标轨不存在 / 类型不匹配 / 重叠 → session 线程校验失败。 */
+int32_t cq_session_move_clip_to_track(CQSession* session, uint64_t clip_id, uint64_t track_id,
+                                      int64_t start_value, int32_t start_timescale);
+
+/* ---- 画布比例（UIA-040；项目级属性）----
+ *
+ * set_canvas：异步提交，可撤销（画布是「项目结构」，比例切换进撤销栈）。
+ *   宽高只是**比例语义**（预览/导出按画布取景），不是像素承诺；取值 (0, 8192]，
+ *   越界 → session 线程校验失败。
+ * get_canvas：**同步读**已发布快照（契约同 track_count：状态码 + out 参数）。
+ *   默认 1080×1920（9:16 竖屏基准）。
+ */
+int32_t cq_session_set_canvas(CQSession* session, int32_t width, int32_t height);
+
+int32_t cq_session_get_canvas(const CQSession* session, int32_t* out_width, int32_t* out_height);
+
 /* ---- 撤销 / 重做（UIA-005；异步提交）----
  *
  * 命令历史是 **session 线程状态**（非线程安全），故 undo/redo 也必须入队：

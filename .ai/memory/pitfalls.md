@@ -1999,3 +1999,16 @@ TASK-CAM-012 剩余风险栏其实预判了（"若真机上 CI 工作空间表�
 - **防复发规则**：①双会话共用工作区时提交只允许 `git add <逐个文件>`，提交前
   `git status --short` 逐行认领；②发现 HEAD 非自己基点时先 `git log` 对账再写文件；
   ③跨线文件出现在自己 diff 里 = 立即停手回报，不许「顺手一起提交」。
+
+## P121：分割/移动类「双变量取错」三犯（2026-10-12，UIA-040 编码轮，已修）
+
+- **现象**：MoveClipToTrack 跨轨路径 `ChqClip moved = *clip`（旧起点），应为
+  `= candidate`（新起点）——与 P119（SplitClip 右半时长误用 delta）同族，且累计
+  **第三次**同类错误。
+- **根因**：「candidate（新值工作副本）/ origin（旧值快照）」并存时，就近取用
+  `*clip` / `delta` 在编译器眼里全部合法，靠人眼守不住。
+- **修**：moved = candidate（chq_timeline.cpp MoveClipToTrack）。
+- **验证状态**：已修，model_timeline/model_command/c_abi_edit 4/4 绿（2026-10-12）。
+- **防复发规则**：①凡是「candidate（新值）/ origin（旧值）」并存的操作，**禁止**从
+  模型指针取值构造目标实体——目标实体只能由 candidate 派生；②单测必须同时断言
+  「新值生效 + 旧值还原」两个方向（只测还原测不出 moved 取错）。

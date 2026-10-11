@@ -240,6 +240,45 @@ ChqStatus ChqTrimClipInCommand::Undo(ChqTimeline& model) {
 }
 
 // ===========================================================================
+// ChqSetCanvasCommand
+// ===========================================================================
+
+ChqStatus ChqSetCanvasCommand::Do(ChqTimeline& model) {
+    old_width_ = model.CanvasWidth();
+    old_height_ = model.CanvasHeight();
+    return model.SetCanvas(new_width_, new_height_);
+}
+
+ChqStatus ChqSetCanvasCommand::Undo(ChqTimeline& model) {
+    return model.SetCanvas(old_width_, old_height_);
+}
+
+// ===========================================================================
+// ChqMoveClipToTrackCommand
+// ===========================================================================
+
+ChqStatus ChqMoveClipToTrackCommand::Do(ChqTimeline& model) {
+    const ChqClip* clip = model.FindClip(clip_id_);
+    if (clip == nullptr) return ChqStatus(ChqStatusCode::kInvalidArgument);
+    // 片段当前所在轨（Undo 的回到点）。
+    old_track_id_ = 0;
+    for (const ChqTrack& track : model.Tracks()) {
+        for (const ChqClip& c : track.clips) {
+            if (c.id == clip_id_) { old_track_id_ = track.id; break; }
+        }
+        if (old_track_id_ != 0) break;
+    }
+    if (old_track_id_ == 0) return ChqStatus(ChqStatusCode::kInternal);
+    old_start_ = clip->start;
+    return model.MoveClipToTrack(clip_id_, target_track_id_, new_start_);
+}
+
+ChqStatus ChqMoveClipToTrackCommand::Undo(ChqTimeline& model) {
+    if (old_track_id_ == 0) return ChqStatus(ChqStatusCode::kInternal);
+    return model.MoveClipToTrack(clip_id_, old_track_id_, old_start_);
+}
+
+// ===========================================================================
 // ChqMoveClipCommand
 // ===========================================================================
 

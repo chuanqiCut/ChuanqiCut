@@ -25,6 +25,24 @@ public enum EditorError: Error, Sendable {
     case sessionCreationFailed
 }
 
+// MARK: - 面板分级（UIA-040；RESEARCH-008 范式①⑤：单焦点 + 底部替换条）
+
+/// 底部操作面板的状态（**UI 状态**，不进内核）。
+///   * primary —— 一级工具位（媒体/画中画/音频/文字/特效 + 撤销重做）
+///   * clipSelected —— 选中片段的二级动作替换条（分割/删除 + 占位）
+///   * drawer —— 一级工具位展开的二级替换条（音频/文字/特效/比例）
+public enum EditorToolbarMode: Equatable {
+    case primary
+    case clipSelected
+    case drawer(EditorDrawerKind)
+}
+
+/// 二级抽屉种类。ratio 是真实能力（setCanvas）；其余为入口占位（能力未就绪
+/// 不伪装可用 —— RESEARCH-010 空壳清单的分级化收口）。
+public enum EditorDrawerKind: Equatable {
+    case audio, text, effects, ratio
+}
+
 // MARK: - 视图模型
 
 // MARK: - DEBUG 诊断快照（B-02 批）
@@ -464,6 +482,19 @@ public final class EditorViewModel: ObservableObject {
 
     // MARK: 选中与结构动作（UIA-039；EDIT-007/008 收口）
 
+    /// 底部操作面板模式（UIA-040 分级；随选中态与抽屉开合迁移）。
+    @Published public private(set) var toolbarMode: EditorToolbarMode = .primary
+
+    /// 展开二级抽屉（音频/文字/特效/比例）。
+    public func openDrawer(_ kind: EditorDrawerKind) {
+        toolbarMode = .drawer(kind)
+    }
+
+    /// 收起替换条：回到一级；仍有选中片段则回选中动作条（单焦点语义）。
+    public func closePanel() {
+        toolbarMode = (selectedClipId != nil) ? .clipSelected : .primary
+    }
+
     /// 当前选中片段（**UI 本地状态**，不入内核）。选中态是工具栏动作
     /// （分割 / 删除）的靶子；快照回流时片段已不存在则自动清除。
     @Published public private(set) var selectedClipId: UInt64?
@@ -471,6 +502,8 @@ public final class EditorViewModel: ObservableObject {
     /// 点按片段 → 选中；再点同一片段或空白（clipId 传 nil）→ 取消。
     public func selectClip(_ clipId: UInt64?) {
         selectedClipId = (clipId != nil && clipId == selectedClipId) ? nil : clipId
+        // 选中态迁移即替换条迁移（对标 App范式⑤；抽屉随选中开启而关闭 —— 单焦点）。
+        toolbarMode = (selectedClipId != nil) ? .clipSelected : .primary
     }
 
     /// 选中的片段是否可在播放头处分割：播放头严格落在片段内部
@@ -502,6 +535,36 @@ public final class EditorViewModel: ObservableObject {
         return st
     }
 
+    // MARK: 画布与多轨（UIA-040）
+
+    /// 设置画布比例（异步提交，可撤销；画布是项目结构，进撤销栈）。
+    @discardableResult
+    public func setCanvas(width: Int32, height: Int32) -> Status {
+        session.setCanvas(width: width, height: height)
+    }
+
+    /// 跨轨移动（多轨操作；异步提交，可撤销）：片段 id 不变，落到目标轨道 start 处。
+    @discardableResult
+    public func moveClipToTrack(clipId: UInt64, to trackId: UInt64,
+                                start: RationalTime) -> Status {
+        session.moveClipToTrack(clipId: clipId, trackId: trackId, start: start)
+    }
+
+    /// 新增画中画轨（真实内核命令 addTrack）：多轨操作的入口 —— 新轨出现后，
+    /// 片段可经跨轨拖拽或后续功能上轨。
+    @discardableResult
+    public func addOverlayTrack() -> Status {
+        session.addTrack(kind: 0)
+    }
+
+    /// 预览画布宽高比（w/h；TimelineState 快照直读，默认 9:16）。
+    public var canvasAspect: CGFloat {
+        let w = Double(timeline.canvasWidth)
+        let h = Double(timeline.canvasHeight)
+        guard w > 0, h > 0 else { return 9.0 / 16.0 }
+        return CGFloat(w / h)
+    }
+
     @discardableResult
     public func undo() -> Status { session.undo() }
 
@@ -515,14 +578,13 @@ public final class EditorViewModel: ObservableObject {
     /// 内核里并不存在的"幽灵片段"。故提交后一律主动重查一次：成功时 observer
     /// 随后会再刷一次（同值，无害），失败时这一次就是回到真值的唯一途径。
     public func refreshFromKernel() {
-        timeline = TimelineState(
-            tracks: session.queryTracks(),
-            clips: session.queryClips(),
-            version: session.currentSnapshot.version)
+        timeline = makeTimelineState(version: session.currentSnapshot.version)
+        syncPreviewCanvasIfNeeded()
         // 同 applySnapshot：选中的片段若已不在内核（提交被拒/撤销）→ 清除。
         if let sel = selectedClipId,
            !timeline.clips.contains(where: { $0.clipId == sel }) {
             selectedClipId = nil
+            toolbarMode = .primary
         }
         refreshHistoryFlags()
         // 提交被拒（重叠 / duration ≤ 0）不触发 observer 回流，这里就是回到真值的
@@ -708,21 +770,52 @@ public final class EditorViewModel: ObservableObject {
 
     // MARK: 快照回流
 
+    /// 时间线状态的唯一构造点（含画布字段，UIA-040）。
+    private func makeTimelineState(version: UInt64) -> TimelineState {
+        let canvas = session.canvasSize()
+        return TimelineState(tracks: session.queryTracks(),
+                             clips: session.queryClips(),
+                             canvasWidth: canvas.width,
+                             canvasHeight: canvas.height,
+                             version: version)
+    }
+
+    /// 画布比例变化 → 重设预览渲染目标（长边 1280，短边按比例）。
+    /// 渲染目标跟随画布，杜绝「16:9 目标里装 9:16 画布」的假适配；
+    /// 挂泵后 resize 只能走泵线程（cq_preview 契约）。
+    private var lastCanvas: (Int32, Int32) = (0, 0)
+    private func syncPreviewCanvasIfNeeded() {
+        let canvas = (timeline.canvasWidth, timeline.canvasHeight)
+        guard canvas != lastCanvas, canvas.0 > 0, canvas.1 > 0 else { return }
+        lastCanvas = canvas
+        let longSide = 1280
+        let w: Int, h: Int
+        if canvas.0 >= canvas.1 {
+            w = longSide
+            h = Int((Double(longSide) * Double(canvas.1) / Double(canvas.0)).rounded())
+        } else {
+            h = longSide
+            w = Int((Double(longSide) * Double(canvas.0) / Double(canvas.1)).rounded())
+        }
+        _ = previewPump?.requestResize(width: w, height: h)
+            ?? preview?.resize(width: w, height: h)
+            ?? .ok
+    }
+
     private func applySnapshot(_ snap: Snapshot) {
         guard snap.version != knownVersion else { return }
         lastChanges = session.changesSince(knownVersion)
         knownVersion = snap.version
         snapshot = snap
         // 时间线显示状态随之刷新（UIA-004）：读内核已发布快照。
-        timeline = TimelineState(
-            tracks: session.queryTracks(),
-            clips: session.queryClips(),
-            version: snap.version)
+        timeline = makeTimelineState(version: snap.version)
+        syncPreviewCanvasIfNeeded()
         // 选中片段随这次变更消失了（删除/撤销删除/undo 结构命令）→ 清除选中态，
         // 避免工具栏动作打在一个内核里已不存在的 id 上。
         if let sel = selectedClipId,
            !timeline.clips.contains(where: { $0.clipId == sel }) {
             selectedClipId = nil
+            toolbarMode = .primary  // 靶子没了，替换条一起收（单焦点）
         }
         refreshMediaLibrary()
         refreshHistoryFlags()
@@ -731,10 +824,8 @@ public final class EditorViewModel: ObservableObject {
 
     /// 主动刷新一次时间线与素材库状态（初始加载用：版本 0 不触发 observer 回流）。
     public func refreshTimeline() {
-        timeline = TimelineState(
-            tracks: session.queryTracks(),
-            clips: session.queryClips(),
-            version: session.currentSnapshot.version)
+        timeline = makeTimelineState(version: session.currentSnapshot.version)
+        syncPreviewCanvasIfNeeded()
         refreshMediaLibrary()
         refreshHistoryFlags()
         // 初始装载也要把播放头 0 的画面请求出来（UIA-020）：否则首帧要等

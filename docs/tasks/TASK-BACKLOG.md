@@ -287,8 +287,10 @@ parallel:    false          # 是否与同批次其他任务并行
 | EDIT-004 | 跨平台 | 文字/字幕渲染（排版 → 纹理 atlas → 叠加） | RENDER-001 | `core/src/effect/text.*` | 中英混排、换行正确 |
 | EDIT-005 | 跨平台 | 贴纸/图片叠加层 | RENDER-011 | `core/src/effect/sticker.*` | PNG/APNG/WebP |
 | EDIT-006 | 跨平台 | 代理媒体工作流 | MEDIA-010 | `core/src/media/proxy.*` | 后台转码 + 导出切回原片 |
-| EDIT-007 | SDK | 片段分割与删除 C ABI（B1 模型层命令；RESEARCH-010 §5.2 新号） | MODEL-002 ✅ | `engine/core/cq/{model,command,session}/*`、`engine/core/cq/cq_sdk.*` | Split/RemoveClip/RemoveTrack 经 C ABI 可用且有单测 | ✅ 2026-10-11（TASK-EDIT-007，48/48）
-| EDIT-008 | SDK | 左缘裁剪 trim-clip-in C ABI（RESEARCH-010 §5.2 新号） | EDIT-007 | 同上（共用写集） | start/source_in/duration 联动、右缘不动、越界拒绝，经 C ABI 可用且有单测 | ✅ 2026-10-11（TASK-EDIT-008，48/48）
+| EDIT-007 | SDK | 片段分割与删除 C ABI（B1 模型层命令；RESEARCH-010 §5.2 新号） | MODEL-002 ✅ | `engine/core/cq/{model,command,session}/*`、`engine/core/cq/cq_sdk.*` | Split/RemoveClip/RemoveTrack 经 C ABI 可用且有单测 | ✅ 2026-10-11（TASK-EDIT-007，48/48） |
+| EDIT-008 | SDK | 左缘裁剪 trim-clip-in C ABI（RESEARCH-010 §5.2 新号） | EDIT-007 | 同上（共用写集） | start/source_in/duration 联动、右缘不动、越界拒绝，经 C ABI 可用且有单测 | ✅ 2026-10-11（TASK-EDIT-008，48/48） |
+| EDIT-009 | SDK | 跨轨移动命令 + C ABI（UIA-040 多轨操作内核面） | EDIT-007 | `engine/core/cq/{model,command,session}`、`cq_sdk.*` | id 不变上目标轨；类型/重叠校验；可撤销 | ✅ 2026-10-12（TASK-UIA-040，48/48） |
+| EDIT-010 | SDK | 画布项目属性 + 比例 C ABI/UI（UIA-040） | MODEL-001 | 同上 + Editor Pod | set_canvas 可撤销、指纹纳入；预览目标随画布 resize | ✅ 2026-10-12（TASK-UIA-040，65/65） |
 | PROJ-001 | 跨平台 | 项目序列化（schema v1） | MODEL-001, CORE-001 | `core/src/project/*` | 往返序列化一致 |
 | PROJ-002 | 跨平台 | schema 版本迁移器链 | PROJ-001 | `core/src/project/migrate/*` | 每个迁移器有样本测试 |
 | PROJ-003 | 跨平台 | 自动保存（临时文件 + 原子替换） | PROJ-001 | `core/src/project/autosave.*` | 写入中断不损坏 |

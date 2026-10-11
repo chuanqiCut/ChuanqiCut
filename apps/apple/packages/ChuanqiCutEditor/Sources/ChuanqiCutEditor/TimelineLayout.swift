@@ -94,12 +94,24 @@ struct TimelineLayout {
     /// 右边缘裁剪手柄宽度（pt）。
     static let trimHandleWidth: CGFloat = 8
 
+    /// 轨道行号（显示顺序，0 起）；未找到返回 nil。
+    func trackRow(forTrackId id: UInt64) -> Int? {
+        tracks.firstIndex(where: { $0.trackId == id })
+    }
+
     /// 片段矩形（y 已含标尺偏移；行号以 trackId 在 tracks 中的位置定位）。
     /// 完全在视口外的片段返回 nil（布局层的可见裁剪，调用方跳过绘制）。
     ///
     /// `override`：拖拽/裁剪期间的本地预览值（未提交内核）。
-    func rect(for clip: ClipInfo, override: ClipPreviewOverride? = nil) -> CGRect? {
-        guard let trackRow = tracks.firstIndex(where: { $0.trackId == clip.trackId }) else {
+    /// `rowOverride`：跨轨拖拽的预览行（UIA-040）—— **只对 override 命中的那个
+    /// 片段生效**（片段还在源轨，预览画在目标行上）；nil 或非拖拽片段 = 按真实轨道。
+    func rect(for clip: ClipInfo, override: ClipPreviewOverride? = nil,
+              rowOverride: Int? = nil) -> CGRect? {
+        var trackRow = tracks.firstIndex(where: { $0.trackId == clip.trackId })
+        if let rowOverride, let o = override, o.clipId == clip.clipId {
+            trackRow = rowOverride
+        }
+        guard let row = trackRow else {
             return nil
         }
         var startSeconds = Double(clip.start.value) / Double(clip.start.timescale)
@@ -112,7 +124,7 @@ struct TimelineLayout {
         let width = CGFloat(durationSeconds) * pixelsPerSecond
         // 完全在视口外（含 1pt 边界容差）→ 跳过
         if x + width < 0 || x > viewport.width + 1 { return nil }
-        let y = rulerHeight + CGFloat(trackRow) * (trackHeight + Self.trackSpacing)
+        let y = rulerHeight + CGFloat(row) * (trackHeight + Self.trackSpacing)
         return CGRect(x: x, y: y, width: max(width, 2), height: trackHeight)
     }
 

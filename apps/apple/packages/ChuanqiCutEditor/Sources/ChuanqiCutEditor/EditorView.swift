@@ -45,6 +45,10 @@ public struct EditorView: View {
                             showsEmptyState: viewModel.timeline.clips.isEmpty,
                             onTogglePlayback: { viewModel.togglePlayback() },
                             onOpenMedia: { showMediaSheet = true })
+                // 画布比例取景（UIA-040）：渲染目标已随画布 resize，容器随之钳比。
+                .aspectRatio(viewModel.canvasAspect, contentMode: .fit)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .background(Theme.previewBackground)
                 #if DEBUG
                 .overlay(alignment: .topLeading) {
                     if viewModel.debugOverlayVisible,

@@ -136,6 +136,106 @@ final class TimelineInteractionTests: XCTestCase {
         XCTAssertFalse(TimelineLayout.isStrictlyInside(c, atSeconds: 3.5), "片段后不可分割")
     }
 
+    // MARK: - 多轨与面板（UIA-040）
+
+    /// 跨轨落点行（纯函数）：Δy 按行距取整 + 夹取到 [0, rowCount)。
+    func testDropTrackRowMath() {
+        // 行距 48pt：+48 → 下一行，-100 → 上两行，越界夹取。
+        XCTAssertEqual(ClipDrag.dropTrackRow(originRow: 0, deltaY: 48, rowPitch: 48, rowCount: 3), 1)
+        XCTAssertEqual(ClipDrag.dropTrackRow(originRow: 0, deltaY: 23, rowPitch: 48, rowCount: 3), 0,
+                       "不足半行不换轨")
+        XCTAssertEqual(ClipDrag.dropTrackRow(originRow: 2, deltaY: -100, rowPitch: 48, rowCount: 3), 0,
+                       "负向夹到首行")
+        XCTAssertEqual(ClipDrag.dropTrackRow(originRow: 0, deltaY: 999, rowPitch: 48, rowCount: 2), 1,
+                       "正向夹到末行")
+        XCTAssertEqual(ClipDrag.dropTrackRow(originRow: 1, deltaY: 48, rowPitch: 48, rowCount: 0), 1,
+                       "无轨道时原样返回（防呆）")
+    }
+
+    /// 跨轨预览行只作用于被拖拽片段（rect 的 rowOverride 语义）。
+    func testRectRowOverrideOnlyAffectsDraggedClip() throws {
+        let l = layout(clips: [clip(id: 10, start: 0, duration: Int64(2 * ts)),
+                               clip(id: 11, start: Int64(3 * ts), duration: Int64(2 * ts))])
+        let override = ClipPreviewOverride(clipId: 10, startSeconds: 0, durationSeconds: 2.0)
+        // 行高 44 + 间距 4 = 48；clip10 在行 0（y=24），override 行 1（y=72）。
+        let dragged = try XCTUnwrap(l.rect(for: l.clips[0], override: override, rowOverride: 1))
+        XCTAssertEqual(dragged.minY, 24 + 48, accuracy: 0.5, "被拖片段画在目标行")
+        let untouched = try XCTUnwrap(l.rect(for: l.clips[1], override: override, rowOverride: 1))
+        XCTAssertEqual(untouched.minY, 24, accuracy: 0.5, "其它片段不受 rowOverride 影响")
+        // 不带 override 时 rowOverride 不生效（命中测试等路径的既有行为不变）。
+        let plain = try XCTUnwrap(l.rect(for: l.clips[0], rowOverride: 1))
+        XCTAssertEqual(plain.minY, 24, accuracy: 0.5, "无 override 时按真实轨道")
+        XCTAssertEqual(l.trackRow(forTrackId: 1), 0, "trackRow 解析")
+        XCTAssertNil(l.trackRow(forTrackId: 999), "未知轨道返回 nil")
+    }
+
+    /// 面板分级状态机（UI 状态，VM 驱动）：选中 ↔ 一级 ↔ 抽屉，单焦点语义。
+    func testToolbarModeTransitions() throws {
+        let vm = try EditorViewModel()
+        XCTAssertEqual(vm.toolbarMode, .primary)
+
+        vm.selectClip(42)
+        XCTAssertEqual(vm.toolbarMode, .clipSelected, "选中 → 选中动作条")
+        vm.selectClip(42)
+        XCTAssertNil(vm.selectedClipId)
+        XCTAssertEqual(vm.toolbarMode, .primary, "取消选中 → 一级")
+
+        vm.selectClip(42)
+        vm.openDrawer(.ratio)
+        XCTAssertEqual(vm.toolbarMode, .drawer(.ratio), "抽屉开启")
+        vm.selectClip(7)
+        XCTAssertEqual(vm.toolbarMode, .clipSelected,
+                       "单焦点：选中开启时抽屉被选中条替换")
+        vm.closePanel()
+        XCTAssertEqual(vm.toolbarMode, .clipSelected, "仍有选中 → 返回选中条")
+        vm.selectClip(nil)
+        vm.openDrawer(.audio)
+        vm.closePanel()
+        XCTAssertEqual(vm.toolbarMode, .primary, "无选中 → 返回一级")
+    }
+
+    /// 画布 + 跨轨穿内核（UIA-040）：全程断言内核查询值（含快照里的画布字段）。
+    func testCanvasAndCrossTrackThroughViewModel() throws {
+        let vm = try EditorViewModel()
+        let url = goldenURL()
+        guard FileManager.default.fileExists(atPath: url.path) else {
+            return XCTFail("golden 夹具缺失：\(url.path)")
+        }
+        XCTAssertEqual(vm.timeline.canvasWidth, 1080)
+        XCTAssertEqual(vm.timeline.canvasHeight, 1920, "默认画布 9:16")
+        XCTAssertEqual(vm.importMedia(url: url), .ok)
+        XCTAssertTrue(waitForTimelineVersion(vm, 3))
+        let clipId = try XCTUnwrap(vm.timeline.clips.first?.clipId)
+
+        // ---- 画布：切换 → 快照回流带新比例 → aspect 换算 ----
+        var v = vm.timeline.version
+        XCTAssertEqual(vm.setCanvas(width: 1080, height: 1080), .ok)
+        XCTAssertTrue(waitForTimelineVersion(vm, v + 1))
+        XCTAssertEqual(vm.timeline.canvasHeight, 1080, "画布经快照回流生效")
+        XCTAssertEqual(vm.canvasAspect, 1.0, accuracy: 0.0001)
+        v = vm.timeline.version
+        XCTAssertEqual(vm.undo(), .ok)
+        XCTAssertTrue(waitForTimelineVersion(vm, v + 1))
+        XCTAssertEqual(vm.timeline.canvasHeight, 1920, "undo 画布（可撤销）")
+
+        // ---- 跨轨：新增画中画轨 → 片段移过去（id 不变）→ undo 回原轨 ----
+        v = vm.timeline.version
+        XCTAssertEqual(vm.addOverlayTrack(), .ok)
+        XCTAssertTrue(waitForTimelineVersion(vm, v + 1))
+        let overlayTrack = try XCTUnwrap(vm.timeline.tracks.last?.trackId)
+        XCTAssertEqual(vm.moveClipToTrack(clipId: clipId, to: overlayTrack,
+                                          start: RationalTime(value: 0, timescale: ts)), .ok)
+        XCTAssertTrue(waitForTimelineVersion(vm, vm.timeline.version + 1))
+        let moved = try XCTUnwrap(vm.timeline.clips.first { $0.clipId == clipId })
+        XCTAssertEqual(moved.trackId, overlayTrack, "片段上画中画轨（id 不变）")
+        v = vm.timeline.version
+        XCTAssertEqual(vm.undo(), .ok)
+        XCTAssertTrue(waitForTimelineVersion(vm, v + 1))
+        let restored = try XCTUnwrap(vm.timeline.clips.first { $0.clipId == clipId })
+        XCTAssertNotEqual(restored.trackId, overlayTrack, "undo 跨轨回原轨")
+    }
+
+
     // MARK: - ViewModel 端到端（穿内核）
 
     private func goldenURL() -> URL {

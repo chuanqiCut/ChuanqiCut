@@ -219,6 +219,33 @@ int32_t cq_session_remove_track(CQSession* session, uint64_t track_id) {
     return CodeOf(session->impl.SubmitRemoveTrack("remove-track", track_id));
 }
 
+// ---- 跨轨移动与画布（UIA-040）----------------------------------------------
+
+int32_t cq_session_move_clip_to_track(CQSession* session, uint64_t clip_id, uint64_t track_id,
+                                      int64_t start_value, int32_t start_timescale) {
+    if (session == nullptr) return CodeOfEnum(cq::ChqStatusCode::kInvalidArgument);
+    if (start_timescale <= 0) return CodeOfEnum(cq::ChqStatusCode::kInvalidArgument);
+    const cq::ChqRationalTime start{start_value, start_timescale};
+    return CodeOf(session->impl.SubmitMoveClipToTrack("move-clip-to-track", clip_id, track_id,
+                                                      start));
+}
+
+int32_t cq_session_set_canvas(CQSession* session, int32_t width, int32_t height) {
+    if (session == nullptr) return CodeOfEnum(cq::ChqStatusCode::kInvalidArgument);
+    return CodeOf(session->impl.SubmitSetCanvas("set-canvas", width, height));
+}
+
+int32_t cq_session_get_canvas(const CQSession* session, int32_t* out_width, int32_t* out_height) {
+    if (session == nullptr || out_width == nullptr || out_height == nullptr) {
+        return CodeOfEnum(cq::ChqStatusCode::kInvalidArgument);
+    }
+    std::shared_ptr<const cq::ChqTimeline> snap = session->impl.CurrentTimeline();
+    if (!snap) return CodeOfEnum(cq::ChqStatusCode::kInternal);  // 自定义状态无模型
+    *out_width = snap->CanvasWidth();
+    *out_height = snap->CanvasHeight();
+    return CodeOfEnum(cq::ChqStatusCode::kOk);
+}
+
 int32_t cq_session_undo(CQSession* session) {
     if (session == nullptr) return CodeOfEnum(cq::ChqStatusCode::kInvalidArgument);
     return CodeOf(session->impl.SubmitUndo("undo"));

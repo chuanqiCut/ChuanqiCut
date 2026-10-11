@@ -27,6 +27,8 @@ final class EditorViewController: UIViewController {
     // 区块视图
     private let previewContainer = UIView()
     private var previewMTKView: PreviewMTKView?
+    /// 预览画布比例约束（UIA-040；画布变化时重建，multiplier 不可变）。
+    private var previewAspectConstraint: NSLayoutConstraint?
     private let previewFallback = UILabel()
     private let emptyStateView = UIView()
     private let transportBar = EditorTransportBarView()
@@ -135,6 +137,15 @@ final class EditorViewController: UIViewController {
         toolbarView.onDeleteSelected = { [weak self] in
             self?.viewModel.deleteSelectedClip()
         }
+        // 面板分级（UIA-040）：抽屉开合 / 画布比例 / 画中画轨。
+        toolbarView.onOpenDrawer = { [weak self] kind in self?.viewModel.openDrawer(kind) }
+        toolbarView.onClosePanel = { [weak self] in self?.viewModel.closePanel() }
+        toolbarView.onSetCanvas = { [weak self] w, h in
+            self?.viewModel.setCanvas(width: w, height: h)
+        }
+        toolbarView.onAddOverlayTrack = { [weak self] in
+            self?.viewModel.addOverlayTrack()
+        }
         toolbarView.onOpenMedia = { [weak self] in self?.onOpenMedia() }
     }
 
@@ -148,12 +159,13 @@ final class EditorViewController: UIViewController {
             mtk.translatesAutoresizingMaskIntoConstraints = false
             previewContainer.addSubview(mtk)
             NSLayoutConstraint.activate([
-                mtk.leadingAnchor.constraint(equalTo: previewContainer.leadingAnchor),
-                mtk.trailingAnchor.constraint(equalTo: previewContainer.trailingAnchor),
                 mtk.topAnchor.constraint(equalTo: previewContainer.topAnchor),
                 mtk.bottomAnchor.constraint(equalTo: previewContainer.bottomAnchor),
+                mtk.centerXAnchor.constraint(equalTo: previewContainer.centerXAnchor),
             ])
+            // 宽由画布比例约束给出（applyCanvasAspect），多余宽度自然留黑边 —— 预览即画布。
             previewMTKView = mtk
+            applyCanvasAspect()
         } else {
             // 预览后端缺失：如实降级（对照 PreviewZone 降级文案），不伪装可用。
             previewFallback.text = "预览不可用\n当前平台缺少预览后端"
@@ -245,6 +257,19 @@ final class EditorViewController: UIViewController {
             .sink { [weak self] _ in Task { @MainActor in self?.refreshSelectionState() } }
             .store(in: &cancellables)
 
+        // 面板分级（UIA-040）：模式迁移即整条重建；重建后按钮可用性全部回默认值，
+        // 必须重推 undo/redo/分割/删除的真实状态。
+        viewModel.$toolbarMode
+            .dropFirst().receive(on: DispatchQueue.main)
+            .sink { [weak self] mode in Task { @MainActor in
+                guard let self else { return }
+                self.toolbarView.setMode(mode)
+                self.toolbarView.setUndoEnabled(self.viewModel.canUndo)
+                self.toolbarView.setRedoEnabled(self.viewModel.canRedo)
+                self.toolbarView.setSplitEnabled(self.viewModel.canSplitSelected)
+                self.toolbarView.setDeleteEnabled(self.viewModel.selectedClipId != nil)
+            } }.store(in: &cancellables)
+
         // 播放态：传输条图标 + 显示链接启停 + MTK 连续绘制标志
         viewModel.$isPlaying
             .receive(on: DispatchQueue.main)
@@ -292,10 +317,23 @@ final class EditorViewController: UIViewController {
                             playheadSeconds: playheadSeconds)
         // rebuild 清空全部层 → 选中描边重刷（VM 侧已保证失效 id 不会灌进来）
         timelineView.setSelectedClip(viewModel.selectedClipId)
+        applyCanvasAspect()
         let empty = viewModel.timeline.clips.isEmpty
         emptyStateView.isHidden = !empty
         transportBar.setEnabled(!empty)
         syncPreview()
+    }
+
+    /// 预览按画布比例取景（UIA-040）：渲染目标已随画布 resize（VM 侧），
+    /// 这里把 MTK 宽度钳到「高 × 画布比」—— 预览即画布，两侧留黑边。
+    private func applyCanvasAspect() {
+        guard let mtk = previewMTKView else { return }
+        previewAspectConstraint?.isActive = false
+        let aspect = max(0.2, min(5.0, viewModel.canvasAspect))
+        let c = mtk.widthAnchor.constraint(equalTo: mtk.heightAnchor,
+                                           multiplier: aspect, constant: 0)
+        c.isActive = true
+        previewAspectConstraint = c
     }
 
     /// 播放头秒值（唯一换算点；红线 #4：其余位置只读 RationalTime 本值）。
@@ -353,6 +391,16 @@ final class EditorViewController: UIViewController {
 
     private func commitDrag(_ d: ClipDrag) {
         let ts = RationalTime.projectTimescale
+        // 跨轨（UIA-040）：落点行解析回 trackId；类型不匹配/重叠由内核拒绝，
+        // refreshFromKernel 回真值。
+        let tracks = viewModel.timeline.tracks
+        if d.targetTrackRow != d.originTrackRow, d.targetTrackRow < tracks.count {
+            let ticks = Int64((d.previewStart * Double(ts)).rounded())
+            viewModel.moveClipToTrack(clipId: d.clipId, to: tracks[d.targetTrackRow].trackId,
+                                      start: RationalTime(value: ticks, timescale: ts))
+            viewModel.refreshFromKernel()
+            return
+        }
         switch d.region {
         case .trimEnd:
             let ticks = Int64((d.previewDuration * Double(ts)).rounded())

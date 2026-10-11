@@ -538,3 +538,10 @@
   - **推送时机** —— main 领先 origin 5 个提交，建议 DEPS 线提交后一起推；
   - 28 个未提交文件（`apps/apple/` 相机 17 + 壳工程 7 + `make_ffmpeg_xcframework.sh` +
     `third_party/manifest.toml` + 图标源文件 2）去向未定，交接里已写明「别顺手提交」。
+
+## 2026-10-11 13:20 · 壳工程冻结入库，XcodeGen 退役（ADR-0037）
+- **决策人**：传哲（追问「project.yml 我没法可视化操作吧，我在工程改啥也不会保存吧，下次重新生成就冲掉了；包括 Info.plist 的一些修改」——痛点确认为「可视化改动不保存」，方向拍板为冻结方案）
+- **决策内容**：`apps/apple/{ios,mac}/ChuanqiCut.xcodeproj`/`.xcworkspace` 冻结入库为手工源文件（唯一真源）；删两份 project.yml；XcodeGen 退役；链路收敛为 clone → bundle install（首次）→ pod install → open workspace。
+- **写集**：.gitignore（hunk 级，并行线 engine/vendor 行未动）、两工程 bundle（xcuserdata 未入库）、删 project.yml ×2、docs/COCOAPODS.md §4、ADR-0037、MEMORY.md 规则行（hunk 级）。
+- **验证**：macOS BUILD SUCCEEDED（x86_64/P96 口径）；iOS generic device BUILD SUCCEEDED（pod install 刷新过期清单后）；metallib 9391B/7123B 非 96B 空壳；pbxproj 零绝对路径。
+- **实施**：集成机会话（GLM-5.3-Flash），commit 73f7d04。

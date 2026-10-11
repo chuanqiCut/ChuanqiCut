@@ -389,6 +389,7 @@
 			isa = XCBuildConfiguration;
 			baseConfigurationReference = 79B587049CC24173DD281F47 /* Pods-ChuanqiCutApp.debug.xcconfig */;
 			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				DEVELOPMENT_TEAM = JGFAHCM926;
 				INFOPLIST_FILE = iOSApp/Info.plist;
 				PRODUCT_BUNDLE_IDENTIFIER = com.chuanqi.cut;
@@ -400,6 +401,7 @@
 			isa = XCBuildConfiguration;
 			baseConfigurationReference = AFEF0A2F58D62C4B42DDCD31 /* Pods-ChuanqiCutApp.release.xcconfig */;
 			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				DEVELOPMENT_TEAM = JGFAHCM926;
 				INFOPLIST_FILE = iOSApp/Info.plist;
 				PRODUCT_BUNDLE_IDENTIFIER = com.chuanqi.cut;

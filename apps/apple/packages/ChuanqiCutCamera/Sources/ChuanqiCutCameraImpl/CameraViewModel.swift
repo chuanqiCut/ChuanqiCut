@@ -323,6 +323,95 @@ final class CameraViewModel: ObservableObject {
         }
     }
 
+    // MARK: DEBUG 实时诊断浮层（B-02 批；用户要求：采集/渲染帧率、处理耗时上屏）
+    //
+    // 数据：CameraRenderer.debugStats（采集/渲染计数、处理耗时）差分 + 录制帧数 +
+    // 内存足迹。2Hz 采样（独立 Timer，录制/预览/暂停全可用）。Release 不编译。
+    // 开关：顶栏天线按钮（DEBUG only）+ CQ_DEBUG_OVERLAY=1 默认开；整体设置模块
+    // 后续接管（2026-10-11 传哲）。
+
+    #if DEBUG
+    @Published public private(set) var debugOverlayVisible = false
+    @Published public private(set) var debugSnapshot: CameraDebugSnapshot?
+
+    private var debugSampleTimer: Timer?
+    private var lastCaptureCount: UInt64 = 0
+    private var lastDrawCount: UInt64 = 0
+    private var lastSampleAt: DispatchTime?
+    private var debugProcessMax: Double = 0
+
+    /// 相机内存足迹（MB）。失败 -1（与编辑器同口径：宁可 -1 不伪造 0）。
+    nonisolated private static func cameraMemoryFootprintMB() -> Double {
+        var info = task_vm_info_data_t()
+        var count = mach_msg_type_number_t(
+            MemoryLayout<task_vm_info_data_t>.size / MemoryLayout<integer_t>.size)
+        let kr = withUnsafeMutablePointer(to: &info) { ptr -> kern_return_t in
+            ptr.withMemoryRebound(to: integer_t.self, capacity: Int(count)) {
+                // $0 = 重绑定后的 info 输出缓冲（task_info 第 3 参），勿漏。
+                task_info(mach_task_self_, task_flavor_t(TASK_VM_INFO), $0, &count)
+            }
+        }
+        guard kr == KERN_SUCCESS else { return -1 }
+        return Double(info.phys_footprint) / 1048576.0
+    }
+
+    func toggleDebugOverlay() {
+        debugOverlayVisible.toggle()
+        if debugOverlayVisible { startDebugSampler() } else { stopDebugSampler() }
+    }
+
+    private func startDebugSampler() {
+        guard debugSampleTimer == nil else { return }
+        if let st = renderer?.debugStats.snapshot() {
+            lastCaptureCount = st.captureCount
+            lastDrawCount = st.drawCount
+        }
+        lastSampleAt = DispatchTime.now()
+        let timer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) {
+            [weak self] _ in
+            Task { @MainActor [weak self] in self?.sampleDebugStats() }
+        }
+        debugSampleTimer = timer
+    }
+
+    private func stopDebugSampler() {
+        debugSampleTimer?.invalidate()
+        debugSampleTimer = nil
+    }
+
+    private func sampleDebugStats() {
+        let now = DispatchTime.now()
+        let elapsed = lastSampleAt.map {
+            max(Double(now.uptimeNanoseconds &- $0.uptimeNanoseconds) / 1_000_000_000, 0.001)
+        } ?? 0.001
+        defer {
+            lastSampleAt = now
+            if let st = renderer?.debugStats.snapshot() {
+                lastCaptureCount = st.captureCount
+                lastDrawCount = st.drawCount
+            }
+        }
+        var captureFps = 0.0, drawFps = 0.0
+        var msLast = 0.0, msMax = 0.0
+        if let st = renderer?.debugStats.snapshot() {
+            captureFps = Double(st.captureCount &- lastCaptureCount) / elapsed
+            drawFps = Double(st.drawCount &- lastDrawCount) / elapsed
+            msLast = st.processMsLast
+            msMax = st.processMsWindowMax
+        }
+        debugProcessMax = msMax
+        debugSnapshot = CameraDebugSnapshot(
+            captureFps: captureFps,
+            drawFps: drawFps,
+            processMsLast: msLast,
+            processMsMax: msMax,
+            isRecording: isRecording,
+            recordedFrames: UInt64(recorderBox.get()?.currentAppendedFrameCount() ?? 0),
+            footprintMB: Self.cameraMemoryFootprintMB(),
+            positionFront: position == .front)
+    }
+    #endif
+
     // MARK: 真机自动探针（DEBUG only；B-02 问卷机器侧取证，2026-10-11）
     //
     // CQ_CAM_PROBE=front：running 后切前摄 → 拍照（PNG 存 tmp，探针模式**跳过相册**

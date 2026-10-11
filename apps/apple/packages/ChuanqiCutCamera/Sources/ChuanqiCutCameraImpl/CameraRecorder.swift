@@ -370,8 +370,8 @@ final class CameraRecorder: @unchecked Sendable {
         return total
     }
 
-    /// 当前已写入帧数（线程安全读；收尾回调用）。
-    private func currentAppendedFrameCount() -> Int {
+    /// 当前已写入帧数（线程安全读；收尾回调 + 相机 DEBUG 浮层采样用）。
+    func currentAppendedFrameCount() -> Int {
         lock.lock()
         defer { lock.unlock() }
         return appendedFrames

@@ -357,6 +357,7 @@
 			isa = XCBuildConfiguration;
 			baseConfigurationReference = F3E31B9F46F384E07DF59113 /* Pods-ChuanqiCutMacApp.debug.xcconfig */;
 			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_IDENTITY = "-";
 				INFOPLIST_FILE = MacApp/Info.plist;
 				PRODUCT_BUNDLE_IDENTIFIER = com.chuanqi.cutmac;
@@ -392,6 +393,7 @@
 			isa = XCBuildConfiguration;
 			baseConfigurationReference = AA71849CD5A138493F5DC61F /* Pods-ChuanqiCutMacApp.release.xcconfig */;
 			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_IDENTITY = "-";
 				INFOPLIST_FILE = MacApp/Info.plist;
 				PRODUCT_BUNDLE_IDENTIFIER = com.chuanqi.cutmac;

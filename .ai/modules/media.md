@@ -541,6 +541,48 @@ CQ_LOG_LEVEL=debug  CQ_LOG_WORKFLOW=decode,mem,perf  CQ_LOG_WF_LEVEL=decode=trac
 
 ---
 
+## AUDIO-002：预览音频全链（2026-10-11，集成机会话，传哲直接下令）
+
+> 「编辑链路预览视频没有声音……彻底解决一下」。AUDIO-001 骨架（音频图/SPSC 环/PCM 池）
+> 之上的第一条**真实出声**链路。解码走 AVFoundation（FFmpeg 后端是 MEDIA-021 的可选项，
+> 本链路不依赖）；模块册表行与 DEPS-012 未提交 hunk 同区避让，以本节代登记。
+
+### 链路形状（五层，一次贯通）
+| 层 | 文件 | 职责 |
+|---|---|---|
+| core 契约 | `cq/audio/track_reader.{h,cpp}` | `IAudioTrackReader`（demux+解码→PCM 块，可重锚，AudioReaderPtr=Destroy 语义）+ 默认装配工厂 |
+| core 编排 | `cq/audio/preview_mixer.{h,cpp}` | 时间线→PCM：快照命中、逐 clip 独立读位、求和混音+削波、漂移护栏、欠载重锚（自有 feed 线程 30Hz） |
+| Platform 解码 | `platform/apple/media/audio_track_reader.mm` | AVAssetReader PCM 输出（解码一体：AAC→PCM/重采样/上混）；P33 加载纪律 + 纯 C++ 线程 @autoreleasepool |
+| Platform 引擎 | `platform/apple/media/audio_engine.mm`（PALA-030） | AVAudioEngine + AVAudioSourceNode；SPSC 环=唯一无锁执行点；Flush=代数递增由回调侧落地（无锁清环） |
+| C ABI | `cq/audio/cq_sdk_audio.cpp` + cq_sdk.h 音频段 | `cq_audio_preview_create/destroy/sync/stats`（独立 TU，链接隔离论证同 cq_sdk_preview.cpp） |
+| Swift | `bindings/swift/.../PreviewAudio.swift` + EditorViewModel | `sync(playhead:playing:)` 每 tick；暂停/停止/拖拽全接线（AppEntry） |
+
+### 时钟语义（MVP，MEDIA-030 全量音画同步前的诚实边界）
+- **视频（墙钟 Player）为主、音频为从**：Sync 60Hz 喂播放头，混音线程在两次 Sync 之间按
+  墙钟外推目标窗口；缓冲前沿（= rendered_upto − BufferedFrames）与外推播放头差 >120ms
+  → Flush + 重锚（播放中 seek/拖拽 ≤ 一个混音周期收敛；音频丢、画面不丢）。
+- 欠载不伪造：缓冲耗尽 = 静音缺口 + 计数 + 重锚到当前播放头；素材音频短于片段（EOF）=
+  片段余下时长静音。暂停 = Sync(playing=false) 立即 Flush；在飞窗口竞态 ≤1 块由暂停分支
+  补 Flush 清尾（不可闻）。
+
+### 契约变更（有意，向后兼容）
+- `platform/audio.h` `IAudioEngine` 增 `FlushOutput()` / `BufferedFrames()`（漂移护栏需要
+  引擎侧水位反馈；唯一实现=AppleAudioEngine，测试假实现同步）。
+- `spsc_ring` 增 `DropAllByConsumer()`（head 唯一写者=消费者，与生产者并发安全论证见头注释）。
+- 已知取舍（写明不藏着）：预览混音=求和+削波，无响度归一/限制器；变速/变声、音频主时钟
+  同步、多路混音图全部归 MEDIA-030 / AUDIO-004。
+
+### 验证（模块级，2026-10-11，Intel macOS 26.7 / Xcode 26.6）
+- `ctest --test-dir build/audio-check`：**48/48 全绿**（新增 `core_audio_preview_mixer`：
+  块网格连续、命中与混音、削波、muted 轨、EOF 静音、source_in 映射、暂停 Flush/恢复重锚；
+  时序敏感用例 5 连跑稳定；含 DEPS 线 media_ffmpeg_probe，无回归）。
+- 两个新 .mm：macOS 全量构建 -Werror 0 编译警告 + iOS arm64 slice 单 TU `clang -Werror` 编译过。
+- Swift：绑定层对新鲜 cq_sdk.h typecheck 0 错；编辑器整包 typecheck 0 错。
+- **未实测**：真机出声、A/V 同步体感、漂移/欠载分布 —— 本节无实测性能数字（设计语义），
+  真机项见池 [12]；baselines「预览音频」段待回填。
+
+---
+
 ## 模块册（ADR-0030：任务/进度/测试门禁记录按模块归口）
 
 > 本节由归属线更新（一机一线，天然单写者）；BACKLOG / pitfalls / baselines 等

@@ -79,6 +79,14 @@ add_library(cq_core STATIC
     cq/audio/audio_graph.cpp
     cq/audio/pcm_pool.cpp
     cq/audio/spsc_ring.cpp
+    # AUDIO-002：预览音频 —— 读取器接缝（core 契约 + 默认装配工厂）与
+    # 预览混音器（时间线→PCM 编排，详见 preview_mixer.h 时钟语义）。
+    cq/audio/track_reader.cpp
+    cq/audio/preview_mixer.cpp
+    # AUDIO-002：音频预览 C ABI。引用 Platform 音频工厂符号的唯一 TU，
+    # 单独成 TU（与 cq/preview/cq_sdk_preview.cpp 同一论证）：不消费音频
+    # 预览的目标链接 cq_core 不牵出 Platform 音频依赖。
+    cq/audio/cq_sdk_audio.cpp
     # AIEDIT-001：EditPlan 校验器（手写 JSON 解析 + 结构/语义校验 + golden 样例）。
     # 契约头 core/cq/ai/ 与实现同域共置，通过 cq_core 的 include root 自动可见。
     cq/ai/plan/edit_plan_validator.cpp)

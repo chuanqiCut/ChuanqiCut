@@ -98,6 +98,13 @@ uint64_t SpscSampleRing::ReadableBytes() const {
     return tail_.load(std::memory_order_relaxed) - head_.load(std::memory_order_relaxed);
 }
 
+void SpscSampleRing::DropAllByConsumer() {
+    // 仅消费者线程调用（head_ 唯一写者，见头文件契约）。
+    // acquire 读 tail：与生产者的 release store 配对，保证追平后不会把
+    // 「已拷贝但未发布」的该厂商当成已丢弃而重复消费。
+    head_.store(tail_.load(std::memory_order_acquire), std::memory_order_release);
+}
+
 uint64_t SpscSampleRing::WritableBytes() const {
     const uint64_t tail = tail_.load(std::memory_order_relaxed);
     const uint64_t head = head_.load(std::memory_order_relaxed);

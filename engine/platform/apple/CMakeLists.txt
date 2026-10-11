@@ -24,7 +24,12 @@ add_library(cq_platform_apple STATIC
     #   gfx/blit_pass.mm             —— CreateBlitPass（MSL 源在 gfx/shaders/）
     #   media/frame_provider_apple.mm —— CreateFrameProvider（PALA-010 + PALA-011 → MEDIA-020）
     gfx/blit_pass.mm
-    media/frame_provider_apple.mm)
+    media/frame_provider_apple.mm
+    # AUDIO-002：音频轨读取（AVAssetReader PCM 解码输出）+ 音频播放引擎
+    #（AVAudioEngine + AVAudioSourceNode，PALA-030）。均实现 Platform 契约
+    #（CreateAudioTrackReader / CreateAudioEngine，声明在 core），无独立 .h。
+    media/audio_track_reader.mm
+    media/audio_engine.mm)
 
 target_include_directories(cq_platform_apple PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/base
@@ -44,7 +49,7 @@ set_target_properties(cq_platform_apple PROPERTIES
 # Objective-C++ 启用 ARC（与项目警告集共存：-Werror -Wconversion -Wshadow -Wold-style-cast）。
 set_source_files_properties(gfx/gfx_metal.mm media/media_demux.mm media/media_decode.mm
     media/media_encode.mm media/media_muxer.mm base/capabilities.mm gfx/blit_pass.mm
-    media/frame_provider_apple.mm
+    media/frame_provider_apple.mm media/audio_track_reader.mm media/audio_engine.mm
     PROPERTIES COMPILE_FLAGS "-fobjc-arc")
 
 # 项目统一警告集 + -Werror（apply_cq_warnings 已含）。

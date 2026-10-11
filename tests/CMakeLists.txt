@@ -597,6 +597,18 @@ cq_require_cxx20(cq_tests_core_audio_graph)
 apply_cq_warnings(cq_tests_core_audio_graph)
 add_test(NAME core_audio_graph COMMAND cq_tests_core_audio_graph)
 
+# ---- AUDIO-002：预览音频混音器 ----
+# 全 core 确定性用例（假引擎/假读取器/假快照）：块网格连续、命中与混音、
+# source_in 映射、EOF 诚实静音、暂停 Flush / 恢复重锚、muted 轨。
+add_executable(cq_tests_core_audio_preview_mixer
+    unit/test_preview_mixer.cpp)
+target_include_directories(cq_tests_core_audio_preview_mixer PRIVATE
+    ${CMAKE_SOURCE_DIR}/engine/core)
+target_link_libraries(cq_tests_core_audio_preview_mixer PRIVATE cq_core)
+cq_require_cxx20(cq_tests_core_audio_preview_mixer)
+apply_cq_warnings(cq_tests_core_audio_preview_mixer)
+add_test(NAME core_audio_preview_mixer COMMAND cq_tests_core_audio_preview_mixer)
+
 # ---- AIEDIT-001：EditPlan 校验器 + golden 样例集（58 例）----
 # 手写 JSON 解析 + 结构/语义校验；红线 4 时间浮点机器检查。
 # golden 目录通过编译宏注入（测试二进制运行时读取 JSON 夹具）。

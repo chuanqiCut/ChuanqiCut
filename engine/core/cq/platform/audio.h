@@ -55,7 +55,18 @@ public:
                               SampleFormat fmt, uint32_t frames_per_buffer) = 0;
 
     // 写入一块 PCM 播放。buf.data 必须在调用期间有效。
+    // 内部缓冲已满时返回 kResourceExhausted（整块丢弃语义：调用方按块重试/丢弃）。
     virtual Status Write(const PcmBuffer& buf) = 0;
+
+    // 丢弃全部已缓冲未播放的输出样本（seek / 暂停静音用）。
+    // ⚠️ 线程语义：内部经「代数递增 + 消费者在音频回调侧执行丢弃」实现 ——
+    // 生产者线程（混音线程）调用**安全**；丢弃在下一次音频回调内生效
+    // （≤ 一个回调周期，约 10ms）。不需要也不支持跨线程直接改环游标。
+    virtual Status FlushOutput() = 0;
+
+    // 当前内部缓冲中尚未播放的样本帧数（近似快照，relaxed；仅用于监控与
+    // 预览混音器的漂移护栏，不作为同步依据）。未 OpenOutput 时返回 0。
+    virtual uint64_t BufferedFrames() const = 0;
 
     // 打开采集输入流（录音）。
     virtual Status OpenInput(uint32_t sample_rate, uint32_t channels,

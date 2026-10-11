@@ -471,6 +471,56 @@ int32_t cq_session_timeline_duration(const CQSession* session, int64_t* out_valu
                                      int32_t* out_timescale);
 
 /* ==========================================================================
+ * 音频预览（AUDIO-002；MEDIA-030 全量音画同步的前置）
+ * ==========================================================================
+ * CQAudioPreview = 「时间线该出什么声音」的会话级预览音频编排器：
+ *   模型快照 → 活动音频 clip → 平台解码（PCM）→ 求和混音 → 平台播放引擎。
+ * 时间线与素材表同样不在本对象里 —— 输入是 CQSession 发布的不可变快照，
+ * 素材的唯一真源是 CQSession。典型用法：与 cq_preview_create(session) 并用，
+ * 播放 tick 时同步一次播放头（见 cq_audio_preview_sync）。
+ *
+ * 时钟语义（MVP，MEDIA-030 前的诚实边界）：**视频（墙钟）为主、音频为从**。
+ *   Sync 每 tick 喂播放头；混音线程在两次 Sync 之间按墙钟外推；缓冲前沿与
+ *   外推播放头差超阈值（120ms）即 Flush + 重锚 —— 播放中 seek/拖拽播放头
+ *   都在 ≤ 一个混音周期（~33ms）内收敛；音频丢、画面不丢。
+ *
+ * ⚠️ 生命周期：CQAudioPreview **不拥有** CQSession —— session 先活后死
+ *    （Swift 绑定由对象图保证：PreviewAudio 强持有 Session）。
+ *
+ * ⚠️ 平台能力依赖：需要 Platform 的音频读取（解码）与播放引擎两项后端。
+ *    缺失任一后端时 cq_audio_preview_create 返回 NULL —— 这是**运行时**失败，
+ *    上层据此走「预览无声」降级。**不要**用编译期宏判断（红线 #3）。
+ */
+
+typedef struct CQAudioPreview CQAudioPreview;
+
+/* 创建预览音频编排器（挂到 session 的模型快照上）。
+ * 内部完成：平台音频引擎 OpenOutput（48kHz / 2ch / Float32 / 480 帧块）
+ * 与混音线程启动。失败返回 NULL（平台后端缺失 / 引擎启动失败）。 */
+CQAudioPreview* cq_audio_preview_create(CQSession* session);
+
+/* 停止混音线程与播放引擎并释放；传 NULL 安全（幂等）。
+ * 调用方保证 session 存活于此调用之前。 */
+void cq_audio_preview_destroy(CQAudioPreview* audio);
+
+/* 同步播放头（播放 tick 时每帧调用；UI 线程，非阻塞）。
+ *   playhead       —— 当前播放头（任意 timescale，内核换算到项目网格）
+ *   playing        —— 1 = 播放中；0 = 暂停/停止（立即静音，引擎缓冲丢弃）
+ * 返回状态码；参数非法返回 7000。
+ * 播放中的大幅播放头跳变（拖拽）无需额外接口 —— 漂移护栏自动收敛。 */
+int32_t cq_audio_preview_sync(CQAudioPreview* audio, int64_t playhead_value,
+                              int32_t playhead_timescale, int32_t playing);
+
+/* 混音统计（out 均可为 NULL；监控与验收用）：
+ *   blocks_rendered —— 成功写入引擎的 PCM 块数（480 帧/块）
+ *   blocks_dropped  —— 引擎缓冲满被整块丢弃的块数（稳定态应为 0）
+ *   underruns       —— 引擎缓冲耗尽（可闻静音缺口）次数
+ *   resyncs         —— 漂移护栏触发的 Flush+重锚次数（正常拖拽会增长） */
+int32_t cq_audio_preview_stats(CQAudioPreview* audio, uint64_t* out_blocks_rendered,
+                               uint64_t* out_blocks_dropped, uint64_t* out_underruns,
+                               uint64_t* out_resyncs);
+
+/* ==========================================================================
  * 日志：按「端到端链路（workflow）」筛选（CORE-010）
  * ==========================================================================
  *

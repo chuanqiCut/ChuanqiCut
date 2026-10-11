@@ -51,6 +51,11 @@ public final class EditorViewModel: ObservableObject {
     ///    且 Pump 内部强持有 Previewer（见 PreviewPump.swift），销毁顺序由此确定。
     public private(set) var previewPump: PreviewPump?
 
+    /// 预览音频门面（AUDIO-002）：平台解码 + 混音 + 播放引擎全在内核，
+    /// 本类只按 tick 同步播放头。nil = 平台音频后端缺失（运行时降级为无声预览，
+    /// 红线 #3：不用编译期判断）。
+    public private(set) var previewAudio: PreviewAudio?
+
     /// 播放头。预览视图按需渲染该时刻的画面（有理数时间，红线 #4）。
     @Published public private(set) var playhead: RationalTime = RationalTime(
         value: 0, timescale: RationalTime.projectTimescale)
@@ -200,6 +205,9 @@ public final class EditorViewModel: ObservableObject {
         // UIA-010 子步骤 5：取帧泵（把 seek+解码+导入+离屏绘制搬离主线程）。
         // 预览后端缺失时 preview 为 nil，泵也随之不可建 —— 预览区据此走降级展示。
         self.previewPump = self.preview.flatMap { PreviewPump(preview: $0) }
+        // AUDIO-002：预览音频（解码/混音/输出在内核）。后端缺失 = nil = 无声预览
+        //（诚实降级，不伪造成功也不阻塞视频预览）。
+        self.previewAudio = PreviewAudio(session: session)
         // UIA-010：播放时钟（纯计算对象，内核侧无后端依赖）。
         self.player = Player()
         // 版本 0 不触发 observer 回流，初始时间线状态主动查一次。
@@ -251,6 +259,8 @@ public final class EditorViewModel: ObservableObject {
         guard !timeline.clips.isEmpty else { return }
         if isPlaying {
             player.pause()
+            // AUDIO-002：暂停 = 立即静音（内核丢弃在途音频缓冲）。
+            previewAudio?.sync(playhead: player.currentTime, playing: false)
             stopPlaybackLoop()
             isPlaying = false
             return
@@ -268,6 +278,10 @@ public final class EditorViewModel: ObservableObject {
     public func stopPlayback() {
         guard let player else { return }
         player.stop()
+        // AUDIO-002：停止 = 静音（恢复播放时内核从新播放头重锚）。
+        previewAudio?.sync(
+            playhead: RationalTime(value: 0, timescale: RationalTime.projectTimescale),
+            playing: false)
         stopPlaybackLoop()
         isPlaying = false
         setPlayhead(RationalTime(value: 0, timescale: RationalTime.projectTimescale))
@@ -318,6 +332,8 @@ public final class EditorViewModel: ObservableObject {
         if player.isPlaying {
             let now = player.currentTime
             previewPump?.request(pts: now)
+            // AUDIO-002：音频从时钟 —— 每 tick 同步播放头（内核外推 + 漂移护栏）。
+            previewAudio?.sync(playhead: now, playing: true)
             tickCount += 1
             if tickCount % 2 == 0 { playhead = now }
         } else {
@@ -413,6 +429,9 @@ public final class EditorViewModel: ObservableObject {
     public func setPlayhead(_ t: RationalTime) {
         playhead = t
         previewPump?.request(pts: t)
+        // AUDIO-002：拖拽/定位也同步音频 —— 播放中跳变由内核漂移护栏收敛
+        //（≤ 一个混音周期），暂停态传 playing=false 保持静音。
+        previewAudio?.sync(playhead: t, playing: isPlaying)
     }
 
 #if DEBUG

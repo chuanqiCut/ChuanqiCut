@@ -39,6 +39,15 @@ public:
     // 【消费者线程】读出 bytes 该厂商。可读不足 → kResourceExhausted（不动缓冲）。
     Status Read(void* out, uint64_t bytes);
 
+    // 【消费者线程专用】丢弃全部可读数据（head 直接追平 tail）。
+    // 用途：seek / 暂停时清空在途音频（IAudioEngine::FlushOutput 的底层原语）。
+    // ⚠️ 只允许消费者线程调用 —— head_ 的唯一写者是消费者，这是本环唯一合法的
+    // 「跨线程清空」方式：生产者 Write 以 acquire 读 head、按全有或全无校验空间，
+    // head 单向前移不会使其越界。生产者若正处「已拷贝、未发布 tail」窗口，
+    // 该块仍会变得可读 —— 语义等于「丢弃请求到达前的最后一块照常播完」，
+    // 迟到量 ≤ 一个块（约 10ms）。
+    void DropAllByConsumer();
+
     uint64_t CapacityBytes() const { return capacity_; }
     // 以下为跨线程快照（relaxed），仅用于监控/测试断言，不作为同步依据。
     uint64_t ReadableBytes() const;

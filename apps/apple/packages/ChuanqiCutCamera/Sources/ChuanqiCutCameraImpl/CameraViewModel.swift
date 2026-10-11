@@ -328,6 +328,19 @@ final class CameraViewModel: ObservableObject {
         manager.stop()
     }
 
+    /// 拍摄页消失（返回/前进进编辑器）由视图层调用：与后台同口径停会话。
+    /// phase 保持不变，回到页面由 prepare()（幂等）→ resumeIfNeeded 恢复。
+    func handleViewDisappear() {
+        manager.stop()
+    }
+
+    /// 兜底释放：正常路径由 handleViewDisappear 停会话；此处防 VM 被引用环
+    /// 拖到进程尾才释放期间摄像头常开。deinit 是 nonisolated 上下文，manager
+    /// 的 stop 内部自带 sessionQueue 异步，安全。
+    deinit {
+        manager.stop()
+    }
+
     /// 回到前台恢复。
     func resumeIfNeeded() {
         guard phase == .running || phase == .preparing else { return }
@@ -908,7 +921,10 @@ final class CameraViewModel: ObservableObject {
         #endif
         manager.onVideoFrame = { buffer, pts in
             #if DEBUG
-            self.renderer?.debugStats.captureTick()
+            // ⚠️ 只用局部 renderer（本函数已 guard let 解包），**不许写 self**：
+            // 此处写 self.renderer 曾形成 manager→闭包→self→manager 保留环
+            //（DEBUG 构建下 VM/会话永不释放 = 摄像头常开 + 内存只涨，2026-10-11 用户反馈）。
+            renderer.debugStats.captureTick()
             probeFrameCount += 1
             if probeFrameCount % 60 == 0 {
                 fputs("[cam-probe] frames flowing N=\(probeFrameCount)\n", stderr)

@@ -44,6 +44,10 @@ public struct CameraView: View {
         }
         .onDisappear {
             UIApplication.shared.isIdleTimerDisabled = false
+            // 退出拍摄页（返回/前进进编辑器）即停会话：摄像头绿点关闭、采集链
+            // 不再耗电占内存。恢复由 onAppear → prepare()（幂等）→ resumeIfNeeded。
+            // 此前只复位息屏开关，会话常驻 = 摄像头未关 + 资源泄漏（2026-10-11 用户反馈）。
+            model.handleViewDisappear()
         }
         .onAppear {
             // 先注入当前方向再启动会话：configure 在 sessionQueue 取用的就是它

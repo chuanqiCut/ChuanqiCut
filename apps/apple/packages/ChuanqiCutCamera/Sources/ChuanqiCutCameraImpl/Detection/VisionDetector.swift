@@ -39,6 +39,15 @@ final class VisionDetector: @unchecked Sendable {
         set { configLock.lock(); _detectionHz = min(max(newValue, 1), 60); configLock.unlock() }
     }
 
+    /// 仅框模式（磨皮蒙版兜底，无锚点消费）的降频（CAM-033 P1 收尾）：
+    /// 单次 faceRectangles 12-20ms（baselines），30Hz ≈ 半核；蒙版有 EMA + dropout
+    /// 保持兜底，15Hz 足够。锚点档（landmarks/贴纸跟手）仍走 detectionHz。
+    private var _rectHz: Double = 15.0
+    var rectHz: Double {
+        get { configLock.lock(); defer { configLock.unlock() }; return _rectHz }
+        set { configLock.lock(); _rectHz = min(max(newValue, 1), 60); configLock.unlock() }
+    }
+
     private var _smoothingStrength: Double = 0.5   // [E]，随美颜面板（CAM-013 接 UI）
     /// 关键点帧间平滑强度 0...1（0 = 关）。语义见 SharedUI KeypointSmoothingParams。
     var smoothingStrength: Double {
@@ -65,7 +74,7 @@ final class VisionDetector: @unchecked Sendable {
 
     /// 检测队列回调；无检测价值（无人脸/人体/动物）时也会回调空快照——
     /// 消费方借此得知「目标离开画面」以复位状态。
-    var onResult: ((DetectionSnapshot) -> Void)?
+    var onResult: (@Sendable (DetectionSnapshot) -> Void)?
 
     // MARK: 诊断埋点（真机检测耗时入 baselines 的数据源；锁保护）
 
@@ -125,7 +134,10 @@ final class VisionDetector: @unchecked Sendable {
         // CAM-033：请求集合为空 = 本会话零 Vision（磨皮脸框走 metadataOutput）——
         // 采集帧直接丢弃，不占检测队列、不进忙检查。
         guard !requests.isEmpty else { return }
-        let minInterval = 1.0 / detectionHz   // 先取配置，避免双锁嵌套
+        // P1 收尾：仅框档降频（15Hz）——requests 恰为 [.faceRectangles] 时
+        // 无锚点消费者，蒙版 EMA/dropout 兜底；锚点档保持 30Hz 跟手。
+        let hz = (requests == [.faceRectangles]) ? rectHz : detectionHz
+        let minInterval = 1.0 / hz   // 先取配置，避免双锁嵌套
         stateLock.lock()
         if busy || (lastPtsSeconds.map { seconds - $0 < minInterval } ?? false) {
             _totalDroppedByRate &+= 1

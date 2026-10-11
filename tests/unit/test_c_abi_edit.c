@@ -16,6 +16,10 @@
  *   * undo/redo 往返：值回到原状、digest 回到原状、clip id 不变（回放不重分配）
  *   * can_undo / can_redo 语义；空历史 undo 被拒
  *   * 参数校验：timescale ≤ 0 与 NULL session 同步拒绝
+ *   * EDIT-007：split（左半保 id / 右半新 id / 边界拒绝）+ remove_clip /
+ *     remove_track 的删除与原 id 恢复
+ *   * EDIT-008：trim_clip_in（start / source_in / duration 三字段联动、右缘
+ *     不动、越界拒绝）
  */
 
 #include <stdio.h>
@@ -204,6 +208,105 @@ int main(void) {
     Check(cq_session_can_redo(NULL) == 0, "NULL session can_redo → 0");
 
     cq_session_destroy(s);
+
+    /* ========================================================================
+     * EDIT-007/008：split / trim_in / remove（独立新会话，避免历史纠缠）
+     * ====================================================================== */
+    CQSession* s2 = cq_session_create();
+    Check(s2 != NULL, "第二会话创建");
+
+    Check(cq_session_register_asset(s2, 1, "/tmp/a.mp4") == 0, "register_asset 入队");
+    Check(cq_session_add_track(s2, 0) == 0, "add_track 入队");
+    DrainAfter(s2, 2);
+    n_tracks = -1;
+    Check(cq_session_query_tracks(s2, tracks, 4, &n_tracks) == 0 && n_tracks == 1,
+          "第二会话轨道在位（id 空间独立，必须重查）");
+    Check(cq_session_add_clip(s2, tracks[0].track_id, 1, 0, TS, 5000, TS, 0, TS) == 0,
+          "add_clip A（0..5000）入队");
+    DrainAfter(s2, 1);
+    Check(QueryClips(s2, clips, 8, &n_clips) == 0 && n_clips == 1, "片段 A 在位");
+    const uint64_t a_id = clips[0].clip_id;
+
+    /* ---- split：左半保 id，右半新 id，媒体引用联动 ---- */
+    Check(cq_session_split_clip(s2, a_id, 2000, TS) == 0, "split A @2000 入队");
+    DrainAfter(s2, 1);
+    Check(QueryClips(s2, clips, 8, &n_clips) == 0 && n_clips == 2, "split 后 2 片段");
+    Check(clips[0].clip_id == a_id && clips[0].duration_value == 2000, "左半保 id 且收缩");
+    const uint64_t right_id = clips[1].clip_id;
+    Check(right_id != a_id, "右半获得新 id（经查询确认，与 add_clip 同约定）");
+    Check(clips[1].start_value == 2000 && clips[1].duration_value == 3000, "右半占 [at, end)");
+    Check(clips[1].source_in_value == 2000 && clips[1].source_duration_value == 3000,
+          "右半 source_in / source_duration 联动");
+
+    ver_before = cq_session_current_snapshot(s2).version;
+    Check(cq_session_split_clip(s2, a_id, 0, TS) == 0, "切在 start 边界仍入队");
+    DrainAfter(s2, 0);
+    Check(cq_session_current_snapshot(s2).version == ver_before + 1, "切在边界被拒");
+
+    /* ---- trim_clip_in：右缘不动，三字段联动 ---- */
+    Check(cq_session_trim_clip_in(s2, right_id, 3000, TS) == 0, "trim_clip_in 右半 → 3000 入队");
+    DrainAfter(s2, 1);
+    Check(QueryClips(s2, clips, 8, &n_clips) == 0 && clips[1].start_value == 3000 &&
+              clips[1].duration_value == 2000 && clips[1].source_in_value == 3000,
+          "trim_in 生效：start / duration / source_in 三字段联动");
+    Check(clips[1].start_value + clips[1].duration_value == 5000, "右缘（end）保持 5000 不动");
+
+    ver_before = cq_session_current_snapshot(s2).version;
+    Check(cq_session_trim_clip_in(s2, right_id, 6000, TS) == 0, "越界 trim_in 仍入队");
+    DrainAfter(s2, 0);
+    Check(cq_session_current_snapshot(s2).version == ver_before + 1,
+          "trim_in 越过右缘被拒（duration ≤ 0）");
+
+    /* ---- 撤销链：trim_in → split 逐层还原，再 redo 逐层重放 ---- */
+    Check(cq_session_undo(s2) == 0, "undo trim_in 入队");
+    DrainAfter(s2, 1);
+    Check(QueryClips(s2, clips, 8, &n_clips) == 0 && clips[1].start_value == 2000 &&
+              clips[1].duration_value == 3000,
+          "undo trim_in：右半回到分割后原状");
+    Check(cq_session_undo(s2) == 0, "undo split 入队");
+    DrainAfter(s2, 1);
+    Check(QueryClips(s2, clips, 8, &n_clips) == 0 && n_clips == 1 &&
+              clips[0].clip_id == a_id && clips[0].duration_value == 5000,
+          "undo split：回到单片段原状（原 id 原时长）");
+    Check(cq_session_redo(s2) == 0, "redo split 入队");
+    DrainAfter(s2, 1);
+    Check(QueryClips(s2, clips, 8, &n_clips) == 0 && n_clips == 2 &&
+              clips[1].clip_id == right_id,
+          "redo split：右半原 id 恢复（RestoreClip 生效）");
+
+    /* ---- remove_clip / remove_track：删除与原 id 恢复 ---- */
+    Check(cq_session_remove_clip(s2, right_id) == 0, "remove_clip 右半入队");
+    DrainAfter(s2, 1);
+    Check(QueryClips(s2, clips, 8, &n_clips) == 0 && n_clips == 1, "删除后只剩左半");
+    Check(cq_session_undo(s2) == 0, "undo remove_clip 入队");
+    DrainAfter(s2, 1);
+    Check(QueryClips(s2, clips, 8, &n_clips) == 0 && n_clips == 2 &&
+              clips[1].clip_id == right_id,
+          "undo remove_clip：原 id 恢复");
+
+    Check(cq_session_remove_track(s2, tracks[0].track_id) == 0, "remove_track 入队");
+    DrainAfter(s2, 1);
+    n_tracks = -1;
+    Check(cq_session_query_tracks(s2, tracks, 4, &n_tracks) == 0 && n_tracks == 0,
+          "轨道连同片段一起消失");
+    Check(cq_session_undo(s2) == 0, "undo remove_track 入队");
+    DrainAfter(s2, 1);
+    n_tracks = -1;
+    Check(cq_session_query_tracks(s2, tracks, 4, &n_tracks) == 0 && n_tracks == 1,
+          "undo remove_track：轨道恢复");
+    Check(QueryClips(s2, clips, 8, &n_clips) == 0 && n_clips == 2 &&
+              clips[0].clip_id == a_id && clips[1].clip_id == right_id,
+          "轨道内片段原 id 全部恢复");
+
+    /* ---- 新 ABI 参数校验（同步，调用侧）---- */
+    Check(cq_session_split_clip(s2, a_id, 100, 0) == 7000, "split timescale=0 → 同步拒绝");
+    Check(cq_session_trim_clip_in(s2, a_id, 100, 0) == 7000, "trim_in timescale=0 → 同步拒绝");
+    Check(cq_session_split_clip(NULL, a_id, 100, TS) == 7000, "NULL session split → 7000");
+    Check(cq_session_trim_clip_in(NULL, a_id, 100, TS) == 7000, "NULL session trim_in → 7000");
+    Check(cq_session_remove_clip(NULL, a_id) == 7000, "NULL session remove_clip → 7000");
+    Check(cq_session_remove_track(NULL, 1) == 7000, "NULL session remove_track → 7000");
+
+    cq_session_destroy(s2);
 
     printf("== %d checks, %d failures ==\n", g_checks, g_failures);
     return g_failures == 0 ? 0 : 1;

@@ -69,9 +69,9 @@ final class CameraManager: NSObject, @unchecked Sendable {
 
     /// 视频帧（videoQueue 回调）。buffer 仅本次回调内有效，需持久消费须自行 retain
     /// （CVImageBuffer 是 CF 对象，Swift 赋值即 retain）。
-    var onVideoFrame: ((CVImageBuffer, CMTime) -> Void)?
+    var onVideoFrame: (@Sendable (CVImageBuffer, CMTime) -> Void)?
     /// 音频 sampleBuffer（audioQueue 回调）。录制路径直接 append 给 AVAssetWriterInput。
-    var onAudioBuffer: ((CMSampleBuffer) -> Void)?
+    var onAudioBuffer: (@Sendable (CMSampleBuffer) -> Void)?
 
     // MARK: 会话与队列
 
@@ -147,7 +147,11 @@ final class CameraManager: NSObject, @unchecked Sendable {
     /// metadata 脸框回调（metadataQueue）：rect 已转视频帧归一化坐标
     /// （origin 左上 0...1，CAM-011 契约同向）。**空数组也回调**（目标离开画面
     /// → 消费方 FaceBoxStore 清空语义）。磨皮关闭时消费方也可忽略。
-    var onMetadataFaces: ((_ rects: [CGRect], _ mirrored: Bool) -> Void)?
+    var onMetadataFaces: (@Sendable (_ rects: [CGRect], _ mirrored: Bool) -> Void)?
+    /// metadata 脸框供框节流（CAM-033 P1 收尾）：回调随帧率（30fps），蒙版有 EMA
+    /// + dropout 兜底，15Hz 供框足够——每帧回调白写 15 次 store。
+    private var lastMetadataDeliverySeconds: Double?
+    private let metadataThrottleHz: Double = 15.0
     private var audioInput: AVCaptureDeviceInput?
     private(set) var currentPosition: Position = .back
     /// 双摄模式（sessionQueue 独占；开关经 setDualCamEnabled）。
@@ -155,7 +159,7 @@ final class CameraManager: NSObject, @unchecked Sendable {
     /// 人像虚化（CAM-023；sessionQueue 独占。开启时视频输入切深度能力设备）。
     private(set) var portraitBlurEnabled = false
     /// 前摄帧（仅双摄模式有流；回调在 frontQueue，消费契约同 onVideoFrame）。
-    var onFrontVideoFrame: ((CVImageBuffer, CMTime) -> Void)?
+    var onFrontVideoFrame: (@Sendable (CVImageBuffer, CMTime) -> Void)?
     /// 采集档位/帧率（只在 sessionQueue 读写；configure/重配时取用并重放）。
     private(set) var captureQuality: CaptureQuality = .hd1080
     private(set) var frameRate: Int = 30
@@ -1054,7 +1058,7 @@ private final class PhotoRelay: NSObject, AVCapturePhotoCaptureDelegate, @unchec
 /// v1 仅持有回调口（拍照深度走 photo 内嵌交付，不走流）；流式深度供后续预览虚化轮。
 private final class DepthRelay: NSObject, AVCaptureDepthDataOutputDelegate {
 
-    var onDepth: ((AVDepthData, CMTime) -> Void)?
+    var onDepth: (@Sendable (AVDepthData, CMTime) -> Void)?
 
     func depthDataOutput(_ output: AVCaptureDepthDataOutput,
                          didOutput depthData: AVDepthData,
@@ -1096,6 +1100,14 @@ extension CameraManager: AVCaptureMetadataOutputObjectsDelegate {
                                                      mirrored: mirrored)
         }.compactMap { $0 }   // 后摄未定标返回 nil → 丢弃（Vision 兜底）
         // 空数组也回调：目标离开画面 → FaceBoxStore 清空语义（与 Vision 快照对齐）。
+        // 15Hz 节流（清空帧不节流——目标离开要即时反馈）。
+        let now = CMClockGetTime(.hostTimeClock).seconds   // CMClock 类属性（Swift）
+        if !rects.isEmpty,
+           let last = lastMetadataDeliverySeconds,
+           now - last < 1.0 / metadataThrottleHz {
+            return
+        }
+        lastMetadataDeliverySeconds = now
         if Self.faceCalib {
             let raw = metadataObjects.compactMap { ($0 as? AVMetadataObject)?.bounds }
                 .map { String(format: "(%.4f,%.4f,%.4f,%.4f)", $0.minX, $0.minY, $0.width, $0.height) }

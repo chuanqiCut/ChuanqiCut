@@ -216,10 +216,16 @@ ChqStatus ChqTrimClipInCommand::Do(ChqTimeline& model) {
     ChqRationalTime new_duration;
     s = SubRational(clip->duration, delta, new_duration);
     if (!s.IsOk()) return s;
+    // 媒体窗口与时间线占时同步收缩（与 SplitClip 同纪律）—— 否则 media ref
+    // 声称的窗口比片段实际使用的更长，解码/导出会读进不会显示的帧。
+    ChqRationalTime new_source_duration;
+    s = SubRational(clip->source.source_duration, delta, new_source_duration);
+    if (!s.IsOk()) return s;
 
     new_clip_ = *clip;
     new_clip_.start = new_start_;
     new_clip_.source.source_in = new_source_in;
+    new_clip_.source.source_duration = new_source_duration;
     new_clip_.duration = new_duration;
     captured_ = true;
 

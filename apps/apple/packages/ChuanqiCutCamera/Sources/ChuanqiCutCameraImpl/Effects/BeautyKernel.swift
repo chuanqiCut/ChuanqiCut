@@ -56,6 +56,19 @@ enum BeautyKernelProfile {
         Float(0.2 + 0.65 * min(max(strength, 0), 1))
     }
 
+    // MARK: guided（CAM-034 P2 高通法：结构分离 + k 纹理保留）
+
+    /// box 半径（半分辨率像素，2...6 [E]）：随强度单调不减——磨得越狠结构层越大。
+    static func guidedRadius(strength: Double) -> Int {
+        2 + Int((4.0 * min(max(strength, 0), 1)).rounded())
+    }
+
+    /// 纹理保留系数（0.9...0.1，**随强度单调不增**）：1 = 原样（无磨皮），
+    /// 0 = 全采用结构层（涂抹）。上限 0.9 保证任何强度都有可见磨皮。
+    static func guidedKeep(strength: Double) -> Float {
+        Float(0.9 - 0.8 * min(max(strength, 0), 1))
+    }
+
     /// 半分辨率 extent（向上取整，不丢末行末列；Swift 侧与 kernel 的
     /// inv_scale/down_scale 映射配套）。
     static func halfExtent(of extent: CGRect) -> CGRect {
@@ -143,7 +156,7 @@ final class BeautyKernel: @unchecked Sendable {
     /// 引擎（nil 计数走 os_log，可定位设备侧失败原因），只走默认实现。
     /// 黏性回落状态盒（@Sendable 闭包捕获可变局部变量在 Swift 6 下非法，
     /// 走 P49 RecorderBox 同款 `@unchecked Sendable` + 锁的既有惯例）。
-    private final class FallbackState: @unchecked Sendable {
+    final class FallbackState: @unchecked Sendable {
         private let lock = NSLock()
         private var consecutiveFailures = 0
         private var disabled = false
@@ -185,6 +198,15 @@ final class BeautyKernel: @unchecked Sendable {
     /// 96B 空壳 metallib 曾静默回落默认实现且无从发现，见 ADR-0021）。
     static func installSharedSmoothingIfNeeded() {
         guard CameraBeautyEngine.smoothing == nil else { return }
+        // CAM-034 P2：CQ_CAM_GUIDED=1 = 高通法引擎优先（真机对比期开关；
+        // 传哲定稿后翻默认）。guided 加载失败诚实回落双边（能力缺失降级）。
+        if ProcessInfo.processInfo.environment["CQ_CAM_GUIDED"] == "1",
+           let guidedData = GuidedBeautyKernel.libraryDataInHostBundles(),
+           let guided = GuidedBeautyKernel(libraryData: guidedData) {
+            CameraBeautyEngine.smoothing = guided.smoothingEngine()
+            statusLogger.notice("beauty engine INSTALLED: guided 高通法（两 pass CIKernel）")
+            return
+        }
         guard let data = libraryDataInHostBundles() else {
             statusLogger.error("beauty engine FALLBACK: bundle 无含 cq_beauty kernels 的 metallib → SharedUI 默认 CI 实现")
             return
@@ -232,5 +254,74 @@ final class BeautyKernel: @unchecked Sendable {
             roiCallback: { index, _ in index == 0 ? halfExtent : extent },
             arguments: [horizontal, image, downScale,
                         NSNumber(value: taps), NSNumber(value: sigma), NSNumber(value: mixT)])
+    }
+}
+
+
+// MARK: - 引导（高通法）磨皮引擎（CAM-034 P2）
+
+/// 高通法双 pass 引擎：beauty_guided.metallib 的 cq_guided_down_h / cq_guided_up_mix。
+/// 契约与 BeautyKernel 相同（apply 值语义/extent 不变/origin=(0,0)/失败 nil 回落）。
+/// 观感换代点：box 均匀平均 = 磨皮程度逐帧恒定（无逐像素强度调制），k 显式控细节。
+final class GuidedBeautyKernel: @unchecked Sendable {
+
+    static let downHFunctionName = "cq_guided_down_h"
+    static let upMixFunctionName = "cq_guided_up_mix"
+
+    private let downH: CIKernel
+    private let upMix: CIKernel
+
+    init?(libraryData: Data) {
+        guard let downH = try? CIKernel(functionName: Self.downHFunctionName,
+                                        fromMetalLibraryData: libraryData),
+              let upMix = try? CIKernel(functionName: Self.upMixFunctionName,
+                                        fromMetalLibraryData: libraryData) else {
+            return nil
+        }
+        self.downH = downH
+        self.upMix = upMix
+    }
+
+    /// 从宿主 bundle 扫含 guided kernel 全集的 metallib（复用 BeautyKernel 扫描纪律）。
+    static func libraryDataInHostBundles() -> Data? {
+        BeautyKernel.libraryDataInHostBundles(requiring: [downHFunctionName, upMixFunctionName])
+    }
+
+    func smoothingEngine() -> CameraBeautySmoothingEngine {
+        let state = BeautyKernel.FallbackState()
+        return { image, strength in
+            guard state.isEnabled() else { return nil }
+            let result = self.apply(image, strength: strength)
+            state.record(result != nil)
+            return result
+        }
+    }
+
+    func apply(_ image: CIImage, strength: Double) -> CIImage? {
+        let extent = image.extent
+        guard strength > 0,
+              extent.origin.x == 0, extent.origin.y == 0,
+              extent.width >= 4, extent.height >= 4 else {
+            return nil
+        }
+        let half = BeautyKernelProfile.halfExtent(of: extent)
+        let radius = Float(BeautyKernelProfile.guidedRadius(strength: strength))
+        let keep = BeautyKernelProfile.guidedKeep(strength: strength)
+        let fullW = CGFloat(Int(extent.width))
+        let fullH = CGFloat(Int(extent.height))
+
+        let invScale = CIVector(x: fullW / half.width, y: fullH / half.height)
+        guard let horizontal = downH.apply(
+            extent: half,
+            roiCallback: { _, _ in extent },
+            arguments: [image, invScale, NSNumber(value: radius)])
+        else { return nil }
+
+        let downScale = CIVector(x: half.width / fullW, y: half.height / fullH)
+        return upMix.apply(
+            extent: extent,
+            roiCallback: { index, _ in index == 0 ? half : extent },
+            arguments: [horizontal, image, downScale,
+                        NSNumber(value: radius), NSNumber(value: keep)])
     }
 }

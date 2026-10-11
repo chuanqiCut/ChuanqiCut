@@ -1,7 +1,7 @@
 // ChuanqiCut — Command / ChqCommandHistory 单测（MODEL-002）
 //
 // 验收对应 BACKLOG「100 次 undo 后回到初始态」：
-//   * 6 类命令的 Do/Undo/Redo 往返（含 Add/Remove 的原 id 恢复）
+//   * 8 类命令的 Do/Undo/Redo 往返（含 Add/Remove/Split 的原 id 恢复）
 //   * 大深度往返：101 条命令 → 全部 Undo → 指纹 == 初始态 → 全部 Redo → 指纹 == 最终态
 //   * 失败语义：非法命令不入历史、不改模型、不清 redo
 //   * 失败的 Do 不推进模型（先校验后变更的契约）
@@ -328,29 +328,24 @@ void TestSplitClipCommand() {
     hist.Execute(std::make_unique<cq::ChqInsertClipCommand>(track_id, MakeClip(1000, 5000)), tl);
     clip_id = tl.FindClipAt(track_id, Ms(2000))->id;
     const std::string fp_initial = Fingerprint(tl);
-    const int depth_before = static_cast<int>(hist.UndoDepth());
 
-    // 失败语义：切在边界 → 不入栈、不改模型、redo 分支不清
-    hist.Redo(tl);  // 先造一个 redo 分支：undo 一次再 redo 前执行失败用例
-    hist.Undo(tl);  // 栈里是 insert-clip；redo 分支持有它
-    hist.Execute(std::make_unique<cq::ChqInsertClipCommand>(track_id, MakeClip(20000, 1000)), tl);
-    // 上面这条 Execute 已丢弃 redo 分支（线性历史）。重新构造干净现场：
-    hist.Undo(tl);
-    hist.Undo(tl);
-    hist.Redo(tl);
-    hist.Redo(tl);
-    Check(Fingerprint(tl) == fp_initial, "现场重建：指纹回到初始态");
-
-    const int depth_after_setup = static_cast<int>(hist.UndoDepth());
+    // 失败语义（模型在场）：切在边界 → 不入栈、不改模型
     Check(!hist.Execute(std::make_unique<cq::ChqSplitClipCommand>(clip_id, Ms(1000)), tl).IsOk(),
           "切在 start 边界失败");
-    Check(static_cast<int>(hist.UndoDepth()) == depth_after_setup, "失败的 split 不入栈");
+    Check(!hist.Execute(std::make_unique<cq::ChqSplitClipCommand>(clip_id, Ms(6000)), tl).IsOk(),
+          "切在 end 边界失败");
     Check(Fingerprint(tl) == fp_initial, "失败的 split 不改模型");
 
-    // 正常分割：Do 生效、右半新 id、左半收缩
-    auto split = std::make_unique<cq::ChqSplitClipCommand>(clip_id, Ms(3000));
-    Check(hist.Execute(std::move(split), tl).IsOk(), "Execute SplitClip");
-    // 右半 id 只能经模型确认（命令已入栈，right_clip_id 不可再取 —— 与 add-clip 同约定）
+    // 失败语义（redo 分支在场）：失败的 Execute 不得清 redo 分支
+    hist.Undo(tl);  // insert-clip 入 redo 分支
+    Check(!hist.Execute(std::make_unique<cq::ChqSplitClipCommand>(clip_id, Ms(3000)), tl).IsOk(),
+          "片段不在场时分割失败");
+    Check(hist.Redo(tl).IsOk(), "失败的 Execute 不清 redo 分支");
+    Check(Fingerprint(tl) == fp_initial, "redo 后回到初始态（失败未改模型）");
+
+    // 正常分割：Do 生效，左半收缩、右半新 id
+    Check(hist.Execute(std::make_unique<cq::ChqSplitClipCommand>(clip_id, Ms(3000)), tl).IsOk(),
+          "Execute SplitClip");
     Check(tl.FindTrack(track_id)->clips.size() == 2, "分割后两个片段");
 
     const std::string fp_split = Fingerprint(tl);
@@ -362,13 +357,15 @@ void TestSplitClipCommand() {
     Check(Fingerprint(tl) == fp_split, "Redo 后指纹与分割后一致（右半原 id 恢复）");
     Check(tl.FindClipAt(track_id, Ms(4000)) != nullptr, "Redo 后右半可命中");
 
-    // 撤销栈里左半原 id 依然有效：对左半再 trim 一次，然后连撤三条
+    // 撤销栈里左半原 id 依然有效：对左半再 trim 一次，然后连撤两条
     const uint64_t left_id = tl.FindClipAt(track_id, Ms(2000))->id;
     Check(left_id == clip_id, "左半保留原 id");
     hist.Execute(std::make_unique<cq::ChqTrimClipCommand>(left_id, Ms(1000)), tl);
     Check(tl.FindClip(left_id)->duration == Ms(1000), "分割后左半可继续编辑");
-    for (int i = 0; i < 3; ++i) hist.Undo(tl);
-    Check(Fingerprint(tl) == fp_initial, "连撤三条回到初始态（LIFO 引用有效）");
+    hist.Undo(tl);
+    Check(tl.FindClip(left_id)->duration == Ms(2000), "trim 撤销引用的是分割后的左半");
+    hist.Undo(tl);
+    Check(Fingerprint(tl) == fp_initial, "连撤两条回到初始态（LIFO 引用有效）");
 }
 
 // ---------------------------------------------------------------------------
@@ -412,8 +409,9 @@ void TestTrimClipInCommand() {
           "左缘越过右缘失败");
     Check(Fingerprint(tl) == fp_trimmed, "越界失败不改模型");
 }
+}  // namespace
 
-
+int main() {
     std::setvbuf(stdout, nullptr, _IONBF, 0);
     std::printf("== ChuanqiCut Command / ChqCommandHistory 单测（MODEL-002）==\n");
 
@@ -421,6 +419,8 @@ void TestTrimClipInCommand() {
     TestHundredUndoReturnsToInitial();
     TestFailedExecuteKeepsHistoryAndModel();
     TestOrderInvariantAfterUndoRedo();
+    TestSplitClipCommand();
+    TestTrimClipInCommand();
 
     std::printf("== %d checks, %d failures ==\n", g_checks, g_failures);
     return g_failures == 0 ? 0 : 1;

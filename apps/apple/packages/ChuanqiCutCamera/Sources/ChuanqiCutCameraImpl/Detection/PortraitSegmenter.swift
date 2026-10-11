@@ -38,7 +38,7 @@ final class PortraitSegmenter: @unchecked Sendable {
 
     /// 分割队列回调：mask（CIImage，白=人像，原生低分辨率 extent）。**不回调 nil**
     /// （失败/无脸静默——消费方持最近有效 mask，过期由脸框约束兜底）。
-    var onMask: ((CIImage) -> Void)?
+    var onMask: (@Sendable (CIImage) -> Void)?
 
     private let queue = DispatchQueue(label: "cq.camera.segmentation")
     private let stateLock = NSLock()

@@ -69,7 +69,7 @@ final class CameraFrameSlot {
 /// 检测队列写 / 渲染与录制线程读，锁保护，latest-wins（同 CameraFrameSlot 纪律）。
 /// 语义对齐 CameraBeauty.apply 契约：nil = 尚无检测数据（直通，无算法即无效果）；
 /// [] = 检测过但无脸（直通）；非空 = 平滑后的图像归一化人脸框（origin 左上）。
-final class FaceBoxStore {
+final class FaceBoxStore: @unchecked Sendable {
 
     private let lock = NSLock()
     private var latest: [CGRect]?
@@ -283,7 +283,7 @@ private enum FillShader {
 
 // MARK: - 预览渲染器
 
-final class CameraPreviewRenderer: NSObject, MTKViewDelegate {
+final class CameraPreviewRenderer: NSObject, MTKViewDelegate, @unchecked Sendable {
 
     private static let logger = Logger(subsystem: "com.chuanqi.cut", category: "camera.preview")
 

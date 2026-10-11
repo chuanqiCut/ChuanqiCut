@@ -194,13 +194,16 @@ ChqStatus ChqTimeline::SplitClip(uint64_t clip_id, const ChqRationalTime& at,
     ChqRationalTime right_source_duration;
     s = SubRational(clip->source.source_duration, delta, right_source_duration);
     if (!s.IsOk()) return s;
+    ChqRationalTime right_duration;  // 右半时长 = end - at（delta 是左半的，别拿错）
+    s = SubRational(end, at, right_duration);
+    if (!s.IsOk()) return s;
 
     // ---- 变更段：左半原位收缩，右半构造后插入 ----
     const ChqTransitionKind orig_out_transition = clip->out_transition;  // 回滚留档
     ChqClip right = *clip;
     right.id = next_id_++;
     right.start = at;
-    right.duration = delta;
+    right.duration = right_duration;
     right.source.source_in = right_source_in;
     right.source.source_duration = right_source_duration;
     // 分割点是媒体中段的切线：两侧的转场边界随之作废（出转场归左、入转场归右，

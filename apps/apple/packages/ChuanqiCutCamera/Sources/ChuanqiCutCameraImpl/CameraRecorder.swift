@@ -238,7 +238,8 @@ final class CameraRecorder: @unchecked Sendable {
     // MARK: 帧注入（videoQueue）
 
     func appendVideo(sourceBuffer: CVImageBuffer, at time: CMTime) {
-        guard setupIfNeeded(with: sourceBuffer) else { return }
+        guard setupIfNeeded(width: CVPixelBufferGetWidth(sourceBuffer),
+                            height: CVPixelBufferGetHeight(sourceBuffer)) else { return }
         lock.lock()
         // writer 状态守卫：只拦「已失败/已收尾」——.failed 之后 append 全部无效
         //（P60 伪绿同族：失败伪装成进度）。⚠️ .unknown（尚未 startWriting）必须

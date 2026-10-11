@@ -27,7 +27,7 @@
 | `apps/apple/project.yml` | 新建 |
 | `.gitignore` | 追加（生成工程 / SPM 构建目录 / CocoaPods 本地环境 / .zcode） |
 
-不触碰：`core/`、`bindings/`、`pal/`、`CMakeLists.txt`、`cq_sdk.h`
+不触碰：`core/`、`bindings/`、`platform/`、`CMakeLists.txt`、`cq_sdk.h`
 
 ## 实际写集与计划的偏差
 

@@ -1,10 +1,10 @@
 # 模块：相机（iOS 原生域，ADR-0014）
 
-> **归属**：B 线（相机/特效；pal/apple 相机与检测子域随 B） —— 归属表见 docs/tasks/PLAN-三线并行.md §1a / ADR-0029（双机分工与门禁跑批，2026-10-07）
+> **归属**：B 线（相机/特效；platform/apple 相机与检测子域随 B） —— 归属表见 docs/tasks/PLAN-三线并行.md §1a / ADR-0029（双机分工与门禁跑批，2026-10-07）
 
 > 建立：2026-10-05（此前只散落在 TASK-CAM-* 与 HANDOFF-004，无模块文档）
 > 位置：`apps/apple/ios/iOSApp/Camera/`
-> 边界：相机是 **App 层资产域**，不经 PAL / C ABI（ADR-0014）。SharedUI 只持
+> 边界：相机是 **App 层资产域**，不经 Platform / C ABI（ADR-0014）。SharedUI 只持
 > 相机相关的**契约层**（`CameraFilterPreset` / `CameraBeautyParams` /
 > `CameraBeautyEngine` 注入点 + 默认 CI 兜底），不放特效资产。
 
@@ -114,10 +114,11 @@ usage，而 CI 的 CIRenderDestination 要求 ShaderWrite → destination nil �
 | CAM-021 | 双摄（MultiCamSession） | ✅ 代码落地 2026-10-07：双输入双输出 + 前/后独立检测桥（PiP 过完整链 WYSIWYG）+ PiP 右上白描边可互换 + 录制合成流（Renderer composer）+ 不支持机型置灰明示；真机 A8 验收待传哲 |
 | CAM-023 | 景深人像 | ✅ 代码落地 2026-10-07：深度能力设备切换（DualWide/Dual/LiDAR/TrueDepth）+ DepthDataOutput 同步 connection + 拍照内嵌深度交付 + PortraitBlur CI 管线（视差归一/羽化/f 值单调）；深度仅服务拍照；无深度机型置灰明示；与双摄互斥 v1；**AVCapturePhoto.depthData / isDepthDataDeliveryEnabled 命名待构建机核对** |
 | CAM-022~025 | C 期四卡（MetalFX/景深/宠物美化/美体），2026-10-07 立项（美体自原 022~024 拆出） | 024/025 本轮全链落地；022 MetalFX 本轮落地（SDK 命名待构建机对表）；023 待接续 |
-| CAM-026 | 美妆（唇/腮红/眼影/眉/美瞳五区域） | ⚠️ 2026-10-08：契约 `MakeupParams.swift` + 实现 `Effects/MakeupRenderer.swift` + 五路接线（VM/渲染/录制/FaceBoxStore/UI 面板）已落盘**未提交**；单测 ✅ 已补 10 用例（`MakeupMaskTests.swift`，待构建机实证）；iOS 构建与 swift test 本机跑不了（Xcode 13.1 / swiftpm 5.5）= 池 [9] |
+| CAM-026 | 美妆（唇/腮红/眼影/眉/美瞳五区域） | ✅ **2026-10-08 晚构建机实测**：已于 `93d94ee` 提交推送（此前写的「未提交」是提交前快照）。契约 `MakeupParams.swift` + 实现 `Effects/MakeupRenderer.swift` + 五路接线；单测 `MakeupMaskTests.swift` **13 用例**（三份文档曾误记 10，已同步）。构建机首跑抓出 2 个真 bug（见下条门禁记录）→ 已修，现 **57/57** |
 | CAM-027 | 人像理解底座（皮肤/头发/人像分割） | ⚠️ **v1 已落地 2026-10-08 晚**（几何级精修）：契约层 `PortraitSkinMask`（脸框 ∩ 非眼/眉/唇区）+ `CameraBeautyEngine.semanticMask` **注入点**（`apply(to:faces:)` 签名零改动，nil=老行为）+ Impl 薄壳 `Detection/PortraitSemantics.swift` + ViewModel 装配 1 处 + 7 用例；`FaceBoxStore` 补 `@unchecked Sendable`（并发契约变更，门禁需确认）。**本期不做**头发分割（SDK 15 无符号）与肤色聚类（归 CAM-028）——均已写进文件注释。构建机验证/真机 = 池 [9] |
 | CAM-029 | 磨皮/美白算法升级 | ⚠️ 2026-10-08：只落地「②色域兜底（`cq_beauty_protect`）」+「③自适应 σ（`cq_beauty_sigma_local`）」，且**只在 pass1 `cq_beauty_down_h`**；①细节回注与④美白唇保护未做；`BeautyKernel` 参数面未动（常量写死）；无 harness 剖面实测 = 池 [9] |
 | **算法定则（传哲 2026-10-07）** | 美颜/美型/美体/美妆/道具/人脸跟踪/AR 一切人像能力必须算法驱动，无算法即无效果，**不得退化为滤镜式全画面修改** | 已落实：CameraBeauty.apply nil 语义 全画面兜底→**直通**（旧契约用例同步改） |
+| **MultiCam preset 崩溃（2026-10-09，P93/P94）** | `AVCaptureMultiCamSession` 不支持 `sessionPreset`（设了抛 NSException）+ 其 activeFormat 必须落在 `isMultiCamSupported` 子集 | ✅ 已修：multiCam 走逐设备 activeFormat；选择规则抽成契约层纯函数 `CameraFormatSelector.bestIndex`（5 例单测）；新增 input 重放档位。真机复验待传哲 |
 
 ### 测试与门禁记录（阶段批）
 
@@ -127,7 +128,14 @@ usage，而 CI 的 CIRenderDestination 要求 ShaderWrite → destination nil �
 | 2026-10-07 | 相机 Pod 迁移阶段批 | Camera 契约 swift test **36/36**；metallib **8431B** + kernelNames（cq_beauty_down_h/up_v_mix）齐全；iOS 模拟器 + macOS BUILD SUCCEEDED；全量门禁见当日日志。真机验收（磨皮/区域化/录制色）仍 = 池 [2] |
 | 2026-10-07 | 修复轮+功能批（本机，未提交） | 本机仅新契约文件 typecheck PASS（CameraReshape/StickerAnchor，工具链 5.5 限制无法编 Impl/iOS）；真机「还是滤镜效果」根因 = 预览 FaceBoxStore 断线（两线同病非合并回归）；录制报错根因 = 音频 append 无会话起点守卫。**iOS 构建/单测/真机全部待构建机与传哲** |
 | 2026-10-08 | HANDOFF-017 收口轮（本机，**按传哲规则未跑门禁/未提交**） | 核环境：本机 **macOS 12.7.6 / Xcode 13.1 / Swift 5.5.1 / 无 cmake·ninja·brew** → iOS Pod 与 SPM `swift test`、`build_core.sh` 全跑不了（§17 旧记录的 Xcode 26.6 与实际不符，P90）。退掉一处不可编译接线（P89）；契约层 `MakeupParams.swift` 仅过 `swiftc -typecheck`（macOS SDK, Swift 5.5）——**弱证据，不作为完成依据**。真机/构建全部 = 池 [9] |
+| 2026-10-09 | MultiCam 崩溃修复轮（本机，**未跑门禁/未提交**） | Camera `swift test` **62/62**（新增 `CameraFormatSelectorTests` 5 例：分辨率最近 / 帧率不覆盖拒绝 / multiCam 只认 multiCamSupported 子集 / 单摄不受该约束 / 空候选 nil）；`CameraManager.swift` 与选择器 `swiftc -typecheck`（device SDK, Swift 6）零错。**iOS 壳构建 + 真机复验仍待（先询问传哲）** |
 | 2026-10-08 晚 | CAM-026/027 编码轮（本机，**未跑任何门禁/测试/构建**） | 交付：契约层 `PortraitSkinMask.swift`（新）+ `CameraBeauty` 注入点 + Impl `PortraitSemantics.swift` + ViewModel 装配 + 两份单测（`MakeupMaskTests` 10 例 / `PortraitSkinMaskTests` 7 例）。**未执行任何验证**（按传哲指令不编译）——所有数字仍为空，构建机 `swift test` 与 iOS 双壳构建 = 池 [9]。新增关注点：`FaceBoxStore` 的 `@unchecked Sendable` 扩充 |
+| **2026-10-08 深夜** | **构建机阶段批（首次真跑 Camera 测试；机器 macOS 26.7.1 / Xcode 26.6 / Swift 6.3.3 / cmake 4.4.3）** | Camera `swift test` **53/56 → 3 失败**：①`testEngineOverridesSmoothingWhenEngaged` 用例传 `faces:nil`，与「算法驱动定则」直通语义冲突（**测试错，非实现回归**，df2a672 起必然失败）→ 用例改传非空人脸框，并补 `testNoFaceNeverInvokesEngine` 作直通防线；②`irisMask` extent = (43,43,14,14) —— **`cropped` 是交集不是外扩**，径向渐变裁回画面拿不到画面 extent（P81 的反例补充）→ 改 `composited(over:)` 黑底画布再裁；③三角内采样 195<200 —— `featherRadius × extent.height` 在 100px 画布 = 2px 羽化把小三角中心压暗 → 羽化下限 1px，采样点改取形心。另修 `triangleMask` 位图按 `extent.origin` 起算（非零点原画布会整体平移）。**修复后 57/57**。并发关注点 `FaceBoxStore @unchecked Sendable`：**无新告警**。
+双壳：**macOS BUILD SUCCEEDED**；**iOS `-scheme ChuanqiCutApp` BUILD SUCCEEDED**
+（device SDK；先 `pod install` 解决 Pods 工程陈旧 → P92，再逐个修真 bug：
+缺 `import CoreMedia`、MetalFX 六处 SDK 命名 + 可失败 init、曝光夹取区间在 device 而非
+activeFormat、`depthCapableDevice` 漏 `Self.`、闭包捕获 optional renderer 未解包）。
+metallib 实测 **9391B**（旧 8431B）+ 两 kernel 名齐全 |
 
 ### 调研 · 决策 · 池指针
 

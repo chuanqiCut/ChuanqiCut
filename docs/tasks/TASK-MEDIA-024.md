@@ -12,7 +12,7 @@ output:      [core/src/media/system_frame_provider.cpp 修复、core/src/preview
 write_set:   core/src/media/system_frame_provider.cpp、core/include/cq/media/system_frame_provider.h（如需）、
              core/src/preview/preview_renderer.cpp、core/src/preview/preview_pump.cpp（仪器）、
              tests/unit/test_media_sequential_*.cpp、tests/unit/test_preview_*.cpp
-read_set:    ADR-0017、.ai/modules/{media,preview}.md、pal/apple/media_demux.mm（ScanKeyframes）
+read_set:    ADR-0017、.ai/modules/{media,preview}.md、platform/apple/media_demux.mm（ScanKeyframes）
 deps:        []
 acceptance:
   - 新增单测：模拟「连续 kExact 前进请求」在 keyframes 表存在时快路径命中率（或等效断言：acquire 不触发 demuxer Seek）⏸（本轮修法改为渲染器侧区间复用，见下）

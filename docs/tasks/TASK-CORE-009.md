@@ -1,7 +1,7 @@
 # TASK-CORE-009：EditorSession 门面与快照机制
 
 - **层**：跨平台内核（`core/src/session/`）
-- **依赖**：CORE-006（PAL 冻结）、**CORE-008（线程模型，已完成）**
+- **依赖**：CORE-006（Platform 冻结）、**CORE-008（线程模型，已完成）**
 - **阻塞**：**BIND-001**（C ABI）→ BIND-002（Swift 绑定）→ 所有 UIA-*
 - **规格**：`docs/specs/ARCH-001-技术方案总纲.md` §4.1（`session` = 对外唯一门面）
 - **日期**：2026-09-29
@@ -81,7 +81,7 @@ session 线程修改。故 session 线程在变更成功后**预先算好 digest
 tools/build/build_core.sh --platform=apple --config=Debug   --test
 tools/build/build_core.sh --platform=apple --config=Release --test
 tools/build/build_core_apple.sh --config=Release
-python3 tools/pal/check_pal_headers.py
+python3 tools/platform/check_platform_headers.py
 ```
 
 ## 验收标准（对应 BACKLOG「快照版本号递增，UI 可 diff」）

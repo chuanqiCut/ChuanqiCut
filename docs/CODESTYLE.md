@@ -3,7 +3,7 @@
 > 生效：2026-10-05（CODE-001 首次成文）。
 > 地位：风格判定的**唯一标准**，`cq-code-review` skill 按本文件执行。
 > 约定来源 = 仓库既有主导实践（全库审计归纳），不是新发明；少数条目是对既有
-> 偏离的收敛决定，随条目标注。架构红线（PAL 头零平台类型、RationalTime、
+> 偏离的收敛决定，随条目标注。架构红线（Platform 头零平台类型、RationalTime、
 > Command、依赖治理等）在 AGENTS.md，不在此重复。
 
 ## 1. 命名与前缀（防库间冲突的硬规则）
@@ -14,8 +14,8 @@
 | C ABI 公开类型/句柄 | `CQ` 前缀 PascalCase，opaque 用 `typedef struct CQXxx CQXxx;` | `CQSession`、`CQSnapshot` |
 | C ABI 回调 typedef | `CQXxxFn` / `CQXxxObserver` | `CQSnapshotObserver` |
 | C 宏 / include guard | `CQ_` 前缀；guard 统一 `CQ_<路径>_<文件>_H_`（尾下划线） | `CQ_BASE_TIME_H_` |
-| C++ 命名空间 | 内核一律 `namespace cq`；pal 平台层嵌套 `cq::apple` | |
-| C++ 类型 | PascalCase；接口 `I` 前缀；叶子实现类标 `final` | `IPalResource`、`GfxDeviceImpl final` |
+| C++ 命名空间 | 内核一律 `namespace cq`；platform 平台层嵌套 `cq::apple` | |
+| C++ 类型 | PascalCase；接口 `I` 前缀；叶子实现类标 `final` | `IPlatformResource`、`GfxDeviceImpl final` |
 | C++ 函数 | PascalCase（与既有库一致，不改 snake_case） | `CreateGfxDevice` |
 | 成员变量 | 尾下划线 `x_` | `mtx_`、`state_` |
 | 枚举 | `enum class` + `k` 前缀值 | `StatusCode::kOk` |
@@ -26,7 +26,7 @@
 | App 层（iOSApp/MacApp/SharedUI） | App target 内一律 internal（禁 `public`）；SharedUI 的 `public` 唯一判据 = 被 App target 消费 | |
 
 第三方冲突红线：公共头（`core/include/cq/`）零平台类型、零第三方类型
-（ffmpeg 的 `AV*`、`av_*` 宏等不得出现，机器门禁 `tools/pal/check_pal_headers.py`
+（ffmpeg 的 `AV*`、`av_*` 宏等不得出现，机器门禁 `tools/platform/check_platform_headers.py`
 + 未来 DEPS-004 符号扫描强制）。
 
 ## 2. C++ 内核
@@ -39,7 +39,7 @@
 - **日志**：`CQ_LOG_*` 宏 + `ILogSink` 注入，禁止直写 stdout/cerr/NSLog/print。
 - **时间**：一律 `RationalTime`，唯一浮点出口 `ToSeconds()`（日志/UI 展示）。
 - **include 顺序**：自带头 → 本 TU 平台头（`#import`，仅 .mm）→ `<std>` →
-  `cq/` 项目头 → 同目录本地头。（pal 侧 media_decode.mm 等旧文件按此收敛。）
+  `cq/` 项目头 → 同目录本地头。（platform 侧 media_decode.mm 等旧文件按此收敛。）
 - **注释**：中文为主；注释中引用的 `cq_*` 函数名与 `k*` 常量必须真实存在
   （出现过幽灵引用案底，审查时按此检查）。
 
@@ -96,7 +96,7 @@
 
 ## 5. 工具链（逐步机器化）
 
-- 已有机器门禁：`-Werror` 编译、`ctest`、`tools/pal/check_pal_headers.py`、
+- 已有机器门禁：`-Werror` 编译、`ctest`、`tools/platform/check_platform_headers.py`、
   `tools/deps/deps.py validate`、`tests/golden/verify.py`、smoke_link。
 - `tools/ci/run_gate.sh` = 本机总门禁入口（合并守门/提交前跑）。
 - `.clang-format`/`.clang-tidy` 待引入（INFRA-012）；引入前以本文件 +

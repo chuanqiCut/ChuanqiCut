@@ -24,14 +24,14 @@
 
 ```
 decode/session 线程 ──SpscSampleRing（全有或全无, SPSC 专用）──▶ 音频线程
-音频线程: pool.Acquire → AudioGraph.Process(节点链原位变换) → IAudioEngine.Write(PAL) → pool.Release
+音频线程: pool.Acquire → AudioGraph.Process(节点链原位变换) → IAudioEngine.Write(Platform) → pool.Release
            ▲ 全部预分配（Init 一次性），音频线程路径零锁零分配（operator new 计数实测 = 0）
-AudioBuffer（core, data 可变）↔ PcmBuffer（PAL, data const）：PALA-030 在边界做平凡适配
+AudioBuffer（core, data 可变）↔ PcmBuffer（Platform, data const）：PALA-030 在边界做平凡适配
 ```
 
 ## 3. 关键决策与理由（防新会话重新发明）
 
-1. **AudioBuffer 与 PAL PcmBuffer 字段对齐但 data 可变**（新约定，`.ai/modules/audio.md`）——
+1. **AudioBuffer 与 Platform PcmBuffer 字段对齐但 data 可变**（新约定，`.ai/modules/audio.md`）——
    效果节点要原位写样本；const 语义差异由 PALA-030 在边界适配，不留给下游。
 2. **AudioGraph 拓扑限单链**（入度≤1、出度≤1、必须连通，成环/断链 → kInvalidArgument）——
    AUDIO-001 只需要链式效果节点；多输入汇点（混音）留给 AUDIO-004 扩展 ctx 输入视图，
@@ -64,7 +64,7 @@ AudioBuffer（core, data 可变）↔ PcmBuffer（PAL, data const）：PALA-030 
 
 ## 6. 门禁（本机实测，run_gate.sh 三轮终局 PASS=6/FAIL=1）
 
-- deps 校验 ✅、PAL 头纯净性 ✅（36 头 0 违规，含新增 cq/audio/ 四头）、apple-prepare ✅
+- deps 校验 ✅、Platform 头纯净性 ✅（36 头 0 违规，含新增 cq/audio/ 四头）、apple-prepare ✅
 - 内核全量：**Debug 44/44、Release 44/44**（新增 core_audio_pcm / core_audio_graph）
 - **XCFramework 三切片 ✅**（修复了合并遗留的 iOS 切片编译断裂，见 §5 与当日日志补记 2）
 - swift-bindings FAIL = 本机环境上限（BIND-002 声明 tools 6.1，本机 Swift 5.9.2），

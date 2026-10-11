@@ -8,7 +8,7 @@ input:       [AIEDIT-001 契约, AIEDIT-002/004/005/006/011 产物, ADR-0020, .a
 output:      [cq_sdk.h 新函数组, Swift 绑定, C ABI 测试, SharedUI 侧可消费的句柄/回调]
 write_set:   core/include/cq/cq_sdk.h(高冲突——独占批次)、core/src/abi/(新文件 ai 段)、
              bindings/swift/Source/(新 AiPlan.swift 等)、bindings 测试、core/tests/test_c_abi_ai.c(新)
-read_set:    core/include/cq/ai/*, core/src/ai/*, pal/apple/net/*, bindings/swift/*, docs/decisions/ADR-0012
+read_set:    core/include/cq/ai/*, core/src/ai/*, platform/apple/net/*, bindings/swift/*, docs/decisions/ADR-0012
 deps:        [AIEDIT-002, AIEDIT-004, AIEDIT-005, AIEDIT-006]
 acceptance:
   - 新 C ABI 函数组（命名 cq_ai_*）：analyze_assets / generate_plan / apply_plan / cancel / llm_config_set / progress_observer —— 全部 opaque 句柄 + C 类型，零平台类型（红线 2/7 grep 审查）

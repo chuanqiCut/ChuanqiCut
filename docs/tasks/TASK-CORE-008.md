@@ -33,7 +33,7 @@ ARCH-001 §6 定义了 7 类线程角色与 4 条铁律，但**没有任何代�
 | `core/CMakeLists.txt` | 修改 | 登记两个新 `.cpp` |
 | `tests/unit/test_thread_model.cpp` | 新增 | 含「主线程零阻塞」实测 |
 | `tests/CMakeLists.txt` | 修改 | 注册新用例 |
-| `tools/pal/check_pal_headers.py` | 修改 | 扫描范围改为自动遍历（见下方"顺带修复"） |
+| `tools/platform/check_platform_headers.py` | 修改 | 扫描范围改为自动遍历（见下方"顺带修复"） |
 
 ## 设计决策（评审点）
 
@@ -72,7 +72,7 @@ ARCH-001 §6 定义了 7 类线程角色与 4 条铁律，但**没有任何代�
 
 ## 顺带修复：头文件门禁的静默缺口
 
-`tools/pal/check_pal_headers.py` 原先硬编码扫描 `("pal","gfx","media")`。
+`tools/platform/check_platform_headers.py` 原先硬编码扫描 `("platform","gfx","media")`。
 CORE-008 新增的 `session/` **不会被扫到** —— 不报错、CTest 全绿、
 `git status` 也看不出来，纯靠人记得加（与 `.gitignore` 裸 `build/`
 把 `tools/build/` 一并忽略属同一种缺口）。
@@ -89,7 +89,7 @@ CORE-008 新增的 `session/` **不会被扫到** —— 不报错、CTest 全�
 tools/build/build_core.sh --platform=apple --config=Debug   --test
 tools/build/build_core.sh --platform=apple --config=Release --test
 tools/build/build_core_apple.sh --config=Release          # 三切片 + 链接冒烟
-python3 tools/pal/check_pal_headers.py
+python3 tools/platform/check_platform_headers.py
 ```
 
 ## 验收标准（对应 BACKLOG「主线程零阻塞可测」）

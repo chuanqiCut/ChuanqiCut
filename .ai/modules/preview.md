@@ -4,7 +4,7 @@
 
 > 建立：2026-10-02
 > 位置：`core/include/cq/preview/` + `core/src/preview/`
-> 上游：MODEL-001（时间线）、AssetRegistry（素材表）、MEDIA-020（取帧）、PAL（GFX / 导入）
+> 上游：MODEL-001（时间线）、AssetRegistry（素材表）、MEDIA-020（取帧）、Platform（GFX / 导入）
 
 ## 1. 职责
 
@@ -36,7 +36,7 @@ PreviewRenderer(IGfxDevice* gfx, IBlitPass* blit, IFrameProviderFactory* provide
                 const Timeline* timeline, const AssetRegistry* assets, const Config& cfg);
 ```
 
-本类自己持有：importer（`PalPtr<INativeImageImporter>`）、离屏 RenderTarget、
+本类自己持有：importer（`PlatformPtr<INativeImageImporter>`）、离屏 RenderTarget、
 `asset_id → FrameProvider` 映射、**上一帧导入的纹理**（逐帧 `ReleaseTexture`）。
 
 ## 4. 返回值语义（不要伪造成功）
@@ -71,7 +71,7 @@ golden 素材 `gf_1080p_h264.mp4` 是**静态**彩条，不同时刻的像素完
 ## 6.5 宽高比适配 FitMode（UIA-014 / ADR-0018，2026-10-04）
 
 源帧与画布比例不同时的映射，**实现接缝 = 编码器视口**（`IGfxEncoder::SetViewport`
-→ PAL `ICommandEncoder::SetViewport`，ADR-0018）：
+→ Platform `ICommandEncoder::SetViewport`，ADR-0018）：
 
 | FitMode | 视口 | 效果 |
 |---|---|---|
@@ -109,14 +109,14 @@ MediaFrame.video.image (CVPixelBuffer)
 ## 8. 装配（C ABI 侧，见 `cq_sdk_preview.cpp`）
 
 ```
-CreateGraphicsDevice(PAL) → CreateGfxDevice(pal, gfx)   # GFX 接管 PAL 所有权
-CreateBlitPass(gfx->PalDevice(), kRGBA8, blit)
-PalFrameProviderFactory                                  # 内部经 CreateFrameProvider
+CreateGraphicsDevice(Platform) → CreateGfxDevice(platform, gfx)   # GFX 接管 Platform 所有权
+CreateBlitPass(gfx->PlatformDevice(), kRGBA8, blit)
+PlatformFrameProviderFactory                                  # 内部经 CreateFrameProvider
         ↓
 PreviewRenderer(gfx, blit.get(), &factory, &timeline, &assets, cfg)
 ```
 
-任一 PAL 后端缺失 → `cq_preview_create` 返回 `NULL`（运行时失败，不是崩溃）。
+任一 Platform 后端缺失 → `cq_preview_create` 返回 `NULL`（运行时失败，不是崩溃）。
 
 ## 9. 验证
 
@@ -149,12 +149,12 @@ SwiftUI PreviewZone
 
 要点：
 - **Swift 绑定类型名是 `Previewer`**（不是 `Preview`，与 SwiftUI 撞名，见 pitfalls P22）。
-- MSL 几何与 `pal/apple/shaders/blit_fullscreen_msl.h` **逐值一致**（uv(0,0)=左上），
+- MSL 几何与 `platform/apple/shaders/blit_fullscreen_msl.h` **逐值一致**（uv(0,0)=左上），
   两侧必须同步改（SharedUI 像素级用例锁定）。
 - 视图是「单帧按需渲染」；连续播放须由上层异步推进 pts，**不得**在视图内加渲染循环。
 - `GetColorTexture` 现在返回**裸原生纹理**（id<MTLTexture>），不是 CqTexture* 包装
   （接口缺陷修复，见 pitfalls P20）；「导出用」与「SetTexture 用」两种句柄语义已
-  在 pal/gfx.h 写清。
+  在 platform/gfx.h 写清。
 - 设备一致性（hypothesis，2026-10-02 本机实测）：内核与 MTKView 的设备同为
   `MTLCreateSystemDefaultDevice()` 的进程内缓存实例。
 - 调试演示：`CQ_DEMO_VIDEO=<视频路径>` 环境变量（DEBUG 构建）启动即载入 5s 片段。
@@ -191,8 +191,8 @@ SwiftUI PreviewZone
 
 ## 12. 相关
 
-ADR-0011（core 调 PAL 工厂的隔离规则）、`docs/tasks/TASK-BIND-003.md`、
-`.ai/modules/pal.md`、`.ai/modules/gfx.md`
+ADR-0011（core 调 Platform 工厂的隔离规则）、`docs/tasks/TASK-BIND-003.md`、
+`.ai/modules/platform.md`、`.ai/modules/gfx.md`
 
 ---
 

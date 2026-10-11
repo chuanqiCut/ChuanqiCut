@@ -1,14 +1,14 @@
 # TASK-CORE-007：能力查询 `ICapabilities` 与枚举（实现）
 
 - **层**：跨平台内核 + Apple 后端
-- **依赖**：CORE-006（PAL 接口冻结，已完成）
+- **依赖**：CORE-006（Platform 接口冻结，已完成）
 - **阻塞**：CORE-009（EditorSession）→ BIND-001（C ABI）→ BIND-002（Swift 绑定）
-- **契约**：`docs/specs/PAL-接口契约.md` §4 Capabilities
+- **契约**：`docs/specs/Platform-接口契约.md` §4 Capabilities
 - **日期**：2026-09-29
 
 ## 背景（为什么要做这个，而不是先做 BIND-001）
 
-`core/include/cq/pal/capabilities.h` 在 CORE-006 里**只冻结了接口与枚举**：
+`core/include/cq/platform/capabilities.h` 在 CORE-006 里**只冻结了接口与枚举**：
 
 ```cpp
 Status SetCapabilitiesBackend(ICapabilities* backend);
@@ -16,7 +16,7 @@ CapabilityValue QueryCapability(Capability cap);
 ```
 
 实测确认（2026-09-29）：这两个函数**没有任何实现**。全仓库唯一引用是
-`tests/unit/pal_headers_compile.cpp` 里的 `static_assert`，属于**编译期检查、不链接**，
+`tests/unit/platform_headers_compile.cpp` 里的 `static_assert`，属于**编译期检查、不链接**，
 所以 CTest 一直全绿看不出来——这与 CORE-006 当时的教训同型
 （「编译验证 7/7 全绿，但接口其实是断的」）。
 
@@ -33,11 +33,11 @@ CapabilityValue QueryCapability(Capability cap);
 
 | 文件 | 动作 | 说明 |
 |---|---|---|
-| `core/src/pal/capabilities.cpp` | 新增 | `SetCapabilitiesBackend` / `QueryCapability` 实现 |
-| `pal/apple/capabilities.mm` | 新增 | Apple 能力后端（Metal / VideoToolbox） |
-| `pal/apple/capabilities_apple.h` | 新增 | 安装函数的 Apple 侧声明（**不进 core/include**，避免平台类型污染） |
-| `core/CMakeLists.txt` | 修改 | 登记 `src/pal/capabilities.cpp` |
-| `pal/apple/CMakeLists.txt` | 修改 | 登记 `capabilities.mm` + ARC 属性 + 框架 |
+| `core/src/platform/capabilities.cpp` | 新增 | `SetCapabilitiesBackend` / `QueryCapability` 实现 |
+| `platform/apple/capabilities.mm` | 新增 | Apple 能力后端（Metal / VideoToolbox） |
+| `platform/apple/capabilities_apple.h` | 新增 | 安装函数的 Apple 侧声明（**不进 core/include**，避免平台类型污染） |
+| `core/CMakeLists.txt` | 修改 | 登记 `src/platform/capabilities.cpp` |
+| `platform/apple/CMakeLists.txt` | 修改 | 登记 `capabilities.mm` + ARC 属性 + 框架 |
 | `tests/unit/test_capabilities.cpp` | 新增 | 平台无关行为单测（注入/nullptr/枚举完备） |
 | `tests/unit/test_capabilities_apple.cpp` | 新增 | Apple 后端真实查询单测 |
 | `tests/CMakeLists.txt` | 修改 | 注册两个新用例 |
@@ -85,7 +85,7 @@ tools/build/build_core.sh --platform=apple --config=Release --test
 tools/build/build_core_apple.sh --config=Release
 
 # 3. 静态门禁
-python3 tools/pal/check_pal_headers.py
+python3 tools/platform/check_platform_headers.py
 ```
 
 ## 验收标准
@@ -93,7 +93,7 @@ python3 tools/pal/check_pal_headers.py
 - **不再是断接口**：`QueryCapability` 有真实实现，未注入返回 `kNo` 且可测
 - Apple 后端在真实 macOS 上返回**可解释**的结果（每项都能说明依据来源）
 - `Capability` 枚举 16 项**全部有明确处置**，无 `default: return kYes` 式兜底
-- 零平台类型进入 `core/include`；PAL 头文件门禁仍 0 violation
+- 零平台类型进入 `core/include`；Platform 头文件门禁仍 0 violation
 - iOS 切片仍可编译（部署目标不做任何抬高）
 - CTest 全绿，用例数 22 → 24
 

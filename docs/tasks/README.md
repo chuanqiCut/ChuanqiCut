@@ -32,7 +32,7 @@
 | 卡 | 标题 |
 |---|---|
 | [CORE-001](TASK-CORE-001.md) | RationalTime 与有理数时间运算 |
-| [CORE-006](TASK-CORE-006.md) | PAL 接口定义冻结 |
+| [CORE-006](TASK-CORE-006.md) | Platform 接口定义冻结 |
 | [CORE-007](TASK-CORE-007.md) | 能力查询 `ICapabilities` 与枚举（实现） |
 | [CORE-008](TASK-CORE-008.md) | 线程模型与队列骨架 |
 | [CORE-009](TASK-CORE-009.md) | EditorSession 门面与快照机制 |
@@ -105,7 +105,7 @@
 | [AIEDIT-001](TASK-AIEDIT-001.md) | 智能成片契约冻结（FeatureReport / EditPlan / LLM 接口 + 校验器） |
 | [AIEDIT-002](TASK-AIEDIT-002.md) | 视觉特征提取管线（镜头边界/运动/质量） |
 | [AIEDIT-003](TASK-AIEDIT-003.md) | 音频解码扩档 + 音频特征提取（静音/响度/能量包络） |
-| [AIEDIT-004](TASK-AIEDIT-004.md) | PAL 网络传输 + LLM 客户端（URLSession / SSE） |
+| [AIEDIT-004](TASK-AIEDIT-004.md) | Platform 网络传输 + LLM 客户端（URLSession / SSE） |
 | [AIEDIT-005](TASK-AIEDIT-005.md) | Prompt 管线与决策解析/修复 |
 | [AIEDIT-006](TASK-AIEDIT-006.md) | EditPlan→Command 执行器 + 新增命令类型 |
 | [AIEDIT-007](TASK-AIEDIT-007.md) | C ABI 扩展与 Swift 绑定（Integrator） |

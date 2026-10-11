@@ -11,7 +11,7 @@
 |---|---|---|---|
 | 1 | 素材表 AssetRegistry | ✅ | `asset_registry` |
 | 2 | 取帧接入 | ✅ | `frame_provider_apple` |
-| 3 | 纹理导入（零拷贝） | ✅ | **PALA-002 已覆盖**（2026-09-26，`pala_native_image` 含 IOSurface ID 断言 + 真实解码帧渲染读回）→ 本任务无需再做 |
+| 3 | 纹理导入（零拷贝） | ✅ | **PALA-002 已覆盖**（2026-09-26，`platform_apple_native_image` 含 IOSurface ID 断言 + 真实解码帧渲染读回）→ 本任务无需再做 |
 | 4 | 预览渲染器 | ✅ | `preview_renderer`（35 项检查） |
 | 5 | C ABI 封装 | ✅ | `c_abi_preview`（32 项检查，真正的 C TU） |
 | 6 | UIA-003 MTKView 嵌入 | ✅ | SharedUI 像素级用例 + macOS/iOS 编译 + 启动冒烟（见 TASK-UIA-003） |
@@ -21,21 +21,21 @@
 ### 子步骤 5 的关键决策：C ABI 放 core，不按平台分裂
 
 矛盾：C ABI 门面要装配预览，就得拿平台能力（图形设备 / blit pass / 帧提供器）；
-但**core 从不调用 PAL 工厂**（全库 grep 确认：调用只发生在 tests/ 与 pal/），
+但**core 从不调用 Platform 工厂**（全库 grep 确认：调用只发生在 tests/ 与 platform/），
 若 C ABI 按平台分裂实现，`cq_sdk.h` 作为「唯一对外边界」就废了。
 
-解法：**PAL 工厂 + 独立 TU**
-- blit pass 提升为 PAL 契约（`IBlitPass` + `CreateBlitPass` 移入 `pal/gfx.h`）。
-  它必然由平台原生 shader 实现（红线 #6），本就该在 PAL；且 PAL 不能反向依赖
-  GFX，故 `IGfxEncoder` 补 `PalEncoder()` 逃生口（与 `PalDevice()` 同套路）。
-- 落地 `pal/media.h` 里**悬空 7 天**的 `CreateFrameProvider` 声明；
-  core 侧用 `PalFrameProvider` 把 PAL 的 `IFrameProvider` 适配成 core 的
+解法：**Platform 工厂 + 独立 TU**
+- blit pass 提升为 Platform 契约（`IBlitPass` + `CreateBlitPass` 移入 `platform/gfx.h`）。
+  它必然由平台原生 shader 实现（红线 #6），本就该在 Platform；且 Platform 不能反向依赖
+  GFX，故 `IGfxEncoder` 补 `PlatformEncoder()` 逃生口（与 `PlatformDevice()` 同套路）。
+- 落地 `platform/media.h` 里**悬空 7 天**的 `CreateFrameProvider` 声明；
+  core 侧用 `PlatformFrameProvider` 把 Platform 的 `IFrameProvider` 适配成 core 的
   `FrameProvider`（形状适配，不引入第二套取帧逻辑）。
-- 两个调 PAL 工厂的 TU（`pal_frame_provider.cpp` / `cq_sdk_preview.cpp`）**必须
+- 两个调 Platform 工厂的 TU（`platform_frame_provider.cpp` / `cq_sdk_preview.cpp`）**必须
   各自独立**：静态库按 archive member 粒度拉符号，独立 TU 才能保证「不用预览的
-  目标」不被牵出 PAL 依赖。
+  目标」不被牵出 Platform 依赖。
 
-实证：`cq_tests_c_abi` 只链 `cq_core`、**不链** `cq_pal_apple`，仍然链接通过并运行成功
+实证：`cq_tests_c_abi` 只链 `cq_core`、**不链** `cq_platform_apple`，仍然链接通过并运行成功
 → 隔离成立。若把这段代码并进 `cq_sdk.cpp`，该测试会立刻链接失败。
 
 ---
@@ -47,13 +47,13 @@
 | 时间线模型 | ✅ 已实现 | `core/src/model/timeline.cpp` |
 | GFX 渲染 | ✅ 已实现 | `core/src/gfx/gfx_device.cpp` |
 | 取帧（Open/Seek/AcquireFrame） | ✅ 已实现 | `system_frame_provider.h`（内联）+ `.cpp` 工厂 |
-| 硬解后端 | ✅ 已实现 | `pal/apple/media_decode.mm` |
-| CVPixelBuffer → GPU 纹理（零拷贝） | ✅ 已实现 | `pal/apple/gfx_metal.mm` + PALA-002 |
+| 硬解后端 | ✅ 已实现 | `platform/apple/media_decode.mm` |
+| CVPixelBuffer → GPU 纹理（零拷贝） | ✅ 已实现 | `platform/apple/gfx_metal.mm` + PALA-002 |
 | **素材管理**（asset_id → 媒体源） | ❌ **无** | 需新建 |
 | **C ABI 预览接口** | ❌ **无** | 需新建 |
 
-`SystemFrameProvider` 构造需 `PalPtr<IMediaDemuxer>` + `IFrameDecoder*`，
-两者 PAL Apple 后端都已提供 —— 所以**取帧链路是通的，缺的是"谁来持有、按什么时间取"**。
+`SystemFrameProvider` 构造需 `PlatformPtr<IMediaDemuxer>` + `IFrameDecoder*`，
+两者 Platform Apple 后端都已提供 —— 所以**取帧链路是通的，缺的是"谁来持有、按什么时间取"**。
 
 ## 二、为什么必须顺带做素材管理
 
@@ -149,27 +149,27 @@ void    cq_preview_release_texture(CQPreview*, void* texture);
 
 ### 子步骤 4 新增（2026-10-02）
 
-**两个接缝**（core 保持平台无关，装配下沉 pal/apple）：
+**两个接缝**（core 保持平台无关，装配下沉 platform/apple）：
 - `core/include/cq/gfx/blit_pass.h` —— `IBlitPass` 全屏拷贝抽象。
   core **不得**内联 MSL（红线 #6）；SPIR-V 链未落地前 MSL 是唯一可用路径，
-  属「能力缺失降级」而非「平台特化优化」。实现在 `pal/apple/blit_pass.mm`，
-  MSL 源在 `pal/apple/shaders/blit_fullscreen_msl.h`。
+  属「能力缺失降级」而非「平台特化优化」。实现在 `platform/apple/blit_pass.mm`，
+  MSL 源在 `platform/apple/shaders/blit_fullscreen_msl.h`。
 - `core/include/cq/media/frame_provider_factory.h` —— `IFrameProviderFactory`。
   `SystemFrameProvider` 需要 `IFrameDecoder*`，其真实实现 `VideoToolboxDecoder`
-  只在 Apple TU 可见，core 直接装配会违反「PAL 头文件零平台类型」，故下沉。
-  实现在 `pal/apple/frame_provider_apple.mm`（PALA-010 + PALA-011 → MEDIA-020）。
+  只在 Apple TU 可见，core 直接装配会违反「Platform 头文件零平台类型」，故下沉。
+  实现在 `platform/apple/frame_provider_apple.mm`（PALA-010 + PALA-011 → MEDIA-020）。
 
 ### 子步骤 5 新增
 
 - `core/include/cq/cq_sdk.h` —— 预览 ABI 段（`cq_preview_create/destroy/register_asset/
   add_clip/render_frame/resize` + 诊断量 `last_hit_clip/last_cpu_fallback/last_frame_pts`）
 - `core/src/preview/cq_sdk_preview.cpp` —— 实现（**独立 TU**，原因见上）
-- `core/include/cq/media/pal_frame_provider.h` + `core/src/media/pal_frame_provider.cpp`
-  —— `PalFrameProvider`（PAL→core 适配器）+ `PalFrameProviderFactory`（core 默认工厂）
+- `core/include/cq/media/platform_frame_provider.h` + `core/src/media/platform_frame_provider.cpp`
+  —— `PlatformFrameProvider`（Platform→core 适配器）+ `PlatformFrameProviderFactory`（core 默认工厂）
 - `tests/unit/test_c_abi_preview.c` —— 真正的 C 翻译单元
 
-**顺带补的接口缺陷**：PAL `IFrameProvider::GetDuration` —— core 的 `FrameProvider`
-要求此项，PAL 接口原本没有，适配时无处可取（会让上层拿不到素材时长）。
+**顺带补的接口缺陷**：Platform `IFrameProvider::GetDuration` —— core 的 `FrameProvider`
+要求此项，Platform 接口原本没有，适配时无处可取（会让上层拿不到素材时长）。
 
 **顺带补的两个接口缺陷**（都是首次真实使用时才暴露的）：
 - `INativeImageImporter::ReleaseTexture`：`Import` 返回裸 `TextureHandle`，
@@ -183,7 +183,7 @@ void    cq_preview_release_texture(CQPreview*, void* texture);
 - `bindings/swift/Package.swift` / `run_smoke.sh` —— 补系统框架 + libc++ 链接
   （媒体/预览 TU 被拉入后必需，P23）。
 - `apps/apple/packages/SharedUI/Sources/SharedUI/Editor/PreviewFrameRenderer.swift`
-  —— 预览纹理 → drawable 的恒等映射 blit（MSL 与 PAL blit 几何逐值一致）。
+  —— 预览纹理 → drawable 的恒等映射 blit（MSL 与 Platform blit 几何逐值一致）。
 - `apps/apple/packages/SharedUI/Sources/SharedUI/Editor/MetalPreviewView.swift`
   —— MTKView 子类 + 双平台 representable；单帧按需渲染。
 - `PreviewZone` / `EditorView` / `AppEntry(EditorViewModel)` —— 预览区接入
@@ -194,8 +194,8 @@ void    cq_preview_release_texture(CQPreview*, void* texture);
 **顺带修的接口缺陷**（首次真实消费暴露，P20）：`IRenderTarget::GetColorTexture`
 的 Apple 实现原返回惰性 `CqTexture*` 包装，与 `cq_sdk.h`「reinterpret 为
 id<MTLTexture>」的契约不符，Swift 侧首用即崩；改为返回裸原生纹理，
-两种句柄语义已在 `pal/gfx.h` 写清。
+两种句柄语义已在 `platform/gfx.h` 写清。
 
 - `CreateSystemFrameProvider` 增加**接管解码器所有权**的重载
   （内部转调新增的 `SystemFrameProvider::AdoptDecoder`）：
-  原签名只收裸指针且不接管，PAL 装配堆对象时没有同生命周期的持有方。
+  原签名只收裸指针且不接管，Platform 装配堆对象时没有同生命周期的持有方。

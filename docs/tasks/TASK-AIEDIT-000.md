@@ -17,7 +17,7 @@
               │
 批次2   ┌─────┼──────────┬─────────────┬────────────┐
         002 视觉特征   003 音频特征   004 网络传输    006 执行器+新命令   011 降级引擎
-        (ai/analysis) (ai/audio+manifest) (pal/apple/net) (command/model)   (ai/fallback)
+        (ai/analysis) (ai/audio+manifest) (platform/apple/net) (command/model)   (ai/fallback)
               │         │            │            │
 批次3         └─────────┴──── 005 Prompt管线与解析 ────┘
                                     │

@@ -23,7 +23,7 @@
 | 环节 | 任务 | 状态 |
 |---|---|---|
 | 内核 | CORE-001~009 / MODEL-001 / MODEL-002 | ✅ |
-| 渲染 | GFX-002 `IGfxDevice` 直连 PAL | ✅ |
+| 渲染 | GFX-002 `IGfxDevice` 直连 Platform | ✅ |
 | 预览 | BIND-003（素材表 / 取帧 / 渲染器 / C ABI / Swift 绑定） | ✅ |
 | UI | UIA-003 预览嵌入、UIA-004 时间线自绘、UIA-005 拖拽裁剪 | ✅ |
 | UI | UIA-009 素材导入（三个子步骤全完成） | ✅ |
@@ -34,7 +34,7 @@
 | 预览宽高比 | UIA-014 letterbox/fit（ADR-0018，视口原语接缝；编号两次让位 011→012→014） | ✅（2026-10-04，本机） |
 
 **并行开发的写集边界（已与传哲确认）**：
-相机侧只动 `pal/*`、`docs/tasks/TASK-CAP-*`、`docs/specs/`；
+相机侧只动 `platform/*`、`docs/tasks/TASK-CAP-*`、`docs/specs/`；
 避开 `core/preview/*`、`core/include/cq/cq_sdk.h`、SharedUI 的时间线/预览、`bindings/swift`。
 
 ---
@@ -75,8 +75,8 @@ MTKView.draw(in:)
 | `tests/unit/test_preview_pump.cpp` | 41 断言（假帧源，只链 `cq_core`） |
 
 改动的既有文件：`preview_renderer.{h,cpp}`（+Timings 埋点、实现帧源接口）、
-`gfx_device.{h,cpp}`（队列复用 + `SharedQueueHandle`）、`pal/gfx.h` +
-`pal/apple/gfx_metal.mm`（`ICommandQueue::NativeHandle`）、`cq_sdk.h` +
+`gfx_device.{h,cpp}`（队列复用 + `SharedQueueHandle`）、`platform/gfx.h` +
+`platform/apple/gfx_metal.mm`（`ICommandQueue::NativeHandle`）、`cq_sdk.h` +
 `cq_sdk_preview.cpp`（8 个 pump ABI + shared_queue + last_timings）、
 SharedUI 的 `MetalPreviewView` / `PreviewFrameRenderer` / `PreviewZone` /
 `EditorView` / `AppEntry`。
@@ -162,7 +162,7 @@ cd apps/apple/packages/SharedUI && swift test --disable-sandbox        # 54/54�
    修复 = 轮询目标效果（`queryTracks` 出现视频轨）。两层修复后 SharedUI 全量
    ×3 **20/20**（套件时长 14.8s→4.2s，失败用例不再烧 5s 超时）。详见 pitfalls P33。
 4. ~~letterbox/fit~~ **✅ 已完成（2026-10-04，UIA-014 / ADR-0018）**：
-   `FitMode` stretch/contain/cover，实现接缝 = 编码器视口原语（GFX/PAL additive，
+   `FitMode` stretch/contain/cover，实现接缝 = 编码器视口原语（GFX/Platform additive，
    不动 IBlitPass 与 MSL）。门禁：Debug 42/42、Release 42/42、
    preview_renderer 51、c_abi_preview 78、gfx_device 30（含视口像素断言）、
    swift 23/23。产品装配 = AppEntry 显式 contain。

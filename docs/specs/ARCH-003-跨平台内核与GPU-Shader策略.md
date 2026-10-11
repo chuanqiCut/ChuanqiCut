@@ -52,7 +52,7 @@
 
 1. **不抽象同步语义的细粒度差异**：只提供 `wait(fence)` / `signal(fence)`，各后端自行实现。
 2. **不隐藏显存分配**：`TexturePool` 在 core 层做统一的池化与预算控制，后端只负责真实分配。
-3. **平台特化只存在于 Platform-Native shader 层，不泄漏到 core**：若某效果在 Metal 上能用特性显著加速（argument buffer、tile memory 等），走 §4 的 Platform-Native 机制 —— 提供 portable 等价路径 + 平台特化加速，**特化代码只放在 `pal/<platform>/shaders/`**。core 层不得出现平台分支。
+3. **平台特化只存在于 Platform-Native shader 层，不泄漏到 core**：若某效果在 Metal 上能用特性显著加速（argument buffer、tile memory 等），走 §4 的 Platform-Native 机制 —— 提供 portable 等价路径 + 平台特化加速，**特化代码只放在 `platform/<platform>/shaders/`**。core 层不得出现平台分支。
 
 ---
 
@@ -67,7 +67,7 @@
 | **Android (Vulkan)** | `AHardwareBuffer` → `VK_ANDROID_external_memory_android_hardware_buffer` → `VkImage` | 需检查 extension 与 `AHardwareBuffer` 格式支持表 |
 | **HarmonyOS** | `OHNativeWindow` / Surface → Vulkan 外部内存 | P2，仅预留 |
 
-**统一抽象**：`PAL` 提供 `INativeImageImporter::import(CQNativeImageHandle) -> TextureHandle`。上层只关心"给我一张可采样的纹理"，不关心底层怎么来的。导入失败必须能优雅退化为「CPU 拷贝路径」，而不是崩溃。
+**统一抽象**：`Platform` 提供 `INativeImageImporter::import(CQNativeImageHandle) -> TextureHandle`。上层只关心"给我一张可采样的纹理"，不关心底层怎么来的。导入失败必须能优雅退化为「CPU 拷贝路径」，而不是崩溃。
 
 ---
 
@@ -97,9 +97,9 @@ Metal Shading Language 只在 Apple 可用；三端各写一套 shader 一致性
 └──────────────────────────────────────────────────────────────┘
 
 ┌─ Platform-Native 层（可选加速）──────────────────────────────┐
-│ pal/apple/shaders/*.metal     ← 可用满 Metal 特性            │
-│ pal/android/shaders/*.glsl    ← 可用 GLES/Vulkan 扩展        │
-│ pal/ohos/shaders/*            ← P2                            │
+│ platform/apple/shaders/*.metal     ← 可用满 Metal 特性            │
+│ platform/android/shaders/*.glsl    ← 可用 GLES/Vulkan 扩展        │
+│ platform/ohos/shaders/*            ← P2                            │
 │ 直接编译，不经中间表示，无平台特性限制                          │
 └──────────────────────────────────────────────────────────────┘
 ```
@@ -127,7 +127,7 @@ Metal Shading Language 只在 Apple 可用；三端各写一套 shader 一致性
 1. **永远可选**：任何效果必须先有 Portable 实现，特化只能作为加速路径
 2. **一致性测试**：特化 vs portable，PSNR ≥ 36dB、SSIM ≥ 0.98
 3. **收益门槛**：帧时间改善 < 20% 不予合入（否则只是多一份要维护的重复代码）
-4. **位置约束**：只在 `pal/<platform>/shaders/`，不得进 `shaders/src/` 或 core 层
+4. **位置约束**：只在 `platform/<platform>/shaders/`，不得进 `shaders/src/` 或 core 层
 
 ### 4.6 反射与绑定
 

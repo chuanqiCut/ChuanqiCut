@@ -22,7 +22,7 @@
 | 绑定 | BIND-002 Swift 绑定层（SPM） | ✅ |
 | 基建 | INFRA-009 iOS/macOS 双工程 + CocoaPods 源码集成 | ✅ |
 | 模型 | MODEL-001 时间线数据模型 | ✅ |
-| 渲染 | GFX-002 `IGfxDevice` 直连 PAL | ✅ |
+| 渲染 | GFX-002 `IGfxDevice` 直连 Platform | ✅ |
 | 媒体 | BIND-003 子步骤 1 素材表 | ✅ |
 | 媒体 | BIND-003 子步骤 2 取帧链路验证 | ✅ |
 | 预览 | 子步骤 3 纹理导入（零拷贝） | ✅ **PALA-002 已覆盖**（2026-09-26） |
@@ -45,16 +45,16 @@
 不是代码问题，但 iOS 侧改动自 2026-10-03 起**只有 macOS 路径被编译过**。
 
 **本轮新增的架构决策**：
-- **ADR-0011**（core 调用 PAL 工厂的隔离规则）—— core 从不调 PAL 工厂的惯例被开口子，
+- **ADR-0011**（core 调用 Platform 工厂的隔离规则）—— core 从不调 Platform 工厂的惯例被开口子，
   条件是**隔离在独立 TU**（静态库按 archive member 拉符号）。
-  实证守卫：`cq_tests_c_abi` 只链 cq_core、不链 cq_pal_apple 必须通过。
+  实证守卫：`cq_tests_c_abi` 只链 cq_core、不链 cq_platform_apple 必须通过。
 - **判断抽象放哪层的规则**：看实现必然落在哪。只能用平台原生能力实现的
-  （shader 源码 / 平台 SDK）→ 抽象放 PAL（如 `IBlitPass` 已从 GFX 层移到 `pal/gfx.h`）。
+  （shader 源码 / 平台 SDK）→ 抽象放 Platform（如 `IBlitPass` 已从 GFX 层移到 `platform/gfx.h`）。
 命令：`./tools/build/build_core.sh --platform=apple --config=Debug --test`
 
 > ⚠️ 旧版 HANDOFF 把「子步骤 3 纹理导入」标为下一步，是**错的**：
 > PALA-002（2026-09-26，commit 76fce6b）已做完零拷贝导入，
-> `pala_native_image` 用例含 IOSurface ID 一致性 + 真实解码帧渲染读回 +
+> `platform_apple_native_image` 用例含 IOSurface ID 一致性 + 真实解码帧渲染读回 +
 > 零拷贝/CPU 退化耗时代差（≈1400×）。子步骤 3 无需再做，直接进 4。
 
 ---
@@ -65,7 +65,7 @@
 - Swift 绑定 `Previewer`（`bindings/swift/Sources/ChuanqiCut/Previewer.swift`；
   ⚠️ 不叫 `Preview`，与 SwiftUI 撞名，pitfalls P22）+ `RationalTime`（Time.swift）。
 - SharedUI `MetalPreviewView`（MTKView 直绘，单帧按需渲染）+ `PreviewFrameRenderer`
-  （恒等映射 blit，MSL 与 PAL blit 几何逐值一致，**两侧不得单独改**）+ `PreviewZone` 接入。
+  （恒等映射 blit，MSL 与 Platform blit 几何逐值一致，**两侧不得单独改**）+ `PreviewZone` 接入。
 - 接口缺陷修复：`IRenderTarget::GetColorTexture` 曾返回 CqTexture* 包装而非裸
   id<MTLTexture>，契约承诺 reinterpret 但首用即崩（pitfalls P20）。
 - 调试演示：DEBUG 构建设 `CQ_DEMO_VIDEO=<视频>` 环境变量启动即有画面。
@@ -145,7 +145,7 @@ GFX 渲染同样有像素级证据：
 ## 3b. 预览渲染器（子步骤 4）装配形状
 
 ```
-cq::CreateGraphicsDevice(PAL) → cq::CreateGfxDevice(pal, gfx)   // GFX 接管 PAL 所有权
+cq::CreateGraphicsDevice(Platform) → cq::CreateGfxDevice(platform, gfx)   // GFX 接管 Platform 所有权
 cq::apple::CreateBlitPass(gfx, kRGBA8)                          // 全屏拷贝（MSL）
 cq::apple::CreateAppleFrameProviderFactory()                    // PALA-010+011 装配
         ↓
@@ -164,18 +164,18 @@ asset_id→provider 映射 / 上一帧导入的纹理（逐帧 `ReleaseTexture`�
 
 ## 3c. C ABI 预览（子步骤 5）为什么放 core、以及隔离手段
 
-矛盾：C ABI 门面要装配预览就得拿平台能力，但 **core 从不调 PAL 工厂**
-（全库 grep 确认：调用只发生在 tests/ 与 pal/）。若按平台分裂实现 C ABI，
+矛盾：C ABI 门面要装配预览就得拿平台能力，但 **core 从不调 Platform 工厂**
+（全库 grep 确认：调用只发生在 tests/ 与 platform/）。若按平台分裂实现 C ABI，
 `cq_sdk.h` 作为「唯一对外边界」就废了。
 
 解法：
-- `IBlitPass` + `CreateBlitPass` 移入 **`pal/gfx.h`**（它必然是平台原生 shader，
-  本就属 PAL；且 PAL 不能反向依赖 GFX，故 `IGfxEncoder` 补 `PalEncoder()` 逃生口）。
-- 落地 `pal/media.h` 里**悬空 7 天**的 `CreateFrameProvider`；core 侧
-  `PalFrameProvider` 把 PAL `IFrameProvider` 适配成 core `FrameProvider`。
-- 调 PAL 工厂的 TU（`pal_frame_provider.cpp` / `cq_sdk_preview.cpp`）**必须独立**：
+- `IBlitPass` + `CreateBlitPass` 移入 **`platform/gfx.h`**（它必然是平台原生 shader，
+  本就属 Platform；且 Platform 不能反向依赖 GFX，故 `IGfxEncoder` 补 `PlatformEncoder()` 逃生口）。
+- 落地 `platform/media.h` 里**悬空 7 天**的 `CreateFrameProvider`；core 侧
+  `PlatformFrameProvider` 把 Platform `IFrameProvider` 适配成 core `FrameProvider`。
+- 调 Platform 工厂的 TU（`platform_frame_provider.cpp` / `cq_sdk_preview.cpp`）**必须独立**：
   静态库按 archive member 粒度拉符号，独立 TU 才能保证「不用预览的目标」
-  不被牵出 PAL 依赖。实证：`cq_tests_c_abi` 只链 `cq_core`、不链 `cq_pal_apple`，
+  不被牵出 Platform 依赖。实证：`cq_tests_c_abi` 只链 `cq_core`、不链 `cq_platform_apple`，
   仍链接通过并运行成功。
 
 诊断量（C 侧可查）：`cq_preview_last_hit_clip` / `last_cpu_fallback` / `last_frame_pts`。
@@ -201,7 +201,7 @@ asset_id→provider 映射 / 上一帧导入的纹理（逐帧 `ReleaseTexture`�
 - **P7** SPM 本地包身份取**目录名**（`bindings/swift` → `package: "swift"`），不是 Package.swift 里的 name
 - **P8** `*State(wrappedValue:)` 是非 throwing autoclosure，包不住 `try` → "先建值后包装"
 - **P9~P13** CocoaPods 集成类（hmap 基名劫持 / `module_map` 会被 pod module 覆盖 / 消费方 module 可见性 / Gemfile.lock 必须入库 / iOS 分支首次编译才暴露的 bug）
-- **`CreateFrameProvider`（PAL）只有声明没实现** —— PALA-011 实现的是 core 层的 `IFrameDecoder`（`VideoToolboxDecoder`），要走 `SystemFrameProvider` 编排。链接期会报 symbol not found
+- **`CreateFrameProvider`（Platform）只有声明没实现** —— PALA-011 实现的是 core 层的 `IFrameDecoder`（`VideoToolboxDecoder`），要走 `SystemFrameProvider` 编排。链接期会报 symbol not found
 - **`VertexAttribute{location, offset, format}`** 的 location 必须对应 MSL `[[attribute(n)]]`，写错会让 `CreatePipeline` 失败
 - **SSO 陷阱** `MediaSource` 只存 `const char*` 裸指针 → 素材表必须用**堆上** `unique_ptr<string>` 保管路径
 - **"只声明未接入"** 本项目踩过 4 次：`cq_build_anchor`、能力查询实现、BIND-001 实现、
@@ -221,7 +221,7 @@ apps/apple/
 ```
 
 ⚠️ 两者是同一份源码的两种消费方式，**不可同时进 App 依赖链**（重复符号）。
-SDK 默认 `Source` subspec（现场编译 C++20 + ObjC++ PAL，免除"先打包 xcframework"的前置）。
+SDK 默认 `Source` subspec（现场编译 C++20 + ObjC++ Platform，免除"先打包 xcframework"的前置）。
 
 ---
 

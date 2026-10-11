@@ -24,7 +24,7 @@ ChuanqiCut（跨平台视频编辑 SDK）**在 macOS 上已打通完整编辑闭
 | DEPS-010 | FFmpeg demux 常用档位（17 demuxer / 13 parser / 5 bsf） | 2.22 MiB；GPL 符号扫描 0；`CONFIG_GPL=0` |
 | QA-001 | golden 样本库 21 段 | ffprobe 实测校验，21/21 |
 | CORE-001~005 | base 层：时间 / 错误 / 日志 / 内存 / 并发 | 单测合计 200+ 项 |
-| CORE-006 | **PAL 接口冻结**（8 领域 + 静态门禁） | 零平台类型门禁；评审通过 |
+| CORE-006 | **Platform 接口冻结**（8 领域 + 静态门禁） | 零平台类型门禁；评审通过 |
 | GFX-001 / MEDIA-010 | 跨平台 GFX / FrameProvider 接口 | — |
 | MEDIA-020 | SystemFrameProvider（精确 seek） | mock 验证 kExact 命中 B 帧 |
 | PALA-001 | Metal 渲染后端 | 离屏渲染 + 读回像素断言（清屏红、四色纹理四角） |
@@ -89,10 +89,10 @@ cache 里仍是 ON，`.o` 还是 bitcode，且产物该厂商数与之前完全�
 
 `capabilities.h` 在 CORE-006 里只冻结了接口，
 `SetCapabilitiesBackend` / `QueryCapability` **长期只有声明无定义**——唯一引用是
-`pal_headers_compile.cpp` 的 `static_assert`（编译期检查、**不链接**），所以 CTest 全绿
+`platform_headers_compile.cpp` 的 `static_assert`（编译期检查、**不链接**），所以 CTest 全绿
 看不出来。这是 CORE-006「编译 7/7 全绿但接口是断的」的**同型复发**（记为 pitfalls P2）。
 
-已补：`core/src/pal/capabilities.cpp`（内核注入/分发）+ `pal/apple/capabilities.mm`
+已补：`core/src/platform/capabilities.cpp`（内核注入/分发）+ `platform/apple/capabilities.mm`
 （Apple 后端）。要点：
 - 解码用 `VTIsHardwareDecodeSupported`（**iOS 11+/macOS 10.13+**，无需守卫）；
   比 PALA-011 的会话探针（iOS 17.0+ 常量）覆盖面更广，iOS 16 上也能如实上报
@@ -205,7 +205,7 @@ ChuanqiCutCore (binaryTarget: xcframework)
 4. 硬编探针常量要求 iOS 17.4 → 同上
 5. macOS 切片部署目标 `11.0 → 15.4`（ADR-0010）
 
-配套：`pal/apple/CMakeLists.txt` 里 `IOSurface` 的 `find_library` 按
+配套：`platform/apple/CMakeLists.txt` 里 `IOSurface` 的 `find_library` 按
 `CMAKE_SYSTEM_NAME STREQUAL "Darwin"` 条件化（iOS 下该框架不存在，`REQUIRED` 会 configure 失败）。
 
 ## 5. 门禁（新会话先跑一遍确认基线）
@@ -216,7 +216,7 @@ CTEST_BIN=$(dirname $CMAKE_BIN)/ctest
 PY=/Users/zhuning/.workbuddy/binaries/python/versions/3.13.12/bin/python3
 
 $CMAKE_BIN --build build -j4 && $CTEST_BIN --test-dir build      # 期望 22/22
-$PY tools/pal/check_pal_headers.py                                # 零平台/零 FFmpeg 类型
+$PY tools/platform/check_platform_headers.py                                # 零平台/零 FFmpeg 类型
 $PY tests/golden/verify.py                                        # golden 21 段
 $PY tools/deps/deps.py validate third_party/manifest.toml
 $PY tools/deps/selfcheck.py                                       # 期望 18/18
@@ -232,7 +232,7 @@ $PY tools/deps/selfcheck.py                                       # 期望 18/18
 - **零平台类型 / 零 FFmpeg 类型**（ADR-0010）
 - **`-Werror` 零警告，禁止 `-Wno-*` 逃逸**——告警必须改代码
 - **注释不能比代码走得快**（发现"注释说有、代码没有"必须修实现或改注释，不许糊弄）
-- **PAL 接口已冻结**：允许**新增**接口，**修改既有签名**需先提 ADR。发现冻结接口缺陷**先报告，不要自己改**
+- **Platform 接口已冻结**：允许**新增**接口，**修改既有签名**需先提 ADR。发现冻结接口缺陷**先报告，不要自己改**
 - **产物不入库**：clone 后须自行构建 FFmpeg（见 docs/BUILD.md）
 
 ## 7. 建议下一步（按优先级）

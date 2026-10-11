@@ -30,8 +30,8 @@ MEDIA-027（播放 5 秒冻结 + 3.4GB jetsam）的定位过程暴露了三件�
 
 | 文件 | 处数 | Release 会编译 |
 |---|---|---|
-| `pal/apple/media_decode.mm` | 18 | **8** |
-| `pal/apple/media_demux.mm` | 3 | 0 |
+| `platform/apple/media_decode.mm` | 18 | **8** |
+| `platform/apple/media_demux.mm` | 3 | 0 |
 | `core/src/preview/preview_pump.cpp` | 4 | 0 |
 | `core/src/preview/preview_renderer.cpp` | 2 | 0 |
 | `core/include/cq/media/system_frame_provider.h` | 4 | 0 |
@@ -95,8 +95,8 @@ os_log backend）。当前把 `[wf:xxx]` 拼进 message，向后兼容且 grep �
 | `core/src/base/log.cpp` | 实现上述；Logger 增 `wf_mask_` 与 per-workflow 级别表（-1 = 回落全局）；**过滤放在格式化之前**；env 解析（大小写不敏感、容忍空格引号、非法值忽略） |
 | `core/include/cq/base/perf.h` + `.cpp` | 新增 `SlowCallAlarm`（带 workflow，默认阈值 500ms，**Release 可用**）与 `CQ_SLOW_CALL_WF` |
 | `core/include/cq/cq_sdk.h` + `core/src/cq_sdk.cpp` | 新增 C ABI：`cq_log_configure_from_env()` / `cq_log_set_level(int32_t)` |
-| `pal/apple/media_decode.{h,mm}` | 迁 18 处 → WF 宏；删自抄 SlowCallAlarm；**4 个 MEDIA-027 关键计数器提到 Release** |
-| `pal/apple/media_demux.mm` | 删自抄 SlowCallAlarm；迁 3 处；`@autoreleasepool` 保持 |
+| `platform/apple/media_decode.{h,mm}` | 迁 18 处 → WF 宏；删自抄 SlowCallAlarm；**4 个 MEDIA-027 关键计数器提到 Release** |
+| `platform/apple/media_demux.mm` | 删自抄 SlowCallAlarm；迁 3 处；`@autoreleasepool` 保持 |
 | `core/src/preview/preview_pump.cpp` | 删自抄 SlowCallAlarm（阈值原本 1000ms，与其它文件 500ms 不一致）；迁 4 处；**看门狗提到 Release** |
 | `core/src/preview/preview_renderer.cpp` | 6 个 `DebugStageGuard` 解开 NDEBUG；迁 2 处；**修正 MEDIA-027 发现的伪绿诊断行**（原打印 ReleaseFrame 之后的 `frame.video.*`，改打已记录的 `last_import_*`） |
 | `core/include/cq/preview/preview_renderer.h` | 阶段跟踪（`DebugStage`/`DebugStageSinceNanos`/`DebugStageGuard`）+ 2 个限流计数器提到 Release |
@@ -125,7 +125,7 @@ CQ_LOG_WF_LEVEL = decode=trace
 |---|---|
 | `core-dbg`（含新单测） | **43/43 通过** |
 | `core-rel` | 待最终一轮门禁 |
-| 单独 Debug/Release 双向编译（core + PAL） | 通过（`-Wall -Wextra -Werror -fno-exceptions`） |
+| 单独 Debug/Release 双向编译（core + Platform） | 通过（`-Wall -Wextra -Werror -fno-exceptions`） |
 | `core_log_workflow` | 见门禁摘要 |
 
 ## 7. 剩余风险

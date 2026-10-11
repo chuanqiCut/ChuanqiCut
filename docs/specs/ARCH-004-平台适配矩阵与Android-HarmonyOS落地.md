@@ -86,7 +86,7 @@ CQCapabilityValue cq_query_capability(CQCapability c);  // yes / no / degraded
    - Buffer 模式：拿到 `Image`/ByteBuffer，可读回，但有拷贝。
    - **策略**：默认 Surface 模式 + 零拷贝；当效果链需要 CPU 侧访问（如某些分析）或设备黑名单命中时，降级 Buffer 模式。
 3. **关键帧 seek**：`MediaExtractor.seekTo(time, SEEK_TO_CLOSEST_SYNC)`，与 iOS 的精确 seek 语义不同，Android 只有关键帧级 seek。精确 seek 场景走 FFmpeg demux 后端统一语义。**这正是 `FrameProvider` 抽象存在的价值。**
-4. **色彩格式**：优先 `COLOR_FormatYUV420Flexible`，通过 `Image.getHardwareBuffer()` 取 AHardwareBuffer；需处理厂商 stride 对齐差异（YUV 平面 stride 与 iOS 不同，统一在 PAL 内转换）。
+4. **色彩格式**：优先 `COLOR_FormatYUV420Flexible`，通过 `Image.getHardwareBuffer()` 取 AHardwareBuffer；需处理厂商 stride 对齐差异（YUV 平面 stride 与 iOS 不同，统一在 Platform 内转换）。
 5. **并发路数**：受限于硬件解码器实例数（部分芯片只有 1–2 路硬解实例）。`DecoderPool` 必须支持"超出硬件路数时降级到软解或复用实例"。
 6. **设备黑名单**：维护已知问题机型清单（Vulkan 缺陷、EGLImage 缺陷、MediaCodec 色彩偏移等），命中即降级。清单随版本更新，线上可远程下发。
 
@@ -95,7 +95,7 @@ CQCapabilityValue cq_query_capability(CQCapability c);  // yes / no / degraded
 | 差异 | 处理 |
 |---|---|
 | seek 只能到关键帧 | `FrameProvider` 统一为"精确 seek 语义"，Android 端内部 seek 到关键帧后向前解码到目标帧 |
-| YUV 平面 stride 对齐不同 | PAL 内统一转换为 core 定义的 `NativeImageHandle` 描述，上层无感 |
+| YUV 平面 stride 对齐不同 | Platform 内统一转换为 core 定义的 `NativeImageHandle` 描述，上层无感 |
 | 硬解实例数受限 | `DecoderPool` 动态调度 + 降级 |
 | 无 ANE，NPU 碎片化 | 推理后置多后端 + 强制 CPU 回退（见 ADR-0005） |
 | 无 ProRes 硬解 | 能力查询返回 false，导入 ProRes 走 FFmpeg 软解或不支持提示 |
@@ -103,7 +103,7 @@ CQCapabilityValue cq_query_capability(CQCapability c);  // yes / no / degraded
 
 ### 4.4 Android 端排期原则
 
-Android 不是"再写一遍"，而是**先做 PAL(Android) + 空壳 App 跑通内核，再逐步点亮功能**。内核已由 iOS/Mac 端验证过，Android 端的主要风险集中在 PAL 与设备适配，而非业务逻辑。因此 Android 端排期应显著短于 Apple 端首次实现。
+Android 不是"再写一遍"，而是**先做 Platform(Android) + 空壳 App 跑通内核，再逐步点亮功能**。内核已由 iOS/Mac 端验证过，Android 端的主要风险集中在 Platform 与设备适配，而非业务逻辑。因此 Android 端排期应显著短于 Apple 端首次实现。
 
 ---
 
@@ -129,13 +129,13 @@ HarmonyOS NEXT（API 12+，HarmonyOS 4.0/5.x/6.x）具备承载本项目所需�
 ### 5.2 本期做什么 / 不做什么
 
 **做（架构预留，低成本）**：
-1. PAL 接口定义中包含 `IHarmonyOS` 所需的能力枚举（已在 ARCH-003/004 的能力查询中覆盖）。
-2. `pal/ohos/` 目录占位，含**接口编译检查**（保证 ohos PAL 与接口签名同步演进，不会腐烂）。
+1. Platform 接口定义中包含 `IHarmonyOS` 所需的能力枚举（已在 ARCH-003/004 的能力查询中覆盖）。
+2. `platform/ohos/` 目录占位，含**接口编译检查**（保证 ohos Platform 与接口签名同步演进，不会腐烂）。
 3. 依赖清单中登记鸿蒙平台的库形态与协议。
 4. 任务清单中保留 `OHOS-0xx` 组（未排期）。
 
 **不做（本期）**：
-- 不实现任何鸿蒙 PAL 代码。
+- 不实现任何鸿蒙 Platform 代码。
 - 不搭建 DevEco 工程。
 - 不做鸿蒙机型适配与测试。
 
@@ -143,7 +143,7 @@ HarmonyOS NEXT（API 12+，HarmonyOS 4.0/5.x/6.x）具备承载本项目所需�
 
 `OHOS-001 环境验证`（DevEco + NDK hello world + Vulkan 清屏）→ `OHOS-002 GFX 后端` → `OHOS-003 媒体后端` → `OHOS-004 音频/推理` → `OHOS-005 NAPI 绑定` → `OHOS-006 ArkUI 壳` → 复用全部内核与效果。
 
-由于内核与效果 100% 共享，届时工作量集中在 PAL 与 UI 壳，预计显著低于任一端的首次实现成本。
+由于内核与效果 100% 共享，届时工作量集中在 Platform 与 UI 壳，预计显著低于任一端的首次实现成本。
 
 ---
 

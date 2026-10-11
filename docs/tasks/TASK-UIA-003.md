@@ -13,9 +13,9 @@
 传哲选择「先扩展 C ABI 暴露渲染接口，再接真实画面」。调研后发现，
 **C ABI 不是第一道关卡**，真正的阻塞在更下面两层。
 
-### 阻塞 1：PAL `RenderTargetDesc` 无法接纳外部 drawable
+### 阻塞 1：Platform `RenderTargetDesc` 无法接纳外部 drawable
 
-`core/include/cq/pal/gfx.h:71`：
+`core/include/cq/platform/gfx.h:71`：
 
 ```cpp
 struct RenderTargetDesc {
@@ -31,12 +31,12 @@ struct RenderTargetDesc {
 `GraphicsDeviceDesc` 有个 `NativeImageHandle surface`（注释写"如 CAMetalLayer 内容"），
 但那是**设备级**的可选字段，不是每帧 render target，且当前 `gfx_metal.mm` 未使用该字段。
 
-### 阻塞 2：GFX 编排层未实现，预览只能走 PAL 直连
+### 阻塞 2：GFX 编排层未实现，预览只能走 Platform 直连
 
 - `core/src/gfx/` **不存在** → `IGfxDevice`（gfx_device.h）只有接口声明，
   文件头明确写着"本任务只定义接口，不实现（实现由 RENDER-001 / GFX-002 阶段落地）"
-- `pal/apple/gfx_metal.mm` **已实现**（PALA-001）
-- 因此预览若现在做，只能直接调 PAL（`CreateGraphicsDevice` → `ICommandEncoder`），
+- `platform/apple/gfx_metal.mm` **已实现**（PALA-001）
+- 因此预览若现在做，只能直接调 Platform（`CreateGraphicsDevice` → `ICommandEncoder`），
   绕开尚未存在的 RenderGraph。这是阶段性可接受，但**必须在 RenderGraph 落地后回切**。
 
 ### 阻塞 3：即使接口通了，也没有真实帧可显示
@@ -61,10 +61,10 @@ struct RenderTargetDesc {
 
 | 方案 | 做法 | 代价 |
 |---|---|---|
-| A1 扩展 PAL | `RenderTargetDesc` 增加外部原生纹理字段，内核直接渲染到 drawable | 改动 PAL 冻结接口（CORE-006），需 ADR |
+| A1 扩展 Platform | `RenderTargetDesc` 增加外部原生纹理字段，内核直接渲染到 drawable | 改动 Platform 冻结接口（CORE-006），需 ADR |
 | A2 离屏 + 导出句柄 | 内核渲染到离屏 RT，C ABI 把结果纹理以**中性句柄**暴露给 Swift，Swift 侧 blit 到 drawable | 需新增 C ABI 导出接口；每帧一次 GPU blit（可接受，非 CPU 拷贝） |
 
-A2 不破坏 PAL 冻结接口，代价更小，**建议走 A2**。
+A2 不破坏 Platform 冻结接口，代价更小，**建议走 A2**。
 
 ⚠️ 无论哪条，**都不要**用"读回像素 → Swift 再上传"的路子
 （即 `gfx_metal_internal.h` 的 `ReadRenderTargetPixels`）：那是 CPU 往返，
@@ -76,7 +76,7 @@ A2 不破坏 PAL 冻结接口，代价更小，**建议走 A2**。
 
 ```
 1. MODEL-001 时间线模型        ← 让预览"有东西可显示"
-2. GFX-002 / RENDER-001        ← core/src/gfx 落地（或明确预览直连 PAL 的阶段性方案）
+2. GFX-002 / RENDER-001        ← core/src/gfx 落地（或明确预览直连 Platform 的阶段性方案）
 3. C ABI 预览接口（方案 A2）    ← cq_preview_create / render / export_texture
 4. UIA-003 MTKView 嵌入        ← SharedUI 内 UIViewRepresentable / NSViewRepresentable
 ```
@@ -90,7 +90,7 @@ A2 不破坏 PAL 冻结接口，代价更小，**建议走 A2**。
 
 - **像素级（SharedUI 测试，macOS 实跑）**：
   - `testIdentityBlitPreservesOrientationAndChannels` —— 已知源纹理（顶红底蓝）
-    blit 后逐该厂商断言：不上下颠倒、通道不错位（锁定与 PAL blit 同源的几何约定）。
+    blit 后逐该厂商断言：不上下颠倒、通道不错位（锁定与 Platform blit 同源的几何约定）。
   - `testGoldenFrameRendersThroughDisplayPath` —— Previewer 渲染 golden 素材
     0.5s → 中性句柄 reinterpret → blit 到可读纹理 → 非黑像素断言（预览区
     非黑屏的像素级证据，替代 GUI 截图：XCTest 无窗口宿主，drawable 机制不可靠）。
@@ -112,7 +112,7 @@ A2 不破坏 PAL 冻结接口，代价更小，**建议走 A2**。
 |---|---|
 | `bindings/swift/Sources/ChuanqiCut/Previewer.swift` + `Time.swift` | BIND（Swift 投影） |
 | `bindings/swift/Package.swift` / `run_smoke.sh`（链接清单，P23） | BIND |
-| `core/include/cq/pal/gfx.h` + `pal/apple/gfx_metal.mm`（GetColorTexture 缺陷修复，P20） | PAL |
+| `core/include/cq/platform/gfx.h` + `platform/apple/gfx_metal.mm`（GetColorTexture 缺陷修复，P20） | Platform |
 | `apps/apple/packages/SharedUI/Sources/SharedUI/Editor/PreviewFrameRenderer.swift` | UIA |
 | `apps/apple/packages/SharedUI/Sources/SharedUI/Editor/MetalPreviewView.swift` | UIA |
 | `apps/apple/packages/SharedUI/Sources/SharedUI/Editor/PreviewZone.swift` / `EditorView.swift` / `AppEntry.swift` | UIA |

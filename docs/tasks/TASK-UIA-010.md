@@ -18,7 +18,7 @@ write_set:   core/include/cq/preview/player_clock.h（新）, core/src/preview/p
              core/include/cq/preview/preview_frame_source.h（新）,
              core/include/cq/preview/preview_pump.h（新）, core/src/preview/preview_pump.cpp（新）,
              core/include/cq/gfx/gfx_device.h, core/src/gfx/gfx_device.cpp,
-             core/include/cq/pal/gfx.h, pal/apple/gfx_metal.mm,
+             core/include/cq/platform/gfx.h, platform/apple/gfx_metal.mm,
              bindings/swift/Sources/ChuanqiCut/PreviewPump.swift（新）,
              apps/apple/packages/SharedUI/Sources/SharedUI/Editor/MetalPreviewView.swift,
              apps/apple/packages/SharedUI/Sources/SharedUI/Editor/PreviewFrameRenderer.swift,
@@ -94,7 +94,7 @@ parallel:    false
 | `core/preview/preview_pump.{h,cpp}`（新） | 取帧泵：自有线程 + 请求合并 + 消费端 Lock/Unlock 协议 + 统计 |
 | `core/preview/preview_renderer.{h,cpp}` | 实现 `IPreviewFrameSource`；新增 `Timings`（acquire/import/draw/total 埋点） |
 | `core/gfx/gfx_device.{h,cpp}` | 命令队列由「每帧新建」改为**按设备复用**；新增 `SharedQueueHandle()` |
-| `core/pal/gfx.h` + `pal/apple/gfx_metal.mm` | 新增 `ICommandQueue::NativeHandle()`（中性句柄） |
+| `core/platform/gfx.h` + `platform/apple/gfx_metal.mm` | 新增 `ICommandQueue::NativeHandle()`（中性句柄） |
 | `core/cq_sdk.h` + `preview/cq_sdk_preview.cpp` | `cq_preview_pump_*`（8 个）+ `cq_preview_shared_queue` + `cq_preview_last_timings` |
 | `bindings/swift` | `PreviewPump.swift`（新）；`Previewer.sharedQueueHandle` / `lastTimings` |
 | SharedUI | `MetalPreviewView` 只 blit（连续/按需两种节奏）；`PreviewFrameRenderer` 用共享队列；`AppEntry` 建泵并驱动 |

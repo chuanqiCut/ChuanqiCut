@@ -7,7 +7,7 @@
 
 - commit：`b134bc6..3163ceb`（`80f1d5a` 撞号裁定归一轮 + `3163ceb` TODO 立项/日志），快进合并无冲突。
 - 文件：28 个 —— 相机域 Swift 8（CameraRecorder/Renderer/ViewModel/BeautyKernel/CameraBeauty/FaceMask/FaceMaskTests）、Editor 域 Swift 4（注释）、docs 12、.ai 1、.workbuddy 3。
-- 性质：**全部为文档 + 代码注释级改号**，无逻辑改动（逐文件 diff 核过）；core / PAL / 公共头 / 绑定层零触碰。
+- 性质：**全部为文档 + 代码注释级改号**，无逻辑改动（逐文件 diff 核过）；core / Platform / 公共头 / 绑定层零触碰。
 
 ## 裁定一致性核查（与昨日 UIA 清扫轮 14f9ec9 对照）
 

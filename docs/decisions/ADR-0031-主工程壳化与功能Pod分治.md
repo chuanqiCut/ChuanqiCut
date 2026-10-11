@@ -6,7 +6,7 @@
 
 ## 背景
 
-现状（INFRA-009 起）：SDK 层 `ChuanqiCut.podspec`（core C++ + PAL + Swift 绑定，Source/Binary
+现状（INFRA-009 起）：SDK 层 `ChuanqiCut.podspec`（core C++ + Platform + Swift 绑定，Source/Binary
 双 subspec）+ `SharedUI.podspec` **一个大 pod 混装全部 UI 域**（`Sources/SharedUI/` 下
 AppEntry、Camera 契约、Common、Editor、MediaPicker、Player、Timeline 七个子域）；
 拍摄实现（`iOSApp/Camera/`）还直接挂在 App target 里。两份独立 xcodegen 工程
@@ -25,7 +25,7 @@ import 没有护栏；③多机分线开发后（ADR-0029 §1a），A 线内部�
 
 | Pod | 内容 | 来源 | 依赖 |
 |---|---|---|---|
-| `ChuanqiCut` | SDK 层：core C++ + PAL + Swift 绑定（**不动**） | 现状 | — |
+| `ChuanqiCut` | SDK 层：core C++ + Platform + Swift 绑定（**不动**） | 现状 | — |
 | `SharedUI`（基座，瘦身重定位） | Common/Theme 设计令牌/通用组件 | SharedUI/Common | ChuanqiCut |
 | `ChuanqiCutPlayer` | 独立播放器全域 | SharedUI/Player | 基座、SDK |
 | `ChuanqiCutImport` | 素材导入（相册/文件/拍摄产物落库；MediaPicker 迁入） | SharedUI/MediaPicker + 导入链（UIA-009/011/012） | 基座、SDK、Assets |

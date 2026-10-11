@@ -2,7 +2,7 @@
 
 > **归属**：C 线（内核/媒体/渲染） —— 归属表见 docs/tasks/PLAN-三线并行.md §1a / ADR-0029（双机分工与门禁跑批，2026-10-07）
 
-**可手改**：`shaders/src/*.glsl`（Portable）、`pal/<platform>/shaders/*`（Platform-Native）
+**可手改**：`shaders/src/*.glsl`（Portable）、`platform/<platform>/shaders/*`（Platform-Native）
 **不可手改**：`shaders/generated/`（产物，不入库）
 
 > **2026-09-23 修订**：初版规定"禁止平台扩展"。现改为双层：Portable（跨平台基线）+ Platform-Native（平台原生加速）。
@@ -31,14 +31,14 @@ shaders/src/*.glsl (GLSL 4.50 Vulkan 方言)
 
 ## 二、Platform-Native 层（可选加速）
 
-位置：`pal/apple/shaders/*.metal`、`pal/android/shaders/*.glsl`
+位置：`platform/apple/shaders/*.metal`、`platform/android/shaders/*.glsl`
 直接编译，**可以用满平台特性**（argument buffer、tile memory、SIMD、texture2d 优化、厂商扩展…）
 
 ### 四条硬约束（防止失控）
 1. **永远可选**：任何效果必须先有 Portable 实现，特化只作加速路径。否则其他平台无实现。
 2. **一致性测试**：特化 vs portable，PSNR ≥ 36dB、SSIM ≥ 0.98
 3. **收益门槛**：帧时间改善 < 20% 不予合入 —— 否则只是多一份要长期维护的重复代码
-4. **位置约束**：只在 `pal/<platform>/shaders/`，不得进 `shaders/src/` 或 core 层
+4. **位置约束**：只在 `platform/<platform>/shaders/`，不得进 `shaders/src/` 或 core 层
 
 ### 选择机制
 ```cpp

@@ -41,7 +41,7 @@
 ### [2] CAM-018/019 真机验收（⏳ 待真机，承 [TODO-2026-10-07-撞号归一轮收尾](TODO-2026-10-07-撞号归一轮收尾待接手.md) TODO-2）
 
 - 来源：集成机 / 美颜线 + 2026-10-07 + 80f1d5a
-- 改动面：B 线 · camera + pal-apple 相机子域
+- 改动面：B 线 · camera + platform-apple 相机子域
 - 待办：[ ] 真机 iPhone 17 Pro，5 项：磨皮不闪 + 保边恢复（workingColorSpace = gamma sRGB）、
   滤镜观感基线复核（色彩域连带漂移人工定案）、美白/磨皮区域化行为（美白只在脸 / 无脸直通 /
   移动不抖）、预览 vs 录制颜色一致性（池缓冲色彩空间键接受度）、真机 log 确认
@@ -156,11 +156,21 @@ sw_vers; xcodebuild -version; xcrun swift --version; which cmake ninja brew
 | 2 | `ctest -R ai_edit_plan` | **通过数 / 总数**（写具体数字） | 校验器 117 检查 0 失败（本机 clang13 直编已得此数，ctest 通道首次验证） |
 | 3 | `ctest --test-dir build`（全量） | Debug x/y、Release x/y | 不写"全绿" |
 | 4 | `xcodebuild -workspace ... -scheme ChuanqiCutApp build` | BUILD SUCCEEDED + **target 数与告警数** | ⚠️ 必须 `-scheme ChuanqiCutApp`：只编 Pods 静态库是假绿（P61，日志里 `Target dependency graph (1 target)` 就是线索） |
-| 5 | ChuanqiCutCamera `swift test` | 通过数/总数 | 守恒 36 + 新增 MakeupMask 10 + PortraitSkinMask 7 = **53/53** |
-| 6 | SharedUI `swift test` | 通过数/总数 | 守恒 **140**（改了 CameraBeauty，必须零回归） |
+| 5 | ChuanqiCutCamera `swift test` | 通过数/总数 | 存量 36（CameraBeauty 7 + CameraFilter 4 + DetectionSmoothing 13 + FaceMask 12）+ MakeupMask **13** + PortraitSkinMask 7 = **56/56**（+1 直通防线用例后 = **57/57**）。⚠️ **订正 2026-10-08**：原文写「MakeupMask 10 → 53/53」，源码实为 13 例；`TASK-CAM-026.md` 与 `.ai/modules/camera.md` 同错，已三处同步 |
+| 6 | ~~SharedUI `swift test`~~ → **改为 `swift build`** | 编译 PASS/FAIL | ⚠️ **订正 2026-10-08**：SharedUI 包**无 Tests 目录、Package.swift 无 testTarget**（podspec:15「无独立测试，由门禁 swift build + 双壳构建兜底」，`run_gate.sh:152` 也只跑 build）。「140」是全仓合计旧口径，不是单包数——**这条命令原样执行会直接失败** |
 | 7 | metallib 核对 | 该厂商数 + `cq_beauty_down_h/up_v_mix` kernel 名均在 | 旧值 8431B；CAM-029 改过 `beauty_bilateral.metal`，要重新核大小 |
 
 SPM 临时产物一律 `swift test --disable-sandbox --scratch-path "$ROOT/build/spm/<包名>"`（P84）。
+
+> **2026-10-08 构建机首轮实测（机器：macOS 26.7.1 / Xcode 26.6 / Swift 6.3.3 /
+> cmake 4.4.3）**：1 ✅（Debug+Release 双向，新增 TU 零警告）· 2 ✅（`ai_edit_plan` PASS）
+> · 3 ✅（**Debug 46/46 · Release 46/46**）· 5 ❌→✅（首跑 **53/56** 三失败，已修 → **57/57**）
+> · 6 ✅（按订正口径 build 通过）· 7 ✅（`beauty_bilateral.metallib` **9391B**，旧值 8431B；
+> `cq_beauty_down_h` / `cq_beauty_up_v_mix` 均在）· golden ✅（built 21 / fail 0）。
+> **补充经验（新坑 P92）**：#4 在跑之前必须先 `pod install` —— Pods.xcodeproj 是文件清单
+> 快照，新增 Swift 文件不会自动进工程，直接构建会报几十条 `cannot find type in scope`。
+> 另：iOS 侧 MetalFX 在 **iphonesimulator** SDK 下 `unable to resolve module dependency`，
+> 用 `-sdk iphoneos -destination 'generic/platform=iOS' CODE_SIGNING_ALLOWED=NO` 才编得过。
 
 #### 第 2 步：必须记录的参数（缺一项就回填不全）
 
@@ -241,7 +251,7 @@ SPM 临时产物一律 `swift test --disable-sandbox --scratch-path "$ROOT/build
 
 - 来源：开发机 / A 编辑器线（AIEDIT 并入 A，PLAN-三线并行 §1a）· 2026-10-08 编码会话
 - 改动面：engine/core/include/cq/ai/{feature_report.h, edit_plan.h, llm_client.h}(新) +
-  engine/core/include/cq/pal/net.h(新) + engine/core/include/cq/base/status.h(+AI 决策段
+  engine/core/include/cq/platform/net.h(新) + engine/core/include/cq/base/status.h(+AI 决策段
   9500~9513 与 kAiPlan 分类，只追加不动既有段) + engine/core/src/base/status.cpp(case 补齐) +
   engine/core/src/ai/plan/edit_plan_validator.{h,cpp}(新) +
   engine/core/src/ai/plan/edit_plan_golden/(新，58 JSON 夹具 + manifest.txt，总 <100KB) +

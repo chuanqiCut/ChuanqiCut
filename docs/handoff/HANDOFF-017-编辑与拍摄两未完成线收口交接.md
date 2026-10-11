@@ -41,7 +41,7 @@
 | 文件 | 内容 |
 |---|---|
 | `engine/core/include/cq/ai/{feature_report.h, edit_plan.h, llm_client.h}` | 新契约头：`cq.featurereport/1`、`cq.editplan/1`（动词集 9）、ILlmClient |
-| `engine/core/include/cq/pal/net.h` | INetTransport（PostJson / PostSse），SSE 拆帧边界 |
+| `engine/core/include/cq/platform/net.h` | INetTransport（PostJson / PostSse），SSE 拆帧边界 |
 | `engine/core/include/cq/base/status.h` + `src/base/status.cpp` | 追加 `kAiPlan*` 段 **9500~9513** + 分类 11（只追加，不动既有段） |
 | `engine/core/src/ai/plan/edit_plan_validator.{h,cpp}` | 三层校验：手写 JSON → 结构 → 语义（私有头） |
 | `engine/core/src/ai/plan/edit_plan_golden/` | 58 JSON 夹具 + `manifest.txt`（**append-only 真源**，生成脚本用后即删） |
@@ -67,7 +67,7 @@ clang++ -std=c++20 -Wall -Wextra -Wconversion -Wshadow -Wold-style-cast \
    （-Werror）+ `ctest -R ai_edit_plan`。风险面只在 CMake 注册（本机已经有一条等价的直编证据）。
 2. 真机无涉（纯 C++ 契约层）。
 3. 解锁后并行排的下批卡：`AIEDIT-002`（视觉特征，产出 feature_report）、`AIEDIT-004`
-   （ILlmClient 实现 + `pal/apple/net`）、`AIEDIT-011`（本地规则引擎，同 schema，
+   （ILlmClient 实现 + `platform/apple/net`）、`AIEDIT-011`（本地规则引擎，同 schema，
    `generator="local_rules"`）；`AIEDIT-005` 依赖 004+011，`AIEDIT-006` 依赖 001 可先行。
 
 ### 2.4 冻结裁定（下游卡开工前必读）
@@ -179,7 +179,7 @@ podspec `source_files` 用通配 `Sources/ChuanqiCutCamera/**/*.swift`，新文�
 - 修改：上述相机 6 文件 + AIEDIT 的 `status.h/cpp` + 两个 CMakeLists + `docs/tasks/TASK-AIEDIT-001.md`
   + TODO-POOL + `.ai/modules/ai.md` + `.ai/memory/baselines.md`
 - 新增：`MakeupParams.swift`、`MakeupRenderer.swift`、`engine/core/include/cq/ai/`、
-  `engine/core/include/cq/pal/net.h`、`engine/core/src/ai/`、`tests/unit/test_edit_plan_validator.cpp`、
+  `engine/core/include/cq/platform/net.h`、`engine/core/src/ai/`、`tests/unit/test_edit_plan_validator.cpp`、
   本文档、`docs/` 其他回写
 - **未 commit、未 push** —— 是否提交由传哲定。若要提交，建议按 P86 规约拆成两个提交
   （AIEDIT-001 一条 / 相机 C 期一条），别让一个提交混两条线。

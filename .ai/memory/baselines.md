@@ -612,7 +612,7 @@ fit 为每帧一次整数几何计算（4 次乘除）+ 一次视口状态设置
 「MEDIA-021 / UIA-010」段为准（真机端到端帧率待 iPhone 17 Pro）。
 ## CAM-001：相机契约（2026-10-04；**契约当日回退，条目改记环境事实**）
 
-> ⚠️ ADR-0014：相机转 iOS 原生（App 层），CAM-001 的 PAL 契约/ABI/枚举已回退，
+> ⚠️ ADR-0014：相机转 iOS 原生（App 层），CAM-001 的 Platform 契约/ABI/枚举已回退，
 > 本条目保留环境事实与"未实测清单"（这些验收项转给 iOS 原生实现的任务）。
 
 **环境注意（pitfalls P42）**：本轮构建机 = Intel Mac / **macOS 13.7 / Xcode 15.2（AppleClang 15）**，
@@ -798,7 +798,60 @@ UI 重建（ADR-0024）解决不了它 → 立即立 MEDIA-023（VT 输出降采
 | 项 | 实测 | 说明 |
 |---|---:|---|
 | 校验器单测 | **本机 clang13 直编：117 检查 0 失败** | golden 58 例：合法 18/18、非法 40/40（错误码按码名精确匹配）；非 ctest 通道，构建机复跑 = 池[8] |
-| build_core.sh -Werror | **未执行** | 本机无 cmake/ninja；新增 TU 已过等价警告集（-Wall -Wextra -Wconversion -Wshadow -Wold-style-cast）零警告 |
+| **ctest 通道（2026-10-08 晚，构建机实测）** | **`ai_edit_plan` PASS；全量 Debug 46/46 · Release 46/46** | 机器：macOS 26.7.1 / Xcode 26.6 / Swift 6.3.3 / cmake 4.4.3（`~/.workbuddy/binaries/cmake/CMake.app`）。CMake 注册三件事（私有头 include / `CQ_EDIT_PLAN_GOLDEN_DIR` / 链 `cq_core`）全部成立 → **池 [8] 可关** |
+| build_core.sh -Werror | ✅ 2026-10-08 晚通过 | Debug/Release 双向；新增 TU 零警告（仅 1 条链接期 `ignoring duplicate libraries` 环境级提示） |
 | 校验器性能（单 plan 解析耗时） | **未实测** | 契约任务无性能验收项；AIEDIT-005 管线接入后随 token/延迟一并回填 |
 
 ⚠️ 本节无性能基线可引用（契约层任务）；唯一实测是正确性单测计数，非性能数字。
+
+## 门禁计数基线（阶段批，构建机实测口径；机器：macOS 26.7.1 / Xcode 26.6 / Swift 6.3.3 / cmake 4.4.3）
+
+> 用途：下次跑门禁前先看这里，数字对不上就是回归或口径漂移。**机器变了必须重记。**
+
+| 2026-10-08 晚 | 数字 |
+|---|---|
+| core 全量单测（Debug / Release） | **46/46 · 46/46**（ctest；`tests/CMakeLists.txt` 行首 `add_test` = 30 个目标，46 是展开后用例数；旧「40/40」口径作废） |
+| Swift 绑定 `swift test` | **26/26** |
+| SharedUI | **只 `swift build`**（包内无 Tests/、Package.swift 无 testTarget；podspec 注释已写明「无独立测试，由门禁 build + 双壳构建兜底」）。「140」是全仓合计旧口径，**不是单包数** |
+| ChuanqiCutPlayer | **52/52** |
+| ChuanqiCutCamera | **57/57**（存量 36 = CameraBeauty 7 + CameraFilter 4 + DetectionSmoothing 13 + FaceMask 12；新增 MakeupMask **13** + PortraitSkinMask 7；本轮再 +1 直通防线用例）。**池 [10] 写的 53 是错数（曾把 MakeupMask 记成 10）**。⚠️ **2026-10-09 更新为 62/62**（新增 `CameraFormatSelectorTests` 5 例） |
+| ChuanqiCutImport | **16/16** |
+| ChuanqiCutEditor | **57/57**（文档「守恒 36」已失效：UIA-037/038 后涨到 57） |
+| golden 齐备性 | built 21 / fail 0（880.6KB） |
+| 双壳构建 | macOS `-scheme ChuanqiCutMacApp` **BUILD SUCCEEDED**；iOS `-scheme ChuanqiCutApp` 见当日日志（Pods 工程陈旧是第一个坑） |
+| **metallib（2026-10-08 深夜实测）** | `beauty_bilateral.metallib` **9391B**（旧值 8431B 是 CAM-029 改 metal 之前）；`cq_beauty_down_h` / `cq_beauty_up_v_mix` **两个 kernel 名均在内**。取自 `/tmp/cq-dd-ios-device/.../ChuanqiCutApp.app/`（Debug-iphoneos，Xcode 26.6）。⚠️ 只验了大小与符号名，**算法剖面（保边保持率/高频恢复/耗时）仍零实测** |
+
+## 目录共置后首跑（2026-10-09，机器 macOS 26.7.1 / AppleClang 21.0.0 / Swift 6.3.3 / cmake 4.4.3）
+
+> ADR-0033 / INFRA-024：内核头与实现共置到 `engine/core/cq/**`、Apple Platform 分 `base/gfx/media`，
+> Engine 拆 `CChuanqiCut` + `ChuanqiCutEngine` 两个 Pod。**门禁口径未变，数字必须与上表对齐。**
+
+| 项 | 实测 | 说明 |
+|---|---:|---|
+| core CMake Debug 全量 ctest | **46/46** | 与上表 2026-10-08 基线一致，零回归 |
+| `platform_header_gate` | **0 违规 / 38 头** | 扫描根改 `engine/core/cq` 后加契约目录白名单（P95） |
+| `cq_core` + `cq_platform_apple` 构建 | **零错误零警告** | `-Werror` 下通过 |
+| ChuanqiCutCamera `swift test` | **62/62** | 新增 5 例 format 选择（P94） |
+| iOS 壳 `ChuanqiCutApp`（iphoneos / generic device） | **BUILD SUCCEEDED** | Podfile 双 `:path`（CChuanqiCut + ChuanqiCutEngine）后 `pod install` → `xcodebuild`；唯一警告是 P97 的无害 duplicate header |
+| macOS 壳 `ChuanqiCutMacApp` | **BUILD SUCCEEDED（`-arch x86_64`）** | 不加 `-arch` 会挂：Intel 机 universal 编 arm64 时 SDK 26.5 无该 slice 预编译模块（P96），**不是代码回归** |
+| `Pods/Headers/Public/CChuanqiCut` | **仅 cq_sdk.h**（+ umbrella/modulemap） | 双壳一致；其余头全在 Private 下按功能分子目录 |
+
+⚠️ 本节只有"结构重构不回归"的计数，**不是性能基线**；性能基线（PERF-001）仍未建立。
+
+## 2026-10-11 · INFRA-022 P2（`pal` → `platform` 全量改名）后实测
+
+> 机器：Intel Mac / macOS 26.7.1 / Xcode 26.6 / cmake 4.4.3（**Intel，无 ANE/ProRes 硬编，不作产品阈值**）
+
+| 项 | 实测 | 说明 |
+|---|---:|---|
+| `build_core.sh --platform=apple --config=Debug` | **EXIT 0，0 error / 0 warning** | 改名后首轮**全量重编 2m55s**（174 文件改动，逐个 TU 重建） |
+| 同上加 `--test` | **46/46 通过**（113.32s） | 含 7 个改名后的 `platform_apple_*` 用例；与上表 2026-10-08 基线一致，零回归 |
+| `tools/platform/check_platform_headers.py` | **38 头 / 0 违规** | 扫描根 `engine/core/cq`，契约目录白名单已含 `platform`（P95 复发已修） |
+| `apps/` 目录体积（P1 清理后） | **5.5G → 4.3M** | 删 5 处包内 `.build`(1.27G) + 2 处 xcodebuild derivedData(4.6G) |
+
+**单个用例耗时（本次实测，供回归对照）**：
+`platform_apple_native_image` 3.76s / `platform_apple_encode` 8.25s / `platform_apple_muxer` 7.55s /
+`platform_apple_muxer_audio` 1.72s / `platform_apple_capabilities` 0.54s /
+`platform_apple_decode` 6.92s / `media_sequential_real` 65.97s（最慢）
+
+⚠️ 本节是「改名不回归」的计数，**不是性能基线**；性能基线（PERF-001）仍未建立。

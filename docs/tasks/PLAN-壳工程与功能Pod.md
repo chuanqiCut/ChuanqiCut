@@ -9,7 +9,7 @@
 
 ```
 壳 App（apps/apple/ios + mac，App target = AppEntry/装配/路由/权限/启动钩子，零业务）
- ├─ ChuanqiCut          SDK（core+PAL+bindings，Source/Binary 双 subspec，不动）
+ ├─ ChuanqiCut          SDK（core+Platform+bindings，Source/Binary 双 subspec，不动）
  ├─ SharedUI            UI 基座（Common/Theme/令牌/通用组件；功能域全部迁出）
  ├─ ChuanqiCutPlayer    播放器          ← SharedUI/Player
  ├─ ChuanqiCutImport    素材导入        ← SharedUI/MediaPicker + UIA-009/011/012 导入链

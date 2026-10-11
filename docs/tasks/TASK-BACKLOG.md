@@ -18,7 +18,7 @@ goal:        实现 FrameProvider 的 FFmpeg demux 后端
 input:       [ARCH-002 §3, ADR-0003, 已冻结的 FrameProvider 接口]
 output:      [代码, 单测, golden 测试样本, 模块文档更新]
 write_set:   core/src/media/ffmpeg_impl/*, core/include/cq/media/frame_provider.h
-read_set:    pal/apple/*, core/src/media/*
+read_set:    platform/apple/*, core/src/media/*
 deps:        [MEDIA-010, DEPS-012]
 acceptance:
   - 与 SystemFrameProvider 在相同 seek 请求下返回同一帧（PSNR ≥ 45dB）
@@ -40,7 +40,12 @@ parallel:    false          # 是否与同批次其他任务并行
 | 层 | 前缀 | 内容 | 任务数 |
 |---|---|---|---|
 | **跨平台层（SDK 内核）** | `CORE` `MODEL` `GFX` `SHADER` `RENDER` `MEDIA` `AUDIO` `AI` `COLOR` `PROJ` `EXPORT` | C++20 共享内核，与平台无关 | 51 |
-| **跨平台层（PAL 实现）** | `PALA` `PALD` `OHOS` | Apple / Android / 鸿蒙 的平台适配 | 24 |
+| **跨平台层（Platform 实现）** | `PALA` `PALD` `OHOS` | Apple / Android / 鸿蒙 的平台适配 | 24 |
+
+> **前缀说明（2026-10-11）**：`PALA` / `PALD` 是「Platform 层 · Apple / Android」的**历史任务前缀**
+> （`PAL` 是 2026-10-10 前的旧名，当日随 INFRA-022 统一改名为 `Platform`，见 RESEARCH-011 §5.2）。
+> 前缀**保持 `PALA` / `PALD` 不变** —— 已建的几百张卡与 BACKLOG 行都挂在它下面，
+> 改前缀会让历史引用全部断链，收益远小于代价。阅读时按「Platform·Apple / Platform·Android」理解即可。
 | **SDK 绑定层** | `BIND` | C ABI → Swift / Kotlin / ArkTS | 6 |
 | **UI 层** | `UIA` `UID` `UIO` | SwiftUI / Compose / ArkUI | 16 |
 | **基建** | `DEPS` `INFRA` `PERF` `QA` | 依赖治理、CI、性能、测试 | 21 |
@@ -51,7 +56,7 @@ parallel:    false          # 是否与同批次其他任务并行
 
 ---
 
-## 2. Phase 0 — 地基（内核骨架 / PAL 契约 / 构建 / 治理 / 基线）
+## 2. Phase 0 — 地基（内核骨架 / Platform 契约 / 构建 / 治理 / 基线）
 
 目标：三平台能编译出内核，Apple 空壳 App 能跑，性能基线数据入库，依赖治理跑通。
 
@@ -78,7 +83,7 @@ parallel:    false          # 是否与同批次其他任务并行
 | INFRA-005 | 基建 | Apple Xcode workspace 与双 target（iOS/Mac） | INFRA-003 | `apps/apple/` | 两个 target 均可编译运行 |
 | INFRA-006 | 基建 | CI：编译 + 单测 + 门禁（三平台） | INFRA-002/3/4 | `.github/workflows/` | PR 触发全门禁 |
 | INFRA-007 | 基建 | 警告即错误（-Werror）与静态检查接入 | INFRA-002 | CI | 新代码零警告 |
-| INFRA-008 | 基建 | `pal/ohos/` 接口编译检查 target（ADR-0007） | CORE-006 | `pal/ohos/` | 接口签名变更时该 target 失败 |
+| INFRA-008 | 基建 | `platform/ohos/` 接口编译检查 target（ADR-0007） | CORE-006 | `platform/ohos/` | 接口签名变更时该 target 失败 |
 | INFRA-009 | 基建 | Apple 双工程拆分 + CocoaPods 源码集成（owner 决策 2026-10-02，替代 INFRA-005 的单工程形态） | UIA-002 | `apps/apple/**`, `ChuanqiCut.podspec` | 双工程 `pod install` 成功且 macOS/iOS 均编译通过 |
 | INFRA-010 | 基建 | 本机总门禁脚本 `tools/ci/run_gate.sh`（多机守门入口，cq-code-review 流程 A 依赖）✅ 2026-10-05 | INFRA-002 | `tools/ci/run_gate.sh` | 一条命令跑完 deps 校验/头纯净性/Debug+Release 全量单测/XCFramework+Swift/golden，一票否决，日志落 `build/gate-logs/` |
 | INFRA-011 | 基建 | DEPS-004 落地：静态库符号泄漏扫描（nm 全局符号 + `cq_/CQ_` 前缀白名单） | INFRA-010 | `tools/compliance/*`, `tools/ci/run_gate.sh` | 公共符号含非 `cq_/CQ_` 前缀时门禁失败 |
@@ -106,8 +111,8 @@ parallel:    false          # 是否与同批次其他任务并行
 | CORE-003 | 跨平台 | `base`：日志与帧级 trace | INFRA-002 | `core/src/base/log.*` | 分级日志，可落盘，媒体管线可追溯 |
 | CORE-004 | 跨平台 | `base`：内存池 / Arena / 纹理预算记账 | INFRA-002 | `core/src/base/alloc.*` | 可查询当前分配量 |
 | CORE-005 | 跨平台 | `base`：并发原语、有界队列、CancelToken | INFRA-002 | `core/src/base/concurrency.*` | 取消语义可测 |
-| CORE-006 | 跨平台 | **PAL 接口定义冻结**（GFX/Media/Audio/Inference/FS/Clock/Log/Capabilities） | CORE-001~005 | `core/include/cq/pal/*.h` | 头文件零平台类型；评审通过 |
-| CORE-007 | 跨平台 | 能力查询 `ICapabilities` 与枚举 | CORE-006 | `core/src/pal/capabilities.*` | 运行时可查询各项能力 |
+| CORE-006 | 跨平台 | **Platform 接口定义冻结**（GFX/Media/Audio/Inference/FS/Clock/Log/Capabilities） | CORE-001~005 | `core/include/cq/platform/*.h` | 头文件零平台类型；评审通过 |
+| CORE-007 | 跨平台 | 能力查询 `ICapabilities` 与枚举 | CORE-006 | `core/src/platform/capabilities.*` | 运行时可查询各项能力 |
 | CORE-008 | 跨平台 | 线程模型与队列骨架（ARCH-001 §6） | CORE-005 | `core/src/session/*` | 主线程零阻塞可测 |
 | CORE-009 | 跨平台 | `EditorSession` 门面与快照机制 | CORE-006/008 | `core/src/session/*` | 快照版本号递增，UI 可 diff |
 
@@ -128,30 +133,30 @@ parallel:    false          # 是否与同批次其他任务并行
 - [ ] `PERF-001` 实测数据入库，原调研中所有估算数字被替换或标注为待实测
 - [ ] 依赖治理 CI 全绿（协议门禁、符号门禁、SBOM）
 - [ ] FFmpeg `demux` 档位产物 < 3MB 且无 GPL 符号
-- [ ] PAL 接口冻结并通过评审
+- [ ] Platform 接口冻结并通过评审
 
 ---
 
 ## 3. Phase 1 — Apple MVP（解码→渲染→预览→导出）
 
-### 3.1 GFX 与 Shader（跨平台层 + Apple PAL）
+### 3.1 GFX 与 Shader（跨平台层 + Apple Platform）
 
 | ID | 层 | 任务 | 依赖 | 写集 | 验收 |
 |---|---|---|---|---|---|
 | GFX-001 | 跨平台 | GFX 抽象接口（概念映射表 12 项） | CORE-006 | `core/include/cq/gfx/*.h` | 头文件零平台类型 |
 | GFX-002 | 跨平台 | TexturePool 与内存预算控制 | GFX-001, CORE-004 | `core/src/gfx/pool.*` | 超预算时按 LRU 回收 |
 | GFX-003 | 跨平台 | 外部图像导入抽象 `INativeImageImporter` | GFX-001 | `core/src/gfx/import.*` | 导入失败可退化为 CPU 拷贝 |
-| PALA-001 | 跨平台 | **Metal 后端实现** | GFX-001 | `pal/apple/gfx_metal.*` | 清屏 + 纹理绘制可跑 |
-| PALA-002 | 跨平台 | `CVPixelBuffer → CVMetalTexture` 零拷贝 | PALA-001 | `pal/apple/` | 实测零拷贝生效（无 memcpy） |
+| PALA-001 | 跨平台 | **Metal 后端实现** | GFX-001 | `platform/apple/gfx_metal.*` | 清屏 + 纹理绘制可跑 |
+| PALA-002 | 跨平台 | `CVPixelBuffer → CVMetalTexture` 零拷贝 | PALA-001 | `platform/apple/` | 实测零拷贝生效（无 memcpy） |
 | SHADER-001 | 跨平台 | shader 编译链：GLSL → SPIR-V → MSL | DEPS-030 | `tools/shaders/` | 生成可读 MSL 并落盘 |
 | SHADER-002 | 跨平台 | 反射信息 → 绑定号代码生成 | SHADER-001 | `tools/shaders/` | 绑定号由工具生成 |
 | SHADER-003 | 跨平台 | shader 规范检查（禁用扩展/显式精度等） | SHADER-001 | `tools/shaders/lint.*` | 违规 shader 构建失败 |
 | SHADER-004 | 跨平台 | **Platform-Native 层机制**：`RenderNode.specialize()` + 运行时选择 + fallback | SHADER-001, RENDER-001 | `core/src/graph/*` | 有特化用特化，无特化 fallback portable |
 | SHADER-005 | 跨平台 | 特化 vs portable 一致性对比工具 | SHADER-004 | `tools/qa/*` | 输出 PSNR/SSIM 对比报告 |
 | SHADER-010 | 跨平台 | 基础变换 shader（平移/旋转/缩放/裁剪） | SHADER-001 | `shaders/src/transform.glsl` | 三端一致性测试通过 |
-| SHADER-110 | 跨平台 | **[Apple 优先] Metal 特化：变换/合成** | SHADER-004, PALA-001 | `pal/apple/shaders/` | 收益 ≥ 20%，与 portable 一致性达标 |
-| SHADER-111 | 跨平台 | **[Apple 优先] Metal 特化：LUT/调色** | SHADER-004, COLOR-002 | `pal/apple/shaders/` | 同上 |
-| SHADER-112 | 跨平台 | **[Apple 优先] Metal 特化：美颜磨皮** | SHADER-004, AI-020 | `pal/apple/shaders/` | 同上 |
+| SHADER-110 | 跨平台 | **[Apple 优先] Metal 特化：变换/合成** | SHADER-004, PALA-001 | `platform/apple/shaders/` | 收益 ≥ 20%，与 portable 一致性达标 |
+| SHADER-111 | 跨平台 | **[Apple 优先] Metal 特化：LUT/调色** | SHADER-004, COLOR-002 | `platform/apple/shaders/` | 同上 |
+| SHADER-112 | 跨平台 | **[Apple 优先] Metal 特化：美颜磨皮** | SHADER-004, AI-020 | `platform/apple/shaders/` | 同上 |
 
 ### 3.2 媒体管线（跨平台层）
 
@@ -162,12 +167,12 @@ parallel:    false          # 是否与同批次其他任务并行
 | MEDIA-012 | 跨平台 | DecoderPool 调度与硬件路数限制处理 | MEDIA-010 | `core/src/media/decoder_pool.*` | 超路数时降级不崩溃 |
 | MEDIA-013 | 跨平台 | `TimeMap` 抽象：恒速 / 曲线 / 倒放 | CORE-001 | `core/src/retime/*` | 三种实现同一接口 |
 | MEDIA-020 | 跨平台 | SystemFrameProvider（抽象 + 通用逻辑） | MEDIA-010 | `core/src/media/` | 通过 mock 单测 |
-| PALA-010 | 跨平台 | Apple 解封装后端（AVAssetReader） | MEDIA-020 | `pal/apple/media_demux.*` | 可读 MP4/MOV |
-| PALA-011 | 跨平台 | Apple 硬解后端（VideoToolbox） | PALA-010 | `pal/apple/media_decode.*` | 硬解生效，功耗符合预期 |
-| PALA-012 | 跨平台 | Apple 编码与封装（AVAssetWriter + PixelBufferAdaptor） | MEDIA-020 | `pal/apple/media_encode.*` | 能导出 H.264 MP4 |
+| PALA-010 | 跨平台 | Apple 解封装后端（AVAssetReader） | MEDIA-020 | `platform/apple/media_demux.*` | 可读 MP4/MOV |
+| PALA-011 | 跨平台 | Apple 硬解后端（VideoToolbox） | PALA-010 | `platform/apple/media_decode.*` | 硬解生效，功耗符合预期 |
+| PALA-012 | 跨平台 | Apple 编码与封装（AVAssetWriter + PixelBufferAdaptor） | MEDIA-020 | `platform/apple/media_encode.*` | 能导出 H.264 MP4 |
 | MEDIA-030 | 跨平台 | 音画同步与时钟（audio master clock） | MEDIA-020, CORE-008 | `core/src/media/sync.*` | A/V 偏差 ≤ 1 帧 |
 | MEDIA-021 | 跨平台 | FFmpeg demux 后端（精确 seek / 倒放 / 曲线） | DEPS-012, MEDIA-010 | `core/src/media/ffmpeg_impl/*` | 与系统后端同 seek 同结果 |
-| PALA-013 | 跨平台 | FFmpeg demux + VT 解码组合路径 | MEDIA-021, PALA-011 | `pal/apple/` | 倒放/速度曲线可逐帧取 |
+| PALA-013 | 跨平台 | FFmpeg demux + VT 解码组合路径 | MEDIA-021, PALA-011 | `platform/apple/` | 倒放/速度曲线可逐帧取 |
 
 ### 3.3 渲染图与基础效果（跨平台层）
 
@@ -210,7 +215,7 @@ parallel:    false          # 是否与同批次其他任务并行
 | UIA-011 | UI | 相册素材导入（PhotosPicker → 既有 importMedia 链路，不引第三方；Spec UIA-011） | UIA-009 ✅ | `SharedUI`（PropertyPanelZone + PhotoImportTests） | 相册选视频追加进时间线；与文件导入汇入同一入口；内核/绑定零改动 |
 | UIA-012 | UI | 相册多选批量导入（PhotosPicker maxSelectionCount=20，逐条汇入 importMedia，部分失败不中断；Spec UIA-012 + ADR-0015） | UIA-011 | `SharedUI`（PropertyPanelZone + PhotoImportTests 追加） | 多选 N 条全部入表且顺序一致；部分失败汇总展示不中断；零权限零依赖；内核/绑定零改动 |
 | UIA-013 | UI | 自研相册浏览器（网格/相簿/多选序号/时长过滤/iCloud/.limited，替换系统 sheet；Spec UIA-013 + ADR-0015，B 期伞任务） | UIA-012 | `SharedUI/MediaPicker`（新目录）+ `project.yml` info 段（高冲突，开工时协调） | 编译门禁 + AlbumPickerTests 全绿；真机项（权限/.limited/iCloud/帧率）随真机恢复决策执行；导入链路零改动 |
-| UIA-014 | 跨平台 + UI | 预览宽高比适配（FitMode stretch/contain/cover，视口原语接缝）✅ 2026-10-04 | UIA-010 | `preview_renderer.*` + GFX/PAL 编码器 + `cq_sdk.h` + `Previewer.swift` + SharedUI AppEntry | 非同比例素材按模式适配；默认 stretch 行为不变；像素断言见 TASK-UIA-014（编号两次让位：011→012→014，撞相册导入/相册多选） |
+| UIA-014 | 跨平台 + UI | 预览宽高比适配（FitMode stretch/contain/cover，视口原语接缝）✅ 2026-10-04 | UIA-010 | `preview_renderer.*` + GFX/Platform 编码器 + `cq_sdk.h` + `Previewer.swift` + SharedUI AppEntry | 非同比例素材按模式适配；默认 stretch 行为不变；像素断言见 TASK-UIA-014（编号两次让位：011→012→014，撞相册导入/相册多选） |
 | UIA-015 | UI | 独立视频播放器 MVP（AVPlayer 过渡 + PlayerEngine 接缝；Spec UIA-020 + ADR-0022，2026-10-05 当日交付）✅ + 第二/三轮 V1 | 无（UIA-014 收口后立项） | `SharedUI/Player/`（新目录）+ HomeView + MacApp + `ios/project.yml` info 段 | PlayerTests 全绿 + 构建机 0 警告 + SPEC §6.4 行为清单；内核/绑定零改动；C++ session 演进见 ADR-0022 反转条件 |
 | UIA-016 | UI | 播放器系统级播控补完（章节标记 + PiP 占位态 + AirPlay 路由；进阶版 P1，PLAN-播放器进阶） | UIA-015 门禁 PASS | `SharedUI/Player/**` + PlayerTests | 章节刻度/跳转；PiP 占位态；AirPlay 呼出；章节 API 形状构建机首验 |
 | UIA-017 | UI | 播放器画面捏合缩放与拖移（1x–3x + 双击复位；进阶版 P1） | UIA-015 门禁 PASS | PlayerControlsView/Screen/VM + PlayerTests | 缩放钳制 + 回弹；与上下滑/长按消歧真机验证；映射纯函数可测 |
@@ -249,7 +254,7 @@ parallel:    false          # 是否与同批次其他任务并行
 |---|---|---|---|---|---|
 | **AI-013** | 基建 | **[spike] `.tflite → .mlpackage` 转换链可行性验证**（ADR-0005 §0.1，Apple 端路径 A 的生死判定） | DEPS-031 | `tools/models/spike/`, `.ai/memory/baselines.md` | ① 两个模型都能转出 `.mlpackage`；② 与 LiteRT 原始输出数值比对在阈值内；③ 目标设备能跑通。**任一不通过 → 切路径 B（LiteRT + CoreML delegate），不写业务代码** |
 | AI-001 | 跨平台 | `IInferenceBackend` 抽象 | CORE-006 | `core/include/cq/infer/*.h` | 零平台类型 |
-| PALA-020 | 跨平台 | CoreML 后端 | AI-001, **AI-013** | `pal/apple/infer_coreml.*` | 可加载模型并推理 |
+| PALA-020 | 跨平台 | CoreML 后端 | AI-001, **AI-013** | `platform/apple/infer_coreml.*` | 可加载模型并推理 |
 | AI-002 | 基建 | **实测 CoreML 是否落在 ANE**（RESEARCH-001 F8） | PALA-020 | `.ai/memory/baselines.md` | 给出实测结论，不成立则记录回退方案 |
 | AI-010 | 跨平台 | 人脸检测（Apple 端先做） | PALA-020 | `core/src/ai/face_detect.*` | 检出率与耗时入库 |
 | AI-011 | 跨平台 | **landmark 后处理在 C++ 实现并共享**（ADR-0005） | AI-010 | `core/src/ai/landmark_post.*` | 三端同一份代码 |
@@ -269,7 +274,7 @@ parallel:    false          # 是否与同批次其他任务并行
 | AUDIO-002 | 跨平台 | 时间拉伸节点（signalsmith-stretch 集成） | DEPS-020 | `core/src/audio/stretch.*` | **变速后时长误差 ≤ 1 帧** |
 | AUDIO-003 | 跨平台 | 变声节点（pitch + formant） | AUDIO-002 | `core/src/audio/pitch.*` | formant 可独立控制 |
 | AUDIO-004 | 跨平台 | 多轨混音 | AUDIO-001 | `core/src/audio/mix.*` | 电平正确，无溢出 |
-| PALA-030 | 跨平台 | AVAudioEngine 后端（播放/渲染） | AUDIO-001 | `pal/apple/audio.*` | 低延迟播放 |
+| PALA-030 | 跨平台 | AVAudioEngine 后端（播放/渲染） | AUDIO-001 | `platform/apple/audio.*` | 低延迟播放 |
 | AUDIO-010 | 跨平台 | EQ/压缩/混响基础效果 | AUDIO-001 | `core/src/audio/fx.*` | 参数可测 |
 
 ### 4.3 编辑能力
@@ -306,20 +311,20 @@ parallel:    false          # 是否与同批次其他任务并行
 
 ## 5. Phase 3 — Android
 
-原则：**先做 PAL + 空壳 App 跑通内核，再点亮功能**。内核已由 Apple 端验证，风险集中在 PAL 与设备适配。
+原则：**先做 Platform + 空壳 App 跑通内核，再点亮功能**。内核已由 Apple 端验证，风险集中在 Platform 与设备适配。
 
 | ID | 层 | 任务 | 依赖 | 写集 | 验收 |
 |---|---|---|---|---|---|
-| PALD-001 | 跨平台 | GLES 3.1 后端（基线） | GFX-001 | `pal/android/gfx_gles.*` | 清屏 + 纹理绘制 |
-| PALD-002 | 跨平台 | Vulkan 后端（旗舰可选） | GFX-001 | `pal/android/gfx_vulkan.*` | 能力查询受控切换 |
-| PALD-003 | 跨平台 | `AHardwareBuffer → EGLImage / VkImage` 零拷贝 | PALD-001 | `pal/android/import.*` | 实测无 memcpy；失败可退化 |
-| PALD-004 | 基建 | Android 设备黑名单与降级策略 | PERF-002 | `pal/android/caps.*` | 命中机型走降级路径 |
-| PALD-010 | 跨平台 | MediaExtractor/MediaCodec 解封装与硬解 | MEDIA-020 | `pal/android/media.*` | 异步模式，关键帧 seek 语义统一 |
-| PALD-011 | 跨平台 | MediaCodec 硬编 + MediaMuxer 封装 | MEDIA-020 | `pal/android/media_enc.*` | 导出 H.264 MP4 |
-| PALD-012 | 跨平台 | YUV stride 对齐差异处理 | PALD-010 | `pal/android/media.*` | 上层无感 |
-| PALD-020 | 跨平台 | TFLite 推理后端（NNAPI/GPU/XNNPACK 回退） | AI-001 | `pal/android/infer_tflite.*` | 三档回退可用 |
-| PALD-030 | 跨平台 | Oboe 音频后端（AAudio→OpenSL） | AUDIO-001 | `pal/android/audio.*` | 低延迟，自动回退 |
-| PALD-040 | 跨平台 | Scoped Storage / MediaStore 文件访问 | CORE-006 | `pal/android/fs.*` | 权限最小化 |
+| PALD-001 | 跨平台 | GLES 3.1 后端（基线） | GFX-001 | `platform/android/gfx_gles.*` | 清屏 + 纹理绘制 |
+| PALD-002 | 跨平台 | Vulkan 后端（旗舰可选） | GFX-001 | `platform/android/gfx_vulkan.*` | 能力查询受控切换 |
+| PALD-003 | 跨平台 | `AHardwareBuffer → EGLImage / VkImage` 零拷贝 | PALD-001 | `platform/android/import.*` | 实测无 memcpy；失败可退化 |
+| PALD-004 | 基建 | Android 设备黑名单与降级策略 | PERF-002 | `platform/android/caps.*` | 命中机型走降级路径 |
+| PALD-010 | 跨平台 | MediaExtractor/MediaCodec 解封装与硬解 | MEDIA-020 | `platform/android/media.*` | 异步模式，关键帧 seek 语义统一 |
+| PALD-011 | 跨平台 | MediaCodec 硬编 + MediaMuxer 封装 | MEDIA-020 | `platform/android/media_enc.*` | 导出 H.264 MP4 |
+| PALD-012 | 跨平台 | YUV stride 对齐差异处理 | PALD-010 | `platform/android/media.*` | 上层无感 |
+| PALD-020 | 跨平台 | TFLite 推理后端（NNAPI/GPU/XNNPACK 回退） | AI-001 | `platform/android/infer_tflite.*` | 三档回退可用 |
+| PALD-030 | 跨平台 | Oboe 音频后端（AAudio→OpenSL） | AUDIO-001 | `platform/android/audio.*` | 低延迟，自动回退 |
+| PALD-040 | 跨平台 | Scoped Storage / MediaStore 文件访问 | CORE-006 | `platform/android/fs.*` | 权限最小化 |
 | BIND-003 | SDK | JNI 绑定层 + Kotlin 封装 | BIND-001 | `bindings/kotlin/` | Kotlin 可调用门面 |
 | UID-001 | UI | Compose 编辑器主框架 | BIND-003 | `apps/android/app/` | 布局与 iOS 对齐 |
 | UID-002 | UI | SurfaceView/TextureView 预览嵌入 | UID-001, PALD-003 | `apps/android/` | 不经 UI 合成 |
@@ -337,7 +342,7 @@ parallel:    false          # 是否与同批次其他任务并行
 
 | ID | 层 | 任务 | 状态 |
 |---|---|---|---|
-| OHOS-001 | 跨平台 | `pal/ohos/` 接口编译检查 | **本期做**（INFRA-008） |
+| OHOS-001 | 跨平台 | `platform/ohos/` 接口编译检查 | **本期做**（INFRA-008） |
 | OHOS-002 | 基建 | DevEco + NDK + Vulkan 环境验证 | 未排期（启动后第一步） |
 | OHOS-003 | 跨平台 | GFX Vulkan 后端 | 未排期 |
 | OHOS-004 | 跨平台 | AVCodecKit 解封装/硬解/硬编/封装 | 未排期 |
@@ -357,7 +362,7 @@ parallel:    false          # 是否与同批次其他任务并行
 - **批次 D**：`UIA-*` 各页面在 `BIND-002` 完成后可并行
 
 **禁止并行**：
-- `CORE-006`（PAL 接口冻结）之前，任何 PAL 实现不得开始 —— 接口不稳定会导致大规模返工
+- `CORE-006`（Platform 接口冻结）之前，任何 Platform 实现不得开始 —— 接口不稳定会导致大规模返工
 - `BIND-001`（C ABI 冻结）之前，任何绑定层不得开始
 - `GFX-001` 之前，任何后端不得开始
 - 同一写集的两个任务
@@ -385,12 +390,12 @@ INFRA-001/002 → CORE-001~005 → CORE-006(PAL冻结) → PALA-001/010
 
 > 用户需求：首页两入口 + 相机采集 + 实时特效（美颜/美型/美体/宠物/贴纸/滤镜/头部道具）+ 前后同开。
 > **ADR-0014**：相机域为 iOS 原生功能域（AVFoundation + Vision/ARKit + Core Image/Metal），
-> 不经 PAL/C ABI；编辑器内核维持 C++ 跨端。CAM-001 曾冻结的 PAL 契约当日回退。
+> 不经 Platform/C ABI；编辑器内核维持 C++ 跨端。CAM-001 曾冻结的 Platform 契约当日回退。
 > 分 A/B/C 三期（SPEC-CAM-001 **v1.2** §3；v1.2 拍板：双摄提前至 B 期 + 横竖屏全支持 + UI 栈 SwiftUI+MTKView 混合）。
 
 | ID | 层 | 任务 | 依赖 | 写集 | 验收 |
 |---|---|---|---|---|---|
-| CAM-001 | SDK | ~~PAL 契约冻结~~ **已回退留档** | — | — | 39/39 门禁（回退后） |
+| CAM-001 | SDK | ~~Platform 契约冻结~~ **已回退留档** | — | — | 39/39 门禁（回退后） |
 | CAM-002 | UI | 相机采集管理器（AVCaptureSession 前后摄/权限） | — | `iOSApp/Camera/CameraManager.swift` | 授权状态机单测；iOS 构建 |
 | CAM-003 | UI | 预览渲染链（MTKView + Core Image）+ 滤镜预设 | CAM-002 | `CameraVideoView/Renderer.swift`、SharedUI `CameraFilter.swift` | 滤镜单测；真机 ≥30fps |
 | CAM-004 | UI | 首页两入口 + 相机页 + EditorViewModel 惰性化 | CAM-002/003 | `HomeView.swift`、`CameraView.swift`、SharedUI `EditorScreen.swift` | SharedUI 全量；iOS 构建+权限 |
@@ -424,10 +429,10 @@ RENDER-001/红线 #6 路线，勿把相机滤镜直接当 SDK 能力引用。
 
 | ID | 层 | 任务 | 依赖 | 写集要点 | 验收 |
 |---|---|---|---|---|---|
-| AIEDIT-001 | SDK | **契约冻结**：FeatureReport/EditPlan schema + ILlmClient/INetTransport + 校验器 | — | `core/include/cq/ai/*`(新)、`core/include/cq/pal/net.h`(新)、校验器+golden ≥40 例 | ctest edit_plan 全绿；浮点秒全拒 |
+| AIEDIT-001 | SDK | **契约冻结**：FeatureReport/EditPlan schema + ILlmClient/INetTransport + 校验器 | — | `core/include/cq/ai/*`(新)、`core/include/cq/platform/net.h`(新)、校验器+golden ≥40 例 | ctest edit_plan 全绿；浮点秒全拒 |
 | AIEDIT-002 | SDK | 视觉特征（镜头边界/运动/质量，零模型 P0） | 001 | `core/src/ai/analysis/*`(新) | golden 边界 ±1；内存 <200MB [E] |
 | AIEDIT-003 | SDK | 音频解码扩档(FFmpeg decode) + 音频特征（静音/LUFS/包络） | 001 | `core/src/media/audio_decode/*`(新)、`third_party/manifest.toml`(高冲突) | 过 dependency-governance；边界 ≤50ms |
-| AIEDIT-004 | SDK | PAL 网络（URLSession/SSE）+ OpenAI-compatible 客户端 | 001 | `pal/apple/net/*`(新)、`core/src/ai/llm/*`(新) | 假服务器四异常路径；零三方依赖 |
+| AIEDIT-004 | SDK | Platform 网络（URLSession/SSE）+ OpenAI-compatible 客户端 | 001 | `platform/apple/net/*`(新)、`core/src/ai/llm/*`(新) | 假服务器四异常路径；零三方依赖 |
 | AIEDIT-005 | SDK | Prompt 管线与决策解析/修复/降级编排 | 001/004/011 | `core/src/ai/plan/plan_pipeline 等`(新) | 四路径全过；增量 rev 校验 |
 | AIEDIT-006 | SDK | EditPlan→Command 执行器 + RemoveRange/SetTransition 新命令 | 001 | `core/include/cq/command/command.h`(高冲突)、`core/src/command/*` | undo 逐字段还原；批次原子 |
 | AIEDIT-007 | SDK | C ABI 扩展（cq_ai_*）+ Swift 绑定（Integrator） | 002/004/005/006 | `cq_sdk.h`(高冲突)、bindings | c_abi_ai 全绿；observer 无泄漏 |
@@ -452,7 +457,7 @@ RENDER-001/红线 #6 路线，勿把相机滤镜直接当 SDK 能力引用。
 | UIA-020 | UI | 预览活性修复（模型推进 → 同 pts 重渲染，seq 追帧） | — | `AppEntry.swift`、`MetalPreviewView.swift`、SharedUITests | 泵 requested 单测；全量零回归 |
 | UIA-033 | UI | Theme 令牌扩展（增量，全量清扫待批；原 UIA-016 让位改号） | — | `Common/Theme.swift` | Editor 新文件无裸 RGB；编译绿 |
 | UIA-032 | UI | iOS 编辑页对标 App式重构（预览最大化/播放条/底部工具栏/媒体抽屉；原 UIA-015 让位改号） | 020、033 | `Editor/*`（七文件）+ `ChuanqiCutApp.swift` DEBUG 钩子 | 走查截图 + 全量测试 + 双平台编译 |
-| MEDIA-022 | SDK | HEVC 解码支持 + 探测失败诚实透传 ✅ 2026-10-05 | — | `pal/apple/media_decode.mm`、绑定 probe 透传、AppEntry 文案 | HEVC golden probe=0 + 像素断言；门禁全绿（诊断见任务卡 §背景） |
+| MEDIA-022 | SDK | HEVC 解码支持 + 探测失败诚实透传 ✅ 2026-10-05 | — | `platform/apple/media_decode.mm`、绑定 probe 透传、AppEntry 文案 | HEVC golden probe=0 + 像素断言；门禁全绿（诊断见任务卡 §背景） |
 
 **批次**：020 ∥ 033 → 032。**关键路径**：020 → 032。
 | MEDIA-024 | SDK | 顺序快路径对真实 4K60 失效修复 + 泵帧外秒级尖刺定位（播放卡顿定案修复） | — | `system_frame_provider.cpp`、`preview_renderer.cpp`、单测 | 真机 rendered/s ≥ 55 且无秒级尖刺（数据见 baselines） |
@@ -485,20 +490,20 @@ RENDER-001/红线 #6 路线，勿把相机滤镜直接当 SDK 能力引用。
 > 全部顺延为 **ADR-0025~0028**。
 > **Pod 域归属（ADR-0031，2026-10-07）**：LIB-*、UIA-028 → `ChuanqiCutAssets` Pod；
 > PROJ-005、UIA-029 → `ChuanqiCutDraft` Pod；UIA-030/031 → `ChuanqiCutEditor` Pod；
-> MEDIA-028/029、EXPORT-010/011 → C 线内核支撑（core/pal，不进 UI Pod）。
+> MEDIA-028/029、EXPORT-010/011 → C 线内核支撑（core/platform，不进 UI Pod）。
 
 | ID | 层 | 任务 | 依赖 | 写集要点 | 验收 |
 |---|---|---|---|---|---|
 | LIB-001 | 跨平台 | 素材库契约冻结（资产类型 video/still/animated/livephoto、存储布局、元数据 schema、与 Session AssetRegistry 关系） | 定稿 ADR-0025 | `core/include/cq/library/*.h` | 契约评审通过；零平台类型 |
 | LIB-002 | 跨平台 | 素材库存储与索引（入库/扫描/检索/失效标记） | LIB-001 | `core/src/library/*` | 往返一致；跨会话可重建索引 |
-| LIB-003 | 跨平台+PALA | 缩略图与元数据（probe 复用；缩略图生成/缓存） | LIB-002 | `core/src/library/thumbs*`、`pal/apple/media_thumb*` | 缩略图命中率；主线程不解码 |
+| LIB-003 | 跨平台+PALA | 缩略图与元数据（probe 复用；缩略图生成/缓存） | LIB-002 | `core/src/library/thumbs*`、`platform/apple/media_thumb*` | 缩略图命中率；主线程不解码 |
 | LIB-004 | 跨平台+UI | 入库链路改造：拍摄/导出/相册/文件→落库，替换 importMedia tmp 链（UIA-009/011/012 欠账收口；C/A 拆两卡） | LIB-002 | core `library/ingest*` + SharedUI 导入链 | 全部产出有库内资产 ID；tmp 链退役 |
 | LIB-005 | 跨平台 | 素材管理：删除/重命名/去重/引用保护（被草稿引用→缺失标记） | LIB-002, PROJ-001 | `core/src/library/manage*` | 引用保护语义单测；无静默连删 |
 | PROJ-005 | 跨平台 | 草稿箱索引与生命周期（建/开/存/复制/删/封面） | PROJ-001 | `core/src/project/drafts*` | 崩溃后草稿可恢复（自动保存接线） |
-| MEDIA-028 | 跨平台+PALA | 静图/动图帧源：FrameProvider 扩展 still（单帧+声明时长）/ animated（帧序列，GIF 帧延迟→120000 网格） | MEDIA-020, 定稿 ADR-0026/0027 | `core/src/media/`、`pal/apple/media_gif*` | GIF 逐帧时间与解码器一致（golden） |
-| MEDIA-029 | 跨平台+PALA | LivePhoto 探测与解码（photo+video 配对识别；Apple-only，其他端降级普通素材） | MEDIA-028 | `pal/apple/media_livephoto*` + core 探测接缝 | 配对识别真机验证；缺失降级不崩溃 |
-| EXPORT-010 | 跨平台+PALA | GIF 导出（逐帧量化编码器；尺寸/帧率/循环参数） | EXPORT-002, RENDER-011, 定稿 ADR-0028 | `core/src/export/`、`pal/apple/media_enc*` | golden 对比；导出走同一 RenderGraph |
-| EXPORT-011 | 跨平台+PALA | LivePhoto 导出（视频+封面配对写入相册 / 文件对；入相册=显式授权） | EXPORT-002, 定稿 ADR-0028 | `pal/apple/media_livephoto*` | 相册成对写入真机验证；文件对可打开 |
+| MEDIA-028 | 跨平台+PALA | 静图/动图帧源：FrameProvider 扩展 still（单帧+声明时长）/ animated（帧序列，GIF 帧延迟→120000 网格） | MEDIA-020, 定稿 ADR-0026/0027 | `core/src/media/`、`platform/apple/media_gif*` | GIF 逐帧时间与解码器一致（golden） |
+| MEDIA-029 | 跨平台+PALA | LivePhoto 探测与解码（photo+video 配对识别；Apple-only，其他端降级普通素材） | MEDIA-028 | `platform/apple/media_livephoto*` + core 探测接缝 | 配对识别真机验证；缺失降级不崩溃 |
+| EXPORT-010 | 跨平台+PALA | GIF 导出（逐帧量化编码器；尺寸/帧率/循环参数） | EXPORT-002, RENDER-011, 定稿 ADR-0028 | `core/src/export/`、`platform/apple/media_enc*` | golden 对比；导出走同一 RenderGraph |
+| EXPORT-011 | 跨平台+PALA | LivePhoto 导出（视频+封面配对写入相册 / 文件对；入相册=显式授权） | EXPORT-002, 定稿 ADR-0028 | `platform/apple/media_livephoto*` | 相册成对写入真机验证；文件对可打开 |
 | UIA-028 | UI | 素材库页面（浏览/搜索/多选/管理；联动编辑与播放器复用 UIA-026 接缝） | LIB-002/005, UIA-026 | SharedUI（预占，依赖就绪后建卡） | 管理操作走库 ABI；失效素材置灰 |
 | UIA-029 | UI | 草稿箱页面（列表/封面/时长/体积；开/编/删/复制） | PROJ-005 | SharedUI（预占，依赖就绪后建卡） | 冷启动进草稿箱；崩溃恢复入口 |
 | UIA-030 | UI | 多轨时间线 UI（轨道增删/排序/静音锁定；Z 序=轨序） | UIA-035, RENDER-011 | SharedUI（预占，依赖就绪后建卡） | 多轨真机走查 <16ms/帧 |

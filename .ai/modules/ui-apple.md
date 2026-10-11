@@ -36,7 +36,7 @@ apps/apple/
 
 **依赖链**（INFRA-009 起，全部走 CocoaPods，App 不用 SPM）：
 App → SharedUI (pod) → ChuanqiCut (pod，**默认 Source 模式**：现场编译
-C++20 内核 + ObjC++ PAL + Swift 绑定) → CChuanqiCut (clang module，
+C++20 内核 + ObjC++ Platform + Swift 绑定) → CChuanqiCut (clang module，
 经 SWIFT_INCLUDE_PATHS 共用 `bindings/swift/Sources/CChuanqiCut/include/`)。
 `bindings/swift/Package.swift` 仅作绑定层 `swift test` 测试宿主。
 集成细节与红线见 `docs/COCOAPODS.md` 与 pitfalls P9~P12。
@@ -231,7 +231,7 @@ macOS 12.6，见 pitfalls P45），只做了 `swiftc -parse` 语法级检查；s
   UIA-011 挂载点(按钮 + item→URL 胶水保留,换选择器本体)。**显式偏离
   零权限惯例**:新增 `NSPhotoLibraryUsageDescription` + 隐私标签申报
   (ADR-0015 决策 3)。**方向锚**:core 的 probe/解码消费文件 URL,自研只换
-  选择 UI,不改变"选中项 → 文件 URL → importMedia"落盘路径(撞 PAL 红线
+  选择 UI,不改变"选中项 → 文件 URL → importMedia"落盘路径(撞 Platform 红线
   #2 的路不走)。Spec UIA-013。
 - **三端**:不强行统一相册选择 UI(Android 系统 Photo Picker / 鸿蒙
   PhotoViewPicker),三端统一的是"选择结果 → importMedia → Command"链路
@@ -747,4 +747,12 @@ RESEARCH-004/005 结论全部维持，本文补**操作层**，关键增量：
 ### 调研 · 决策 · 池指针
 
 - RESEARCH-006（播放器）/ RESEARCH-008（对标 App范式）/ ADR-0022 / ADR-0024 / SPEC-UIA-032
-- pitfalls P78/P79（Player 编译与行为修复案底）
+- **RESEARCH-012（2026-10-10，商用 SDK 竞品：该厂商 其创作 SDK × 阿里云 UGSV iOS 端）** —— 主要增量：
+  ① 该厂商「面板 = `Panel_configs/<panel_key>.json`」**UI 完全配置驱动**（tabs→subItems，含多语言
+  标题/图标/资源路径/业务参数）+ 色卡 Key + 文案 Key 换皮三件套 → **我们当前面板是代码写死，
+  这是最大 gap**，建议落 LIB/Editor 域 SPEC（需先提案给集成机）；② 阿里云 UGSV **UI 源码 MIT 开源**
+  （`MediaBox-Demos/amdemos-ios-ugsv`），实测文件名级核验：**无 split / 无 undo·redo / 无草稿箱 /
+  无复制片段**，其开源 UI 是「录制+单层编辑+裁剪+上传」，**不是多轨重编辑器** —— 我们有 ADR-0012
+  命令栈，**撤销重做是现成优势，别反过来对齐它**；③ 云剪辑 Web SDK 是另一条产品线（云端渲染，
+  编辑器本体为 CDN 闭源 JS），只看布局。
+- pitfalls P78/P79（Player 编译与行为修复案底）/ **P101**（商用 SDK 文档抓取技巧坑）/ **P102**（公开 podspec 仓库 + CDN 直链这条取数路径）

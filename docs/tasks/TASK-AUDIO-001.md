@@ -9,12 +9,12 @@ id:          AUDIO-001
 layer:       跨平台
 goal:        落地 core 层音频地基 —— 预分配缓冲池（lock-free freelist）、SPSC 无锁样本环、
              AudioGraph DAG 校验+拓扑遍历骨架 —— 为 AUDIO-002/003/004/010 与 PALA-030 提供公共底座
-input:       [PAL audio.h 契约（CORE-006 冻结）, ARCH-001 §6 线程模型/音频线程铁律,
+input:       [Platform audio.h 契约（CORE-006 冻结）, ARCH-001 §6 线程模型/音频线程铁律,
              .ai/modules/audio.md, TASK-BACKLOG §4.2]
 output:      [cq/audio 头文件 + 实现, 单测 ×2, CMake 登记, .ai/modules/audio.md 更新]
 write_set:   core/include/cq/audio/*(新)、core/src/audio/*(新)、tests/unit/test_audio_*.cpp(新)、
              core/CMakeLists.txt、tests/CMakeLists.txt
-read_set:    core/include/cq/pal/{audio,common}.h、core/include/cq/base/{concurrency,alloc,time,status}.h、
+read_set:    core/include/cq/platform/{audio,common}.h、core/include/cq/base/{concurrency,alloc,time,status}.h、
              core/include/cq/session/thread_model.h、.ai/modules/{audio,core}.md
 deps:        [CORE-006]
 acceptance:
@@ -39,7 +39,7 @@ parallel:    true（write_set 与当前在办任务不相交）
 ## 背景
 
 BACKLOG §4.2 音频线全部未开工（2026-10-05 核实：`core/src/audio/` 不存在）。
-CORE-006 已冻结 PAL Audio 契约：`PcmBuffer`（POD）+ `IAudioEngine`，并明确分工 ——
+CORE-006 已冻结 Platform Audio 契约：`PcmBuffer`（POD）+ `IAudioEngine`，并明确分工 ——
 **平台引擎只搬 PCM，混音/效果在 core 层做**。ARCH-001 铁律 2：音频线程无锁、无分配，
 所有 buffer 预分配、通信用 lock-free ring buffer。
 
@@ -48,8 +48,8 @@ CORE-006 已冻结 PAL Audio 契约：`PcmBuffer`（POD）+ `IAudioEngine`，并
 
 ## 实现要点
 
-1. **AudioBlock（core 侧缓冲描述）**：字段与 PAL `PcmBuffer` 对齐，但 `data` 可变
-   （效果节点要原位写样本）。PAL 边界处（PALA-030）做 AudioBuffer↔PcmBuffer 平凡适配，
+1. **AudioBlock（core 侧缓冲描述）**：字段与 Platform `PcmBuffer` 对齐，但 `data` 可变
+   （效果节点要原位写样本）。Platform 边界处（PALA-030）做 AudioBuffer↔PcmBuffer 平凡适配，
    不把 const 语义问题留给下游。
 2. **AudioBlockPool**：固定槽位预分配 + 置 tag 索引 Tre栈 freelist（CAS，ABA 安全）。
    Acquire/Release 全程原子操作；耗尽返回 `kResourceExhausted`，**绝不回退堆分配**。

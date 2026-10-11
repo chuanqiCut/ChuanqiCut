@@ -11,13 +11,13 @@
 
 | 问题 | 结论 |
 |---|---|
-| 相机代码现状 | **全仓为零**。`core/pal/apps/bindings` 均无 camera/capture 代码，Info.plist 无相机权限 |
+| 相机代码现状 | **全仓为零**。`core/platform/apps/bindings` 均无 camera/capture 代码，Info.plist 无相机权限 |
 | 渲染链路可复用度 | **约 80%**。相机帧(CVPixelBuffer)与解码帧同构，PALA-002 零拷贝导入链路原样可用；缺的是"外部帧入口 + 特效多 pass" |
 | 录制复用 | **IMediaMuxer 已具备完整能力**（AVAssetWriter + 视频 CVPixelBuffer + PCM→AAC），相机录制几乎零新增 |
 | 前后同开 | `AVCaptureMultiCamSession`（iOS 13+，A12+），iPhone 17 Pro 支持；**运行时 `isMultiCamSupported` 判定**（红线 #3）；双流分辨率上限预计 ≤1080p/流 [E，待真机实测] |
 | 人脸/宠物检测 | iOS 系统能力齐备：人脸框/关键点(76点)、人体姿态(17关节)、人像分割、动物检测(猫狗)、动物姿态(25关节，iOS 17+)；精细美型按 ADR-0005 走 MediaPipe 468 点模型(CoreML) |
 | 特效算法 | 磨皮=频率分解/双边滤波(Metal)，美型=MeshWarp(Delaunay+顶点偏移)，美体=人体姿态+分割+区域形变，贴纸/道具=关键点锚定的纹理叠加，滤镜=3D LUT |
-| 主要缺口 | ① PAL 无相机契约；② ICommandEncoder **无 compute dispatch**、**无"把纹理当渲染目标"** 的 API（特效链必需）；③ Portable shader 层为零(SHADER-001 未启动)；④ 无 home/导航 |
+| 主要缺口 | ① Platform 无相机契约；② ICommandEncoder **无 compute dispatch**、**无"把纹理当渲染目标"** 的 API（特效链必需）；③ Portable shader 层为零(SHADER-001 未启动)；④ 无 home/导航 |
 
 ---
 
@@ -35,11 +35,11 @@
 
 | 能力项 | 所在层 | 说明 |
 |---|---|---|
-| 采集(单/双摄)、会话管理 | PAL(apple) | AVFoundation 是平台 HAL，天然归 PAL |
-| 检测(人脸/人体/宠物) | PAL(apple) + core 后处理 | Apple 端 Vision / CoreML 推理在 PAL；坐标后处理、平滑下沉 core（ADR-0005 §1.3） |
+| 采集(单/双摄)、会话管理 | Platform(apple) | AVFoundation 是平台 HAL，天然归 Platform |
+| 检测(人脸/人体/宠物) | Platform(apple) + core 后处理 | Apple 端 Vision / CoreML 推理在 Platform；坐标后处理、平滑下沉 core（ADR-0005 §1.3） |
 | 美颜/美型/美体算法与 mesh 生成 | core | 跨平台共享（红线 #1、ADR-0005） |
-| 特效 shader | shaders/src(Portable) / pal/apple/shaders(Native) | 策略冲突见 §9 决策点 D4 |
-| 录制封装 | core（复用 IMediaMuxer） | PAL 实现 AppleMediaMuxer 已存在 |
+| 特效 shader | shaders/src(Portable) / platform/apple/shaders(Native) | 策略冲突见 §9 决策点 D4 |
+| 录制封装 | core（复用 IMediaMuxer） | Platform 实现 AppleMediaMuxer 已存在 |
 | 首页/相机页 UI | apps/apple（iOS 端） | 相机先不做 macOS；首页壳放 iOSApp target |
 | 能力降级判定 | core `cq_query_capability` | 新增枚举：双摄、动物姿态等 |
 
@@ -51,21 +51,21 @@
 
 | 既有件 | 位置 | 对相机的意义 |
 |---|---|---|
-| 零拷贝导入 | `pal/apple/gfx_metal.mm:390-504` `CqNativeImageImporter` | 相机输出 CVPixelBuffer(32BGRA+MetalCompat) → MTLTexture，与解码帧**完全同构**，IOSurface 共享已实测（1500× 代差） |
-| blit 管线范本 | `pal/apple/blit_pass.mm:41-101` | MSL→ShaderModule→Pipeline→绘制的完整装配模式，特效 pass 直接克隆 |
+| 零拷贝导入 | `platform/apple/gfx_metal.mm:390-504` `CqNativeImageImporter` | 相机输出 CVPixelBuffer(32BGRA+MetalCompat) → MTLTexture，与解码帧**完全同构**，IOSurface 共享已实测（1500× 代差） |
+| blit 管线范本 | `platform/apple/blit_pass.mm:41-101` | MSL→ShaderModule→Pipeline→绘制的完整装配模式，特效 pass 直接克隆 |
 | Metal 设备/GFX 门面 | `core/src/gfx/gfx_device.cpp`（GFX-001 已完成） | `RenderFrame(ctx,target,client)` 帧编排已存在 |
-| 视频录制封装 | `pal/apple/media_encode.{h,mm}`（PALA-012） | `IMediaMuxer`：视频 CVPixelBuffer 按源格式写 H.264 + PCM(kFloat32/kInt16)→AAC，PTS 用 RationalTime 网格无漂移 |
-| 能力查询 | `core/include/cq/pal/capabilities.h:20-38` | 已有 kGpuMetal/kComputeShader/kNpuInference 等，按需新增枚举 |
+| 视频录制封装 | `platform/apple/media_encode.{h,mm}`（PALA-012） | `IMediaMuxer`：视频 CVPixelBuffer 按源格式写 H.264 + PCM(kFloat32/kInt16)→AAC，PTS 用 RationalTime 网格无漂移 |
+| 能力查询 | `core/include/cq/platform/capabilities.h:20-38` | 已有 kGpuMetal/kComputeShader/kNpuInference 等，按需新增枚举 |
 | 预览上屏 | SharedUI `MetalPreviewView`/`PreviewFrameRenderer` | MTKView + 恒等 blit 的上屏模式可被相机预览借用 |
 | Swift 绑定惯例 | `bindings/swift/Sources/ChuanqiCut/` | 一类型一文件；新 ABI 组按 Session.swift 模式包装 |
 
 ### 2.2 缺口（必须新做）
 
-1. **PAL 相机契约 + Apple 实现**：`core/include/cq/pal/camera.h`（冻结契约，零平台类型）+ `pal/apple/camera_capture.{h,mm}`。
+1. **Platform 相机契约 + Apple 实现**：`core/include/cq/platform/camera.h`（冻结契约，零平台类型）+ `platform/apple/camera_capture.{h,mm}`。
 2. **外部帧渲染入口**：`PreviewRenderer` 只吃时间线快照（`preview_renderer.cpp:186-210`），无外部帧入口；需要 `cq_preview_render_external_frame` 之类的直通路径或独立 CameraRenderer。
-3. **特效链的 PAL 扩展（两处硬缺口）**：
+3. **特效链的 Platform 扩展（两处硬缺口）**：
    - `IRenderTarget` 只能自建纹理，**无法把已有 ITexture 包装成渲染目标** → 磨皮→LUT→贴纸的多 pass ping-pong 走不通；
-   - `ICommandEncoder` **无 compute dispatch API**（`pal/gfx.h:159`）→ 频率分解磨皮需要 compute（或 fragment 双 pass 替代）。
+   - `ICommandEncoder` **无 compute dispatch API**（`platform/gfx.h:159`）→ 频率分解磨皮需要 compute（或 fragment 双 pass 替代）。
 4. **检测契约**：core 无 `ai/observation.h` 之类的中性观测结构（人脸框/关键点/姿态/宠物）。
 5. **Portable shader 层为零**：`shaders/src/` 空目录，SPIR-V 路径在 Metal 上直接返回 `kInternal`（`gfx_metal.mm:581-583`），SHADER-001 未启动。
 6. **首页/导航**：root 直接是 EditorView（`iOSApp/ChuanqiCutApp.swift:32-38`），且 `EditorViewModel`（含内核 Session）在 App.init 就创建——首页形态下要改为**进编辑器时惰性创建**。
@@ -90,7 +90,7 @@
 
 ### 3.2 与架构红线的对照
 
-- 红线 #2（PAL 头零平台类型）：相机帧以 `NativeImageHandle`（opaque，内含 CVPixelBuffer）过契约，与 media.h 的既有做法一致；
+- 红线 #2（Platform 头零平台类型）：相机帧以 `NativeImageHandle`（opaque，内含 CVPixelBuffer）过契约，与 media.h 的既有做法一致；
 - 红线 #3（能力运行时查询）：双摄、动物姿态、ANE 等全部走 `cq_query_capability` 新增枚举；
 - 红线 #4（有理数时间）：采集时间戳 CMTime → `RationalTime`（timescale 沿 ADR-0009 的 120000 网格）；
 - 红线 #8（主线程零阻塞）：采集回调在专用串行队列；检测降频（人脸类每帧或 15Hz [E]）在独立队列；渲染在 MTKView 渲染线程。
@@ -131,7 +131,7 @@
 
 | 特效 | 算法 | GPU 形态 | 备注 |
 |---|---|---|---|
-| 磨皮 | 频率分解（低频保边+高频保留）或引导/双边滤波 | **compute 优先**（需 PAL 补 dispatch API）；fragment 双 pass 为替代路径 | 既有决策书已定频率分解+Metal compute |
+| 磨皮 | 频率分解（低频保边+高频保留）或引导/双边滤波 | **compute 优先**（需 Platform 补 dispatch API）；fragment 双 pass 为替代路径 | 既有决策书已定频率分解+Metal compute |
 | 美白/红润/滤镜 | 3D LUT（.cube 或 baked 条带）+ 强度混合 | fragment 单 pass | COLOR-002 既有规划 |
 | 美型(瘦脸/大眼等) | 局部平移形变/TPS → 三角剖分 mesh 或 UV offset map | 顶点偏移（Delaunay 索引一次性上传，逐帧仅插值参数） | AI-021/022 既有规划（MeshWarp 与 UV Map 同接口） |
 | 美体(瘦腰/长腿) | 人体姿态关节定位 → 区域分段垂直/水平形变 + 人像分割保背景 | fragment/compute + mesh | **复杂度高，建议 Phase C**；先做 2-3 个基础形变 |
@@ -143,7 +143,7 @@
 
 ```
 相机帧纹理 → [磨皮 compute/fragment] → [LUT/调色] → [美型 warp] → [贴纸/道具叠加] → 上屏/录制
-             └────────── ping-pong 中间纹理链（需要 PAL 扩展②）──────────┘
+             └────────── ping-pong 中间纹理链（需要 Platform 扩展②）──────────┘
 ```
 
 特效参数全部由 core 下发（C++ 生成 mesh/参数，shader 只执行），保证三端一致（红线 #1）。
@@ -169,8 +169,8 @@
 [ABI] cq_camera_* / cq_gfx_import_* / cq_preview_render_external_frame（新增 ABI 组）
 [core] EffectChain（磨皮/LUT/warp/叠加 参数与 mesh 生成，C++20）
        ai/observation.h（中性观测结构）+ 平滑后处理
-[pal ] camera_capture.mm（AVCapture Session/MultiCam → NativeImageHandle + RationalTime）
-       vision_detector.mm（Vision/CoreML → 中性观测）        ← 检测在 PAL，后处理在 core
+[platform ] camera_capture.mm（AVCapture Session/MultiCam → NativeImageHandle + RationalTime）
+       vision_detector.mm（Vision/CoreML → 中性观测）        ← 检测在 Platform，后处理在 core
 ```
 
 - 采集 → 渲染：`AVCaptureVideoDataOutput` 回调（专用队列）→ `INativeImageImporter::Import`（既有零拷贝）→ 特效链 → 纹理句柄 → MTKView 上屏；
@@ -212,7 +212,7 @@
 
 | # | 决策 | 选项 | 建议倾向 |
 |---|---|---|---|
-| D1 | 特效算法来源 | ① 自研（Vision/MediaPipe模型 + Metal，零授权费，效果靠迭代）② 商业 SDK（该厂商云服务/FaceUnity/商汤，开箱即用但授权费+依赖治理+适配层） | ① 自研打底；商业 SDK 若引入也走 PAL 适配层（红线 #7/#10） |
+| D1 | 特效算法来源 | ① 自研（Vision/MediaPipe模型 + Metal，零授权费，效果靠迭代）② 商业 SDK（该厂商云服务/FaceUnity/商汤，开箱即用但授权费+依赖治理+适配层） | ① 自研打底；商业 SDK 若引入也走 Platform 适配层（红线 #7/#10） |
 | D2 | 检测器 MVP 路线 | ① Vision 76 点先行，MediaPipe 468 后续切换 ② 等 AI-013 spike 直接上 468 | ① 先通链路；检测器做可替换接口 |
 | D3 | 双摄产品形态 | ① 画中画合成（过渲染链，可录合成流）② 左右分屏 ③ 仅预览合成、录制只录主摄 | ① 画中画（美颜相机主流形态） |
 | D4 | 特效 shader 落层 | ① 先 Platform-Native MSL（快，记 ADR"例外/欠账"，Portable 层在 Android 阶段前补）② 先建 SHADER-001 Portable 工具链再写特效（守红线 #6 但显著拉长） | ① Native 先行 + ADR 记账（先例：blit_fullscreen_msl.h）；**此为红线例外，须用户确认** |
@@ -223,7 +223,7 @@
 | 风险 | 等级 | 缓解 |
 |---|---|---|
 | 双摄分辨率/帧率上限未知（1080p/流 为 [E]） | 中 | 真机 activeFormat 实测入库（baselines）；能力查询动态适配 |
-| PAL 契约扩展（compute dispatch / 纹理当 RT）触碰冻结契约 | 中 | CORE-006 变更走独立 ADR；fragment 替代路径兜底 |
+| Platform 契约扩展（compute dispatch / 纹理当 RT）触碰冻结契约 | 中 | CORE-006 变更走独立 ADR；fragment 替代路径兜底 |
 | Vision 76 点做美型效果不达预期 | 中 | 检测器可替换；468 模型路径已规划（ADR-0005） |
 | 宠物美化期望差（Vision 仅猫狗、姿态 25 关节、iOS 17+） | 低 | 需求侧对齐：宠物以贴纸/道具为主，形变为辅 |
 | 实时特效与 30fps 预览的功耗/温控 | 中 | 特效逐项开关+降级；真机温控实测（ADR-0010 §6 埋点先行） |

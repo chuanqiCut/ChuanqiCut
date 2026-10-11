@@ -72,7 +72,7 @@ CTEST_BIN=$(dirname $CMAKE_BIN)/ctest
 PY=/path/to/python3
 
 $CTEST_BIN --test-dir build                                  # C++ 单测 + 编译验证 + 静态门禁
-$PY tools/pal/check_pal_headers.py                             # PAL/GFX/MEDIA 头零平台类型、零 FFmpeg 类型
+$PY tools/platform/check_platform_headers.py                             # Platform/GFX/MEDIA 头零平台类型、零 FFmpeg 类型
 $PY tests/golden/verify.py                                     # golden 样本库 21 段（ffprobe 实测）
 $PY tools/deps/deps.py validate third_party/manifest.toml      # 依赖清单 schema
 $PY tools/deps/deps.py lock   third_party/manifest.toml --out /tmp/lock   # 不带 --allow-placeholder
@@ -82,10 +82,10 @@ $PY tools/deps/selfcheck.py                                    # 解析器自测
 
 ### 几条门禁的设计意图（别把它们当形式）
 
-- **`check_pal_headers.py`**：零平台类型**编译证明不了**
+- **`check_platform_headers.py`**：零平台类型**编译证明不了**
   （AppleClang 下头文件里出现 `CVPixelBufferRef` 照样能编译过）。该脚本会先**剥离注释与字符串**
   再匹配，因为朴素 grep 会把注释里的说明误报成违规。
-  覆盖 `core/include/cq/{pal,gfx,media}/`，新增头文件会自动纳入。
+  覆盖 `core/include/cq/{platform,gfx,media}/`，新增头文件会自动纳入。
 - **`deps.py lock` 默认拒绝占位 sha256**：全 0 / 全 1 / 全 2 这类明显占位会被拦下。
   这条的意义是防止「声明一个我们明知不存在的产物」——那比不声明更糟。
 - **`-Werror`**：警告集合含 `-Wconversion -Wshadow -Wold-style-cast`。
@@ -96,8 +96,8 @@ $PY tools/deps/selfcheck.py                                    # 解析器自测
 | 平台 | 状态 |
 |---|---|
 | Apple（macOS） | 渲染 / 解封装 / 硬解 / 零拷贝导入 / 导出 均已实现并验证 |
-| Android | 未开始（PAL 接口已冻结，可直接实现） |
-| 鸿蒙 | 本期仅 `pal/ohos/` 接口编译检查 |
+| Android | 未开始（Platform 接口已冻结，可直接实现） |
+| 鸿蒙 | 本期仅 `platform/ohos/` 接口编译检查 |
 
 Apple 端的能力链路：
 
@@ -120,5 +120,5 @@ Apple 端的能力链路：
    `set_source_files_properties`(ARC)、`find_library`+`target_link_libraries`(系统框架)。
    漏了只会在链接期报「符号未定义」，且**报错只显示引用位置、不指明缺哪个框架**，排查成本高。
 2. 修改 golden 后必须重跑 `tests/golden/verify.py`——校验是 ffprobe 实测，不迁就产物。
-3. 改 `docs/specs/PAL-接口契约.md` 或 `core/include/cq/**` 前先确认是否被冻结。
-   PAL 接口已冻结（CORE-006），**新增**接口可以，**修改既有签名**需先提 ADR。
+3. 改 `docs/specs/Platform-接口契约.md` 或 `core/include/cq/**` 前先确认是否被冻结。
+   Platform 接口已冻结（CORE-006），**新增**接口可以，**修改既有签名**需先提 ADR。

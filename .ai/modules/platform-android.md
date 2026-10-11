@@ -1,8 +1,8 @@
-# 模块：Android 平台适配（PAL）
+# 模块：Android 平台适配（Platform）
 
 > **归属**：集成机（P2 预留） —— 归属表见 docs/tasks/PLAN-三线并行.md §1a / ADR-0029（双机分工与门禁跑批，2026-10-07）
 
-**边界**：`pal/android/`、`apps/android/`、`bindings/kotlin/`
+**边界**：`platform/android/`、`apps/android/`、`bindings/kotlin/`
 
 ## 基线
 minSdk **26 (Android 8.0)**｜ABI **arm64-v8a only**｜NDK r27+｜C++20 + libc++_shared｜Kotlin + Compose
@@ -23,7 +23,7 @@ minSdk **26 (Android 8.0)**｜ABI **arm64-v8a only**｜NDK r27+｜C++20 + libc++
 ## 已知坑
 1. **MediaCodec 两种输出模式**：Surface 模式可零拷贝但无法读回 CPU；Buffer 模式可读回但有拷贝。默认 Surface + 零拷贝，需 CPU 访问或命中黑名单时降级 Buffer。
 2. **seek 只有关键帧级** → 统一为精确 seek 语义，内部 seek 到关键帧后向前解码
-3. **YUV stride 对齐与 iOS 不同** → PAL 内统一转换
+3. **YUV stride 对齐与 iOS 不同** → Platform 内统一转换
 4. **硬解实例数受限**（部分芯片仅 1–2 路）→ DecoderPool 调度 + 降级
 5. **厂商 ROM 的 EGLImage / Vulkan 实现缺陷** → 设备黑名单 + 运行时降级
 6. **NNAPI 碎片化** → 必须 XNNPACK(CPU) 回退

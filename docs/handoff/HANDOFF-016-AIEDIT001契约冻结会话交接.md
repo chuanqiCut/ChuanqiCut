@@ -20,7 +20,7 @@
 | `engine/core/include/cq/ai/feature_report.h` | cq.featurereport/1 类型（聚合统计，上云唯一载荷） |
 | `engine/core/include/cq/ai/edit_plan.h` | cq.editplan/1 类型 + 动词集 9 + op/转场名映射声明 |
 | `engine/core/include/cq/ai/llm_client.h` | ILlmClient / LlmConfig（key 引用不落明文） |
-| `engine/core/include/cq/pal/net.h` | INetTransport（PostJson/PostSse）+ SSE 拆帧边界 |
+| `engine/core/include/cq/platform/net.h` | INetTransport（PostJson/PostSse）+ SSE 拆帧边界 |
 | `engine/core/include/cq/base/status.h` | +kAiPlan* 段 9500~9513 + 分类 11（只追加） |
 | `engine/core/src/ai/plan/edit_plan_validator.{h,cpp}` | 三层校验：手写 JSON → 结构 → 语义（私有头） |
 | `engine/core/src/ai/plan/edit_plan_golden/` | 58 JSON 夹具 + manifest.txt（append-only） |
@@ -33,7 +33,7 @@
    `-I engine/core/src` 拿私有头，tests/CMakeLists 已写）。
 2. **AIEDIT 下一批（依赖 001 已解，可并行排）**：
    - AIEDIT-002 视觉特征（消费 feature_report.h，产出方）
-   - AIEDIT-004 ILlmClient 实现 + pal/apple/net（消费 net.h/llm_client.h）
+   - AIEDIT-004 ILlmClient 实现 + platform/apple/net（消费 net.h/llm_client.h）
    - AIEDIT-011 本地规则引擎（输出同 schema EditPlan，generator="local_rules"）
    - AIEDIT-005 依赖 004+011；AIEDIT-006 依赖 001 可先行（command.h 批次内独占）
 3. 真机无涉（纯 C++ 契约层）。

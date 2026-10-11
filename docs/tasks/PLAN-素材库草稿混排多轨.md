@@ -12,7 +12,7 @@
 |---|---|---|
 | 本地素材库 | Session 级 AssetRegistry + 编辑器最小 MediaLibrary 面板（UIA-009）；相册/文件导入链路（UIA-011/012）；拍摄产出进编辑（CAM-005） | 无**跨会话持久**素材库；tmp+importMedia 导入链是绝对路径欠账（UIA-009/011/012 登记"素材库整理"待收口）；无管理功能（搜索/重命名/删除/去重/信息）；拍摄/导出产出无统一落库点 |
 | 草稿 | 项目文件格式已定义：`Project.chuanqicut/` bundle + ADR-0006 版本模型（`.ai/modules/project.md`） | `core/src/project/` **零实现**（PROJ-001~004 全部未动）；无草稿箱（列表/封面/打开/重命名/复制/删除）；自动保存无接线 |
-| 混排 + GIF/LivePhoto 产出 | 视频帧链完整（MEDIA-020 精确 seek + PALA-010/011）；静图仅预览直导纹理（`INativeImageImporter`，单帧语义） | 无 still/animated/livephoto 素材类型与帧源（GIF 帧延迟→有理时间）；无 GIF/LivePhoto 导出分支；FFmpeg 仅 demux（ADR-0003）→ 动图解码必须走系统解码（PAL），运行时能力查询（红线 #3） |
+| 混排 + GIF/LivePhoto 产出 | 视频帧链完整（MEDIA-020 精确 seek + PALA-010/011）；静图仅预览直导纹理（`INativeImageImporter`，单帧语义） | 无 still/animated/livephoto 素材类型与帧源（GIF 帧延迟→有理时间）；无 GIF/LivePhoto 导出分支；FFmpeg 仅 demux（ADR-0003）→ 动图解码必须走系统解码（Platform），运行时能力查询（红线 #3） |
 | 多轨 | MODEL-001 多轨模型（跨轨重叠允许）+ AddTrack/RemoveTrack 命令；BACKLOG 已有 RENDER-011（合成节点）、AUDIO-004（多轨混音） | 渲染只画**第一条命中视频轨**（BIND-003 已登记限制）；RENDER-001 RenderGraph 未落地——**多轨、导出、转场共同瓶颈**（其依赖 GFX-001 已于 2026-09-25 落地，无前置阻塞） |
 
 **结论（关键路径）**：四块需求里三块压在两个未落地地基上——`RENDER-001`（多轨合成 + 导出共用图）与
@@ -28,8 +28,8 @@
 |---|---|---|
 | **ADR-0025 素材库为资产唯一真源** | 拍摄/导出/智能成片产出默认落素材库（App 沙箱）；**入相册/文件一律用户显式同意**（CAM-005 现行"直接存相册"同步改口径）；草稿**引用**素材库素材（相对路径 + 资产 ID，project.md 硬约束 #5），不拷贝入草稿；素材被草稿引用时删除→标记缺失（沿用素材库失效标记语义），不做静默连删 | 红线 #1（管理逻辑下沉 core）、红线 #5 |
 | **ADR-0026 多类型素材的时间语义** | 素材类型枚举 video / still / animated / livephoto；静图默认时长策略（建议 4s，可改）；GIF/WebP 帧延迟 → 120000 有理网格（非均匀 delay、0-delay 帧合并规则显式定义）；LivePhoto 按视频素材处理（封面=still 帧），不引入特殊轨 | 红线 #4（有理时间） |
-| **ADR-0027 动图解码归属 PAL 系统能力** | Apple=ImageIO 逐帧解码（CGImageSource），Android=平台解码器；可用性走 `cq_query_capability()`；FFmpeg 不破例（ADR-0003） | 红线 #2/#3、ADR-0003 |
-| **ADR-0028 导出格式分支** | 视频/GIF/LivePhoto 共用同一 RenderGraph（红线 #9），差异只在输出目标：GIF=逐帧量化编码器（PAL）；LivePhoto=视频+封面**配对**写入相册（PAL 接口），文件出口=写文件对；先落素材库，入相册/文件是显式授权动作 | 红线 #9 |
+| **ADR-0027 动图解码归属 Platform 系统能力** | Apple=ImageIO 逐帧解码（CGImageSource），Android=平台解码器；可用性走 `cq_query_capability()`；FFmpeg 不破例（ADR-0003） | 红线 #2/#3、ADR-0003 |
+| **ADR-0028 导出格式分支** | 视频/GIF/LivePhoto 共用同一 RenderGraph（红线 #9），差异只在输出目标：GIF=逐帧量化编码器（Platform）；LivePhoto=视频+封面**配对**写入相册（Platform 接口），文件出口=写文件对；先落素材库，入相册/文件是显式授权动作 | 红线 #9 |
 
 ## 3. 分期与卡清单（线归属按 PLAN-三线并行 §1）
 
@@ -42,7 +42,7 @@
 | EXPORT-001（既有号） | C | 导出控制器：状态机/进度/取消/错误码 | MEDIA-012、CORE-005 |
 | LIB-001 | C | 素材库契约冻结：资产类型枚举（video/still/animated/livephoto）、存储布局、元数据 schema、与 Session AssetRegistry 的关系 | 开工前定稿 ADR-0025 |
 | LIB-002 | C | 素材库存储与索引（`core/src/library/`：入库/扫描/检索/失效标记） | LIB-001 |
-| LIB-003 | C | 缩略图与元数据 PAL（probe 复用 `cq_media_probe`；缩略图生成/缓存） | LIB-002 |
+| LIB-003 | C | 缩略图与元数据 Platform（probe 复用 `cq_media_probe`；缩略图生成/缓存） | LIB-002 |
 
 ### 期 2 — 能力成型（C 线为主 + 一张跨线卡）
 

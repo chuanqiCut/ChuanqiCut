@@ -7,16 +7,16 @@
 id:          TASK-MEDIA-022
 layer:       SDK
 goal:        VideoToolbox 解码器支持 HEVC（iPhone 相册默认格式），导入/预览不再对 HEVC 报 2001；探测失败原因向 UI 诚实透传
-input:       [pitfalls 无（既有文档化限制）, .ai/modules/pal-apple.md PALA-011 范围, ADR-0003]
-output:      [pal/apple/media_decode.mm HEVC 支持, 绑定层 probe 状态透传, AppEntry 错误文案分级, ctest/共享测试]
-write_set:   pal/apple/media_decode.{h,mm}、pal/apple/media_demux.mm（'hev1'/'dvh1'/'dvhe'
+input:       [pitfalls 无（既有文档化限制）, .ai/modules/platform-apple.md PALA-011 范围, ADR-0003]
+output:      [platform/apple/media_decode.mm HEVC 支持, 绑定层 probe 状态透传, AppEntry 错误文案分级, ctest/共享测试]
+write_set:   platform/apple/media_decode.{h,mm}、platform/apple/media_demux.mm（'hev1'/'dvh1'/'dvhe'
              映射 —— 实测 ffmpeg 产出的 HEVC 是 'hev1'，缺映射时 demuxer 报 kUnknown）、
              bindings/swift/Sources/ChuanqiCut/{Timeline.swift,ChuanqiCut.swift}
              （Status: Error 一致性）、
              apps/apple/packages/SharedUI/Sources/SharedUI/{AppEntry.swift,Editor/MediaSheet.swift}、
              tests/unit/test_media_decode_apple.cpp、bindings Tests/ProbeTests.swift(新)、
              SharedUITests/{RepoPath.swift,MediaImportTests.swift}
-read_set:    .ai/modules/{media,pal-apple,preview}.md、ADR-0003、ADR-0010、ADR-0017
+read_set:    .ai/modules/{media,platform-apple,preview}.md、ADR-0003、ADR-0010、ADR-0017
 deps:        []
 acceptance:
   - cq_media_probe_duration 对 gf_1080p_hevc.mp4 返回 0（当前实测 2001 kDecodeUnsupported）
@@ -40,10 +40,10 @@ parallel:    true   # 线 C 域；与线 A SharedUI 错误文案小改解耦（�
 
 1. iPhone 相册默认录制 **HEVC**（"高效"格式；Dolby Vision 亦为 HEVC 系容器）。
 2. 导入流程第一步 `probeMediaDuration` 实际打开**完整解码管线**（demuxer + 解码器），
-   而 `VideoToolboxDecoder::Open`（`pal/apple/media_decode.mm` 143/194 行）**只接受
+   而 `VideoToolboxDecoder::Open`（`platform/apple/media_decode.mm` 143/194 行）**只接受
    H.264**：`bound_codec_ != kH264` / `codec != kCMVideoCodecType_H264` →
    `kDecodeUnsupported (2001)`。HEVC 时长探测从未成功过 —— 该限制是
-   PALA-011 的文档化已知范围（`.ai/modules/pal-apple.md`「后续任务」）。
+   PALA-011 的文档化已知范围（`.ai/modules/platform-apple.md`「后续任务」）。
 3. 绑定层 `probeMediaDuration` 把一切非 0 码折叠成 nil，`importMedia` 再折叠成
    `.decodeError` → UI 统一显示「解码失败」，掩盖了「格式不支持」。
 4. 实测（本机 macOS 宿主，bindings swift test 注入，2026-10-05）：
@@ -87,11 +87,11 @@ acceptance 四条全过。
    （osstatus 进日志）；VT 会话拒绝（如杜比视界基底不被接受）→ 2000 + osstatus
    诊断打印。能力查询沿用既有 hwDecodeHevc 位。
 6. **一致性**：预览与导出走同一条解码链（变更在链路底层，两端同受益）；同 seek
-   同结果由 pala_decode 端到端 4 目标时间断言锁定；iOS/macOS 共用本 PAL 实现。
+   同结果由 platform_apple_decode 端到端 4 目标时间断言锁定；iOS/macOS 共用本 Platform 实现。
 
  Checklist：时序/内存/取消由既有测试模式覆盖（150 帧 pts 单调 + 像素 + drain，
- HEVC 段同断言强度）；golden 像素校验 = pala_decode 的 smptebars 断言；性能未实测
+ HEVC 段同断言强度）；golden 像素校验 = platform_apple_decode 的 smptebars 断言；性能未实测
  （解码耗时 hypothesis：与 H.264 同量级，真机回填 baselines）。
 
 ## 回写
-`.ai/modules/pal-apple.md` PALA-011 段增补 HEVC；`.ai/modules/media.md` 若流信息映射变化。
+`.ai/modules/platform-apple.md` PALA-011 段增补 HEVC；`.ai/modules/media.md` 若流信息映射变化。

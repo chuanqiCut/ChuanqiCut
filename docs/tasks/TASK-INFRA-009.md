@@ -19,13 +19,13 @@ write_set:   apps/apple/**, ChuanqiCut.podspec, Gemfile, Gemfile.lock,
              docs/tasks/TASK-BACKLOG.md（追加行）, docs/COCOAPODS.md,
              .ai/modules/ui-apple.md, .ai/memory/pitfalls.md
 read_set:    bindings/swift/**, core/include/**, core/src/**（只读！编译验证）,
-             pal/apple/**, cmake/*.cmake, docs/tasks/TASK-UIA-002.md
+             platform/apple/**, cmake/*.cmake, docs/tasks/TASK-UIA-002.md
 deps:        [INFRA-002, UIA-002]
 acceptance:
   - apps/apple/ios 与 apps/apple/mac 各自独立：project.yml / Podfile /
     Gemfile / Gemfile.lock 四件套齐全，根目录不再有 Gemfile
   - `bundle exec pod install` 在两个目录均成功，SDK 走 Source subspec
-    （现场编译 core C++20 + ObjC++ PAL + Swift 绑定，不依赖预构建 xcframework）
+    （现场编译 core C++20 + ObjC++ Platform + Swift 绑定，不依赖预构建 xcframework）
   - macOS App 全量编译通过（xcodebuild -workspace … -scheme ChuanqiCutMacApp）
   - iOS App 编译通过（xcodebuild -destination 'generic/platform=iOS'
     CODE_SIGNING_ALLOWED=NO；真机运行不在本任务范围）

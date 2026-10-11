@@ -197,7 +197,7 @@ LGPL v2.1 对静态链接的核心要求是**接收者能够用修改过的库�
 
 1. 所有第三方库以 `-fvisibility=hidden` 静态链接进内核，最终产物 strip 非导出符号。
 2. SDK 公共头 `include/cq/cq_sdk.h` 只允许出现：基础 C 类型、opaque 句柄、项目自有枚举与结构体。
-3. 跨 PAL 边界传递平台原生图像对象时，统一包装为 `CQNativeImageHandle`（opaque）。平台类型转换只在 `pal/<platform>/` 内部进行。
+3. 跨 Platform 边界传递平台原生图像对象时，统一包装为 `CQNativeImageHandle`（opaque）。平台类型转换只在 `platform/<platform>/` 内部进行。
 4. 若必须引入某个库的头文件到内部实现，只允许出现在 `.cpp`/`.mm` 中，不允许出现在任何 `.h`。
 
 ---

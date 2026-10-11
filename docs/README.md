@@ -50,6 +50,10 @@ cat docs/handoff/HANDOFF-004-*.md      # 3. 最近交接（状态以最新一份
 | [`RESEARCH-006-独立播放器内核与交互调研.md`](research/RESEARCH-006-独立播放器内核与交互调研.md) | 独立播放器内核选型（AVPlayer 过渡 vs 自研 C++ session vs FFmpeg/mpv 等 8 方案对比）与交互范式（一线产品手势/控制层/键盘/无障碍），支撑 SPEC-UIA-020 与 ADR-0022 |
 | [`RESEARCH-007-顶级拍摄剪辑App布局与操作逻辑深度调研.md`](research/RESEARCH-007-顶级拍摄剪辑App布局与操作逻辑深度调研.md) | 全球顶级拍摄/剪辑 App 的控件分区、手势与面板切换规则深拆（18 家），§5 delta 表为编辑域 Spec 的操作层输入（建议位编号备注见文内） |
 | [`RESEARCH-008-对标 App移动端编辑页范式与框架选型.md`](research/RESEARCH-008-对标 App移动端编辑页范式与框架选型.md) | 对标 App移动端编辑页范式拆解 + SwiftUI/UIKit 框架选型，下游 ADR-0024 / BACKLOG §12（**原 006，2026-10-07 撞号让位改号**） |
+| [`RESEARCH-009-人像效果对标对标平台对标 AppINS与追平路线.md`](research/RESEARCH-009-人像效果对标对标平台对标 AppINS与追平路线.md) | 人像效果对标（对标平台/对标 App/Instagram）与追平路线；数字一律 [E]，验收以 baselines 实测为准 |
+| [`RESEARCH-010-编辑功能现状核验与对标 App对齐路线.md`](research/RESEARCH-010-编辑功能现状核验与对标 App对齐路线.md) | **只读代码核验**编辑功能真实现状（不采信完成标记）+ 对标 App对齐路线；关联 ADR-0034 / ADR-0024 |
+| [`RESEARCH-011-仓库布局与分层整改方案.md`](research/RESEARCH-011-仓库布局与分层整改方案.md) | 仓库布局与分层整改（磁盘实勘 + 业界布局惯例对照；**只出方案不动代码**，迁移待拍板），2026-10-10 22:10 |
+| [`RESEARCH-012-商用拍摄剪辑SDK对外Demo与UI调研.md`](research/RESEARCH-012-商用拍摄剪辑SDK对外Demo与UI调研.md) | 商用 SDK 竞品（该厂商 其创作 SDK × 阿里云 UGSV **iOS 端**）demo 获取门槛与 UI 功能清单；**UI 配置化（面板/色卡/尺寸 JSON）** 与 **公开 podspec 仓库 + CDN 直链可得性** 为主要增量 |
 | `legacy/`（7 份） | 第一代调研素材（2026-09-23 前）：6 份 `技术调研_*.md` + `技术方案决策书`。**只读**，每份头部有状态横幅；性能数字一律 [E]、结论已被评审修正 |
 
 **规则**：新的调研产出一律建 `RESEARCH-00x-<标题>.md`（编号纪律见 ADR-0019）；
@@ -71,10 +75,10 @@ cat docs/handoff/HANDOFF-004-*.md      # 3. 最近交接（状态以最新一份
 | [0008](decisions/ADR-0008-FFmpeg本地git管理与依赖版本锁定.md) | FFmpeg 走官方镜像 + 本地 git；源码依赖锁 commit |
 | [0009](decisions/ADR-0009-项目timescale修正为120000.md) | 项目 timescale 60000 → 120000 |
 | [0010](decisions/ADR-0010-平台支持基线与开发参数.md) | 平台支持基线与开发参数 |
-| [0011](decisions/ADR-0011-core调用PAL工厂的隔离规则.md) | core 调用 PAL 工厂的隔离规则 |
+| [0011](decisions/ADR-0011-core调用Platform工厂的隔离规则.md) | core 调用 Platform 工厂的隔离规则 |
 | [0012](decisions/ADR-0012-时间线交互的命令提交时机与撤销栈线程边界.md) | 时间线交互的命令提交时机与撤销栈线程边界 |
 | [0013](decisions/ADR-0013-相机特效Shader先行Native层与Portable欠账.md) | 相机特效 Shader：Native 层先行 + Portable 欠账 |
-| [0014](decisions/ADR-0014-相机模块采用iOS原生栈.md) | **相机模块采用 iOS 原生栈**（相机域豁免 PAL/C ABI） |
+| [0014](decisions/ADR-0014-相机模块采用iOS原生栈.md) | **相机模块采用 iOS 原生栈**（相机域豁免 Platform/C ABI） |
 | [0015](decisions/ADR-0015-相册选择器系统过渡与自研浏览器.md) | 相册选择器：系统 picker 过渡 + 自研浏览器 |
 | [0016](decisions/ADR-0016-预览取帧的线程归属与共享命令队列.md) | 预览取帧的线程归属与共享命令队列 |
 | [0017](decisions/ADR-0017-顺序取帧快路径与解码器显示序重排.md) | 顺序取帧快路径与解码器显示序重排 |
@@ -101,10 +105,10 @@ cat docs/handoff/HANDOFF-004-*.md      # 3. 最近交接（状态以最新一份
 |---|---|---|
 | `ARCH-` | **架构方案** | [ARCH-001 技术方案总纲](specs/ARCH-001-技术方案总纲.md)（主方案）· [ARCH-002 依赖治理](specs/ARCH-002-依赖治理与开源SDK能力管理.md) · [ARCH-003 内核与GPU-Shader策略](specs/ARCH-003-跨平台内核与GPU-Shader策略.md) · [ARCH-004 平台适配矩阵](specs/ARCH-004-平台适配矩阵与Android-HarmonyOS落地.md) · [ARCH-005 UI层策略](specs/ARCH-005-UI层策略与工程结构.md) |
 | `<功能域>-` | **功能 Spec** | [CAM-001 相机与首页](specs/CAM-001-相机与首页.md) · [UIA-002 编辑器主框架](specs/UIA-002-编辑器主框架.md) · [UIA-011 相册素材导入](specs/UIA-011-相册素材导入.md) · [UIA-012 相册多选批量导入](specs/UIA-012-相册多选批量导入.md) · [UIA-013 自研相册浏览器](specs/UIA-013-自研相册浏览器.md) · [UIA-019 统一面板框架与四端布局](specs/UIA-019-统一面板框架与四端布局.md) · [AIEDIT-001 智能成片](specs/AIEDIT-001-智能成片.md) |
-| `PAL-` | **接口契约** | [PAL-接口契约](specs/PAL-接口契约.md)（§4 = GFX/Media 契约，被 `.ai/modules/pal.md`、`gfx.md`、`media.md` 引用） |
+| `Platform-` | **接口契约** | [Platform-接口契约](specs/Platform-接口契约.md)（§4 = GFX/Media 契约，被 `.ai/modules/platform.md`、`gfx.md`、`media.md` 引用） |
 | `AI-ENG-` | **工程方法规范** | [AI-ENG-001](specs/AI-ENG-001.md)（AI 原生研发工作流） |
 
-**规则**：新功能 Spec 用功能域前缀（如 `EXPORT-001`），不新造前缀体系；接口契约改动同步 `.ai/modules/pal.md`。
+**规则**：新功能 Spec 用功能域前缀（如 `EXPORT-001`），不新造前缀体系；接口契约改动同步 `.ai/modules/platform.md`。
 
 ---
 

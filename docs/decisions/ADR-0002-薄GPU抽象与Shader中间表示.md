@@ -36,7 +36,7 @@
 
 | | **Portable 层** | **Platform-Native 层** |
 |---|---|---|
-| 源码位置 | `shaders/src/*.glsl` | `pal/<platform>/shaders/*` |
+| 源码位置 | `shaders/src/*.glsl` | `platform/<platform>/shaders/*` |
 | 语言 | Vulkan 方言 GLSL 4.50 | 平台原生（MSL / GLSL ES / 平台扩展） |
 | 生成方式 | glslang → SPIR-V → SPIRV-Cross | 直接编译，无中间表示 |
 | 作用 | **跨平台基线，唯一必需实现** | **可选加速**，可完全不存在 |
@@ -61,7 +61,7 @@ RenderNode.specialize(platform) → 可选返回平台特化实现
 1. **Platform-Native 永远是可选的。** 任何效果都必须先有 Portable 实现，特化只能作为加速路径。否则该效果在其他平台无实现。
 2. **两者必须通过同一组一致性测试。** 同平台回归 PSNR ≥ 40dB；特化 vs portable 对比 PSNR ≥ 36dB、SSIM ≥ 0.98。差异过大说明特化实现有 bug。
 3. **加特化实现必须给出性能收益数据。** 收益不显著的（< 20% 帧时间改善）不予合入——它换来的是一份要长期维护的重复代码。
-4. **特化 shader 不得出现在 `shaders/src/`，也不得进入 core 层。** 只在 `pal/<platform>/shaders/`。
+4. **特化 shader 不得出现在 `shaders/src/`，也不得进入 core 层。** 只在 `platform/<platform>/shaders/`。
 
 ### 这个设计的实际收益
 

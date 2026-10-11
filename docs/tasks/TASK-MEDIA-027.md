@@ -72,9 +72,9 @@
 
 | 文件 | 改动 |
 |---|---|
-| `pal/apple/media_decode.h` | 新增 `kMaxQueuedFrames=12`、`kMaxMismatchStreak=8`、`order_mismatch_streak_` 与两个 Debug 计数器 |
-| `pal/apple/media_decode.mm` | ①无在途帧且不匹配时改为「连续 8 次仍等不到即按缺口交付并重锚」；②队列超 12 帧跳过重排判据强制交付；③`Flush()` 的 VTWait 换为轮询 + 1s 超时；④`OutputCallback` 改为先入队后登记；⑤Debug 队列深度/缺口/超上界日志 |
-| `pal/apple/media_demux.mm` | `RebuildReader` / `ReadPacket` 加 `@autoreleasepool`（泵线程是纯 C++ `std::thread`，**没有** autorelease pool） |
+| `platform/apple/media_decode.h` | 新增 `kMaxQueuedFrames=12`、`kMaxMismatchStreak=8`、`order_mismatch_streak_` 与两个 Debug 计数器 |
+| `platform/apple/media_decode.mm` | ①无在途帧且不匹配时改为「连续 8 次仍等不到即按缺口交付并重锚」；②队列超 12 帧跳过重排判据强制交付；③`Flush()` 的 VTWait 换为轮询 + 1s 超时；④`OutputCallback` 改为先入队后登记；⑤Debug 队列深度/缺口/超上界日志 |
+| `platform/apple/media_demux.mm` | `RebuildReader` / `ReadPacket` 加 `@autoreleasepool`（泵线程是纯 C++ `std::thread`，**没有** autorelease pool） |
 | `core/include/cq/media/system_frame_provider.h` | `AcquireExact` 加追帧上界 `kMaxChasePops=600`（单次调用解码帧数上限，防单帧独占泵线程 8 秒） |
 | `apps/apple/packages/SharedUI/Sources/SharedUI/AppEntry.swift` | DEBUG 剖面行增加 `pump_nonok/s` 与 `footprint=` （真机判断 jetsam 的唯一可观测点） |
 

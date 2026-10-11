@@ -7,10 +7,10 @@
 ## 1. 关键结论（新会话先读这段）
 
 1. **相机模块 = iOS 原生功能域**（ADR-0014）：Swift + AVFoundation + Vision/ARKit +
-   Core Image/Metal，落 `apps/apple/ios/iOSApp/Camera/`。**不经 PAL、不加 C ABI**。
+   Core Image/Metal，落 `apps/apple/ios/iOSApp/Camera/`。**不经 Platform、不加 C ABI**。
 2. **编辑器内核维持 C++ 跨端**：本转向只豁免相机实时域；录制产物经既有
    `cq_session`/`importMedia` 进时间线。剪辑业务红线不松动。
-3. **CAM-001 已回退**：`pal/camera.h`、`cq_sdk.h` 相机 ABI、3 个能力枚举当日删除
+3. **CAM-001 已回退**：`platform/camera.h`、`cq_sdk.h` 相机 ABI、3 个能力枚举当日删除
    （git checkout 7 文件 + 删 2 新文件），复跑门禁 **39/39**。别在旧文档里找相机契约。
 4. **扬长清单**（选型依据）：ARKit 人脸网格(1220 顶点)/Vision 76 点、AVDepthData
    景深、Center Stage、Core Image、MetalFX(A17 Pro+)、MultiCamSession 硬件时间戳、

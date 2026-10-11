@@ -2,7 +2,7 @@
 
 > **归属**：A/C 分子域（智能成片 AIEDIT→A；端侧推理效果链→C） —— 归属表见 docs/tasks/PLAN-三线并行.md §1a / ADR-0029（双机分工与门禁跑批，2026-10-07）
 
-**边界**：`core/src/ai/`、`core/include/cq/infer/`、`pal/<platform>/infer_*`
+**边界**：`core/src/ai/`、`core/include/cq/infer/`、`platform/<platform>/infer_*`
 
 ## MediaPipe 引不引入？（常被问，明确回答）
 
@@ -74,14 +74,14 @@ ADR-0005、ARCH-004 §1
 
 ```
 core/include/cq/ai/     feature_report.h / edit_plan.h / llm_client.h   ← 契约（AIEDIT-001 冻结）
-core/include/cq/pal/    net.h（INetTransport 抽象）
+core/include/cq/platform/    net.h（INetTransport 抽象）
 core/src/ai/analysis/   视觉特征（镜头/运动/质量，P0 零模型）             ← AIEDIT-002
 core/src/ai/audio_analysis/  音频特征（静音/LUFS/包络，需解码扩档）      ← AIEDIT-003
 core/src/ai/plan/       EditPlan 校验器 / Prompt 管线 / timeline 摘要    ← AIEDIT-001/005
 core/src/ai/llm/        OpenAI-compatible 客户端（纯 C++）               ← AIEDIT-004
 core/src/ai/fallback/   本地规则引擎（离线降级，同 schema 输出）          ← AIEDIT-011
 core/src/ai/plan/plan_executor  EditPlan→Command 批次                    ← AIEDIT-006
-pal/apple/net/          URLSession + SSE（零第三方）                     ← AIEDIT-004
+platform/apple/net/          URLSession + SSE（零第三方）                     ← AIEDIT-004
 ```
 
 ## 硬规则（违反即 PR 驳回）
@@ -115,14 +115,14 @@ tools/build/build_core.sh --platform=apple
 
 | Task ID | 标题 | 状态 |
 |---|---|---|
-| AIEDIT-001 | 智能成片契约冻结（FeatureReport/EditPlan/ILlmClient/INetTransport + 校验器） | **编码完成（2026-10-08）**：本机 clang13 直编单测 117 检查 0 失败（golden 58 例：合法 18/18、非法 40/40 错误码精确匹配）；**构建机门禁未跑 = 池[8]** |
+| AIEDIT-001 | 智能成片契约冻结（FeatureReport/EditPlan/ILlmClient/INetTransport + 校验器） | ✅ **2026-10-08 深夜构建机实测通过**：`ctest -R ai_edit_plan` PASS，全量 **Debug 46/46 · Release 46/46**，`build_core.sh -Werror` Debug/Release 双向零警告 —— **池 [8] 可关** |
 | AIEDIT-002~011 | 其余管线卡 | 未开工（002/004/005/011 依赖 001 已解，可排期） |
 | AIEDIT-012~015 | 号段 | 预占 |
 
 ### AIEDIT-001 落地形状（2026-10-08；下游卡开工前必读）
 
 - **契约头**：`engine/core/include/cq/ai/{feature_report.h, edit_plan.h, llm_client.h}` +
-  `engine/core/include/cq/pal/net.h`（INetTransport/SSE 拆帧边界冻结：空行分事件、剥
+  `engine/core/include/cq/platform/net.h`（INetTransport/SSE 拆帧边界冻结：空行分事件、剥
   data: 前缀、跳注释行，"[DONE]" 哨兵原样送达）。
 - **动词集按 9 个冻结**（select_intro/highlight/outro + place_clip/remove_range/trim_clip/
   reorder + set_transition/set_bgm_placeholder）——SPEC §6.1 行文"八个"系笔误，两处枚举
@@ -149,6 +149,7 @@ tools/build/build_core.sh --platform=apple
 | 日期 | 阶段/范围 | 结论（数字） |
 |---|---|---|
 | 2026-10-08 | AIEDIT-001 单测（本机 clang 13 直编最小组合：validator + status + test，非 ctest 通道） | 117 检查 0 失败：golden 合法 18/18、非法 40/40（错误码按码名精确匹配）；编译零警告（-Wall -Wextra -Wconversion -Wshadow -Wold-style-cast）；**build_core.sh / ctest -R ai_edit_plan 未跑（本机无 cmake/ninja）= 池[8]** |
+| **2026-10-08 深夜** | **构建机阶段批（机器 macOS 26.7.1 / Xcode 26.6 / cmake 4.4.3）** | **ctest 通道首验**：`ai_edit_plan` PASS；全量 **Debug 46/46 · Release 46/46**；`build_core.sh -Werror` 双向通过、新增 TU 零警告（仅 1 条链接期 `ignoring duplicate libraries` 环境级提示）。CMake 注册三件事全部成立 → **池 [8] 关闭**。真机无涉 |
 
 ### 调研 · 决策 · 池指针
 

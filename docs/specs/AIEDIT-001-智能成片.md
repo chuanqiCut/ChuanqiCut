@@ -32,13 +32,13 @@
 | 时间线模型 | `core/include/cq/model/timeline.h`（Track/Clip/MediaRef/TransitionKind；**timescale=120000**，ADR-0009） | EditPlan 的落点；转场字段已在（`in/out_transition`）但无命令 |
 | 导入链 | `EditorViewModel.importMedia(url:)`（`AppEntry.swift:327`）→ probe → `registerAsset` → `addClip`；AssetRegistry | 特征提取挂在 probe 之后；素材 URL/asset_id 已有 |
 | 取帧 | `core/include/cq/media/frame_provider.h` + Apple 实现（精确 seek） | 视觉特征抽帧的底座 |
-| 端侧推理抽象 | `core/include/cq/pal/inference.h`（IInferenceBackend，零实现）+ `CQ_CAP_NPU_INFERENCE` | 后续端侧检测模型的挂点（P0 特征提取用算法实现，不依赖模型） |
+| 端侧推理抽象 | `core/include/cq/platform/inference.h`（IInferenceBackend，零实现）+ `CQ_CAP_NPU_INFERENCE` | 后续端侧检测模型的挂点（P0 特征提取用算法实现，不依赖模型） |
 | 相册选择 | UIA-013 `AlbumPickerScreen`（单击即插入/多选模式） | 智能成片的选素材 UI 直接复用，交付 URL 列表 |
 | C ABI + 绑定模式 | `cq_sdk.h` + `bindings/swift` + SharedUI（UI 不共享、共享会话） | 新 ABI 照既有模式扩展 |
 
 ### 2.2 完全缺失（本批次新建）
 
-1. **网络层**：core/pal 零网络设施，manifest 无网络依赖 → ADR-0020 决策 2：`pal/<platform>/net/`（Apple 用 URLSession 原生，不引第三方）。
+1. **网络层**：core/platform 零网络设施，manifest 无网络依赖 → ADR-0020 决策 2：`platform/<platform>/net/`（Apple 用 URLSession 原生，不引第三方）。
 2. **LLM 接入**：全仓无任何大模型代码/文档/任务 → `ILlmClient` 抽象 + Prompt 管线 + EditPlan 校验。
 3. **特征提取**：无人脸/场景切分/运动/音频分析代码（CAM-011 Vision 桥是相机实时域 UI 层，不覆盖导入素材分析；AI-010 系列在 backlog 未排期）→ `core/src/ai/analysis/`。
 4. **文件音频解码**：FFmpeg 仅 demux 档（无 decode），"文件→PCM"不可用 → AIEDIT-003 内扩档（走 cq-dependency-governance）。
@@ -49,7 +49,7 @@
 ### 2.3 硬约束（红线对照）
 
 - 除 UI 外一切下沉 C++（红线 1）：特征提取、Prompt、校验、执行映射全在 core；Swift 只做触发/展示/语音输入。
-- PAL 零平台类型（红线 2）：`INetTransport`/`ILlmClient` 全 opaque + POD。
+- Platform 零平台类型（红线 2）：`INetTransport`/`ILlmClient` 全 opaque + POD。
 - 能力运行时查询（红线 3）：降级分支不写 `#if`，按 `cq_ai_llm_config` 配置与网络可达性运行时判定。
 - 有理数时间（红线 4）：FeatureReport 与 EditPlan 的时间字段一律 `{"value", "timescale"}`；C++ 校验器**拒绝**浮点秒。
 - UI 不直接改模型（红线 5）：AI 产物也走 Command。
@@ -73,8 +73,8 @@
 │      │               ai/fallback 本地规则引擎（离线降级）             │
 │ ④ ai/executor  EditPlan.action[] → ICommand[]（经 cq_session_submit）│
 └───────┬──────────────────────────────────────────────────────────┘
-        │ INetTransport（PAL 抽象）
-┌───────▼───────── pal/apple/net（URLSession，SSE 流式）──────────────┐
+        │ INetTransport（Platform 抽象）
+┌───────▼───────── platform/apple/net（URLSession，SSE 流式）──────────────┐
 │  POST {endpoint}/chat/completions  Authorization: Bearer <key>      │
 │  上行：FeatureReport + 用户消息 + 对话历史摘要（不传原始素材）          │
 └────────────────────────────────────────────────────────────────────┘
@@ -238,7 +238,7 @@ HomeView 新增入口卡「智能成片」(route: .smartCut)
 |---|---|---|
 | **P0（本期）** | FeatureReport/EditPlan schema（001）、视觉特征（002）、ILlmClient+网络（004）、Prompt/校验（005）、执行器+新命令（006）、C ABI（007）、向导 UI（008）、对话+语音（009）、降级引擎（011）；音频特征（003）并行推进，就绪即合入 | 一键成片闭环（含离线降级），导出按钮置灰 |
 | **P0.5** | 音频特征合入后的卡点/BGM 命令（`AddBgmCommand` + 音频轨渲染依赖 AUDIO 批次）、`EXPORT-001` 对接 | 配乐与真实导出 |
-| **P1** | 脚本分镜入口（010）、转写驱动剪辑（STT 转写→字幕→文字删改）、人脸模型替换特征项、Android 端（pal/android/net + Compose UI） | 第二入口 + 第二端 |
+| **P1** | 脚本分镜入口（010）、转写驱动剪辑（STT 转写→字幕→文字删改）、人脸模型替换特征项、Android 端（platform/android/net + Compose UI） | 第二入口 + 第二端 |
 
 ## 11. 非目标（明确不做）
 

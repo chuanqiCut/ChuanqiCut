@@ -9,16 +9,16 @@
 
 ```yaml
 id:          UIA-014
-layer:       跨平台（core/GFX/PAL）+ UI（SharedUI 装配，竖切）
+layer:       跨平台（core/GFX/Platform）+ UI（SharedUI 装配，竖切）
 goal:        预览不再「拉伸铺满」：PreviewRenderer 支持 FitMode（stretch/contain/cover），
              非同比例素材按模式适配画布，bar 区为黑（清屏色）
 input:       [preview_renderer.h「不支持」清单, cq_sdk.h:281 注释, ADR-0013（线程归属）,
               UIA-010 后的渲染装配（泵线程 / 共享队列）]
-output:      [GFX/PAL 编码器视口原语, PreviewRenderer FitMode, C ABI setter,
+output:      [GFX/Platform 编码器视口原语, PreviewRenderer FitMode, C ABI setter,
               Swift Previewer.setFitMode, SharedUI AppEntry 装配 contain,
-              单测（像素断言）, preview.md / gfx.md / pal.md 回写, ADR-0018]
-write_set:   core/include/cq/pal/gfx.h, core/include/cq/gfx/gfx_device.h,
-             core/src/gfx/gfx_device.cpp, pal/apple/gfx_metal.mm,
+              单测（像素断言）, preview.md / gfx.md / platform.md 回写, ADR-0018]
+write_set:   core/include/cq/platform/gfx.h, core/include/cq/gfx/gfx_device.h,
+             core/src/gfx/gfx_device.cpp, platform/apple/gfx_metal.mm,
              core/include/cq/preview/preview_renderer.{h,cpp},
              core/src/preview/cq_sdk_preview.cpp, core/include/cq/cq_sdk.h,
              bindings/swift/Sources/ChuanqiCut/Previewer.swift,
@@ -26,8 +26,8 @@ write_set:   core/include/cq/pal/gfx.h, core/include/cq/gfx/gfx_device.h,
              tests/unit/test_gfx_device.cpp, tests/unit/test_preview_renderer.cpp,
              tests/unit/test_c_abi_preview.c
 read_set:    core/include/cq/preview/preview_pump.h, core/src/gfx/*（其余）,
-             pal/apple/blit_pass.mm, bindings/swift 其余, SharedUI 其余,
-             docs/handoff/HANDOFF-004, .ai/modules/{preview,gfx,pal-apple}.md
+             platform/apple/blit_pass.mm, bindings/swift 其余, SharedUI 其余,
+             docs/handoff/HANDOFF-004, .ai/modules/{preview,gfx,platform-apple}.md
 deps:        []（无前置任务；相机链路写集边界明确避开 cq_sdk.h / SharedUI，无冲突）
 acceptance:
   - 默认行为不变：FitMode 默认 kStretch，既有全部像素断言不改一字通过
@@ -46,7 +46,7 @@ verification:
   - XCFramework 重建 + prepare.sh + swift test（bindings/swift 23 用例）
   - cd apps/apple/packages/SharedUI && swift test --disable-sandbox（20 用例）
 risk:        cq_sdk.h 高冲突文件 —— 已核对相机链路写集边界（HANDOFF-004 §1），其避开
-             cq_sdk.h 与 SharedUI，本任务期间无并行写者；PAL ICommandEncoder 为冻结
+             cq_sdk.h 与 SharedUI，本任务期间无并行写者；Platform ICommandEncoder 为冻结
              接口，扩展必须 additive 且记录 ADR-0018
 parallel:    false（本会话单任务串行）
 ```
@@ -68,7 +68,7 @@ parallel:    false（本会话单任务串行）
 | kContain | 源比例内切矩形居中（≤RT），bar 区不清屏色都不画 → 天然 letterbox |
 | kCover | 源比例外接矩形居中（≥RT），超出部分被光栅化自动裁掉 |
 
-- 视口原语加在 **GFX `IGfxEncoder` + PAL `ICommandEncoder`**（additive），
+- 视口原语加在 **GFX `IGfxEncoder` + Platform `ICommandEncoder`**（additive），
   Apple 实现直映射 `MTLRenderViewport`（原点=target 左上，z 用 {0,1}，文档写清）。
   **不动 IBlitPass 接口与 MSL**，RT→drawable 恒等 blit 及其与 SharedUI 的
   逐值锁定不变量不受影响。
@@ -98,7 +98,7 @@ test_preview_renderer 新段（golden 16:9 素材 + 256x256 画布，bar/内容�
 
 ## 执行记录（2026-10-04）
 
-- **子步骤 1（契约）✅**：PAL `ICommandEncoder::SetViewport`（additive）+
+- **子步骤 1（契约）✅**：Platform `ICommandEncoder::SetViewport`（additive）+
   GFX `IGfxEncoder::SetViewport` 转发 + Metal `MTLViewport` 直映 + gfx_device
   用例 C（视口 (16,16,32,32) 内红/黄、外清屏黑）—— 30 项全过。
 - **子步骤 2（实现+装配）✅**：`FitMode`（Config 字段 + atomic setter）、
@@ -116,7 +116,7 @@ test_preview_renderer 新段（golden 16:9 素材 + 256x256 画布，bar/内容�
 
 ## 回写
 
-- 接口变更 → `.ai/modules/gfx.md`（视口原语）、`.ai/modules/pal-apple.md`、
+- 接口变更 → `.ai/modules/gfx.md`（视口原语）、`.ai/modules/platform-apple.md`、
   `.ai/modules/preview.md`（「不支持」清单移除该条 + FitMode 说明）
 - 决策 → `docs/decisions/ADR-0018-预览宽高比的视口接缝.md`
 - 本文件子步骤状态与写集实际核对

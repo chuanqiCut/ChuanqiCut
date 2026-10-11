@@ -2,12 +2,12 @@
 
 > **归属**：C 线（内核/媒体/渲染） —— 归属表见 docs/tasks/PLAN-三线并行.md §1a / ADR-0029（双机分工与门禁跑批，2026-10-07）
 
-**边界**：`core/src/audio/`、`core/include/cq/audio/`、`pal/<platform>/audio_*`
+**边界**：`core/src/audio/`、`core/include/cq/audio/`、`platform/<platform>/audio_*`
 
 ## 结构
 ```
 core/include/cq/audio/     # 跨平台音频类型与接口（零平台类型）
-├── audio_types.h          # AudioBuffer（可变 data，PAL 边界做 PcmBuffer 平凡适配）/ AudioGraphSpec
+├── audio_types.h          # AudioBuffer（可变 data，Platform 边界做 PcmBuffer 平凡适配）/ AudioGraphSpec
 ├── audio_graph.h          # IAudioNode / AudioGraph（Prepare 校验+拓扑 / Process 无锁遍历）
 ├── pcm_pool.h             # AudioBlockPool（预分配槽位 + tag Treiber freelist + per-slot 状态双保险）
 └── spsc_ring.h            # SpscSampleRing（2 的幂预分配、全有或全无、SPSC 专用）
@@ -48,7 +48,7 @@ ctest -R audio_mix          # AUDIO-004：多轨电平与溢出（未落地）
 
 ## 相关
 ADR-0004、ARCH-002 §7（依赖清单）、ARCH-001 §6（线程模型/铁律 2）、
-CORE-006 冻结的 `cq/pal/audio.h`（PcmBuffer/IAudioEngine 契约）
+CORE-006 冻结的 `cq/platform/audio.h`（PcmBuffer/IAudioEngine 契约）
 
 ---
 

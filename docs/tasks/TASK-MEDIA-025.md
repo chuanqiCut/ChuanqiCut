@@ -10,8 +10,8 @@ layer:       SDK
 goal:        HDR（BT.2020 + HLG/PQ）素材解码输出正确转换到 BT.709 SDR；SDR 素材行为不变；源/输出色彩标签全链路可见
 input:       [用户反馈、SDK 头文件核查（VTPixelTransferProperties.h / CMFormatDescription.h）、RESEARCH-008 §1（原 RESEARCH-006 对标 App范式，让位改号）]
 output:      [media_decode.{h,mm} 色彩转换、诊断日志、单测]
-write_set:   pal/apple/media_decode.{h,mm}、tests/unit/test_media_decode_apple.cpp、baselines（真机验证记录）
-read_set:    .ai/modules/pal-apple.md、ADR-0003、ADR-0010
+write_set:   platform/apple/media_decode.{h,mm}、tests/unit/test_media_decode_apple.cpp、baselines（真机验证记录）
+read_set:    .ai/modules/platform-apple.md、ADR-0003、ADR-0010
 deps:        []
 acceptance:
   - SDR（BT.709）golden 像素断言零回归（行为不变）✅ 门禁 PASS=9/0
@@ -19,7 +19,7 @@ acceptance:
   - 真机目视验收：预览颜色与系统相册一致（传哲）⏸ 待设备解锁
   - 单测：HDR 判定纯函数 ✅（HLG/PQ/宽色域/SDR/标签缺失 6 例）
 verification:
-  - ctest --test-dir build -R pala_decode
+  - ctest --test-dir build -R platform_apple_decode
   - tools/ci/run_gate.sh
   - 真机：CQ_AUTO_ROUTE=editor + CQ_AUTO_PLAY=1（stderr 显示色彩标签）+ 传哲目视
 risk:        VT 对 HLG→709 的内置转换质量未量化 [E]（行业标准做法，先落地再评估）；
@@ -53,4 +53,4 @@ HDR 素材（iPhone 实拍 = BT.2020 原色域 + HLG/PQ 传递函数，常见杜
 acceptance 四条全过。
 
 ## 回写
-baselines 真机记录；pal-apple.md PALA-011 段增补色彩管理；pitfalls 新坑（若有）。
+baselines 真机记录；platform-apple.md PALA-011 段增补色彩管理；pitfalls 新坑（若有）。

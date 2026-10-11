@@ -152,7 +152,7 @@ MEDIA-026 只换了 `PopFrame` 里的 VTWait，`Flush()` 里那处被注释标�
 
 ### 附带：泵线程没有 autorelease pool
 
-泵线程是纯 C++ `std::thread`，**没有** autorelease pool。PAL 侧被它逐帧调用的
+泵线程是纯 C++ `std::thread`，**没有** autorelease pool。Platform 侧被它逐帧调用的
 `RebuildReader` / `ReadPacket` / `Feed` 必须自带 `@autoreleasepool`。
 桌面 soak 实测：加池前 +13.8MB/60s，加池后 +0.5MB/60s。
 
@@ -213,9 +213,9 @@ fast=128000 / slow=116000   ← 快路径比慢路径提前 3 帧
 
 | 文件 | 改动 |
 |---|---|
-| `pal/apple/media_decode.h` | `kMaxQueuedFrames=12`、`kMaxMismatchStreak=8`、`order_mismatch_streak_` + Debug 计数器 |
-| `pal/apple/media_decode.mm` | ①缺口连续 8 次即交付并重锚；②队列 >12 帧跳过重排判据强制交付；③`Flush()` 的 VTWait → 轮询 + 1s 超时；④`OutputCallback` 改为先入队后登记；⑤Debug 队列深度/缺口/超上界日志 |
-| `pal/apple/media_demux.mm` | `RebuildReader` / `ReadPacket` 加 `@autoreleasepool` |
+| `platform/apple/media_decode.h` | `kMaxQueuedFrames=12`、`kMaxMismatchStreak=8`、`order_mismatch_streak_` + Debug 计数器 |
+| `platform/apple/media_decode.mm` | ①缺口连续 8 次即交付并重锚；②队列 >12 帧跳过重排判据强制交付；③`Flush()` 的 VTWait → 轮询 + 1s 超时；④`OutputCallback` 改为先入队后登记；⑤Debug 队列深度/缺口/超上界日志 |
+| `platform/apple/media_demux.mm` | `RebuildReader` / `ReadPacket` 加 `@autoreleasepool` |
 | `core/include/cq/media/system_frame_provider.h` | `AcquireExact` 加追帧上界 `kMaxChasePops=600` |
 | `apps/apple/packages/SharedUI/Sources/SharedUI/AppEntry.swift` | DEBUG 剖面行增 `pump_nonok/s` 与 `footprint=` |
 
@@ -271,7 +271,7 @@ fast=128000 / slow=116000   ← 快路径比慢路径提前 3 帧
 2. **判据失败分支必须区分「还没来」与「永远不会来」**，且后者阈值按**连续次数**给，不能取 1。
 3. **回调内「登记完成」必须在「交付数据」之后。**
 4. **等异步回调一律禁止无上界阻塞**（VTWait 系），`PopFrame` 和 `Flush` 都要管。
-5. **纯 C++ 线程里被逐帧调用的 PAL 函数必须自带 `@autoreleasepool`。**
+5. **纯 C++ 线程里被逐帧调用的 Platform 函数必须自带 `@autoreleasepool`。**
 6. **真机「卡死 + signal 9」必须能区分 jetsam 与解码追赶失败** → DEBUG 剖面行恒带 `footprint` 与 `nonok/s`。
 7. **修一类问题时 grep 全库同类 API 的所有调用点**，不能只改报错那一行（根因 2 的代价）。
 

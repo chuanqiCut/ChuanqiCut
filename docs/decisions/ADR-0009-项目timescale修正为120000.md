@@ -56,13 +56,13 @@ ADR-0006 第 33 行「素材保留其原生 timescale，转换只在边界发生
 |---|---|
 | int64 上限 | INT64_MAX / 120000 ≈ 7.69e13 秒 ≈ **243 万年**（原 60000 为 487 万年）。减半但仍远超任何实际项目时长 |
 | 存储 | `{value, timescale}` 序列化格式不变，`value` 数值变大不影响 int64 |
-| 改动范围 | 常量 `kProjectTimeScale` 一处 + 依赖它的断言/注释。**现在改成本最低** —— 仅 CORE-001~004 使用该常量，PAL 接口（CORE-006）尚未开始 |
+| 改动范围 | 常量 `kProjectTimeScale` 一处 + 依赖它的断言/注释。**现在改成本最低** —— 仅 CORE-001~004 使用该常量，Platform 接口（CORE-006）尚未开始 |
 | 兼容性 | 项目文件版本模型需记录 timescale（ADR-0006 已要求序列化 `timescale` 字段），旧文件仍可按自身记录的 timescale 正确读取 |
 
 ## 为什么现在改而不是以后
 
-BACKLOG 第 327 行规定「CORE-006 之前，任何 PAL 实现不得开始」。
-一旦 PAL 接口（GFX/Media/Audio/Clock）铺开，timescale 会渗透进大量接口签名与平台实现，
+BACKLOG 第 327 行规定「CORE-006 之前，任何 Platform 实现不得开始」。
+一旦 Platform 接口（GFX/Media/Audio/Clock）铺开，timescale 会渗透进大量接口签名与平台实现，
 届时再改就是跨层返工。**当前是改动成本的最低点。**
 
 ## 验证

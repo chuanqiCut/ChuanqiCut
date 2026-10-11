@@ -75,3 +75,14 @@ parallel:    false
   **没有该符号**（已核验），写下必然编不过 → 等带 iOS 17+ SDK 的工具链，且要配 `@available` 门控。
 - **人像分割**（`VNGeneratePersonSegmentationRequest`）：本机 SDK 15.0 里有头文件（已核验），
   但坚持 v1 先几何、不上模型——模型路线的精度与帧预算，要真机实测才有数字。
+
+## 进度 3（2026-10-08 深夜·构建机实测，机器 macOS 26.7.1 / Xcode 26.6 / Swift 6.3.3）
+
+- `PortraitSkinMaskTests` **7/7 通过**（含「注入全黑 → 美颜整图不动」的零回归防线）。
+- `CameraBeautyEngine.semanticMask` 注入点为 nil 时老行为逐位等价 —— 由 7 用例守住。
+- `FaceBoxStore` 的 `@unchecked Sendable` 扩充：**App target 真编译 0 error / 无新增并发告警**
+  （池 [9] 里「门禁需确认」这条可以给结论了）。
+- Impl 薄壳 `Detection/PortraitSemantics.swift` 与 ViewModel 装配：**iOS device SDK 真编译通过**。
+- 本卡**专属**收敛项：非零点原画布的位图蒙版偏移已随 CAM-026 一起修（`triangleMask` 按
+  `extent.origin` 起算）。
+- 真机（池 [9]，归传哲）：眼/眉/唇是否还被磨皮波及（卡验收第一条）、无脸直通、锚点抖动时蒙版不闪。

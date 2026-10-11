@@ -6,7 +6,7 @@
 ## 1. 项目介绍
 
 ChuanqiCut = **跨平台视频编辑 SDK + 各端原生 App**：C++20 共享内核（`core/`，
-媒体/渲染/模型/序列化，对外纯 C ABI）→ 平台适配层（`pal/`）→ 原生 UI（`apps/`，
+媒体/渲染/模型/序列化，对外纯 C ABI）→ 平台适配层（`platform/`）→ 原生 UI（`apps/`，
 SwiftUI/UIKit）。目标 iOS+macOS（P0）→ Android（P1）→ 鸿蒙（P2 预留）。
 双机并行开发：本机 = 集成机（唯一发号器、全量门禁与真机验收），远端 = 开发机
 （编码优先，验证经待办池移交）。
@@ -15,7 +15,7 @@ SwiftUI/UIKit）。目标 iOS+macOS（P0）→ Android（P1）→ 鸿蒙（P2 �
 
 ```
 壳 App（apps/apple/ios + mac：AppEntry/路由/权限/装配，零业务）
- ├─ ChuanqiCutEngine   SDK（core C++20 + pal/apple + Swift 绑定；pod 名本周加 Engine 后缀）
+ ├─ ChuanqiCutEngine   SDK（core C++20 + platform/apple + Swift 绑定；pod 名本周加 Engine 后缀）
  ├─ SharedUI           UI 基座（Theme 配色 + 三个跨域注入器，仅 Common/）
  ├─ ChuanqiCutPlayer   独立播放器（AVPlayer 过渡，ADR-0022）
  ├─ ChuanqiCutImport   素材导入（自研相册浏览器）

@@ -36,6 +36,70 @@
 
 ## 已实测并解决的坑
 
+### P94 · MultiCam 下 activeFormat 不只是"不能设 preset"，还必须是 multiCamSupported 子集
+**日期**：2026-10-09　**来源**：P93 修复轮的连带核对（iPhoneOS 26.5 SDK `AVCaptureDevice.h` 原文）　**验证状态**：已修 + 单测覆盖（选择器纯函数，Camera 62/62），**真机复验待传哲**
+
+- **现象**：P93 把 multiCam 路径改成"逐设备选 activeFormat"后，初版只按**帧率区间**筛 format。
+  查头文件发现漏了第二条硬约束：`AVCaptureDeviceFormat.isMultiCamSupported` ——
+  MultiCamSession 下 device.activeFormat **只能落在 multiCamSupported 的子集里**
+  （"This limited subset of capture formats are known to run sustainably in a multi camera capture scenario"）。
+  漏掉它不会立刻崩，但会话起不来/走样，且**在 macOS 与 SPM 侧完全测不到**（相机实现层 iOS 专属）。
+- **为什么"补一个条件"不够**：这次事故的模式是「约束记在脑子里，代码里没地方表达」。
+  `AVCaptureDevice.formats` 的真实选择在 Impl 层，SPM 测试宿主编不到 → 约束零测试覆盖。
+- **修复形状**：把选择规则抽成契约层纯函数 `CameraFormatSelector.bestIndex(...)`
+  （候选结构 + target + fps + multiCam 四个入参），Impl 层只负责把 `AVCaptureDevice.Format`
+  映射成候选、把结果下标还原成 format。约束从此有单测（`CameraFormatSelectorTests` 5 例：
+  分辨率最近 / 帧率不覆盖拒绝 / multiCam 只认支持子集 / 单摄不受该约束 / 空候选 nil）。
+- **规约**：① 相机域里**凡是"选哪个"的逻辑**（format / 设备 / 帧率），一律做成契约层纯函数 + 单测，
+  不要在 Impl 层用一串 `filter/min` 就地写；② 引用 Apple API 约束时**先读 SDK 头文件原文**，
+  不要凭记忆补条件（P48/P83/P93 同族，第 7 次）。
+
+### P95 · 头文件与实现共置后，按目录递归的门禁会把"内部统计头"一起判违规（扫描范围语义漂移）
+**日期**：2026-10-09　**来源**：ADR-0033 / INFRA-024 目录迁移后 `platform_header_gate` 由绿转红　**验证状态**：已修（ctest 46/46，`platform_header_gate` 复跑 0 违规）
+
+- **现象**：`tools/platform/check_platform_headers.py` 扫描根由 `core/include/cq` 改为 `engine/core/cq` 后，
+  `platform_header_gate` 报 8 处 `double_type`，全部落在 `cq/ai/feature_report.h` 与 `cq/ai/llm_client.h`
+  （人脸占比 / 响度 / temperature 这类**统计类浮点**，本来就允许）。
+- **根因（不是代码坏了，是语义漂移）**：旧扫描根 `include/cq` **只包含对外契约头**，
+  "递归全部目录"那时恰好等于"扫契约"；共置后同一棵树里混进了内部头，
+  "递归全部"不再等于"扫契约"——门禁语义被目录结构悄悄改掉了。
+- **修复**：脚本加**契约目录白名单**（platform/gfx/media/preview/session/model/command/audio）
+  + 保留 base/ 与新增 ai/ 排除，扫 38 头 0 违规。
+- **规约**：① 门禁脚本的"扫描范围"必须显式写死语义（契约 vs 全部），**不能靠目录布局隐含**；
+  ② 目录结构类重构后，凡"按目录递归"的脚本（门禁 / 生成器 / 引用清扫）都要重跑一遍对表，
+  否则是"结构改了、语义也跟着改了但没人发现"的静默缺口（与 P27「mv 后必须 grep 引用」同源）。
+
+### P96 · Intel 机上命令行编 macOS 壳默认 universal 会挂（SDK 26.5 无 arm64 macOS 预编译模块）
+**日期**：2026-10-09　**来源**：INFRA-024 双壳验证（本机 `uname -m` = x86_64，macOS 26.7.1 / Xcode 26.6）　**验证状态**：已定位，`-arch x86_64` 下双壳均 BUILD SUCCEEDED
+
+- **现象**：`xcodebuild -scheme ChuanqiCutMacApp -sdk macosx build` 报一串
+  `error: Unable to resolve module dependency: 'Accessibility' / 'simd' / 'Darwin' / '_Builtin_float'`，
+  随后级联出 `Module map file '.../ChuanqiCutEditor.modulemap' not found`；**iOS 壳同一轮却是绿的**。
+- **根因（环境，不是代码回归）**：命令行 `xcodebuild` 默认 `ONLY_ACTIVE_ARCH=NO` → 编
+  arm64 + x86_64 两个 slice；而 SDK 26.5 的 macOS 预编译 Swift 模块目录
+  `.../swift/macosx/prebuilt-modules/26.5/` 只有 `arm64e-apple-macos` 与 `x86_64-apple-macos`
+  （**没有纯 arm64**），Intel 机上 arm64 slice 因此解析不了系统模块。
+  Xcode IDE 的 Debug 构建默认 `ONLY_ACTIVE_ARCH=YES`，所以在 IDE 里一直是绿的、只有命令行会炸。
+- **修复/规避**：命令行编 mac 壳显式 `-arch x86_64 ONLY_ACTIVE_ARCH=YES`
+  （或 `-destination 'platform=macOS,arch=x86_64'`）。**不要**为此改代码或改 SDK 设置。
+- **规约**：① 报"双壳构建"结论时必须写清**架构与 ONLY_ACTIVE_ARCH**，否则 Intel 机的
+  "mac 红"会被误判成回归；② 本机（Intel）产出的任何性能/能力数字都不得当产品阈值
+  （与 MEMORY 里"无 ANE/ProRes 硬编"同一条纪律）。
+
+### P97 · `core/cq` 下存在 basename 同名头 → Pods 工程 `Skipping duplicate build file` 是无害噪音
+**日期**：2026-10-09　**来源**：INFRA-024 双壳构建警告核查　**验证状态**：已确认无害（两文件均正常落位）
+
+- **现象**：构建 iOS/mac 壳均出现
+  `warning: Skipping duplicate build file in Copy Headers build phase: .../engine/core/cq/platform/gfx.h`。
+- **真因**：`core/cq/gfx/gfx.h`（gfx 功能域）与 `core/cq/platform/gfx.h`（Platform 契约域）basename 相同，
+  Pods 工程的 Copy Headers 阶段按 basename 判重，跳过后一个登记。
+  **与 podspec 是否显式写 `private_header_files` 无关**（删与不删，警告都在）。
+- **实测结论**：`Pods/Headers/Private/CChuanqiCut/` 下两个文件各自 symlink 到
+  `gfx/gfx.h` 与 `platform/gfx.h`，**不互相覆盖、不影响编译**（C++ 侧一律用全路径
+  `#include "cq/gfx/gfx.h"` / `"cq/platform/gfx.h"`，无歧义；唯一 public 头仍是 `cq_sdk.h`）。
+- **规约**：看到这条警告**不要**去改 podspec 或乱改头文件名消警告；
+  同理，删掉 `private_header_files` 也消不掉它（删它只是去掉与 `source_files` 的重复声明）。
+
 ### P1 · XCFramework 合并报 `Unknown header: 0xb17c0de`（真因是 LTO，不是 ENABLE_BITCODE）
 - 现象：`tools/build/build_core_apple.sh --config=Release` 能编出三个切片，但
   `xcodebuild -create-xcframework` 失败：
@@ -64,16 +128,16 @@
   `dec0170b` 变为 `cffaedfe`，`file` 报 `Mach-O 64-bit object arm64`，xcframework 三个切片生成成功）
 
 ### P2 · 冻结接口只有头文件、实现缺失，编译期 `static_assert` 会把它掩盖成"全绿"
-- 现象：`core/include/cq/pal/capabilities.h` 冻结的 `SetCapabilitiesBackend` /
+- 现象：`core/include/cq/platform/capabilities.h` 冻结的 `SetCapabilitiesBackend` /
   `QueryCapability` **长期只有声明、没有定义**。CTest 一直 22/22 全绿。
-- 根因：全仓库唯一引用是 `tests/unit/pal_headers_compile.cpp` 里的 `static_assert`
+- 根因：全仓库唯一引用是 `tests/unit/platform_headers_compile.cpp` 里的 `static_assert`
   （校验返回类型）。**`static_assert` 是编译期检查、不链接** —— 只要声明对就能过，
   实现存不存在它管不着。
 - 影响范围：任何「接口冻结」类任务都可能这样静默断掉。这是 CORE-006 当时
   「编译验证 7/7 全绿但接口是断的」的**同型复发**，只是触发机制换成了 static_assert。
 - 排障步骤：对可疑符号 `grep -rn <符号>`，若**只出现在头文件与 static_assert 里**、
   没有任何 `.cpp/.mm` 定义，即为断接口。
-- 修复：CORE-007 补上实现（`core/src/pal/capabilities.cpp` + `pal/apple/capabilities.mm`）。
+- 修复：CORE-007 补上实现（`core/src/platform/capabilities.cpp` + `platform/apple/capabilities.mm`）。
 - 防复发规则：**冻结接口后必须补一个「链接并运行」的最小用例**，
   `static_assert` / 头文件编译验证**不能**作为"接口可用"的证据。
   本轮已落的样例：`tests/unit/test_capabilities.cpp`（注入后端后真查询）。
@@ -81,7 +145,7 @@
   链接并运行了这两个函数；Apple 后端查询结果与本机已知硬件事实交叉吻合）
 
 ### P3 · 静态门禁硬编码「要扫哪些目录」，新增目录会被静默漏掉
-- 现象：`tools/pal/check_pal_headers.py` 原先写死 `scan_dirs = [cq/"pal", cq/"gfx", cq/"media"]`。
+- 现象：`tools/platform/check_platform_headers.py` 原先写死 `scan_dirs = [cq/"platform", cq/"gfx", cq/"media"]`。
   CORE-008 新增的 `core/include/cq/session/` **不在列表里**，两个新头文件完全不受
   「零平台类型 / 零 FFmpeg 类型 / 禁 throw / 禁裸 double」约束。
 - 危害（这是它阴险的地方）：**不报错、CTest 全绿、`git status` 也看不出来**。
@@ -284,12 +348,12 @@
   （`preview_renderer` 用例连续 12 帧渲染，导入/释放循环无错无崩）
 
 ### P15 · 「所有权没人接」的注入式接缝：裸指针注入 + 堆对象装配 = 悬垂隐患
-- 现象：`SystemFrameProvider(PalPtr<IMediaDemuxer>, IFrameDecoder*)` 明确
-  **不接管** decoder。单测里 decoder 是栈对象没问题；但 PAL 装配时
+- 现象：`SystemFrameProvider(PlatformPtr<IMediaDemuxer>, IFrameDecoder*)` 明确
+  **不接管** decoder。单测里 decoder 是栈对象没问题；但 Platform 装配时
   `VideoToolboxDecoder` 是 `new` 出来的，装配方必须自己想办法让它与 provider
   同生命周期——很容易漏，且漏了不一定立刻崩。
 - 修复：给 `SystemFrameProvider` 加 `AdoptDecoder(unique_ptr<IFrameDecoder>)`，
-  并给 `CreateSystemFrameProvider` 加一个接管所有权的重载；PAL 装配走重载版本。
+  并给 `CreateSystemFrameProvider` 加一个接管所有权的重载；Platform 装配走重载版本。
 - 防复发规则：注入式接缝若真实使用场景下被注入者是**堆对象**，就要提供
   所有权接管入口，不能只留裸指针版本。
 - 日期 / 来源 / 验证状态：2026-10-02 / BIND-003 子步骤 4 / **verified**
@@ -305,44 +369,44 @@
   一个随时间变化的量（pts / 帧序号），不能只靠像素。
 - 日期 / 来源 / 验证状态：2026-10-02 / BIND-003 子步骤 4 / **verified**
 
-### P17 · core 要调 PAL 工厂时，**必须隔离在独立 TU**（否则污染所有下游链接）
+### P17 · core 要调 Platform 工厂时，**必须隔离在独立 TU**（否则污染所有下游链接）
 - 现象：BIND-003 子步骤 5 要做预览的 C ABI，装配需要平台能力（图形设备 /
-  blit pass / 帧提供器）。但既有惯例是 **core 从不调 PAL 工厂**（全库 grep：
-  调用只发生在 tests/ 与 pal/），因为 cq_core 若引用 PAL 符号，没有 PAL 后端的
+  blit pass / 帧提供器）。但既有惯例是 **core 从不调 Platform 工厂**（全库 grep：
+  调用只发生在 tests/ 与 platform/），因为 cq_core 若引用 Platform 符号，没有 Platform 后端的
   平台（当前 Android / ohos）就会链接失败。
-- 解法：① 需要平台能力的实现**单独成 TU**（`pal_frame_provider.cpp` /
+- 解法：① 需要平台能力的实现**单独成 TU**（`platform_frame_provider.cpp` /
   `cq_sdk_preview.cpp`）；② 静态库按 **archive member 粒度**拉符号，
   只有真正引用了该 TU 符号的目标才会把它链进来 —— 隔离成立。
-- 实证：`cq_tests_c_abi` 只链 `cq_core`、**不链** `cq_pal_apple`，
+- 实证：`cq_tests_c_abi` 只链 `cq_core`、**不链** `cq_platform_apple`，
   仍链接通过并运行成功。若把预览代码并进 `cq_sdk.cpp`，该测试会立刻链接失败。
-- 防复发规则：新增「core 调 PAL 工厂」的代码前，先确认它在**专属 TU** 里，
-  并留一个不链 PAL 的目标做回归验证。
+- 防复发规则：新增「core 调 Platform 工厂」的代码前，先确认它在**专属 TU** 里，
+  并留一个不链 Platform 的目标做回归验证。
 - 日期 / 来源 / 验证状态：2026-10-02 / BIND-003 子步骤 5 / **verified**
 
 ### P18 · 「必然由平台原生实现」的抽象，定义层要放对（放错会被依赖方向反噬）
 - 现象：`IBlitPass` 初版定义在 `core/include/cq/gfx/`（GFX 层），实现在
-  pal/apple。可它由**平台原生 shader**（MSL）实现，按红线 #6 只能落在
-  pal/<platform>/；而 PAL 不能反向 include GFX 头 —— 依赖方向直接冲突。
-- 修复：`IBlitPass` + `CreateBlitPass` 移到 **`pal/gfx.h`**；GFX 侧需要把
-  PAL 编码器传给 PAL 层 pass，故给 `IGfxEncoder` 补 `PalEncoder()` 逃生口
-  （与既有的 `IGfxDevice::PalDevice()` 同一套路）。
+  platform/apple。可它由**平台原生 shader**（MSL）实现，按红线 #6 只能落在
+  platform/<platform>/；而 Platform 不能反向 include GFX 头 —— 依赖方向直接冲突。
+- 修复：`IBlitPass` + `CreateBlitPass` 移到 **`platform/gfx.h`**；GFX 侧需要把
+  Platform 编码器传给 Platform 层 pass，故给 `IGfxEncoder` 补 `PlatformEncoder()` 逃生口
+  （与既有的 `IGfxDevice::PlatformDevice()` 同一套路）。
 - 防复发规则：判断抽象该放哪层，看**实现必然落在哪**。若实现只能用平台原生
-  能力（shader 源码 / 平台 SDK），抽象就该在 PAL；放上层会导致反向依赖。
+  能力（shader 源码 / 平台 SDK），抽象就该在 Platform；放上层会导致反向依赖。
 - 日期 / 来源 / 验证状态：2026-10-02 / BIND-003 子步骤 5 / **verified**
   （`preview_renderer` 35 项 + `c_abi_preview` 32 项全绿）
 
-### P19 · PAL `CreateFrameProvider` 悬空 7 天（第 5 次「只有声明无实现」）
-- 现象：`pal/media.h:231` 的 `CreateFrameProvider` 自 CORE-006（2026-09-25）
+### P19 · Platform `CreateFrameProvider` 悬空 7 天（第 5 次「只有声明无实现」）
+- 现象：`platform/media.h:231` 的 `CreateFrameProvider` 自 CORE-006（2026-09-25）
   起只有声明，从未实现。上一轮我已把它标为风险但未处理。
 - 同类问题已发生 5 次：`cq_build_anchor` / 能力查询实现 / BIND-001 实现 /
   `test_media_decode_apple.cpp`（在磁盘但没接入 CMake）/ 本次。
-- 修复：BIND-003 子步骤 5 落地（pal/apple/frame_provider_apple.mm，
+- 修复：BIND-003 子步骤 5 落地（platform/apple/frame_provider_apple.mm，
   内部用 MEDIA-020 SystemFrameProvider + PALA-011 VideoToolboxDecoder）。
 - 防复发规则：**看到「只有声明」的工厂，要么实现、要么删掉**，不要留着。
   留着的下场是某天有人按声明去调，撞链接错误才被发现。
 - 日期 / 来源 / 验证状态：2026-10-02 / BIND-003 子步骤 5 / **verified**
 
-### P20 · C ABI 承诺「reinterpret 为 id<MTLTexture>」，PAL 却返回 CqTexture* 包装 —— 首个真实消费方即崩
+### P20 · C ABI 承诺「reinterpret 为 id<MTLTexture>」，Platform 却返回 CqTexture* 包装 —— 首个真实消费方即崩
 - 现象：UIA-003 Swift 侧首次把 `cq_preview_render_frame` 的 out_texture
   reinterpret 成 MTLTexture，`objc_msgSend` 打在 C++ 对象（`CqTexture`）上，
   段错误。绑定层测试只断言句柄非空，**没有消费句柄**，所以是绿的。
@@ -350,7 +414,7 @@
   而 `cq_sdk.h` / `preview_renderer.h` 的契约写明「中性句柄，UI 侧 reinterpret
   为 MTLTexture」。**契约与实现不符**，且没有任何跨层测试消费过这个句柄。
 - 修复：Apple 实现改为返回 `(__bridge TextureHandle)color_tex_`（裸
-  MTLTexture），删除包装；`pal/gfx.h` 把「导出给 UI 显示」与「可送
+  MTLTexture），删除包装；`platform/gfx.h` 把「导出给 UI 显示」与「可送
   SetTexture 的包装」两种句柄语义写清（与 PALA-001 的 `Handle()` 修复同一
   「首次真实使用暴露」模式）。
 - 防复发规则：**凡契约里写了 reinterpret 的句柄，必须有跨层测试真的
@@ -384,7 +448,7 @@
 - 现象：`swift test` 链接测试包报 `VTDecompressionSession*` /
   `kCMTimeInvalid` 等 undefined symbols。此前一直绿，因为**没有任何 Swift
   测试引用过预览 TU**；新增 Previewer 测试后 `cq_sdk_preview.o` 被拉入 →
-  传递拉入 PAL 媒体/图形 TU → 需要 VideoToolbox / CoreMedia / Metal /
+  传递拉入 Platform 媒体/图形 TU → 需要 VideoToolbox / CoreMedia / Metal /
   AVFoundation / CoreVideo / CoreGraphics / AudioToolbox / QuartzCore /
   IOSurface(macOS only) + libc++。
 - 修复：`bindings/swift/Package.swift` 两个 target 的 linkerSettings 与
@@ -640,7 +704,7 @@
 | E6 | manifest 中多个依赖版本号为编造值（signalsmith-stretch "1.0"、SPIRV-Cross "1.3.296.0"、oboe "1.9.2"） | 上游根本不存在这些 tag；signalsmith-stretch 与 SPIRV-Cross 上游 0 个 tag，oboe 只有 1.9.0/1.9.3。**版本号必须 `git ls-remote` 核对，不得凭印象写**，否则清单看着可审计实则不可信 | 2026-09-24 |
 | E7 | `parser.py::_validate_artifact()` 引用未定义常量 `E_BAD_VALUE` | 非法 artifact.platform 会抛 NameError 而非给出校验错误；已改为 `E_INVALID_VALUE` | 2026-09-24 |
 | E8 | 「CVPixelBuffer(32BGRA) → `MTLPixelFormatBGRA8Unorm` 纹理，采样后需手动把 R/B 交换成 RGBA」 | **错误**。`BGRA8Unorm` 在 Metal 中是「按 BGRA 该厂商序存储、但逻辑通道仍是 .r=红/.b=蓝」的格式；采样返回的已经是逻辑 RGBA，无需交换。错误地写成 `float4(c.b,c.g,c.r,c.a)` 会让 R/B 反掉——绿条等 R==B 区域看不出，但彩条其余通道会暴露（PALA-002 初版即被底部采样检查抓出）。PALA-011 解码输出为 32BGRA，importer 必须用 BGRA8Unorm 才能直接复用其 IOSurface，且着色器直接 `return c` | 2026-09-26 / PALA-002 / verified |
-| E10 | HANDOFF-003 §1 把「BIND-003 子步骤 3 纹理导入（零拷贝）」标为**下一步** | **已做过**：PALA-002（2026-09-26，commit 76fce6b）已完成零拷贝导入，`pala_native_image` 用例含 IOSurface ID 一致性（源 193==纹理 193）、零拷贝/CPU 退化耗时代差（0.0033ms vs 4.5788ms ≈ 1407×）、真实解码帧渲染读回。**交接文档的任务状态要对着 commit 历史核，不能照抄上一版** | 2026-10-02 / BIND-003 / verified |
+| E10 | HANDOFF-003 §1 把「BIND-003 子步骤 3 纹理导入（零拷贝）」标为**下一步** | **已做过**：PALA-002（2026-09-26，commit 76fce6b）已完成零拷贝导入，`platform_apple_native_image` 用例含 IOSurface ID 一致性（源 193==纹理 193）、零拷贝/CPU 退化耗时代差（0.0033ms vs 4.5788ms ≈ 1407×）、真实解码帧渲染读回。**交接文档的任务状态要对着 commit 历史核，不能照抄上一版** | 2026-10-02 / BIND-003 / verified |
 | E9 | 「XCFramework 合并失败是 bitcode 段导致，加 `-fno-embed-bitcode` 可解」（HANDOFF-002 §3 的遗留推测） | **根因判错**：是 Release **LTO/IPO** 产出 bitcode-only `.o`，与 ENABLE_BITCODE 无关；`-fno-embed-bitcode` 该 clang 不识别且方向错误。教训：`0xb17c0de` 这个 magic 既可能来自 embed-bitcode 也可能来自 `-flto`，**必须抽 `.o` 看实际内容再定论**，不能靠 magic 字面猜。另：那次尝试的脏 flag 残留在 `build/apple/ios-device/CMakeCache.txt` 里未被发现，CMake 会持续复用——**CMakeCache 是隐式状态，撤销改动时不要只撤销源码** | 2026-09-29 / PALA XCFramework 打包 / verified |
 
 ### P42 · 开发机换到 macOS 13.7 / Xcode 15.2（AppleClang 15）后既有代码编译失败
@@ -675,9 +739,9 @@
 - 现象：capabilities.mm 无条件引用 `AVCaptureMultiCamSession.isMultiCamSupported`
   在 macOS 切片报 `'AVCaptureMultiCamSession' is unavailable: not available on macOS`。
   （调研时误记为"macOS 10.15+ 可用"——那是文档里别的类的可用性，核验不严。）
-- 处理：PAL 内 `#if TARGET_OS_IPHONE` 吸收平台差异，macOS 分支如实返回 kNo。
+- 处理：Platform 内 `#if TARGET_OS_IPHONE` 吸收平台差异，macOS 分支如实返回 kNo。
   core 头仍零平台分支（红线 #3 不受影响——运行时查询的是能力**结果**，
-  PAL 内部怎么拿到结果是 PAL 的实现自由）。
+  Platform 内部怎么拿到结果是 Platform 的实现自由）。
 - **后记（同日）**：ADR-0014 转向后该实现随 CAM-001 契约一并回退，但 API 事实
   不变，未来在 macOS 上做相机相关代码仍会撞。
 - 日期 / 来源 / 验证状态：2026-10-04 / CAM-001 / **verified**
@@ -1354,7 +1418,7 @@ TASK-CAM-012 剩余风险栏其实预判了（"若真机上 CI 工作空间表�
   把竞态窗口扩大一倍，才在今天炸出来。
 - **教训（一句话）**：**顺序对了 ≠ 互斥对了。** 只要注释里出现「回调/另一线程/异步」字样，
   顺手必须问一句「那把锁是谁？」并处理=无锁=的默认假设。
-- 修复（`pal/apple/media_decode.mm`）：两处插入收进 `queue_mutex_`，且**必须在
+- 修复（`platform/apple/media_decode.mm`）：两处插入收进 `queue_mutex_`，且**必须在
   `VTDecompressionSessionDecodeFrame` 之前释放** —— 回调要抢同一把锁，持锁提交会自锁死。
   同时在 `media_decode.h` 成员处写明「受 `queue_mutex_` 保护」的不变量。
 - **验证方法（关键，别只报连绿）**：并发故障不能用「跑几次没崩」结案。本次做法是
@@ -1521,3 +1585,183 @@ TASK-CAM-012 剩余风险栏其实预判了（"若真机上 CI 工作空间表�
   有/无 cmake·ninja·brew；② 结论要么标明机器代号（§17 的 A/B/C），要么写「未实测」；
   ③ 发现旧记录与实际不符就地改并留日期，**不要沿用**。
 - **待办**：§17 机器表需要一次归口核对——把基线里每条"本机实测"回填到它的真实机器代号下。
+
+### P91 · `CIImage.cropped(to:)` 是**交集**不是外扩 —— 拿「画面 extent」必须合成，不能裁
+**日期**：2026-10-08　**来源**：构建机首次跑 Camera 测试，`MakeupMaskTests.testRadialMaskExtentIsCroppedBack` 失败　**验证状态**：已修（radialMask 改 `composited(over:)` 黑底画布）
+
+- **现象**：`CIRadialGradient` 输出 extent 有限（P81 已实锤），于是代码用
+  `.cropped(to: extent)` 指望「夹回画面」——实测 `irisMask` extent 仍是 **(43,43,14,14)**
+  而不是 (0,0,100,100)：**cropped 做的是两个矩形的交集**，有限矩形 ∩ 画面 = 有限矩形自己，
+  它永远不会把 extent 变大。
+- **正确形状**：先把渐变**合成到同尺寸黑底画布**上（`output.composited(over: CIImage(color: .black).cropped(to: extent))`），
+  再 `.cropped(to: extent)` 兜底。合成才有「并集/铺满」语义。
+- **连带教训（同一条测试）**：`polygonMask` 的羽化 `featherRadius × extent.height` 在 100px
+  单测画布上 = 2px，足以把 20px 小三角的**形心采样**压到 195（阈值 200）。按比例取羽化没问题，
+  但**断言要取真正的内部点**，且羽化半径要有 1px 下限——否则小画布上「有羽化」这件事测不出来。
+- **另修**：`triangleMask` 位图原先按局部坐标写、产物 extent 从 (0,0) 起算 → 画布 origin 非零点原时
+  几何整体平移。改成像素绝对坐标 = `extent.origin + 局部`，产物再 `transformed(by:)` 平移回 origin。
+
+### P93 · `AVCaptureMultiCamSession` 不支持 `sessionPreset` —— 设了直接抛异常崩溃（不是返回 false）
+**日期**：2026-10-09　**来源**：iPhone 17 Pro 真机进相机页即闪退（NSInvalidArgumentException: `AVCaptureSessionPreset1920x1080 is not a supported preset`）　**验证状态**：已修（multiCam 走逐设备 activeFormat），**真机复验待传哲**
+
+- **现象**：`CameraManager.makeSession()` 在 `AVCaptureMultiCamSession.isMultiCamSupported` 为真时
+  **永远**建 MultiCam 实例（不管双摄开关有没有开），而 `configureLocked` / `setCaptureQuality`
+  又无条件 `session.sessionPreset = ...` → iPhone 15/17（isMultiCamSupported 恒 true）上一进
+  相机页就崩。**这不是边界机型，是默认路径。**
+- **为什么门禁没抓到**：纯编译期类型检查看不出来——`sessionPreset` 是 `AVCaptureSession`
+  的合法 API，multiCam 是它的子类，只是**运行时拒绝**；SPM/macOS 侧根本跑不到这段代码
+  （相机实现层 iOS 专属不进 SPM target）。这是 P83/P48 同族的"凭记忆写 API"第 6 次。
+- **正确形状**（Apple 口径：multi-cam 必须逐设备设 `activeFormat`）：
+  1. 分流：`session is AVCaptureMultiCamSession` → **不碰 preset**，改对每个 video input 的
+     device 选 format（在覆盖当前 fps 的候选里取分辨率最接近档位目标的一个），
+     设完 `activeFormat` 必须**重放帧率**（换 format 会重置帧率范围）。
+  2. 普通 Session 仍走 `canSetSessionPreset` → `sessionPreset`。
+  3. **新建 input 也要重放档位**（`addVideoInputLocked`），否则新设备走默认 format。
+- **规约**：① 任何对 `AVCaptureSession` 的设置，先问"MultiCam 子类会不会拒绝"；
+  ② 崩溃签名是 `NSInvalidArgumentException` 而不是返回值失败时，**别指望 canSet* 能拦**，
+  走类型分流；③ 相机实现层 iOS 专属，**真机是唯一能验的路径**，编译过 ≠ 能跑
+  （这次就是门禁 PASS=14 全绿之后真机一开就崩）。
+
+### P92 · CocoaPods 路径不会自动拾取新文件 —— Pods.xcodeproj 陈旧 = 几十条 `cannot find type in scope`
+**日期**：2026-10-08　**来源**：iOS 壳 `-scheme ChuanqiCutApp` 首次真编译（Pods 工程为 2026-10-07 产物）　**验证状态**：已修（`pod install` 重生成）
+
+- **现象**：Camera Pod 新增 4 个 Swift 文件后，SPM 侧 `swift test` 立刻能编（Package.swift 按目录收），
+  但 iOS 壳构建报 **42 条 `cannot find type 'MakeupParams' / 'PortraitSkinMask' / 'MetalFXScaler' in scope`**。
+  根因不是代码：`Pods/Pods.xcodeproj` 是 `pod install` 那一刻生成的**文件清单快照**，新文件不在工程里，
+  同模块内的类型自然"不存在"。
+- **规约**：① podspec 用通配 `source_files` **不等于**免登记——**新增/删除文件后必须在两端跑 `pod install`**
+  （ios / mac 各自一份）；②「SPM 测试绿」不能外推到「App 构建绿」，这两条是**两条独立的源文件清单**；
+  ③ 报一片 `cannot find type in scope` 时先 `grep` 新文件名在不在 `Pods.xcodeproj` 里，别先去查代码。
+### P98 · backlog 写集路径整体过期 —— `core/src/*` 在 INFRA-022 后已迁至 `engine/core/cq/*`
+**日期**：2026-10-10　**来源**：RESEARCH-010 编辑功能现状核验，backlog §3.4/§3.6/§4.3 与实际布局比对　**验证状态**：已确认（事实核对，非修复）
+
+- **现象**：`TASK-BACKLOG.md` 里 EXPORT-001/002/003、EDIT-001~006、PROJ-001~004、MODEL-003 等
+  未开工卡的**写集一律写 `core/src/export/*`、`core/src/model/*`、`core/src/effect/*`**。
+  但 INFRA-022（2026-10-07）已把引擎源收拢到 `engine/`，实际编译单元清单在
+  `engine/core/CMakeLists.txt:17-84`，路径形如 `engine/core/cq/...`。`core/src/` 现在只剩 `.gitkeep`。
+- **为什么没人早发现**：全局册（BACKLOG）自规划后再未被系统维护；而所有引用它的卡都是**未开工**状态，
+  没人按写集去建文件，于是"路径错"长期不表现为任何错误。**这是隐性过载，不是显性故障。**
+- **规约**：① 领 backlog 里的老卡时，**先核写集路径再动手**，以 `engine/core/CMakeLists.txt` 为准，
+  不以 backlog 表格为准；② 若某卡结论已被近期 INFRA/ADR 推翻，**先提案改卡再开工**，不要复活过期形状；
+  ③ 每季度做一次「BACKLOG 写集 vs 真实布局」的一致性清扫，别等开工才发现。
+
+### P99 · 门禁绿 ≠ 功能可用 —— 「完成」口径里缺少用户可见性这一栏
+**日期**：2026-10-10　**来源**：RESEARCH-010 §3.3；用户反馈「编辑没啥功能，跟没做差不多」　**验证状态**：口径建议未采纳（待传哲拍板）
+
+- **现象**：门禁 = `build_core.sh`（编译）+ `ctest`（单测）+ golden 齐备性，三项全 PASS（PASS=14/FAIL=0）
+  的情况下，编辑页实际只有 9 项可用，底部「音频/文字/特效」三个按钮是 `enabled:false` + 空闭包，
+  **且全仓 `Sources/` 下搜不到任何 `TODO`/`FIXME`** —— 项目用"显式置灰 + 空闭包"表达未就绪，
+  这类占位在编译和单测里**完全静默**。
+- **为什么门禁抓不到**：置灰按钮是合法 Swift，`enabled:false` 不会让 `-Werror` 报警；
+  没接出来的 C ABI 函数没人调用，链接期也不报错；缺失的导出功能根本没有代码，**没有可失败的对象**。
+- **规约**：① 新增交互式功能的验收，必须在任务卡里写「用户操作路径 → 可观察结果」的走查证据
+  （截图/日志），**仅编译绿 + 单测绿不得标记完成**；② 按钮/入口若本期为占位，**必须在任务卡写明"占位"
+  并在验收表列出**，禁止用空闭包静默表达；③ 报"某模块完成"时，一并给出该模块的**用户可见能力清单**，
+  而不是只给 PASS 数字。这条建议改 `AGENTS.md`「验证」节 —— 真源改动需传哲拍板后才落地。
+
+### P100 · Edit 对含 markdown 表格的长片段替换可能报 success 却不落盘
+**日期**：2026-10-10　**来源**：修订 RESEARCH-010 §5/§6 时连续两次大段替换丢失　**验证状态**：已规避（换写法）+ 事后 Grep 结构核验通过
+
+- **现象**：对一段含多个 markdown 表格的长文本调用 Edit，工具返回成功，但随后 `Grep '^## '`
+  发现章节结构仍是旧的 —— **替换没有真正写入**。同一文件此前已有一处成功的 Edit（纯文本行），
+  说明不是文件权限问题，而是**长片段 + 表格**的组合。观察到表格会被写后钩子重排列宽
+  （`| a |` 变成对齐的多个空格），推测钩子在读改写过程中使用了格式化前的底稿。
+- **危害**：静默失败，且工具返回的仍是 success。**凭工具返回值判断成功是错的。**
+- **规约**：① 任何涉及 markdown 表格的大段改动，**改用 `python3` 按行号截断 + 尾部重写**
+  （`lines[:idx]` + 新内容），不要依赖长字符串匹配；② 改完必须用 `Grep '^## '` 或读文件
+  核实章节/内容真的变了，把"工具说成功"降级为待验证信号；③ 写完后顺手再读一遍关键段落，
+  尤其是表格相邻的标题层级有没有串号。
+
+### P101 · 商用 SDK 竞品调研的取数坑 —— 中文文档抓不到、源码仓库拖不动
+**日期**：2026-10-10　**来源**：RESEARCH-011（该厂商 其创作 SDK × 阿里云 UGSV 竞品调研）　**验证状态**：已确认（两条迂回路径均实测奏效）
+
+- **现象**（两个独立的坑，都会让「去查一下竞品」直接卡死）：
+  1. **该厂商云服务中文文档是 JS 动态渲染**：`WebFetch https://docs.该厂商云服务.com/docs/6839/1535345`
+     返回**空内容**（不是 403，是正文根本不存在于响应里 —— 内容只在浏览器里渲染出来）。
+  2. **阿里云 UGSV iOS demo 仓库 132 MB**：`git clone --depth 1` 与 `codeload` tarball 均在
+     **4 分钟无进展后超时失败**。为核一眼功能清单去拖 132 MB，性价比极差。
+- **迂回路径（实测奏效）**：
+  1. 该厂商 → 走**海外同产品的 该厂商海外品牌 英文文档站**（`docs.byteplus.com/docs/video-editor-sdk/*`，
+     同产品、公开可访问、正文是静态的），以及**搜索引擎摘要**（结果片段常直接含正文原句，
+     等于变相拿到渲染后的内容）。中文页被索引到的"错误产品 ID 路径"（如 `/docs/6408/1582522`）
+     内容也是真的，能用。
+  2. 源码 → **不下载，改用 GitHub tree API**：
+     `curl "https://api.github.com/repos/<org>/<repo>/git/trees/main?recursive=1"`
+     （本次 2.0 MB JSON / 5693 条目）。按**文件名关键字**做能力核验（如 `split`/`undo`/`redo`/`draft`
+     命中数 = 0 即为没有），再按目录列功能矩阵 —— 快、可复现，且比读文档宣称更硬。
+- **规约**：① 竞品/第三方技术调研**先假设官网抓不到**，直接找该产品的**海外站 / 镜像站 / 搜索引擎摘要**，
+  别在渲染型页面上反复重试；② 需要"某某功能存不存在"这类**布尔结论**时，优先用
+  **仓库 tree API + 文件名检索**，不要为一个布尔值拖整个仓库；③ 结论里必须区分
+  「文档宣称」与「源码/实测」—— 本次阿里云官方文档称支持草稿箱，源码 0 命中，二者不一致。
+- **顺带的事实结论**（对选型有用）：**商用剪辑 SDK 的 UI 源码基本不给** —— 该厂商明确"SDK 暂不公开提供，
+  需联系技术支持"，给的是 UI 标注文档；阿里云是**少见的 UI 源码 MIT 开源**，但引擎仍闭源 + 需 License。
+- **追加（2026-10-10 22:40，传哲指出「阿里云应该看 iOS 端」才发现的第二个坑）**：阿里云 iOS 侧
+  **有两个仓库，别核错** —— 官方 Demo 页（`help.aliyun.com/zh/apsara-video-sdk/demo-for-mediabox-sdk`）
+  **直指的是 `aliyunvideo/MONE_demo_opensource_iOS`**（一体化 App：播放器 / 短视频 / 直播 / RTC 四条线 +
+  AUIBaseKits，短视频在 `AlivcUgsvDemo/`，**比独立仓库多出剪同款全套与多轨编辑条**）；
+  而 `MediaBox-Demos/amdemos-ios-ugsv` 是官方「短视频 SDK Demo 源码下载」页指向的**裁剪版**（只有 UGSV）。
+  **规约**：核验某能力「有/无」之前，先确认官方入口页指向的是哪个仓库 —— 拿裁剪版当全集会漏功能、
+  也会让负结论站不住。本次的负结论（无 split / undo / redo / draft）是**两个仓库都核过**才下的。
+
+### P102 · 找商用 SDK 资料的第三条路：公开 podspec 仓库 + CDN 直链（比官网和"源码"都好使）
+**日期**：2026-10-10　**来源**：RESEARCH-012 §1.5，传哲线索「看智能创作SDK / Creation Kit / CK 与
+`该厂商云服务/其公开 spec 仓库` 里的 其轨道 UI 组件库.podspec」　**验证状态**：已确认（4 个 zip 均实测下载解包）
+
+- **现象**：该厂商 SDK 概览明确写「暂不公开提供」，文档又是 JS 渲染抓不到（P101）——
+  按常理就该收工判定"该厂商什么也拿不到"。**这个结论只对了一半。**
+- **第三条路**：该厂商有公开 podspec 仓库 `github.com/该厂商云服务/其公开 spec 仓库`（**MIT**，
+  63 个组件 / 2192 个 podspec / 9071 条目，2026-10-10 仍在更新）。podspec 里 `s.source` 是**公开 CDN 直链**：
+  `https://sf3-ttcdn-tos.pstatp.com/obj/该厂商云服务/<Name>/<Version>/<Name>.zip`，实测全部 HTTP 200：
+  `其轨道 UI 组件库@0.1` 7.4 MB、`其编辑语义层@17.5.0.14` 7.2 MB、`其媒体引擎层@9.6.2.1-D` 40 MB、
+  `其创作 SDKKit@1.1.0` 92 MB。解包得到 **`Headers/*.h`（接口层）+ 资源 bundle（配置 JSON）**，
+  没有实现源码，但对"看架构 / 接口 / 信息架构"已经够用，**且全程不需要任何商务流程**。
+- **两个操作坑**：
+  1. podspec 的 source 常写成 `{ :http => ".../#{s.name}/#{s.version}/#{s.name}.zip" }` **插值**，
+     直接拿这串字面量去 curl 会 **403**（我第一次就打到了目录根）。**必须按组件名+版本手工展开**再请求。
+  2. **名字会骗人**：`其示例工程`（Gitee `该厂商云服务/其示例工程`，公开 MIT）名字像 Video Editor，
+     实际是该厂商 SDK 全家桶（BDHotfix/RangersAPM/其编辑器组件/其编辑器组件/其编辑器组件/其编辑器组件/Timor），
+     495 条目里**没有任何编辑模块**。白花时间。
+- **规约**：找商用/闭源 SDK 的资料，按四级找，别停在"官网说不公开"就收工 ——
+  ① 官网文档 → ② 海外站（该厂商海外品牌 类）+ 搜索摘要 → ③ **公开包管理仓库**
+  （podspec / maven / npm / pub；`trunk.cocoapods.org/api/v1/pods/<名>` 一查便知）→
+  ④ **包内头文件 + 资源 JSON**（接口与配置往往就在这里）。
+- **合规边界**：podspec 的 license 字段不一致（`其轨道 UI 组件库`/`其媒体引擎层` 写 MIT，`其编辑语义层`/
+  `其创作 SDKKit` 是自定义块）。**头文件/JSON 用于研究可以，二进制集成进产品属商用授权范畴**，
+  与 FFmpeg LGPL 同类，**需法务/商务拍板，不由 AI 代决**（已在 RESEARCH-012 §1.5.6 写明）。
+- **追加（二进制层面还能再挖一层，2026-10-10 23:00 实测）**：拿到 `.a` / `.framework` 之后，
+  **元数据层**仍有大量可读信息，命令就三个：
+  ① `lipo -info` → 架构与体积（本次 armv7+x86_64+arm64，20 MB）；
+  ② `nm -arch arm64 -gU` → **类名 + 实例变量(IVAR) + 协议 + C 函数**
+     （本次 108 类 / **546 个 IVAR** / 34 协议）；
+  ③ `strings` → selector 候选与配置 key（本次 2604 候选、`dve_ui_*` 18 个）。
+  **其中 IVAR 是头文件里完全没有的内部结构** —— 例如 `其多轨控制器` 的
+  8 个「按片段类型划分的 ViewModel」、`其缩略图管理器` 的
+  `_operationQueue/_lock/_tasks/_loaders/_handlers`，都是靠 IVAR 才看出来的。
+  **踩坑**：OC 方法名**不在** `nm -gU` 里（不是外部符号），本次 grep `[-+]\[Class xxx\]` 命中 0；
+  要拿方法名得走 `__objc_methname` 段（`otool -s __TEXT __objc_methname`）或 `otool -ov`，
+  且 `.a` 需先 `ar -x` 解出 `.o`。
+- **边界（再次强调）**：**不反汇编、不反编译、不还原实现逻辑**。商业 SDK 的 EULA 普遍禁止
+  reverse engineering，此问题与 FFmpeg LGPL 同类，**需法务/商务拍板，AI 不代决**。
+  元数据观察仅限架构与信息架构研究，本次未链接、未集成、未运行。
+
+
+### P103 · 全仓机械替换必须显式排除 append-only 文件（2026-10-10 23:40 实测踩）
+
+- **现象**：INFRA-022 的 `pal` → `platform` 改名做全仓正则替换时，把
+  `docs/reports/LEDGER-W42.md` 一并扫进去，结果台账里 24 处被改写 ——
+  历史条目中的 `PAL` 变成 `Platform`，**违反 ADR-0034「台账 append-only、禁止改写历史条目」**。
+- **更隐蔽的一种破坏**：描述变更本身的行被改成了 `A → A`。例如
+  「`engine/core/cq/pal` → `cq/platform`」被改成
+  「`engine/core/cq/platform` → `cq/platform`」，**旧名丢失、语义归零**；
+  同理 `pal.h`→`platform.h` 变成 `platform.h`→`platform.h`。
+  这类错 grep 计数看不出来（行数不变、仍含关键词），只能逐行读。
+- **根因**：替换脚本按「目录 + 扩展名」圈定范围，**没有按文件的可写性质分类**。
+  同一个 `docs/` 下混杂三类文件：① 可改的设计文档；② append-only 台账；③ 日期日志。
+- **定则**：
+  1. 任何全仓机械替换，先列**排除清单**：`docs/reports/LEDGER-*.md`、
+     `.workbuddy/memory/YYYY-MM-DD.md`、`.zcode/plans/*`、其它声明 append-only 的文件；
+  2. 替换后**必须复核**「旧名 → 新名」成对出现的行是否仍成立（专门 grep `→`）；
+  3. 历史条目里被引用的原话（传哲原话、当时的概念名）**一个字都不能改**，
+     新条目才用新名 —— 台账的作用是复盘，不是保持一致。
+- **补救**：本次 24 处已按行号精确修复（历史条目还原 `PAL`，23:38 新条目保留旧名以描述变更），
+  并在台账中登记。修复脚本用 `assert old in line` 逐行断言，避免二次误伤。

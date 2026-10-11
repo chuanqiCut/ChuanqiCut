@@ -27,7 +27,7 @@ SwiftUI(HomeView 入口卡→向导→对话框)  ──C ABI cq_ai_*──▶  
   特征: analysis(视觉) + audio_analysis(音频) → FeatureReport(纯统计,KB级)
   决策: plan_pipeline(Prompt→ILlmClient→校验修复→降级) → EditPlan(cq.editplan/1, 8动词)
   执行: plan_executor → ICommand 批次 → cq_session_submit（与人手编辑同一撤销栈）
-  传输: pal/apple/net(URLSession+SSE, 零三方) ← OpenAI-compatible 协议
+  传输: platform/apple/net(URLSession+SSE, 零三方) ← OpenAI-compatible 协议
   降级: ai/fallback 规则引擎（断网/无key/三连失败 → 同 schema 合法 plan）
 ```
 

@@ -4,13 +4,13 @@
 id:          AIEDIT-001
 layer:       SDK
 goal:        冻结智能成批次的全部跨任务契约：FeatureReport/EditPlan JSON schema、ILlmClient/INetTransport 抽象头，并交付 EditPlan 校验器
-input:       [SPEC AIEDIT-001 §4-§7, ADR-0020 决策 2/3/7, .ai/modules/ai.md, core/include/cq/pal/inference.h（接口风格参照）]
+input:       [SPEC AIEDIT-001 §4-§7, ADR-0020 决策 2/3/7, .ai/modules/ai.md, core/include/cq/platform/inference.h（接口风格参照）]
 output:      [契约头文件, EditPlan 校验器实现, golden 样例集, 单测, 模块文档更新]
 write_set:   core/include/cq/ai/{feature_report.h, edit_plan.h, llm_client.h}(新)、
-             core/include/cq/pal/net.h(新)、core/src/ai/plan/edit_plan_validator.{h,cpp}(新)、
+             core/include/cq/platform/net.h(新)、core/src/ai/plan/edit_plan_validator.{h,cpp}(新)、
              core/src/ai/plan/edit_plan_golden/(新, JSON 夹具)、core/tests/test_edit_plan_validator.cpp(新)、
              core/CMakeLists.txt(登记新文件)
-read_set:    core/include/cq/base/{time.h,status.h}, core/include/cq/pal/inference.h, docs/decisions/ADR-0009
+read_set:    core/include/cq/base/{time.h,status.h}, core/include/cq/platform/inference.h, docs/decisions/ADR-0009
 deps:        []
 acceptance:
   - 校验器 golden 样例集 ≥ 40 例全过：合法 plan 全接受；非法样例（浮点秒时间/越界 source_in/未知 asset/重叠段/未知 schema 版本/未知 op）全拒绝且错误码精确
@@ -31,7 +31,7 @@ ADR-0020 决策 3：LLM 输出必须是有界动词集的 `EditPlan`，C++ 是�
 
 ## 实现要点
 
-1. **类型分层**：`feature_report.h`/`edit_plan.h` 是**纯 POD + 解析/序列化**（hand-written JSON 解析，参照 core 现状不引 nlohmann——若引库走 dependency-governance 另议，P0 手写）；`llm_client.h`/`net.h` 是**抽象接口**（风格对齐 `pal/inference.h`：CancelToken、纯虚、工厂、opaque 句柄）。
+1. **类型分层**：`feature_report.h`/`edit_plan.h` 是**纯 POD + 解析/序列化**（hand-written JSON 解析，参照 core 现状不引 nlohmann——若引库走 dependency-governance 另议，P0 手写）；`llm_client.h`/`net.h` 是**抽象接口**（风格对齐 `platform/inference.h`：CancelToken、纯虚、工厂、opaque 句柄）。
 2. EditPlan 动词集 P0 八个：`select_intro/select_highlight/select_outro/place_clip/remove_range/trim_clip/reorder/set_transition/set_bgm_placeholder`（见 Spec §6.1）；`op` 未知值非法。
 3. 校验器错误码进 `cq_status` 语义域（新增 `CQ_AI_PLAN_*` 段，登记在 base/status.h 注释表——**只加注释与枚举值，不动既有段**）。
 4. golden 夹具放 `core/src/ai/plan/edit_plan_golden/`（JSON 文本，每例 ≤ 2KB，登记清单文件便于增量）。
@@ -51,18 +51,22 @@ ADR-0020 决策 3：LLM 输出必须是有界动词集的 `EditPlan`，C++ 是�
 
 | 子步骤 | 状态 | 证据 |
 |---|---|---|
-| 契约头 feature_report.h / edit_plan.h / llm_client.h / pal/net.h | ✅ | 四头 include smoke 过 clang13 项目警告集零警告 |
+| 契约头 feature_report.h / edit_plan.h / llm_client.h / platform/net.h | ✅ | 四头 include smoke 过 clang13 项目警告集零警告 |
 | 错误码 CQ_AI_PLAN_* 段 | ✅ | status.h 9500~9513 + kAiPlan 分类(11)，码值 static_assert 锁定 |
 | EditPlan 校验器（JSON 解析/结构/语义三层） | ✅ | edit_plan_validator.{h,cpp}；浮点秒双形态拦截 |
 | golden 样例集 | ✅ 58 例（验收 ≥40） | 合法 18 + 非法 40，manifest.txt 增量登记 |
 | 单测 | ✅ 本机 | clang13 直编：117 检查 0 失败（非法 40/40 错误码按码名精确匹配） |
-| ctest -R edit_plan（ctest 通道） | ❌ 未跑 | 本机无 cmake/ninja；CMake 已登记（测试名 ai_edit_plan）= 池[8] |
-| build_core.sh -Werror | ❌ 未跑 | 同上（新增 TU 已过等价警告集自证）= 池[8] |
+| ctest -R edit_plan（ctest 通道） | ✅ **2026-10-08 深夜构建机实测 PASS** | 机器 macOS 26.7.1 / cmake 4.4.3；与 clang13 直编结论一致（117 检查 0 失败） |
+| build_core.sh -Werror | ✅ 同上 | Debug + Release 双向；新增 TU 零警告 |
+| 全量 ctest | ✅ 同上 | **Debug 46/46 · Release 46/46**（`ai_edit_plan` 在内） |
+
+**池 [8] 可关**：CMake 注册三件事（私有头 include / `CQ_EDIT_PLAN_GOLDEN_DIR` 宏 / 链接 `cq_core`）
+在 ctest 通道实测成立。真机无涉（纯 C++ 契约层）。
 
 实际写集（任务卡写 core/，按仓库实际落 engine/core/，两 CMake 例外为登记必需）：
 
 - engine/core/include/cq/ai/{feature_report.h, edit_plan.h, llm_client.h}（新）
-- engine/core/include/cq/pal/net.h（新）
+- engine/core/include/cq/platform/net.h（新）
 - engine/core/include/cq/base/status.h、engine/core/src/base/status.cpp（追加 AI 段，不动既有段）
 - engine/core/src/ai/plan/edit_plan_validator.{h,cpp}（新）
 - engine/core/src/ai/plan/edit_plan_golden/（新：58 JSON + manifest.txt；生成脚本用后即删）

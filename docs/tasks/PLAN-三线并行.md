@@ -11,7 +11,7 @@
 | 线 | 任务前缀 | 域 | 写集（可改） | 禁改（热点，见 §3） |
 |---|---|---|---|---|
 | **A 编辑器/UI 线** | `UIA-*`、`MODEL-*` | 时间线交互、属性面板、素材库、导出 UI | `apps/apple/packages/SharedUI/**`（除相机契约层）、`bindings/swift/**`、`core/src/preview/**`、`core/include/cq/preview/**` | `core/include/cq/cq_sdk.h`、各 `CMakeLists.txt`、`Package.swift`、`ChuanqiCut.podspec`、`manifest.toml` |
-| **B 相机/特效线** | `CAM-*`、`CAP-*` | 相机采集、检测、美颜美型、贴纸 | `apps/apple/ios/iOSApp/Camera/**`、SharedUI 的 `Camera*` 契约层文件、`pal/apple/**`（相机/检测相关）、`docs/specs/`（相机域） | 同上热点；SharedUI 非相机文件；`bindings/swift` |
+| **B 相机/特效线** | `CAM-*`、`CAP-*` | 相机采集、检测、美颜美型、贴纸 | `apps/apple/ios/iOSApp/Camera/**`、SharedUI 的 `Camera*` 契约层文件、`platform/apple/**`（相机/检测相关）、`docs/specs/`（相机域） | 同上热点；SharedUI 非相机文件；`bindings/swift` |
 | **C 内核/媒体/渲染线** | `CORE-*`、`MEDIA-*`、`RENDER-*`、`AUDIO-*`、`GFX-*`、`EXPORT-*` | 解码/编码、渲染图、音频、shader、导出 | `core/src/{media,render,gfx,audio,command}/**`、`core/include/cq/{media,render,gfx,audio,command}/**`、`shaders/**`、`tests/golden/**`、`tools/shaders/**` | 同上热点；`bindings/swift`（ABI 变更走集成机）；SharedUI |
 
 约定：
@@ -29,11 +29,11 @@
 |---|---|---|
 | `ui-apple`、`ui-android` | **A 编辑器/UI 线** | |
 | `model`、`session`、`preview`、`project` | **A 线** | core 内的编辑域（时间线模型/会话/预览/项目序列化）；AIEDIT 智能成片并入 A（传哲 2026-10-04 拍板），ABI 扩展（AIEDIT-007 类）仍走集成机 |
-| `camera` | **B 相机/特效线** | `pal/apple` 的相机/检测子域随 B |
-| `media`、`render`、`gfx`、`audio`、`shader`、`export` | **C 内核/媒体/渲染线** | `pal/apple` 的媒体编解码子域随 C |
+| `camera` | **B 相机/特效线** | `platform/apple` 的相机/检测子域随 B |
+| `media`、`render`、`gfx`、`audio`、`shader`、`export` | **C 内核/媒体/渲染线** | `platform/apple` 的媒体编解码子域随 C |
 | `ai` | **A/C 分子域** | 智能成片（AIEDIT）子域归 A；端侧推理效果链（人脸/磨皮）归 C |
-| `core`、`pal`、`pal-android`、`deps` | **集成机** | 内核基础 / PAL 接口冻结 / 依赖治理 + 全部热点文件（§3） |
-| `pal-apple` | **集成机归口** | B/C 按子域共享写入，冲突时集成机裁决 |
+| `core`、`platform`、`platform-android`、`deps` | **集成机** | 内核基础 / Platform 接口冻结 / 依赖治理 + 全部热点文件（§3） |
+| `platform-apple` | **集成机归口** | B/C 按子域共享写入，冲突时集成机裁决 |
 
 规则：**一机同一时间只待一条线**（换线 = 旧线任务收尾推送之后）；开工先登记认领（§6）；
 新模块由集成机发号时一并定归属。各模块文档头部已加同款归属行。

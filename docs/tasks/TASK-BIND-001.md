@@ -91,7 +91,7 @@ const char* cq_status_to_string(int32_t code);
 tools/build/build_core.sh --platform=apple --config=Debug   --test
 tools/build/build_core.sh --platform=apple --config=Release --test
 tools/build/build_core_apple.sh --config=Release
-python3 tools/pal/check_pal_headers.py
+python3 tools/platform/check_platform_headers.py
 ```
 
 ## 验收标准（对应 BACKLOG「零 C++/平台类型；评审通过」）

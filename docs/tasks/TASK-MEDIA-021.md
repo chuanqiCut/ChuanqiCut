@@ -49,7 +49,7 @@ Debug 与 Release 几乎一样慢 → 不是编译器优化问题，是策略问
    （自适应：只吸收「连续关键帧间隔」「关键帧到交付帧距离」两类实证，
    初始 0，最坏退化为旧行为，无拍脑袋常量）。
 2. **回退必须 seek**：已实现（快路径拒绝回退）。
-3. **与帧缓存的关系**：`IFrameCache` 仍未在预览链路注入（`PalFrameProviderFactory`
+3. **与帧缓存的关系**：`IFrameCache` 仍未在预览链路注入（`PlatformFrameProviderFactory`
    未调 `SetFrameCache`）——维持原状，注入与否另行立项。
 
 ## 验收（全部达成）
@@ -67,7 +67,7 @@ Debug 与 Release 几乎一样慢 → 不是编译器优化问题，是策略问
 ./tools/build/build_core.sh --platform=apple --config=Release --test  # 42/42
 ctest -R media_sequential_acquire   # 46 断言
 ctest -R media_sequential_real      # 7 断言（Debug/Release 均过）
-ctest -R media_system_frame_provider / pala_decode / frame_provider_apple  # 回归全过
+ctest -R media_system_frame_provider / platform_apple_decode / frame_provider_apple  # 回归全过
 cd bindings/swift && swift test --disable-sandbox            # 23/23
 cd apps/apple/packages/SharedUI && swift test --disable-sandbox  # 20/20
 ```

@@ -22,7 +22,7 @@ ChuanqiCut 不是一个 App，而是**一个视频编辑 SDK + 三个平台壳**
 │  SDK 层（C++ 共享内核）—— 唯一的业务逻辑真源，≥90% 共享  │
 │  模型/命令/动画/媒体/渲染图/效果/音频/项目/推理           │
 ├─────────────────────────────────────────────────────────┤
-│  PAL 层（平台抽象）—— 每个平台一份实现                   │
+│  Platform 层（平台抽象）—— 每个平台一份实现                   │
 │  GFX | MediaCodec | Audio | Inference | FS | Clock | Log  │
 └─────────────────────────────────────────────────────────┘
 ```
@@ -56,7 +56,7 @@ ChuanqiCut 不是一个 App，而是**一个视频编辑 SDK + 三个平台壳**
 
 ### 2.2 为什么现在就要按 P1/P2 设计
 
-C++ 内核的模块边界、PAL 接口、Shader 分层这三样东西一旦先按"仅 Apple"写好，后续补 Android 的成本不是增量而是重写。本期多付约 15% 的设计成本，省掉后续 60% 的返工。
+C++ 内核的模块边界、Platform 接口、Shader 分层这三样东西一旦先按"仅 Apple"写好，后续补 Android 的成本不是增量而是重写。本期多付约 15% 的设计成本，省掉后续 60% 的返工。
 
 **但资源投入是 Apple 优先**：架构按三端设计，人力与优化优先保障 iOS/macOS。具体地 —— Platform-Native shader 特化、性能调优、测试覆盖都先做 Apple 端。
 
@@ -67,9 +67,9 @@ C++ 内核的模块边界、PAL 接口、Shader 分层这三样东西一旦先�
 | 层 | 语言 | 标准/版本 | 占比 | 说明 |
 |---|---|---|---|---|
 | SDK 内核 | **C++** | C++20 | ~55% | 唯一业务逻辑真源。禁用异常跨模块、禁用 RTTI（可选开）、禁用 STL 类型跨 ABI 边界 |
-| PAL (Apple) | **Swift / ObjC++** | Swift 5.10+ | ~10% | Metal、VideoToolbox、AVAudioEngine、CoreML 的适配与零拷贝桥接 |
-| PAL (Android) | **C++ / Kotlin** | NDK r27+ | ~8% | MediaCodec、AHardwareBuffer、Oboe/AAudio、TFLite 适配 |
-| PAL (HarmonyOS) | **C++ / ArkTS** | — | 预留 | AVCodecKit、XComponent、OHAudio、MindSpore Lite |
+| Platform (Apple) | **Swift / ObjC++** | Swift 5.10+ | ~10% | Metal、VideoToolbox、AVAudioEngine、CoreML 的适配与零拷贝桥接 |
+| Platform (Android) | **C++ / Kotlin** | NDK r27+ | ~8% | MediaCodec、AHardwareBuffer、Oboe/AAudio、TFLite 适配 |
+| Platform (HarmonyOS) | **C++ / ArkTS** | — | 预留 | AVCodecKit、XComponent、OHAudio、MindSpore Lite |
 | Shader | **GLSL（Vulkan 方言）** | GLSL 4.50 / ES 3.10 | ~8% | 单一源，编译为 SPIR-V 后交叉生成 MSL / GLSL ES，见 `ARCH-003 §4` |
 | UI (Apple) | **Swift / SwiftUI** | Swift 5.10+ | ~12% | 双 target 共享 UI package |
 | UI (Android) | **Kotlin / Compose** | — | ~5% | |
@@ -91,14 +91,14 @@ C++ 内核的模块边界、PAL 接口、Shader 分层这三样东西一旦先�
 | `anim` | 关键帧与插值引擎（Linear/Bezier/Hermite/Catmull-Rom） | `Keyframe<T>`, `AnimationChannel<T>` | ✅ |
 | `retime` | 时间映射引擎：恒速 / 速度曲线 / 倒放 | `TimeMap` | ✅ |
 | `graph` | 渲染图：节点 DAG、pass 合并、中间纹理池 | `RenderGraph`, `RenderNode` | ✅ |
-| `media` | 解封装/解码/编码/封装 的调度与帧缓存 | `FrameProvider`, `DecoderPool`, `Encoder` | ✅（PAL 分离） |
-| `audio` | 音频图：解码、效果、时间拉伸、变声、混音 | `AudioGraph`, `TimeStretchNode` | ✅（PAL 分离） |
+| `media` | 解封装/解码/编码/封装 的调度与帧缓存 | `FrameProvider`, `DecoderPool`, `Encoder` | ✅（Platform 分离） |
+| `audio` | 音频图：解码、效果、时间拉伸、变声、混音 | `AudioGraph`, `TimeStretchNode` | ✅（Platform 分离） |
 | `effect` | 效果节点：变换/抠像/美颜/美型/调色/滤镜/转场/文字 | 各类 `RenderNode` 子类 | ✅ |
-| `inference` | 推理抽象：模型加载与执行 | `InferenceBackend` | ✅（PAL 分离） |
+| `inference` | 推理抽象：模型加载与执行 | `InferenceBackend` | ✅（Platform 分离） |
 | `project` | 项目文件序列化、schema 版本、迁移链 | `ProjectSerializer`, `Migrator` | ✅ |
 | `session` | 编辑器会话：串起上述模块，对外唯一门面 | `EditorSession` | ✅ |
 
-### 4.2 PAL 接口（`core/pal/`，头文件仅声明；实现在 `pal/<platform>/`）
+### 4.2 Platform 接口（`core/platform/`，头文件仅声明；实现在 `platform/<platform>/`）
 
 | 接口 | 职责 | Apple 实现 | Android 实现 | HarmonyOS 实现 |
 |---|---|---|---|---|
@@ -114,10 +114,10 @@ C++ 内核的模块边界、PAL 接口、Shader 分层这三样东西一旦先�
 | `ILogger` | 分级日志 + 帧级 trace | os_log | __android_log | HiLog |
 | `ICapabilities` | 运行时能力查询 | 见 `ARCH-004 §2` | 同 | 同 |
 
-**PAL 设计铁律**：
-1. PAL 头文件**不得暴露任何平台类型**（`CVPixelBuffer`、`AHardwareBuffer`、`VkImage` 一律不得出现在 `core/` 可见的头文件中）。跨层传递统一用句柄 `NativeImageHandle`（opaque）。
-2. PAL 接口是**纯虚 + C 风格工厂**，保证 ABI 稳定。
-3. 每个 PAL 实现必须提供对应的 capability 查询，不能假设能力存在。
+**Platform 设计铁律**：
+1. Platform 头文件**不得暴露任何平台类型**（`CVPixelBuffer`、`AHardwareBuffer`、`VkImage` 一律不得出现在 `core/` 可见的头文件中）。跨层传递统一用句柄 `NativeImageHandle`（opaque）。
+2. Platform 接口是**纯虚 + C 风格工厂**，保证 ABI 稳定。
+3. 每个 Platform 实现必须提供对应的 capability 查询，不能假设能力存在。
 
 ---
 
@@ -216,7 +216,7 @@ chuanqicut/
 │   │   └── cq/...                 # 内部 C++ 头
 │   ├── src/…                      # 按 §4.1 模块划分
 │   └── tests/
-├── pal/
+├── platform/
 │   ├── apple/                     # Metal / VT / AVAudioEngine / CoreML / PhotoKit
 │   ├── android/                   # Vulkan+GLES / MediaCodec / Oboe / TFLite
 │   └── ohos/                      # 预留（不实现，仅占位与接口编译检查）
@@ -286,11 +286,11 @@ chuanqicut/
 
 | 阶段 | 目标 | 出口标准 |
 |---|---|---|
-| **Phase 0 — 地基** | 内核骨架、PAL 契约、构建链、依赖治理、CI、基准测试 | 三平台能编译出内核；Apple 端空壳 App 跑起来；性能基线数据入库 |
+| **Phase 0 — 地基** | 内核骨架、Platform 契约、构建链、依赖治理、CI、基准测试 | 三平台能编译出内核；Apple 端空壳 App 跑起来；性能基线数据入库 |
 | **Phase 1 — Apple MVP** | 解码→渲染→预览→导出 全链路通，基础剪辑 | 导入 3 段素材→裁剪→拼接→变速→调色→转场→导出 MP4，1080p 60fps 预览稳定 |
 | **Phase 2 — 效果与编辑能力** | 美颜/美型/抠像/关键帧/文字/多轨/Undo | 人像视频美颜+瘦脸实时预览 → 导出；完整 Undo/Redo |
-| **Phase 3 — Android** | PAL(Android) + Compose 壳 + 完整功能对齐 | Android 端完成 Phase 1+2 同等功能，设备矩阵通过 |
-| **Phase 4 — 鸿蒙（可选）** | PAL(OHOS) 可行性验证 / 实现 | 视资源决定，架构已预留 |
+| **Phase 3 — Android** | Platform(Android) + Compose 壳 + 完整功能对齐 | Android 端完成 Phase 1+2 同等功能，设备矩阵通过 |
+| **Phase 4 — 鸿蒙（可选）** | Platform(OHOS) 可行性验证 / 实现 | 视资源决定，架构已预留 |
 
 详细任务见 `docs/tasks/TASK-BACKLOG.md`。
 

@@ -144,7 +144,7 @@ undo/redo 的 C ABI 归 UIA-008。
 | 函数 | 语义 |
 |---|---|
 | `cq_session_asset_count` / `cq_session_query_assets` | 读快照（契约同其它查询）；`CQAssetInfo.path` 是 `char[512]` 值拷贝（NUL 结尾 + truncated 标记），**不是**指针 —— 快照发布后路径仍可读 |
-| `cq_media_probe_duration(path, out)` | **同步**探测媒体时长（打开容器→读 duration→关闭，毫秒级；用户导入动作、低频）。实现调 PAL 工厂链，**独立 TU** `core/src/media/media_probe_abi.cpp`（已登记 ADR-0011 §3 TU 表） |
+| `cq_media_probe_duration(path, out)` | **同步**探测媒体时长（打开容器→读 duration→关闭，毫秒级；用户导入动作、低频）。实现调 Platform 工厂链，**独立 TU** `core/src/media/media_probe_abi.cpp`（已登记 ADR-0011 §3 TU 表） |
 
 素材 id 由**调用方分配**（内核不生成）；AssetRegistry 新增 `ListAssets()` 遍历。
 

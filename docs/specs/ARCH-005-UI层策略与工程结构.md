@@ -95,7 +95,7 @@ void            cq_snapshot_release(CQSnapshot*);
 | Android | `SurfaceView` / `TextureView` + NDK 侧 `ANativeWindow` |
 | HarmonyOS | `XComponent`（P2） |
 
-内核通过 PAL 拿到原生窗口句柄，直接绘制。**预览画面不经过 UI 框架的合成路径**，避免额外拷贝。
+内核通过 Platform 拿到原生窗口句柄，直接绘制。**预览画面不经过 UI 框架的合成路径**，避免额外拷贝。
 
 ---
 

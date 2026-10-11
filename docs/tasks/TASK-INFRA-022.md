@@ -3,9 +3,9 @@
 ```yaml
 id:          TASK-INFRA-022
 layer:       基建
-goal:        core/pal/bindings 收拢到顶层 engine/，ChuanqiCutEngine pod 根随之落位，docs/ 不再被 CocoaPods 文档探测吞入
+goal:        core/platform/bindings 收拢到顶层 engine/，ChuanqiCutEngine pod 根随之落位，docs/ 不再被 CocoaPods 文档探测吞入
 input:       [传哲拍板「目录结构不合理就调」, INFRA-021, CocoaPods developer_files 机制]
-output:      [engine/{core,pal,bindings,ChuanqiCutEngine.podspec}, 根 CMakeLists/tests/build 脚本/SPM/project.yml/Podfile 路径重定基]
+output:      [engine/{core,platform,bindings,ChuanqiCutEngine.podspec}, 根 CMakeLists/tests/build 脚本/SPM/project.yml/Podfile 路径重定基]
 write_set:   engine/**（迁入）、根 CMakeLists.txt、tests/CMakeLists.txt、tools/build/{build_core_apple.sh}、engine/bindings/swift/{prepare.sh,run_smoke.sh}、tools/ci/run_gate.sh、双 SPM Package.swift、双 project.yml、双 Podfile、.gitignore
 deps:        [TASK-INFRA-021]
 acceptance:
@@ -17,7 +17,7 @@ verification:
   - tools/build/build_core.sh --platform=apple --config=Debug --test
   - (cd engine/bindings/swift && swift test --disable-sandbox --scratch-path <root>/build/spm/bindings)
   - 双 xcodebuild + 四包 swift test
-risk:    Android/OHOS 侧路径未在本机验证（apps/android CMake 为占位骨架无引用；pal/android 随迁）→ 池登记待验
+risk:    Android/OHOS 侧路径未在本机验证（apps/android CMake 为占位骨架无引用；platform/android 随迁）→ 池登记待验
 parallel:    false
 ```
 
@@ -35,8 +35,8 @@ parallel:    false
 engine/                    ← 跨平台引擎源（pod 根；docs/apps/tools 在外）
 ├── ChuanqiCutEngine.podspec
 ├── core/    （C++ 内核：include + src + tests 注册）
-├── pal/     （apple/android/ohos 适配）
+├── platform/     （apple/android/ohos 适配）
 └── bindings/（Swift 绑定 SPM 包：Package.swift/Sources/Tests/Frameworks/prepare.sh/run_smoke.sh）
-根 CMakeLists.txt 仍在仓库根（cmake -S .），add_subdirectory(engine/core|engine/pal)。
+根 CMakeLists.txt 仍在仓库根（cmake -S .），add_subdirectory(engine/core|engine/platform)。
 tests/（C++ 单测 + golden）留根，include 路径重定基 engine/core/include。
 ```

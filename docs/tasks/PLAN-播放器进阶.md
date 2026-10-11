@@ -66,7 +66,7 @@ PALA-030（已在 BACKLOG，deps AUDIO-001）
   → SPEC-播放session（范围：文件播放语义 vs 时间线播放语义的边界重申）
   → 契约冻结：cq_play_* C ABI 设计稿 + 评审（高冲突文件 cq_sdk.h，单独成卡）
   → 内核：demux loop + 音视频双队列 + 主时钟（复用 PlayerClock / MEDIA-020/021 快路径）
-  → PAL：VideoToolbox/MediaCodec 硬解接入（能力运行时查询，红线 #3）
+  → Platform：VideoToolbox/MediaCodec 硬解接入（能力运行时查询，红线 #3）
   → 绑定：CQPlayerEngine 实现 PlayerEngine 协议（UI 零改动，ADR-0022 接缝兑现）
   → sink 抽象：PlayerSurfaceSink（替代 as? AVPlayerEngine 耦合点）
   → HDR/EDR 自绘（wantsExtendedDynamicRangeContent + 浮点管线）

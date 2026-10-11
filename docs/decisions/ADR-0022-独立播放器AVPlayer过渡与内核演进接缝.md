@@ -19,7 +19,7 @@
 2. **接缝先行**：SharedUI/Player 域内控制层与 ViewModel 只依赖 `PlayerEngine` 协议（load/play/pause/seek/rate/volume/状态回调）；`AVPlayerEngine` 是该协议的已知实现。未来 C++ 播放 session 落地时新增 `CQPlayerEngine` 实现，UI 不改。
 3. **不动 core/ 与 C ABI**：MVP 零内核改动，规避 BIND 协调与高冲突文件。`cq_player_*`（时间线播放时钟）语义不变，文件播放器不与其混淆。
 4. **AVFoundation 使用边界**：AVFoundation 只允许出现在 Player 域的引擎/画面/缩略图文件（`AVPlayerEngine`、`PlayerSurface`、`VideoThumbnailLoader`）；控制层、ViewModel、App target 不 import AVFoundation（协议接缝之外不得泄漏平台播放类型）。
-5. **长期演进路线（登记，不立项）**：PALA-030 落地后，基于 `core/preview/`（PlayerClock + PreviewPump + ADR-0017 顺序快路径）改造 C++ 播放 session：demux loop + 音视频双队列 + 主时钟 + PAL 硬解；画面走 RenderGraph 输出（红线 #9：预览/导出/播放同一张图，只换输出目标与时钟源）；Android P1 同构接 MediaCodec。FFmpeg 仅作软解兜底（能力运行时查询，红线 #3），不 `--enable-gpl`。
+5. **长期演进路线（登记，不立项）**：PALA-030 落地后，基于 `core/preview/`（PlayerClock + PreviewPump + ADR-0017 顺序快路径）改造 C++ 播放 session：demux loop + 音视频双队列 + 主时钟 + Platform 硬解；画面走 RenderGraph 输出（红线 #9：预览/导出/播放同一张图，只换输出目标与时钟源）；Android P1 同构接 MediaCodec。FFmpeg 仅作软解兜底（能力运行时查询，红线 #3），不 `--enable-gpl`。
 6. **明确排除** mpv / GStreamer / ijkplayer / MobileVLCKit（许可、体积、维护状态或管线模型与产品形态不匹配，对比见 RESEARCH-006 §2）。
 
 ## 备选方案

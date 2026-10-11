@@ -7,22 +7,22 @@
 id:          TASK-MEDIA-026
 layer:       SDK
 goal:        导入探测不再付全文件扫描成本；播放 ~5s 停顿的阻塞调用定位到段
-input:       [用户反馈、baselines「泵内分段耗时」（rendered/s=0 停顿窗口 = 同一 bug）、pal/apple/media_demux.mm]
+input:       [用户反馈、baselines「泵内分段耗时」（rendered/s=0 停顿窗口 = 同一 bug）、platform/apple/media_demux.mm]
 output:      [media_demux.mm 懒扫描、ReadPacket/PopFrame/Seek 慢调用警报（Debug）、单测回归]
-write_set:   pal/apple/media_demux.mm、pal/apple/media_decode.mm（警报）、
+write_set:   platform/apple/media_demux.mm、platform/apple/media_decode.mm（警报）、
              core/include/cq/media/system_frame_provider.h（警报）、tests/unit/test_media_*.cpp 回归
-read_set:    ADR-0017、.ai/modules/{media,pal-apple}.md
+read_set:    ADR-0017、.ai/modules/{media,platform-apple}.md
 deps:        []
 acceptance:
   - 探测路径不再触发 ScanKeyframes ✅（probe 改走 demuxer OpenLight——只读容器时长）
-  - 既有 probe/导入/顺序播放测试零回归 ✅（pala_decode 150/150、preview 4/4）
+  - 既有 probe/导入/顺序播放测试零回归 ✅（platform_apple_decode 150/150、preview 4/4）
   - 真机：导入耗时显著下降（回填 baselines）⏸ 待描述文件重签
   - ~5s 停顿 **根因已定位并修复**：PopFrame 的 `VTDecompressionSessionWaitFor-
     AsynchronousFrames` 在 VT 静默丢帧时**永久阻塞**（成对日志实测 PopFrame #577
     进入后不返回；VT 丢帧永不回调）→ 改 2ms 轮询 + 最老 pending 超 1s 按丢失处理
     （清 pending + kIoNotFound + 重锚定，播放自恢复）✅ 本机全绿，真机复测待重签
 verification:
-  - ctest --test-dir build -R 'media|pala_decode'
+  - ctest --test-dir build -R 'media|platform_apple_decode'
   - tools/ci/run_gate.sh
   - 真机剖面（同 MEDIA-024 流程）
 risk:        懒扫描把成本移到首次 Seek（scrub 跳转首跳多 ~1-3s [E]，可接受——后续可

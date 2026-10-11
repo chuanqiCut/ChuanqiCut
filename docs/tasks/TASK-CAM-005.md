@@ -8,7 +8,7 @@ input:       [TASK-CAM-002(帧源), TASK-CAM-003(滤镜链), ADR-0014]
 output:      [apps/apple/ios/iOSApp/Camera/CameraRecorder.swift, CameraViewModel.swift(接线),
              apps/apple/packages/SharedUI/Sources/SharedUI/Editor/EditorScreen.swift(initialMedia 入口)]
 write_set:   上述文件, SharedUI Tests 若加用例
-read_set:    pal-apple.md(PALA-012 的 PTS 纪律参照——产物口径一致)
+read_set:    platform-apple.md(PALA-012 的 PTS 纪律参照——产物口径一致)
 deps:        [TASK-CAM-002, TASK-CAM-003, TASK-CAM-004]
 acceptance:
   - 录制产物:AVAsset 可加载,时长与录制时长偏差 ≤ 2 帧;video=h264 + audio=aac(track 校验)

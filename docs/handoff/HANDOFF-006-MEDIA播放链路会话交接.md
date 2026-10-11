@@ -49,9 +49,9 @@ EditorViewModel.tickPlayback (Timer 60Hz, 主线程)
 
 | 文件 | 内容 |
 |---|---|
-| `pal/apple/media_decode.h` | `kMaxQueuedFrames`、`kMaxMismatchStreak`、`order_mismatch_streak_`、Debug 计数器 |
-| `pal/apple/media_decode.mm` | 缺口处置、队列上界、`Flush()` 去 VTWait、回调顺序、Debug 日志、`Feed` 加 `@autoreleasepool` |
-| `pal/apple/media_demux.mm` | `RebuildReader` / `ReadPacket` 加 `@autoreleasepool` |
+| `platform/apple/media_decode.h` | `kMaxQueuedFrames`、`kMaxMismatchStreak`、`order_mismatch_streak_`、Debug 计数器 |
+| `platform/apple/media_decode.mm` | 缺口处置、队列上界、`Flush()` 去 VTWait、回调顺序、Debug 日志、`Feed` 加 `@autoreleasepool` |
+| `platform/apple/media_demux.mm` | `RebuildReader` / `ReadPacket` 加 `@autoreleasepool` |
 | `core/include/cq/media/system_frame_provider.h` | `AcquireExact` 追帧上界 `kMaxChasePops=600` |
 | `apps/apple/packages/SharedUI/Sources/SharedUI/AppEntry.swift` | DEBUG 剖面行加 `pump_nonok/s` 与 `footprint`（+ `memoryFootprintMB()`） |
 | 文档 | `docs/tasks/TASK-MEDIA-027.md`、`.ai/memory/pitfalls.md` P75、`.ai/memory/baselines.md`、`.ai/modules/media.md`、`.workbuddy/memory/MEMORY.md`（新增「内存与异步等待纪律」段） |

@@ -10,20 +10,20 @@ id:          TASK-MEDIA-023
 layer:       SDK
 goal:        VideoToolbox 解码输出尺寸上限 1080p（VT 内部解码+缩放一体），把单帧取帧耗时压进帧间隔，播放达到素材满帧
 input:       [baselines「预览播放吞吐」、RESEARCH-008 §1 #4（原 RESEARCH-006 对标 App范式，让位改号）、ADR-0017]
-output:      [media_decode.mm 输出属性、pala_decode 降采样断言]
-write_set:   pal/apple/media_decode.{h,mm}、tests/unit/test_media_decode_apple.cpp、
+output:      [media_decode.mm 输出属性、platform_apple_decode 降采样断言]
+write_set:   platform/apple/media_decode.{h,mm}、tests/unit/test_media_decode_apple.cpp、
              .ai/memory/baselines.md（真机复测回填）
-read_set:    .ai/modules/{pal-apple,media}.md、VT 文档（kVTDecompressionPropertyKey_OutputWidth/Height）
+read_set:    .ai/modules/{platform-apple,media}.md、VT 文档（kVTDecompressionPropertyKey_OutputWidth/Height）
 deps:        []
 acceptance:
   - 4K 素材解码输出 CVPixelBuffer ≤ 1920×1080（保持宽高比，偶数对齐）✅ 钳制纯函数断言
   - 1080p 及以下素材输出尺寸不变（逐该厂商行为兼容）✅ golden 1080p 全绿
-  - pala_decode 双 codec 断言全绿（含新降采样断言）✅ 门禁 PASS=9/0
+  - platform_apple_decode 双 codec 断言全绿（含新降采样断言）✅ 门禁 PASS=9/0
   - 真机复测 pump_rendered/s ≥ 55 ⏸ 待设备解锁（仪器已装包：VT 单帧延迟
     p50 8-10ms / p95 12ms——解码本身很快；泵内 acquire/import/draw 分段直方图
     待采集定案下一步修法）
 verification:
-  - ctest --test-dir build -R pala_decode
+  - ctest --test-dir build -R platform_apple_decode
   - tools/ci/run_gate.sh
   - 真机：CQ_AUTO_PLAY=1 剖面（同阶段 0 流程）
 risk:        降采样质量（线性 vs 高质量插值）由 VT 决定，预览可接受 [E]；导出链路（未落地）
@@ -39,7 +39,7 @@ parallel:    true
 ## 实现要点
 - `VTDecompressionSessionCreate` 前设 `kVTDecompressionPropertyKey_OutputWidth/Height`
   （上限 1080p，等比缩，宽高取偶）；`OutputDimensions` 记录实际输出尺寸供诊断。
-- 只动 PAL 解码器；调用方（preview 泵链路）零改动。现阶段全链路皆预览（导出未落地），
+- 只动 Platform 解码器；调用方（preview 泵链路）零改动。现阶段全链路皆预览（导出未落地），
   无"需要原始分辨率"的消费方；RENDER-001 后若导出需要，另拆会话。
 
 ## 媒体管线六问

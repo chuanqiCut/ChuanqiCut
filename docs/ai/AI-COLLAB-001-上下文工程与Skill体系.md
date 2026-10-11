@@ -68,8 +68,8 @@
 │   ├── ai.md                   # 推理与 AI 效果
 │   ├── project.md              # 项目文件与序列化
 │   ├── export.md               # 导出
-│   ├── pal-apple.md            # Apple PAL
-│   ├── pal-android.md          # Android PAL
+│   ├── platform-apple.md            # Apple Platform
+│   ├── platform-android.md          # Android Platform
 │   ├── ui-apple.md             # SwiftUI
 │   ├── ui-android.md           # Compose
 │   └── deps.md                 # 依赖治理
@@ -143,7 +143,7 @@
 1. **分支命名**：`<person>/<task-id>-<slug>` 或 `codex/<task-id>-<slug>`。
 2. **一个任务 = 一个分支 = 一个 PR = 一个负责人**。Agent 是执行者，不是代码所有者。
 3. **写集隔离**：Task DAG 声明 write_set，写集相交的任务不得并行。
-4. **共享接口先落契约 PR**：`CORE-006`(PAL)、`BIND-001`(C ABI)、`GFX-001` 这类接口必须先冻结再让下游开工。
+4. **共享接口先落契约 PR**：`CORE-006`(Platform)、`BIND-001`(C ABI)、`GFX-001` 这类接口必须先冻结再让下游开工。
 5. **高冲突文件串行**：`CMakeLists.txt`、`cq_sdk.h`、`*.pbxproj`、`build.gradle.kts`、`manifest.toml`。
 6. **本地并行用 git worktree**，每个 worktree 独立 DerivedData / 输出目录 / 日志目录，避免 Xcode 并发写冲突。
 7. **不用群聊传递隐式上下文**：结论进 Spec / ADR / Issue / PR。

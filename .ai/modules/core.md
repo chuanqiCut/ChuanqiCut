@@ -2,10 +2,10 @@
 
 > **归属**：集成机（内核基础 + 热点文件） —— 归属表见 docs/tasks/PLAN-三线并行.md §1a / ADR-0029（双机分工与门禁跑批，2026-10-07）
 
-**边界**：`core/src/base/`、`core/include/cq/base/`、`core/include/cq/pal/`、`core/src/session/`
+**边界**：`core/src/base/`、`core/include/cq/base/`、`core/include/cq/platform/`、`core/src/session/`
 
 ## 职责
-时间、状态、日志、内存、并发、PAL 接口定义、EditorSession 门面。
+时间、状态、日志、内存、并发、Platform 接口定义、EditorSession 门面。
 
 ## 入口
 - `RationalTime` — **有理数时间**，禁止浮点秒。项目 timescale = 60000。
@@ -19,7 +19,7 @@
 无（本模块是最底层，不得反向依赖任何其他模块）
 
 ## 硬约束
-1. PAL 头文件零平台类型 → 跨层用 opaque 句柄 `CQNativeImageHandle` 等。
+1. Platform 头文件零平台类型 → 跨层用 opaque 句柄 `CQNativeImageHandle` 等。
 2. 能力查询不得用编译期宏推断（Android 能力由机型决定，Apple 由芯片决定）。
 3. 音频线程无锁、无分配；主线程零阻塞。
 4. `RationalTime` 运算做 timescale 归一化并检测溢出。
@@ -124,8 +124,8 @@ ADR-0006（有理数时间与版本模型）、ARCH-001 §5/§6
 
 # base 层已实现（CORE-001 ~ CORE-005，2026-09-25）
 
-按依赖顺序推进，为 CORE-006「PAL 接口冻结」打地基。BACKLOG 第 327 行要求：
-**CORE-006 之前任何 PAL 实现不得开始**，故 base 类型必须先定型。
+按依赖顺序推进，为 CORE-006「Platform 接口冻结」打地基。BACKLOG 第 327 行要求：
+**CORE-006 之前任何 Platform 实现不得开始**，故 base 类型必须先定型。
 
 ## CORE-001 `RationalTime` — `core/include/cq/base/time.h` / `core/src/base/time.cpp`
 
@@ -151,7 +151,7 @@ int64 上限 @120000 ≈ 243 万年（原 487 万年），仍远超需求。
 改的是**项目时间轴网格**；`RationalTime` 本身仍可携带任意 timescale，两者互补。
 
 改动点：`kProjectTimeScale`（time.h）、依赖它的断言、文档。
-现在改成本最低 —— 仅 CORE-001~004 用到，PAL 接口（CORE-006）尚未开始。
+现在改成本最低 —— 仅 CORE-001~004 用到，Platform 接口（CORE-006）尚未开始。
 单测 `TestProjectTimescaleCoversAllFrameRates` 固化覆盖度，并断言常量 == 120000 防止回退。
 
 ## CORE-002 `Status` — `core/include/cq/base/status.h` / `core/src/base/status.cpp`
@@ -177,7 +177,7 @@ int64 上限 @120000 ≈ 243 万年（原 487 万年），仍远超需求。
 
 - 分级：Error / Warn / Info / Debug / Trace（Trace 可编译期剔除，Release 无开销）
 - **Sink 可注入**：本模块**不**硬写 stdout/stderr，也不实现任何平台后端。
-  iOS(os_log) / Android(logcat) 由 PAL 层（CORE-006 之后）提供实现。本期只给 sink 接口 + 默认 FILE* 实现
+  iOS(os_log) / Android(logcat) 由 Platform 层（CORE-006 之后）提供实现。本期只给 sink 接口 + 默认 FILE* 实现
 - **帧级 trace**：帧标识用 `RationalTime` 的 pts，**不是**裸 int64，更不是 double 秒。
   媒体管线可按「哪一帧 + 哪个环节」追溯
 - 单测 25 项，0 失败（覆盖级别过滤、Sink 注入、帧标识类型、阶段名可读）
@@ -193,7 +193,7 @@ int64 上限 @120000 ≈ 243 万年（原 487 万年），仍远超需求。
 
 ## CORE-005 `concurrency` — `core/include/cq/base/concurrency.h` / `core/src/base/concurrency.cpp`（2026-09-25）
 
-> 写集（边界内，未碰 CORE-001~004 头文件、未碰 pal/）：
+> 写集（边界内，未碰 CORE-001~004 头文件、未碰 platform/）：
 > `core/include/cq/base/concurrency.h`、`core/src/base/concurrency.cpp`、`tests/unit/test_concurrency.cpp`
 > `core/CMakeLists.txt`（加 `concurrency.cpp`）、`tests/CMakeLists.txt`（注册 ctest `core_concurrency`）
 
@@ -258,7 +258,7 @@ int64 上限 @120000 ≈ 243 万年（原 487 万年），仍远超需求。
 ## 下一步
 
 - ~~CORE-005~~：并发原语 / 有界队列 / `CancelToken`（已完成，2026-09-25）
-- **CORE-006**：PAL 接口冻结（GFX/Media/Audio/Inference/FS/Clock/Log/Capabilities），依赖 CORE-001~005
+- **CORE-006**：Platform 接口冻结（GFX/Media/Audio/Inference/FS/Clock/Log/Capabilities），依赖 CORE-001~005
   —— **base 层前置已全部就绪，现在可以冻结全部平台接口**
 
 ## CORE-010 · 日志 Workflow 维度（2026-10-06，已完成）
@@ -332,7 +332,8 @@ Debug 43/43、Release 43/43（本机门禁 PASS=9 / FAIL=0）。
 | 日期 | 阶段/范围 | 结论（数字） |
 |---|---|---|
 | 2026-10-07 | 全量门禁 | PASS=9 / FAIL=0 / SKIP=0（core-dbg 45/45、core-rel 45/45） |
+| 2026-10-09 | INFRA-024 目录共置 + 双 Pod 拆分 | **全量 ctest 46/46**（Debug；机器 macOS 26.7.1 / AppleClang 21 / cmake 4.4.3）。头文件由 `core/include/cq/**` 迁到 `core/cq/**` 与实现共置，CMake include root 改 `engine/core`，`#include "cq/..."` 不变；`platform_header_gate` 加契约目录白名单后 38 头 0 违规（P95）。**Release 与双壳构建未跑** |
 
 ### 调研 · 决策 · 池指针
 
-- 热点文件守门（cq_sdk.h/CMakeLists）· ADR-0011（core 不调 PAL 工厂）
+- 热点文件守门（cq_sdk.h/CMakeLists）· ADR-0011（core 不调 Platform 工厂）

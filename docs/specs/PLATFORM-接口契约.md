@@ -1,7 +1,7 @@
-# PAL 接口契约（CORE-006 冻结稿）
+# Platform 接口契约（CORE-006 冻结稿）
 
 - **状态**：冻结待评审（2026-09-25）
-- **产出**：`core/include/cq/pal/*.h`（接口定义，零实现）
+- **产出**：`core/include/cq/platform/*.h`（接口定义，零实现）
 - **上游依赖**：CORE-001~005（base 层已全部完成并提交）
 - **下游依赖**：GFX-001、MEDIA-010、AI-001、AUDIO-001、PERF-001、CORE-007、
   INFRA-008、PALD-040，以及全部 PALA-/PALD-/OHOS 实现任务。
@@ -10,8 +10,8 @@
 
 ## 0. 本契约的目标与边界
 
-PAL（Platform Abstraction Layer）是**所有平台实现的契约**。在 `CORE-006` 冻结之前，
-任何 PAL 实现（PALA-/PALD-/OHOS）不得开始（BACKLOG 第 327 行）。本文件冻结的接口，
+Platform（Platform Abstraction Layer）是**所有平台实现的契约**。在 `CORE-006` 冻结之前，
+任何 Platform 实现（PALA-/PALD-/OHOS）不得开始（BACKLOG 第 327 行）。本文件冻结的接口，
 iOS / macOS / Android / 鸿蒙四端必须照着实现；接口定错，四端一起返工。
 
 **本阶段只定义接口，不实现任何平台层。** 实现是后续 PALA-xxx / PALD-xxx / OHOS 任务的事。
@@ -34,7 +34,7 @@ ADR-0010 §2 明确规定。理由：FFmpeg 是 LGPL-2.1-or-later，其链接处
   或 `PcmBuffer`），而非 `AVPacket` / `AVFrame`。
 - 容器/编码格式以**本项目自己的枚举**表达（`ContainerFormat` / `CodecId`），
   与 FFmpeg 的 `AVCodecID` 解耦。FFmpeg 后端（MEDIA-021 / PALA-013）将来把 `AVCodecID`
-  映射到本契约的 `CodecId`，映射发生在 PAL 实现内部，不污染 core 层。
+  映射到本契约的 `CodecId`，映射发生在 Platform 实现内部，不污染 core 层。
 - 这样即便将来从「FFmpeg demux」切到「AVFoundation / MediaExtractor」，core 层与
   其他三端实现**零改动**——这正是 ADR-0010 要求抽象的根本原因。
 
@@ -53,9 +53,9 @@ AGENTS.root.md 红线 #2。不得出现 `id` / `NSString` / `CGFloat` / `CVPixel
   的平台资源包装（如 `struct CqTexture { MTLTexture* ...; }`）。
 - AppleClang 下「出现平台类型反而能编译通过」，**不能只靠编译证明零平台类型**；
   也不该只靠朴素 grep（会把注释误报）。因此本契约附带**静态门禁脚本**
-  `tools/pal/check_pal_headers.py`：扫描 `core/include/cq/pal/**/*.h`，**先剔除注释与
+  `tools/platform/check_platform_headers.py`：扫描 `core/include/cq/platform/**/*.h`，**先剔除注释与
   字符串字面量**，再匹配平台类型 / 平台头 / FFmpeg 类型 / `throw` / 裸 `double`，
-  命中即退出码非 0，并接入 CTest（用例 `pal_header_gate`）。零平台类型由
+  命中即退出码非 0，并接入 CTest（用例 `platform_header_gate`）。零平台类型由
   （a）本契约的 opaque 设计 +（b）该门禁脚本 +（c）评审共同兜底。
 
 ---
@@ -79,27 +79,27 @@ AGENTS.root.md 红线 #2。不得出现 `id` / `NSString` / `CGFloat` / `CVPixel
 
 ## 3. 资源所有权与生命周期契约
 
-所有 PAL 资源接口继承 `IPalResource`：
+所有 Platform 资源接口继承 `IPlatformResource`：
 
 ```cpp
-class IPalResource {
+class IPlatformResource {
 public:
-    virtual ~IPalResource() = default;
+    virtual ~IPlatformResource() = default;
     virtual void Destroy() = 0;   // 平台实现在此释放自身（含底层平台资源）
 };
 ```
 
-- **不可跨模块 `delete`**：PAL 实现类可能由平台分配器创建，且与调用方不在同一编译单元，
+- **不可跨模块 `delete`**：Platform 实现类可能由平台分配器创建，且与调用方不在同一编译单元，
   因此一律通过 `Destroy()` 释放，而非 `delete`。
-- 提供 move-only 的 RAII 包装 `PalPtr<T>`（`common.h`），析构自动调 `Destroy()`，
-  工厂函数直接返回 `PalPtr<T>`，既安全又不暴露平台类型。
-- 工厂函数遵循 base 层约定：返回 `Status`，资源经 out 参数（`PalPtr<T>&`）传出。
+- 提供 move-only 的 RAII 包装 `PlatformPtr<T>`（`common.h`），析构自动调 `Destroy()`，
+  工厂函数直接返回 `PlatformPtr<T>`，既安全又不暴露平台类型。
+- 工厂函数遵循 base 层约定：返回 `Status`，资源经 out 参数（`PlatformPtr<T>&`）传出。
 
 ---
 
 ## 4. 八领域接口清单（签名摘要）
 
-> 下列为**签名摘要**与设计取舍，完整定义见 `core/include/cq/pal/*.h`。
+> 下列为**签名摘要**与设计取舍，完整定义见 `core/include/cq/platform/*.h`。
 > 每个领域一个头文件；跨领域共用类型放 `common.h`。
 
 ### 4.1 GFX（gfx.h）—— 对齐 ARCH-003 §2.2 概念映射表（12 概念）
@@ -133,7 +133,7 @@ Platform-Native shader 层（不泄漏到 core，见 ADR-0002）。
   由于 Metal/Vulkan 的纹理必须属于某设备上下文，导入器由 `IGraphicsDevice::
   CreateNativeImageImporter` 创建并绑定到该设备——这是 ARCH-003 §3 统一抽象的落点，
   也是对「重复定义」的去冗余：设备只暴露一个创建导入器的入口，不另设 `ImportNativeImage` 方法。
-- 工厂：`Status CreateGraphicsDevice(const GraphicsDeviceDesc&, PalPtr<IGraphicsDevice>&)`。
+- 工厂：`Status CreateGraphicsDevice(const GraphicsDeviceDesc&, PlatformPtr<IGraphicsDevice>&)`。
 
 ### 4.2 Media（media.h）—— demux / 精确 seek / 帧提供
 
@@ -142,7 +142,7 @@ Platform-Native shader 层（不泄漏到 core，见 ADR-0002）。
 
 | 接口 | 职责 |
 |---|---|
-| `IMediaDemuxer` | 打开容器、枚举流、查询时长/轨道、按 `RationalTime` 精确 seek（语义统一为「精确 seek」，各端内部差异由 PAL 吸收，见 ARCH-004 §4.3）、逐包读取为 `MediaPacket` |
+| `IMediaDemuxer` | 打开容器、枚举流、查询时长/轨道、按 `RationalTime` 精确 seek（语义统一为「精确 seek」，各端内部差异由 Platform 吸收，见 ARCH-004 §4.3）、逐包读取为 `MediaPacket` |
 | `IFrameProvider` | 在 demux 之上提供「按 pts 取帧」语义：视频帧给出 `NativeImageHandle`（零拷贝），音频帧给出 `PcmBuffer`；支持正放/倒放/速度曲线（由调用方驱动 seek，接口本身中立） |
 
 - `MediaPacket`：仅描述「压缩数据块」的元数据（`StreamIndex`、pts/dts `RationalTime`、
@@ -158,15 +158,15 @@ Platform-Native shader 层（不泄漏到 core，见 ADR-0002）。
   **不塞进 FFmpeg demux 路径**。本契约把「图片/图像导入」与「视频 demux」分离：
   `INativeImageImporter`（GFX 领域）负责把任意原生图像（含 HEIC）导入为纹理；
   `IMediaDemuxer` 只处理视频/音频容器。图片解码不依赖 FFmpeg 选型。
-- 工厂：`Status CreateMediaDemuxer(const MediaSource&, PalPtr<IMediaDemuxer>&)`、
-  `Status CreateFrameProvider(const MediaSource&, PalPtr<IFrameProvider>&)`。
+- 工厂：`Status CreateMediaDemuxer(const MediaSource&, PlatformPtr<IMediaDemuxer>&)`、
+  `Status CreateFrameProvider(const MediaSource&, PlatformPtr<IFrameProvider>&)`。
 - 长任务（打开/seek/读取）接受 `const CancelToken&`。
 
 ### 4.2b Media Muxer（media.h）—— 封装（mux）/ 编码输出（与 demux 对称）
 
 下游 **EXPORT-001（导出控制器，core/src/export/*，本期未实现）** 落地时，将通过本契约的
 `IMediaMuxer` 消费「Apple 端已验证的 H.264 MP4 导出能力」（PALA-012 `AppleVideoEncoder`，
-已由 `pala_encode` 用例 ffprobe 验证 codec=H.264 / 1920×1080 / 60 帧 / 2.0s）。
+已由 `platform_apple_encode` 用例 ffprobe 验证 codec=H.264 / 1920×1080 / 60 帧 / 2.0s）。
 
 `IMediaMuxer` 与 `IMediaDemuxer` **对称**：`Open（开容器）→ AddVideoTrack（加轨）→
 WriteVideoFrame（写帧，PTS 非递减）→ Finish（收尾）`，外加 `Cancel`（中止删半成品）。
@@ -177,16 +177,16 @@ WriteVideoFrame（写帧，PTS 非递减）→ Finish（收尾）`，外加 `Can
 | `IMediaMuxer` | 把解码/渲染产出的视频帧（opaque `NativeImageHandle`）封装进容器（MP4 等）并完成平台编码；上层（导出控制器）只持有 `IMediaMuxer`，不接触任何 Apple/Android 内部编码器类型 |
 
 - **零平台类型**：帧以 opaque `NativeImageHandle` 传入，**绝不**出现 `CVPixelBufferRef` /
-  `jobject` / `AHardwareBuffer` 等；Apple 实现在 PAL 内把 `NativeImageHandle` 经
+  `jobject` / `AHardwareBuffer` 等；Apple 实现在 Platform 内把 `NativeImageHandle` 经
   `GetCvPixelBuffer` 转回 `CVPixelBufferRef` 后委托给 `AppleVideoEncoder`。零 FFmpeg 类型
-  （`AVAssetWriter`/`AVPacket` 等只在 PAL 内）。
+  （`AVAssetWriter`/`AVPacket` 等只在 Platform 内）。
 - **统一 base 类型**：时间一律 `RationalTime`（项目 timescale=120000，ADR-0009）；错误一律
   `Status`；长任务（`WriteVideoFrame` / `Finish`）接受 `const CancelToken&`；内核禁用异常。
 - **时间约定（ADR-0009）**：每帧 PTS 必须是 `RationalTime`，timescale 须等于轨约定网格
   （本期 = `kProjectTimeScale` = 120000）。非整除（如 1001/30000 的 NTSC 帧周期）在写入前
   由调用方显式 `Rescale(..., kRound/kFloor)` 对齐，接口本身不做静默舍入。写入顺序须 PTS 非递减。
 - **取消语义**：取消返回 `kCancelled`，其 `IsError()` 为 false（取消不是错误）。
-- **工厂**：`Status CreateMediaMuxer(PalPtr<IMediaMuxer>&)`（与 `CreateMediaDemuxer` 对称）。
+- **工厂**：`Status CreateMediaMuxer(PlatformPtr<IMediaMuxer>&)`（与 `CreateMediaDemuxer` 对称）。
 
 #### 设计取舍（评审重点）
 
@@ -200,7 +200,7 @@ WriteVideoFrame（写帧，PTS 非递减）→ Finish（收尾）`，外加 `Can
    `media.h`，既有 demux/provider 契约完全不变（CORE-006 冻结约束）。
 4. **音频轨只留接口不实现**：Apple 实现当前只有视频轨（与 `AppleVideoEncoder` 一致），
    故 `AddAudioTrack` 返回 `kEncodeUnsupported`，预留扩展而不破坏接口形状。
-5. **Apple 适配层 `AppleMediaMuxer`（pal/apple/media_muxer.{h,mm}）**：组合
+5. **Apple 适配层 `AppleMediaMuxer`（platform/apple/media_muxer.{h,mm}）**：组合
    `AppleVideoEncoder` 并复用其已验证的 60 帧导出能力（AVAssetWriter +
    PixelBufferAdaptor，每帧 PTS 用 RationalTime 同构 CMTime，movieTimeScale=120000），
    仅新增「经 opaque 句柄的跨层转接」，不改编码/封装语义 → ffprobe 验证不回归。
@@ -208,9 +208,9 @@ WriteVideoFrame（写帧，PTS 非递减）→ Finish（收尾）`，外加 `Can
 #### 4.2.1 Media 输出：`IMediaMuxer`（封装 + 编码，与 `IMediaDemuxer` 对称，PALA-012 补充）
 
 `IMediaMuxer` 是 `IMediaDemuxer` 的**结构逆操作**：demux 把容器拆成 `MediaPacket`（压缩块），
-muxer 把帧（已解码像素 / 已编码包）封装成容器文件。两者同处 `media.h`、都继承 `IPalResource`、
-都走 `RationalTime` / `Status` / `CancelToken` / `PalPtr` 生命周期契约，保持「PAL 媒体接口聚集」的
-结构对称（muxer 属 PAL 能力层，不塞进 `media/` 编排层的 `frame_provider.h`）。
+muxer 把帧（已解码像素 / 已编码包）封装成容器文件。两者同处 `media.h`、都继承 `IPlatformResource`、
+都走 `RationalTime` / `Status` / `CancelToken` / `PlatformPtr` 生命周期契约，保持「Platform 媒体接口聚集」的
+结构对称（muxer 属 Platform 能力层，不塞进 `media/` 编排层的 `frame_provider.h`）。
 
 > 边界（本次授权）：本接口是 EXPORT-001 导出控制器的下游消费契约的**提前补充**；EXPORT-001 的
 > core 编排（`core/src/export/*`）本期不实现，仅落地 Apple 平台实现（`AppleMediaMuxer`）。
@@ -236,13 +236,13 @@ muxer 把帧（已解码像素 / 已编码包）封装成容器文件。两者�
   仅预留，Apple 实现不产出音频轨。
 - **零平台类型**：视频帧以 opaque `NativeImageHandle` 传入（与 `VideoFrame.image` 同款），
   Audio 经 `AudioTrackConfig` 描述，绝不出现 `CVPixelBufferRef` / `AVPacket` 等；零 FFmpeg 类型。
-  由门禁脚本 `tools/pal/check_pal_headers.py`（ctest 用例 `pal_header_gate`）扫描
-  `core/include/cq/pal/media.h` 兜底——本接口已通过（无平台/FFmpeg 类型、无 `throw`、无裸 `double`）。
-- **编译期自洽验证**：`tests/unit/pal_headers_compile.cpp` 已扩展 `static_assert`，断言
-  `IMediaMuxer` 继承 `IPalResource`、`WriteVideoFrame` 以 `NativeImageHandle` 传帧、`Finish` 接受
-  `CancelToken`、`CreateMediaMuxer` 返回 `Status + PalPtr<IMediaMuxer>&`、`VideoTrackConfig.bitrate`
+  由门禁脚本 `tools/platform/check_platform_headers.py`（ctest 用例 `platform_header_gate`）扫描
+  `core/include/cq/platform/media.h` 兜底——本接口已通过（无平台/FFmpeg 类型、无 `throw`、无裸 `double`）。
+- **编译期自洽验证**：`tests/unit/platform_headers_compile.cpp` 已扩展 `static_assert`，断言
+  `IMediaMuxer` 继承 `IPlatformResource`、`WriteVideoFrame` 以 `NativeImageHandle` 传帧、`Finish` 接受
+  `CancelToken`、`CreateMediaMuxer` 返回 `Status + PlatformPtr<IMediaMuxer>&`、`VideoTrackConfig.bitrate`
   为 `BitrateTier`、`BitrateTier` 底层为 `int32_t`——固化「接口自洽 / 零平台类型 / 与 demuxer 对称」契约。
-- **平台无关调用证明**：`tests/unit/test_media_muxer_apple.cpp`（`pala_muxer` 用例）全程只通过
+- **平台无关调用证明**：`tests/unit/test_media_muxer_apple.cpp`（`platform_apple_muxer` 用例）全程只通过
   core 冻结接口 `IMediaMuxer` + 工厂 `CreateMediaMuxer` 完成一次真实导出（PALA-010 demux + PALA-011
   硬解 → `WriteVideoFrame(NativeImageHandle, RationalTime, CancelToken)` 写 60 帧 → `Finish`），
   **完全不碰 `AppleVideoEncoder` / `CVPixelBufferRef`**；产出经 ffprobe 验证（codec=h264 / 1920×1080 /
@@ -264,7 +264,7 @@ muxer 把帧（已解码像素 / 已编码包）封装成容器文件。两者�
   - 支持 `const CancelToken&` 于采集阻塞读。
 - 低延迟回放/采集由平台后端（AVAudioEngine / Oboe）保证；接口层只约定「写入/读取
   PCM 块」与生命周期，不暴露平台音频图细节。
-- 工厂：`Status CreateAudioEngine(PalPtr<IAudioEngine>&)`。
+- 工厂：`Status CreateAudioEngine(PlatformPtr<IAudioEngine>&)`。
 
 ### 4.4 Inference（inference.h）—— 推理后端抽象
 
@@ -278,7 +278,7 @@ ADR-0005：共享模型资产不共享推理 SDK（多后端 + 强制 CPU 回退
   - `CreateSession(...)` / `Run(const InferenceTensor inputs[], InferenceTensor outputs[], CancelToken)` 
   - `QueryCapability()`：返回 `CapabilityValue`（yes/degraded/no），承接 `kNpuInference`
     能力查询；后端不可用（无 ANE / 无 NNAPI）时调用方降级 GPU/CPU，接口本身中立。
-- 工厂：`Status CreateInferenceBackend(BackendType, PalPtr<IInferenceBackend>&)`。
+- 工厂：`Status CreateInferenceBackend(BackendType, PlatformPtr<IInferenceBackend>&)`。
   `BackendType` 枚举（kCoreML/kTFLite/kCpuReference），但**具体后端由平台实现决定**，
   接口不绑定某一 SDK 类型。
 
@@ -286,19 +286,19 @@ ADR-0005：共享模型资产不共享推理 SDK（多后端 + 强制 CPU 回退
 
 下游 `PALD-040`（Scoped Storage / MediaStore）依赖。
 
-- `IFile`：文件对象，继承 `IPalResource`，`Read` / `Write` 为其方法；生命周期由
-  `PalPtr<IFile>` 管理（析构 `Destroy()` 即关闭文件）。**与其它资源（Texture/Buffer/
-  Pipeline/...）同一套 `PalPtr + Destroy()` 生命周期约定**，不再使用裸 opaque 指针
+- `IFile`：文件对象，继承 `IPlatformResource`，`Read` / `Write` 为其方法；生命周期由
+  `PlatformPtr<IFile>` 管理（析构 `Destroy()` 即关闭文件）。**与其它资源（Texture/Buffer/
+  Pipeline/...）同一套 `PlatformPtr + Destroy()` 生命周期约定**，不再使用裸 opaque 指针
   （评审要求——避免同接口两套生命周期导致的句柄泄漏）。
 - `IFileSystem`：抽象平台文件访问——
-  - `Open(const Path&, AccessMode, PalPtr<IFile>&)`（返回 RAII 文件对象）
+  - `Open(const Path&, AccessMode, PlatformPtr<IFile>&)`（返回 RAII 文件对象）
   - `Stat`（存在性/大小/类型）、`ListDir`、`Delete`、`Rename`、`CreateDir`
   - `ResolveMediaStoreUri`（Android：把 MediaStore URI / 相册资源映射为可打开的 `Path`）
 - `Path`：本项目自己的路径抽象（UTF-8 字符串 + 命名空间标志：
   `kAppSpecific` / `kSharedDocuments` / `kMediaStore` / `kTemp`），
   **不含 `jobject` / `ContentResolver` 等平台类型**。Android 的 Scoped Storage 差异
-  由 PAL 在 `ResolveMediaStoreUri` 内吸收。
-- 工厂：`Status CreateFileSystem(PalPtr<IFileSystem>&)`。
+  由 Platform 在 `ResolveMediaStoreUri` 内吸收。
+- 工厂：`Status CreateFileSystem(PlatformPtr<IFileSystem>&)`。
 
 ### 4.6 Clock（clock.h）—— 单调时钟
 
@@ -309,17 +309,17 @@ ADR-0005：共享模型资产不共享推理 SDK（多后端 + 强制 CPU 回退
     见 MEDIA-030 的 audio master clock）。
   - 提供 `NowTicks()`（原始 int64 纳秒）作为高性能热路径的轻量出口，但**不进入计算
     语义**——同步计算一律走 `RationalTime`。
-- 工厂：`Status CreateMonotonicClock(PalPtr<IMonotonicClock>&)`。
+- 工厂：`Status CreateMonotonicClock(PlatformPtr<IMonotonicClock>&)`。
 
 ### 4.7 Log（log.h）—— 平台日志后端 sink
 
-base 层已定义 `ILogSink`（CORE-003）。本领域的契约是：**PAL 必须提供一个
+base 层已定义 `ILogSink`（CORE-003）。本领域的契约是：**Platform 必须提供一个
 `ILogSink` 的平台实现**（iOS→os_log、Android→logcat、鸿蒙→hilog），并通过工厂返回。
 
-- 契约函数（由 PAL 平台实现提供）：
+- 契约函数（由 Platform 平台实现提供）：
   - `ILogSink* CreatePlatformLogSink();`
   - `void DestroyPlatformLogSink(ILogSink*);`
-- 不在此定义任何 os_log/logcat 调用细节（那是 PAL 实现层的事）。core 层通过
+- 不在此定义任何 os_log/logcat 调用细节（那是 Platform 实现层的事）。core 层通过
   `cq::SetLogSink()` 注入即可，与 base 层解耦。
 - 帧级 trace（CORE-003 的 `CQ_LOG_FRAME`）已用 `RationalTime` pts 标识帧，平台 sink
   只需把格式化好的 UTF-8 文本交给对应系统日志，无需理解帧概念。
@@ -351,8 +351,8 @@ base 层已定义 `ILogSink`（CORE-003）。本领域的契约是：**PAL 必�
    - 纹理预算 `TextureBudget` 用 `int64 id` 记账（CORE-004），平台实现在 `Register`
      时把句柄地址或自增 id 作为 `id` 传入，两者不冲突。
 
-2. **`PalPtr<T>` RAII 包装而非裸 `delete`**：避免跨模块 `delete` 风险，且调用方不易泄漏。
-   工厂返回 `PalPtr<T>`，析构自动 `Destroy()`。
+2. **`PlatformPtr<T>` RAII 包装而非裸 `delete`**：避免跨模块 `delete` 风险，且调用方不易泄漏。
+   工厂返回 `PlatformPtr<T>`，析构自动 `Destroy()`。
 
 3. **Media 与 GFX 共享 `NativeImageHandle`**：视频解码帧、外部图片（HEIC 等）统一用
    `NativeImageHandle` 表达，由 `INativeImageImporter` 转成 `TextureHandle`。这使得
@@ -376,7 +376,7 @@ base 层已定义 `ILogSink`（CORE-003）。本领域的契约是：**PAL 必�
 
 ## 6. 已知待决策 / 风险（明确标出）
 
-- **`PalPtr` 跨 C ABI 暴露**：当前 PAL 接口是 C++ 内部层，不直接是 `cq_sdk.h` 的公共 ABI。
+- **`PlatformPtr` 跨 C ABI 暴露**：当前 Platform 接口是 C++ 内部层，不直接是 `cq_sdk.h` 的公共 ABI。
   若后续要求 C ABI 暴露资源句柄，需统一转 `uintptr_t`——留待 BIND 层任务处理，不在本契约。
 - **`InferenceTensor` 维度数上限**：暂用固定长度 `int64_t dims[8]`（覆盖常见 NCHW/NHWC），
   若后续出现 >8 维张量需改。属 hypothesis，待 AI-001 实测模型确认。
@@ -387,21 +387,21 @@ base 层已定义 `ILogSink`（CORE-003）。本领域的契约是：**PAL 必�
   本契约只抽象「PCM 输入输出引擎」，混音/效果（AUDIO-004/010）在 core 层基于 `PcmBuffer`
   实现，平台引擎只负责搬运 PCM——避免平台音频框架差异泄漏到 core。
 - **`GraphicsDeviceDesc` 是否携带 surface 句柄**：当前用 `NativeImageHandle`/`void*`
-  中性表达渲染目标 surface，具体平台在 PAL 实现内 reinterpret。若评审要求更严格类型，
+  中性表达渲染目标 surface，具体平台在 Platform 实现内 reinterpret。若评审要求更严格类型，
   可改为模板或 `std::any`——但 `std::any` 会引入 `<any>`，倾向保持 `NativeImageHandle`。
 
 ---
 
 ## 7. 验收（与 BASE 层一致）
 
-- 头文件零平台类型（门禁脚本 `tools/pal/check_pal_headers.py` + 评审；已证明能抓出
+- 头文件零平台类型（门禁脚本 `tools/platform/check_platform_headers.py` + 评审；已证明能抓出
   `jobject` 等违规，误报由「先剔除注释/字符串」消除）。
 - 零 FFmpeg 类型（门禁脚本扫描 `AV*` / `av_` 与 ffmpeg include，零违规）。
-- 新增编译验证 TU `tests/unit/pal_headers_compile.cpp` 自洽编译 + 29 条 `static_assert`，
-  注册为 ctest 用例 `pal_headers_compile`。
-- 新增门禁用例 `pal_header_gate`（ctest 运行 `check_pal_headers.py`）。
-- `cmake --build build -j4` + `ctest --test-dir build` → 原 6 用例 + `pal_headers_compile`
-  + `pal_header_gate` 全通过。
+- 新增编译验证 TU `tests/unit/platform_headers_compile.cpp` 自洽编译 + 29 条 `static_assert`，
+  注册为 ctest 用例 `platform_headers_compile`。
+- 新增门禁用例 `platform_header_gate`（ctest 运行 `check_platform_headers.py`）。
+- `cmake --build build -j4` + `ctest --test-dir build` → 原 6 用例 + `platform_headers_compile`
+  + `platform_header_gate` 全通过。
 - `-Werror` 零警告（含 `-Wconversion` / `-Wshadow` / `-Wold-style-cast`）。
 
 ---
@@ -425,4 +425,4 @@ PALA-001 首次真机渲染就踩到：按 `uv=(clip+1)/2` 直给，图像左上
 ### 各后端验收
 
 纹理绘制用例须**读回像素断言**四角颜色（而非只断言"非清屏色"），
-以此证明采样管线通**且**方向正确。PALA-001 的 `pala_metal_render` 用例即此模式。
+以此证明采样管线通**且**方向正确。PALA-001 的 `platform_apple_metal_render` 用例即此模式。

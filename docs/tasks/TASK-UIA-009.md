@@ -14,7 +14,7 @@ acceptance:
   - 导入的素材注册在 **Session 级**：同一 asset 在预览与后续导出路径可见（非 CQPreview 私有）
   - 片段创建走 CommandHistory（撤销后片段消失、模型指纹回到导入前）
   - C ABI 新增函数有真正的 C TU 测试（沿用 test_c_abi*.c 手法）
-  - `cq_tests_c_abi` 只链 cq_core 仍通过（session 新 TU 不引 PAL 符号）
+  - `cq_tests_c_abi` 只链 cq_core 仍通过（session 新 TU 不引 Platform 符号）
 verification:
   - ./tools/build/build_core.sh --platform=apple --config=Debug --test
   - ctest --test-dir build -R c_abi_session

@@ -54,7 +54,8 @@ parallel:    false
 
 ## 进度 2（2026-10-08 晚）
 
-**单测缺口已补**：新增 `Tests/ChuanqiCutCameraTests/MakeupMaskTests.swift`（10 用例）：
+**单测缺口已补**：新增 `Tests/ChuanqiCutCameraTests/MakeupMaskTests.swift`（**13 用例** ——
+三份文档曾误记 10，2026-10-08 构建机按源码数核对后订正）：
 
 | 用例组 | 断言什么 |
 |---|---|
@@ -64,3 +65,23 @@ parallel:    false
 | 参数契约 | 强度越界夹取到 0...1；`off` 恒等；预设键名 `["自然","元气","浓颜"]`（UI 写死，改名要同步 CameraView） |
 
 仍 unverified（本机 swiftpm 5.5 解析不了 tools-version 6.1）= 池 [9]。
+
+## 进度 3（2026-10-08 深夜·构建机实测，机器 macOS 26.7.1 / Xcode 26.6 / Swift 6.3.3）
+
+**状态：Camera 包 `swift test` 全绿 57/57；本卡 13 用例全过；真机观感仍待传哲一趟**
+
+| 子步骤 | 状态 | 证据 / 缺口 |
+|---|---|---|
+| 契约层 `MakeupParams.swift` | ✅ | `swift test`（SPM 宿主）通过 |
+| 实现层 `Effects/MakeupRenderer.swift` | ✅ 编过 | App target 首次真编译通过（`-scheme ChuanqiCutApp`，device SDK） |
+| 五路接线 | ✅ 编过 | 同上；`FaceBoxStore` 的 `@unchecked Sendable` 扩充**无新告警** |
+| 契约层单测 13 例 | ✅ | 首跑 2 例失败（真 bug，见下）；修完 13/13 |
+| iOS 双壳构建 | ✅ 见下 | 先 `pod install`（P92），再用 device SDK（simulator SDK 无 MetalFX） |
+
+**首跑抓出的两个真 bug（都已修，附根因）**：
+1. `irisMask` extent = (43,43,14,14) 不是画面 —— `CIImage.cropped` 是**交集**不是外扩，
+   有限大小的 `CIRadialGradient` 裁回画面拿不到画面 extent；改 `composited(over:)` 黑底画布再裁（**P91**）。
+2. 三角蒙版内部采样 195 < 阈值 200 —— 羽化 `0.02 × 画布高` 在 100px 小画布 = 2px，足够把
+   20px 小三角的形心压暗；羽化加 1px 下限，断言改取真正内部点。
+
+**真机待办（池 [9]，归传哲）**：五区域跟随无漂移 / 口腔（牙齿）不染色 / 强度滑杆单调 / 预览=录制色。

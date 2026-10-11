@@ -123,46 +123,67 @@ final class CameraBeautyTests: XCTestCase {
     /// 合并实现（磨皮→美白→单次 Blend）与「磨皮 Blend 后再美白 Blend」在
     /// 蒙版内/外采样点逐位一致（混合是逐像素线性算子，同 mask 嵌套可折叠）。
     /// 用默认实现（引擎未注入）对比两段式参考：蒙版核心区与蒙版外各验一点。
-    func testCombinedSingleBlendMatchesTwoStageReference() {
+    /// CAM-033 合并混合 + CAM-035 半分辩率链的语义抽检：
+    /// 蒙版外（远角）= 原图逐位（保真）；蒙版内（脸心）≠ 原图（磨皮+美白生效）。
+    /// （旧"单次 ≡ 两次混合"逐位对比已无意义：两次混合路径已删除，且半分辨率
+    /// 引入后参考实现需同口径复刻——语义抽检即回归防线。）
+    func testCombinedBlendPreservesOutsideMaskAndAppliesInside() {
         let params = CameraBeautyParams(smoothing: 0.5, brightening: 0.5)
         let source = makeSourceImage()
         let face = CGRect(x: 0.25, y: 0.25, width: 0.5, height: 0.5)
         let output = params.apply(to: source, faces: [face])
-        XCTAssertNotNil(output)
-
-        // 参考实现：两段式（旧语义）——直接用默认 filter 组装。
-        let mask = FaceMask.mask(forNormalizedBoxes: [face], in: source.extent)!
-        func blend(_ processed: CIImage, over original: CIImage) -> CIImage {
-            processed.applyingFilter("CIBlendWithMask", parameters: [
-                kCIInputBackgroundImageKey: original,
-                kCIInputMaskImageKey: mask,
-            ])
-        }
-        let smoothed = params.defaultSmoothing(source, strength: 0.5)
-        let brightened = smoothed
-            .applyingFilter("CIExposureAdjust", parameters: [kCIInputEVKey: 0.45 * 0.5])
-            .applyingFilter("CIColorControls", parameters: [
-                kCIInputBrightnessKey: 0.04 * 0.5, kCIInputSaturationKey: 1.0, kCIInputContrastKey: 1.0])
-        let stage1 = blend(smoothed, over: source)
-        let reference = blend(brightened, over: stage1)
-
-        // 渲染对比（软渲染小图足够）：采样点 = 蒙版核心（脸心）与蒙版外（角落）。
         let ctx = CIContext(options: [.useSoftwareRenderer: true])
         func sample(_ image: CIImage, _ p: CGPoint) -> [UInt8] {
             var pixel = [UInt8](repeating: 0, count: 4)
-            ctx.render(image,
-                       toBitmap: &pixel, rowBytes: 4,
+            ctx.render(image, toBitmap: &pixel, rowBytes: 4,
                        bounds: CGRect(x: p.x, y: p.y, width: 1, height: 1),
                        format: .RGBA8, colorSpace: nil)
             return pixel
         }
         let extent = source.extent
-        let faceCenter = CGPoint(x: extent.midX, y: extent.midY)          // 蒙版核心区
-        let corner = CGPoint(x: extent.minX + 2, y: extent.minY + 2)      // 蒙版外
-        for p in [faceCenter, corner] {
-            XCTAssertEqual(sample(output, p), sample(reference, p),
-                           "合并单次混合与两段式参考在 \(p) 应逐位一致")
+        let faceCenter = CGPoint(x: extent.midX, y: extent.midY)
+        let corner = CGPoint(x: extent.minX + 2, y: extent.minY + 2)
+        XCTAssertEqual(sample(output, corner), sample(source, corner), "蒙版外必须保真")
+        XCTAssertNotEqual(sample(output, faceCenter), sample(source, faceCenter), "蒙版内应有美颜生效")
+    }
+
+
+    /// CAM-035 P3 后半：半分辨率子链的输出 extent 必须恢复原帧（奇数帧含向上
+    /// 取整的 1px 溢出也要被 cropped 兜底裁回）。
+    func testHalfChainRestoresExtent() {
+        let source = makeSourceImage()
+        let params = CameraBeautyParams(smoothing: 0.5, brightening: 0.5)
+        let output = params.apply(to: source, faces: [CGRect(x: 0.25, y: 0.25, width: 0.5, height: 0.5)])
+        XCTAssertEqual(output.extent, source.extent, "半分辨率链上采样混回后 extent 不变")
+        XCTAssertFalse(output.extent.isEmpty)
+    }
+
+    /// 美白亮度曲线对强度单调：s=1.0 的输出亮度 ≥ s=0.2（脸框中心采样）。
+    func testBrighteningMonotonic() {
+        let source = makeSourceImage()
+        let face = [CGRect(x: 0.25, y: 0.25, width: 0.5, height: 0.5)]
+        let weak = CameraBeautyParams(smoothing: 0, brightening: 0.2).apply(to: source, faces: face)
+        let strong = CameraBeautyParams(smoothing: 0, brightening: 1.0).apply(to: source, faces: face)
+        let ctx = CIContext(options: [.useSoftwareRenderer: true])
+        func meanLuma(_ image: CIImage) -> Double {
+            let extent = image.extent
+            var pixel = [UInt8](repeating: 0, count: 4)
+            var sum = 0.0
+            let n = 5
+            for dy in 0..<n {
+                for dx in 0..<n {
+                    let p = CGPoint(x: extent.minX + extent.width * (0.3 + 0.1 * Double(dx)),
+                                    y: extent.minY + extent.height * (0.3 + 0.1 * Double(dy)))
+                    ctx.render(image, toBitmap: &pixel, rowBytes: 4,
+                               bounds: CGRect(x: p.x, y: p.y, width: 1, height: 1),
+                               format: .RGBA8, colorSpace: nil)
+                    sum += 0.299 * Double(pixel[0]) + 0.587 * Double(pixel[1]) + 0.114 * Double(pixel[2])
+                }
+            }
+            return sum / Double(n * n)
         }
+        XCTAssertGreaterThanOrEqual(meanLuma(strong), meanLuma(weak) - 0.5,
+                                    "美白强度递增亮度不降（曲线中调提亮单调）")
     }
 }
 

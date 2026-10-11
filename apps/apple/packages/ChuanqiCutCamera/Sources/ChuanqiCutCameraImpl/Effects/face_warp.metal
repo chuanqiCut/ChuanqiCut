@@ -6,7 +6,11 @@
 // 96B 空壳假绿），运行时 CIWarpKernel(functionName:fromMetalLibraryData:)
 // 加载（FaceWarp.swift）。加载失败 = 美型整体跳过（诚实降级，无 CI 兜底）。
 //
-// warp kernel 契约：返回 float2 = dest 对应的源采样坐标，CI 内建重采样。
+// warp kernel 契约（CAM-033 重写，2026-10-11）：**首参必须是 dest 坐标
+// float2**，且 **CIWarpKernel 不允许任何 sampler 参数**——旧版以
+// `coreimage::sampler src` 只取 extent/coord（未 sample）仍被 CI 拒收
+//（"unsupported type sampler for parameter src0"，池 [15]）——画面信息改由
+// Swift 侧以 float4 ext 传入。返回 float2 = dest 对应的源采样坐标，CI 内建重采样。
 // 逐槽钟形羽化（cos，C1 连续）→ 多槽位移累加 → 幅度夹取（防叠加撕裂）
 // → 采样点夹取到 texel 中心范围（同 beauty_bilateral 边界纪律）。
 //
@@ -26,15 +30,15 @@ extern "C" {
 // active_count = 生效槽数（≤8，尾部槽半径 0 亦会被跳过）。
 // Swift 侧填充规则见 FaceWarp.apply（FaceWarpGeometry.controls 输出顺序填充，
 // 缺位补零）。
-float2 cq_face_warp(coreimage::sampler src,
+float2 cq_face_warp(float2 dest_coord,
+                    float4 ext,
                     float4 slot0, float4 slot1, float4 slot2, float4 slot3,
                     float4 slot4, float4 slot5, float4 slot6, float4 slot7,
                     float4 radii_a, float4 radii_b,
                     float active_count) {
-    float4 ext = src.extent();
     float w = ext.z;
     float h = ext.w;
-    float2 p = src.coord();
+    float2 p = dest_coord;
     // 归一化 origin 左上（与控制点同空间）
     float2 pn = float2(p.x / w, 1.0f - p.y / h);
 

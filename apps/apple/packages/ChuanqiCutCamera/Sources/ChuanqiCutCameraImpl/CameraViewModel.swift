@@ -350,6 +350,14 @@ final class CameraViewModel: ObservableObject {
                             self?.probeLog("beauty forced FAIL: bad format \(env)")
                         }
                     }
+                    // 美型探针（CAM-033 warp 契约重写验证）：CQ_CAM_RESHAPE="瘦脸,大眼,缩下巴"
+                    if let env = ProcessInfo.processInfo.environment["CQ_CAM_RESHAPE"] {
+                        let p = env.split(separator: ",").compactMap { Double($0) }
+                        if p.count == 3 {
+                            self?.reshape = CameraReshapeParams(slimFace: p[0], enlargeEye: p[1], chinShrink: p[2])
+                            self?.probeLog("reshape forced slim=\(p[0]) eye=\(p[1]) chin=\(p[2])")
+                        }
+                    }
                     if ProcessInfo.processInfo.environment["CQ_CAM_NO_SEMANTIC"] == "1" {
                         PortraitSemantics.uninstallSkinMask()
                         self?.probeLog("semantic mask uninstalled (bisection)")

@@ -128,7 +128,18 @@ public struct CameraBeautyParams: Equatable, Sendable {
         // 每帧两次全帧 CIBlendWithMask）。数值等价：同一 mask 下两次嵌套线性插值
         // （mask 区=美白(磨皮图)、黑区=原图）≡ 一次（mask 区=美白(磨皮图)、
         // 黑区=原图）——混合是逐像素线性算子，嵌套可折叠。
-        var processed = image
+        // CAM-035 P3 后半：**美颜子链半分辨率**（磨皮/美白是低频信息，540×960
+        // 处理后上采样混回，观感无损 [E]；SPEC-CAM-033-035 §3.P3）——美型/美妆/
+        // 滤镜仍全分辨率。CQ_CAM_FULLCHAIN=1 反向开关（排查观感回归用）。
+        let fullChain = ProcessInfo.processInfo.environment["CQ_CAM_FULLCHAIN"] == "1"
+        var work = image
+        var downscaled = false
+        if !fullChain, image.extent.width >= 16, image.extent.height >= 16 {
+            work = work.transformed(by: CGAffineTransform(scaleX: 0.5, y: 0.5))
+            downscaled = true   // scale 不平移 → origin 仍 (0,0)，磨皮引擎契约成立
+        }
+
+        var processed = work
         let segLog = ProcessInfo.processInfo.environment["CQ_CAM_BEAUTY_SEG"] == "1"
         if smoothing > 0 {
             processed = CameraBeautyEngine.smoothing?(processed, smoothing)
@@ -136,19 +147,29 @@ public struct CameraBeautyParams: Equatable, Sendable {
             if segLog { fputs("[beauty-seg] smoothing done\n", stderr); fflush(stderr) }
         }
         if brightening > 0 {
-            var brightened = processed.applyingFilter("CIExposureAdjust", parameters: [
-                kCIInputEVKey: 0.45 * brightening,
+            // CAM-035 P3 后半：**亮度曲线替代线性曝光**——CIToneCurve 五点，
+            // 两端锚定（高光不动=防死白）+ 中调提亮 + 肤色饱和度微降（防塑料）。
+            // 参数 [E]（真机定标归收尾批）；对强度单调（验收前提）。
+            let s = CGFloat(brightening)
+            var brightened = processed.applyingFilter("CIToneCurve", parameters: [
+                "inputPoint0": CIVector(x: 0.0, y: 0.0),
+                "inputPoint1": CIVector(x: 0.25, y: 0.25 + 0.06 * s),
+                "inputPoint2": CIVector(x: 0.5, y: 0.5 + 0.10 * s),
+                "inputPoint3": CIVector(x: 0.75, y: 0.75 + 0.06 * s),
+                "inputPoint4": CIVector(x: 1.0, y: 1.0),
             ])
             brightened = brightened.applyingFilter("CIColorControls", parameters: [
-                kCIInputBrightnessKey: 0.04 * brightening,
-                kCIInputSaturationKey: 1.0,
-                kCIInputContrastKey: 1.0,
+                kCIInputSaturationKey: 1.0 - 0.05 * s,
             ])
             processed = brightened
             if segLog { fputs("[beauty-seg] brighten done\n", stderr); fflush(stderr) }
         }
-        guard processed !== image else { return image }   // 理论不可达（isOff 已挡），防御
-        let out = blended(processed, over: image, mask: mask)
+        guard processed !== work else { return image }   // 理论不可达（isOff 已挡），防御
+        if downscaled {
+            processed = processed.transformed(by: CGAffineTransform(scaleX: 2, y: 2))
+        }
+        // 半分辨率上采样后 extent 可能比原帧大 1px（奇数帧向上取整），裁回兜底。
+        let out = blended(processed, over: image, mask: mask).cropped(to: image.extent)
         if segLog { fputs("[beauty-seg] blend done\n", stderr); fflush(stderr) }
         return out
     }

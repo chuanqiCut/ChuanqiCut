@@ -344,19 +344,10 @@ SPM 临时产物一律 `swift test --disable-sandbox --scratch-path "$ROOT/build
   - [ ] 切摄横屏闪现消失（P113 = switchPosition 补 begin/commitConfiguration 事务）
   - [ ] 相机页不再自动锁屏中断（isIdleTimerDisabled）
 - 新登记待修（CAM 线）：
-  - [ ] **warp kernel 签名错**：`Function 'cq_face_warp' has an unsupported type
-    "sampler2D" for the parameter 'src0'` —— CIWarpKernel 原型不允许显式 sampler
-    参数（框架采样），face_warp.metal 需按 CIWarpKernel 契约重写参数表；
-    现状 = 美型诚实跳过（跑 cq-shader-portability 纪律）
-  - [ ] **Pool kernel width 越界**：`Invalid Pool kernel width (9)/(13), must be
-    [1-8] or 14` —— **2026-10-11 真机日志重归因 [E]**：beauty_bilateral 是自有
-    CIKernel（metallib 构建期才报错，不会逐帧刷），该告警格式（`Invalid layer:`）
-    与 `numANECores: Unknown aneSubType` 同源，判为 **Vision 模型在 iPhone 17 Pro
-    ANE 上的编译告警**（landmark 模型 pooling 层宽度超 ANE 子类型支持 → 疑似部分
-    层回退 CPU → 检测更贵，加强检测裁剪必要性）。验证法：detectionHz 临时改 1
-    看告警是否降频（下次真机一趟）
-  - [ ] 横持拍照方向（P111 表只覆盖竖屏）+ 初始黑帧优化（会话启动客观延迟，
-    可评估"启动中"占位）
+  - [x] **warp kernel 签名重写完成（美型复活，CAM-033 批）**：CIWarpKernel 契约 =
+    首参 dest 坐标 + **零 sampler 参数**（旧版 src 只读 extent/coord 也被拒收）——
+    画面信息改 float4 ext 由 Swift 传入。E13 真机：reshape 0.6/0.5/0.4 + 磨皮美白+
+    分割全链满帧（0.9-1.4ms）零崩溃，landmarks 锚点正常。**变形效果目检归传哲**。
 - 验收回填：baselines「录制」段；关 [15] 需真机产物核验数字。
 
 - **2026-10-11 18:00 更新**：P114 完成 — 录制完成回调析构竞态修复（强持有 self），
@@ -399,6 +390,14 @@ SPM 临时产物一律 `swift test --disable-sandbox --scratch-path "$ROOT/build
     高频细节，单调性保持）——正解是 P2 引导滤波 k 纹理保留系数（RESEARCH-015）。
   - [ ] **磨皮最大强度引擎状态验证（需设备解锁+人脸对镜头）**：远程 D15 因锁屏
     未跑成；待验证 mix 上限后的观感（传哲目检）。
+  - [x] **P3 后半：美白重做 + 美颜链半分辨率**（CAM-035，2026-10-11 深夜九）：
+    ①美白从线性曝光+CIColorControls 改 **CIToneCurve 五点亮度曲线**（两端锚定
+    防死白+中调提亮）+ 肤色饱和度微降（防塑料），对强度单调（单测）；②**美颜
+    子链半分辨率**（磨皮/美白 540×960 跑完上采样混回，CQ_CAM_FULLCHAIN=1 反向
+    开关；奇数帧 1px 溢出 cropped 兜底，extent 恢复单测）——E12 实测双边引擎
+    处理 1.1-3.5ms（半分辨率前 1.6-3.0 全帧基线上再降）。③合并混合等价测试
+    改语义抽检（蒙版外保真/蒙版内生效——两次混合路径已删+半分辨率变量污染
+    逐位对比）。
   - [x] **「磨皮区域一直变化/美白整头发白」修复（P3 前半提前，CAM-035）**：
     传哲实测双反馈的正解 = **人像分割蒙版 ∩ 脸框**（VNGeneratePersonSegmentation
     .balanced）。实现：独立 PortraitSegmenter 管道（15Hz 闸门+忙丢弃，**不挂

@@ -536,10 +536,12 @@ final class CameraManager: NSObject, @unchecked Sendable {
                self.depthOutput.connection(with: .depthData)?.isActive == true {
                 settings.isDepthDataDeliveryEnabled = true
             }
-            // 方向/镜像沿用 connection 的呈现设置（拍照接后摄，CAM-016）。
+            // 方向/镜像按 connection 实际摄位（前摄拍照同正确；旧实现写死 .back，
+            // 前摄照片横躺且不镜像——与 reapply 同一根因）。
             if let connection = self.photoOutput.connection(with: .video) {
-                self.applyOrientation(connection, self.interfaceOrientation, for: .back)
-                self.applyMirrorIfFront(connection, for: .back)
+                let pos = self.position(of: connection)
+                self.applyOrientation(connection, self.interfaceOrientation, for: pos)
+                self.applyMirrorIfFront(connection, for: pos)
             }
             self.photoOutput.capturePhoto(with: settings, delegate: self.photoRelay)
         }
@@ -650,12 +652,25 @@ final class CameraManager: NSObject, @unchecked Sendable {
         return input
     }
 
+    /// connection 的实际摄位：从 inputPort 的源设备读（AVCaptureInput.h:157 ——
+    /// port 的 sourceDevicePosition 恒等于 deviceInput.device.position）。
+    /// ⚠️ 不能按「输出身份」推断（CAM-021 回归根因）：单摄前摄时前摄挂在**主**
+    /// videoOutput 上，按 `output === frontVideoOutput` 判成后摄 → 偏移 0 而非
+    /// 270° → 前摄横躺。摄位以 connection 实际连接的设备为准，单摄/双摄一视同仁。
+    /// 端口缺失（连接尚未建立）时回退 currentPosition（防御，正常不可达）。
+    private func position(of connection: AVCaptureConnection) -> Position {
+        if let devicePosition = connection.inputPorts.first?.sourceDevicePosition {
+            return devicePosition == .front ? .front : .back
+        }
+        return currentPosition
+    }
+
     /// 全部 video connection 重放方向/镜像（各按其摄位：双摄时前摄输出镜像 + 270° 偏移）。
     /// 深度 connection（CAM-023）同步同向——深度图与照片配准的前提。
     private func reapplyOutputConnectionsLocked() {
         for output in session.outputs {
             guard let connection = output.connection(with: .video) else { continue }
-            let pos: Position = (output === frontVideoOutput) ? .front : .back
+            let pos = position(of: connection)
             applyOrientation(connection, interfaceOrientation, for: pos)
             applyMirrorIfFront(connection, for: pos)
         }

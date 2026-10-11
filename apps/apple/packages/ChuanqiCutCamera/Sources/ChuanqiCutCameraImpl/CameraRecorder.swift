@@ -202,11 +202,13 @@ final class CameraRecorder: @unchecked Sendable {
     func appendVideo(sourceBuffer: CVImageBuffer, at time: CMTime) {
         guard setupIfNeeded(with: sourceBuffer) else { return }
         lock.lock()
-        // writer.status == .writing 守卫：writer 一旦失败（时序错/磁盘满/编码错），
-        // 后续 append 全部无效 —— 继续渲染只是浪费，无条件计数会把失败伪装成进度
-        // （P60 伪绿同族：2026-10-07「assetwriter 报错」修复轮）。
+        // writer 状态守卫：只拦「已失败/已收尾」——.failed 之后 append 全部无效
+        //（P60 伪绿同族：失败伪装成进度）。⚠️ .unknown（尚未 startWriting）必须
+        // 放行：首帧要走到下方 startSessionIfNeeded 才会 startWriting；先查
+        // .writing 再 startWriting = 永远到不了 startWriting 的死锁（P108，
+        // B-02 真机探针实锤：录制 0 帧 + stop 即 finishWriting 崩溃）。
         guard let adaptor, let videoInput, let writer, !isFinished,
-              writer.status == .writing else {
+              writer.status == .writing || writer.status == .unknown else {
             lock.unlock()
             return
         }
@@ -364,12 +366,19 @@ final class CameraRecorder: @unchecked Sendable {
             }
             return
         }
-        // markAsFinished 仅合法于 .writing 态；从未 startWriting 的 writer（未知态）
-        // 调它会触发 NSInternalInconsistencyException —— 走显式失败路径。
-        if writer.status == .writing {
-            videoInput?.markAsFinished()
-            audioInput?.markAsFinished()
+        // markAsFinished / finishWriting 均仅合法于 .writing 态；从未 startWriting
+        // 的 writer（状态 0）调 finishWriting 会抛 NSInternalInconsistencyException
+        //（P108 真机实锤：0 帧录制 stop 即崩）—— 走显式失败路径，不碰 writer。
+        guard writer.status == .writing else {
+            let err = writer.error ?? RecordingError.nothingWritten
+            Self.logger.error("录制收尾：writer 状态 \(writer.status.rawValue, privacy: .public)（未进入 writing），按失败收尾")
+            Task { @MainActor in
+                completion(.failure(err))
+            }
+            return
         }
+        videoInput?.markAsFinished()
+        audioInput?.markAsFinished()
         // AVAssetWriter 不 Sendable。依据：finishWriting 的回调由 writer 自己在
         // 串行队列上调用一次，闭包只读 status/error，且 writer 此后不再被写入
         // （markAsFinished 已调用）—— 跨闭包持有没有数据竞争。

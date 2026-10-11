@@ -488,8 +488,12 @@ final class CameraManager: NSObject, @unchecked Sendable {
     ///   .quality 优先级编码（configure 时已把 photoOutput 上限设为 .quality）。
     /// - Parameter depthDelivery: 人像虚化深度交付（CAM-023）——深度输出 active 时
     ///   请求内嵌 AVDepthData；失败/缺失以 nil 伴随上抛，上层诚实跳过虚化。
+    /// - Parameter onDone: metadata 必须透传（P111）——iOS 26 photoOutput 交付
+    ///   **未旋转** buffer，方向在 kCGImagePropertyOrientation 元数据里，消费管线
+    ///   据 `.oriented()` 摆正；忽略它 = 照片横躺（B-02 真机实证）。
     func capturePhoto(highResolution: Bool = false, depthDelivery: Bool = false,
-                      onDone: @escaping (_ pixelBuffer: CVImageBuffer?, _ depthData: AVDepthData?) -> Void) {
+                      onDone: @escaping (_ pixelBuffer: CVImageBuffer?, _ depthData: AVDepthData?,
+                                         _ metadata: [AnyHashable: Any]?) -> Void) {
         // onDone 的签名含 CVImageBuffer（CF 类型，不 Sendable），保持非 @Sendable，
         // 经 PhotoRelay（@unchecked Sendable）转交——@Sendable 的 async 闭包只捕获
         // relay，不捕获 onDone 本体（P49）。失败路径（设备缺失/未配置）同样回调 nil。
@@ -536,11 +540,14 @@ final class CameraManager: NSObject, @unchecked Sendable {
                self.depthOutput.connection(with: .depthData)?.isActive == true {
                 settings.isDepthDataDeliveryEnabled = true
             }
-            // 方向/镜像按 connection 实际摄位（前摄拍照同正确；旧实现写死 .back，
-            // 前摄照片横躺且不镜像——与 reapply 同一根因）。
+            // 方向/镜像按 connection 实际摄位，**两条线分开**（P111 真机实证）：
+            //   角度 —— photoOutput 语义（前摄与后摄同款：90=竖屏；前摄 270° 偏移
+            //           只属于 videoDataOutput，误用于 photo 会交付横向原生缓冲）；
+            //   镜像 —— 真实摄位（前摄照片镜像，与预览 WYSIWYG 一致）。
             if let connection = self.photoOutput.connection(with: .video) {
                 let pos = self.position(of: connection)
-                self.applyOrientation(connection, self.interfaceOrientation, for: pos)
+                self.applyOrientation(connection, self.interfaceOrientation, for: .back,
+                                      photoOutputSemantics: true)
                 self.applyMirrorIfFront(connection, for: pos)
             }
             self.photoOutput.capturePhoto(with: settings, delegate: self.photoRelay)
@@ -688,16 +695,38 @@ final class CameraManager: NSObject, @unchecked Sendable {
     /// 故 landscapeLeft=0、landscapeRight=180、portrait=90。
     /// ⚠️ 横屏两项是文档推导，真机若出现横屏 180° 反接，交换 0/180（一行）。
     private func applyOrientation(_ connection: AVCaptureConnection, _ io: UIInterfaceOrientation,
-                                  for position: Position) {
+                                  for position: Position,
+                                  photoOutputSemantics: Bool = false) {
         if #available(iOS 17.0, *) {
             // 静态表 + 前摄安装差常量（CAM-017 二修，P72）。旧 API（else 分支）是
             // 语义方向（portrait=竖直），系统内处理安装差异，**不**加偏移。
             // 双摄（CAM-021）按各 connection 自己的摄位取偏移，不再看 currentPosition。
-            let offset: CGFloat = (position == .front) ? 270 : 0
+            //
+            // ⚠️ P111（B-02 真机探针实测）：前摄 270° 安装偏移**只适用于
+            // videoDataOutput** —— photoOutput 的旋转参考与前摄安装差无关
+            //（前摄 photo 用后摄同款语义：90=竖屏；angle 0 交付横向原生缓冲，
+            // 真机照片 1920×1080 人脸横躺实证）。拍照路径传 photoOutputSemantics=true。
+            let offset: CGFloat = (position == .front && !photoOutputSemantics) ? 270 : 0
             let angle = Self.snappedToQuarter(Self.rotationAngle(for: io) + offset)
-            if connection.isVideoRotationAngleSupported(angle) {
+            let supported = connection.isVideoRotationAngleSupported(angle)
+            if supported {
                 connection.videoRotationAngle = angle
             }
+            #if DEBUG
+            // B-02 真机探针（CQ_CAM_PROBE 在场时输出；P67/P72 语义的机器取证：
+            // 后摄 portrait=90/前摄 portrait=0 + 前摄镜像）。打印**实际生效值**
+            //（supported=false 时赋值被跳过，光看计算值会被骗——P111 排障实证）。
+            if ProcessInfo.processInfo.environment["CQ_CAM_PROBE"] != nil {
+                let mirrored = position == .front && connection.isVideoMirroringSupported
+                    ? connection.isVideoMirrored : false
+                fputs("[cam-probe] orientation pos=\(position == .front ? "front" : "back")"
+                      + " photo=\(photoOutputSemantics ? 1 : 0)"
+                      + " angle=\(Int(angle)) supported=\(supported)"
+                      + " actual=\(Int(connection.videoRotationAngle))"
+                      + " mirror=\(mirrored)\n", stderr)
+                fflush(stderr)
+            }
+            #endif
         } else if connection.isVideoOrientationSupported, let vo = Self.videoOrientation(for: io) {
             connection.videoOrientation = vo
         }
@@ -788,18 +817,31 @@ private final class PhotoRelay: NSObject, AVCapturePhotoCaptureDelegate, @unchec
     private static let logger = Logger(subsystem: "com.chuanqi.cut", category: "camera.photo")
 
     /// 深度数据（CAM-023）：depthDelivery 开启时随照片内嵌交付；nil = 无深度（诚实降级）。
-    var onPhoto: ((_ pixelBuffer: CVImageBuffer?, _ depthData: AVDepthData?) -> Void)?
+    var onPhoto: ((_ pixelBuffer: CVImageBuffer?, _ depthData: AVDepthData?,
+                   _ metadata: [AnyHashable: Any]?) -> Void)?
 
     /// 派发一次性拍照回调并清空（拍照单发，不重复触发）。
-    func deliver(_ buffer: CVImageBuffer?, _ depth: AVDepthData? = nil) {
+    /// metadata 必须透传（P111）：iOS 26 photoOutput 交付未旋转 buffer，
+    /// 方向在 kCGImagePropertyOrientation 元数据里。
+    func deliver(_ buffer: CVImageBuffer?, _ depth: AVDepthData? = nil,
+                 _ metadata: [AnyHashable: Any]? = nil) {
         let callback = onPhoto
         onPhoto = nil
-        callback?(buffer, depth)
+        callback?(buffer, depth, metadata)
     }
 
     func photoOutput(_ output: AVCapturePhotoOutput,
                      didFinishProcessingPhoto photo: AVCapturePhoto,
                      error: Error?) {
+        #if DEBUG
+        // P111 取证：photoOutput 的 buffer 是否「不旋转、方向走元数据」——
+        // kCGImagePropertyOrientation 在场 = 管线必须 .oriented() 消费。
+        if ProcessInfo.processInfo.environment["CQ_CAM_PROBE"] != nil {
+            let o: Any? = photo.metadata[String(kCGImagePropertyOrientation)]
+            fputs("[cam-probe] photo meta orient=\(o ?? "nil")\n", stderr)
+            fflush(stderr)
+        }
+        #endif
         guard error == nil, let buffer = photo.pixelBuffer else {
             // 遥测（CAM-017）：失败原因直接可见，不靠 UI 层猜。
             Self.logger.error("拍照回调失败：\(error?.localizedDescription ?? "pixelBuffer 缺失", privacy: .public)")

@@ -14,6 +14,9 @@ import ChuanqiCutEngine
 import ChuanqiCutPlayer  // 播放器域 Pod（ADR-0031）；装配 PlayerPreviewInjector
 import ChuanqiCutImport  // 导入域 Pod：装配 MediaLibraryInjector（相册浏览器）
 import ChuanqiCutEditor  // 编辑器域 Pod：EditorScreen/HomeView 播放入口
+#if DEBUG
+import ChuanqiCutCamera  // DEBUG 冒烟：CQ_AUTO_ROUTE=camera 直进相机（B-02 真机探针）
+#endif
 
 @main
 struct ChuanqiCutApp: App {
@@ -23,6 +26,8 @@ struct ChuanqiCutApp: App {
     #if DEBUG
     private let autoEnterEditor =
         ProcessInfo.processInfo.environment["CQ_AUTO_ROUTE"] == "editor"
+    private let autoEnterCamera =
+        ProcessInfo.processInfo.environment["CQ_AUTO_ROUTE"] == "camera"
     #endif
 
     init() {

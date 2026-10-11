@@ -166,7 +166,11 @@ public final class EditorViewModel: ObservableObject {
             }
             // `wf:` 前缀与内核日志同一套：grep '\[wf:perf\]' 就能把这一份剖面
             // 和解码/取帧链路的 C++ 日志捞在一起按时间看。
-            let line = "playback-perf: t=\(String(format: "%.2f", nowSec))s tick_p95=\(self.ms(p95))ms pump_req/s=\(requestedPerSec) pump_rendered/s=\(renderedPerSec) pump_nonok/s=\(nonOk) mtk_draw/s=\(drawsPerSec) footprint=\(String(format: "%.1f", Self.memoryFootprintMB()))MB"
+            let audio = self.previewAudio?.stats
+            let audioPart = audio.map {
+                " audio_blocks=\($0.blocksRendered) audio_drop=\($0.blocksDropped) audio_under=\($0.underruns) audio_resync=\($0.resyncs)"
+            } ?? " audio=nil"
+            let line = "playback-perf: t=\(String(format: "%.2f", nowSec))s tick_p95=\(self.ms(p95))ms pump_req/s=\(requestedPerSec) pump_rendered/s=\(renderedPerSec) pump_nonok/s=\(nonOk) mtk_draw/s=\(drawsPerSec)\(audioPart) footprint=\(String(format: "%.1f", Self.memoryFootprintMB()))MB"
             let tagged = "[wf:perf] \(line)"
             log.info("\(tagged, privacy: .public)")
             // stderr 无缓冲：`devicectl device process launch --console` 必现。
@@ -482,6 +486,15 @@ public final class EditorViewModel: ObservableObject {
                               start: start, duration: duration,
                               sourceIn: sourceIn).isOK else { return false }
         setPlayhead(RationalTime(value: 60000, timescale: ts))
+        // B-02 真机音频探针：CQ_DEMO_AUTOPLAY=1 → 装载后自动开播（DEBUG only）。
+        if ProcessInfo.processInfo.environment["CQ_DEMO_AUTOPLAY"] == "1" {
+            Task { @MainActor [weak self] in
+                try? await Task.sleep(nanoseconds: 800_000_000)
+                self?.togglePlayback()
+                fputs("[audio-probe] autoplay started\n", stderr)
+                fflush(stderr)
+            }
+        }
         return true
     }
 #endif

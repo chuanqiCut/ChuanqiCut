@@ -303,6 +303,9 @@ final class CameraViewModel: ObservableObject {
                 if !running {
                     self?.errorMessage = "相机启动失败（设备被占用或不存在）"
                 }
+                #if DEBUG
+                if running { self?.runDeviceProbeIfRequested() }
+                #endif
             }
         }
     }
@@ -319,6 +322,49 @@ final class CameraViewModel: ObservableObject {
             self?.phase = running ? .running : self?.phase ?? .preparing
         }
     }
+
+    // MARK: 真机自动探针（DEBUG only；B-02 问卷机器侧取证，2026-10-11）
+    //
+    // CQ_CAM_PROBE=front：running 后切前摄 → 拍照（PNG 存 tmp，探针模式**跳过相册**
+    // 避免权限弹窗阻塞自动化）→ 录 3s（mp4 落 tmp）。逐项 fputs 到 stderr
+    // （devicectl launch --console 可见）；产物由机器侧 devicectl copy 拉回核验。
+
+    #if DEBUG
+    private var probeStarted = false
+
+    private var probeActive: Bool {
+        ProcessInfo.processInfo.environment["CQ_CAM_PROBE"] != nil
+    }
+
+    private func probeLog(_ text: String) {
+        fputs("[cam-probe] \(text)\n", stderr)
+        fflush(stderr)
+    }
+
+    func runDeviceProbeIfRequested() {
+        guard !probeStarted, phase == .running,
+              let mode = ProcessInfo.processInfo.environment["CQ_CAM_PROBE"] else { return }
+        probeStarted = true
+        probeLog("start mode=\(mode) position=\(position == .front ? "front" : "back")")
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            if mode == "front" {
+                self.switchPosition()
+                try? await Task.sleep(nanoseconds: 1_200_000_000)
+                self.probeLog("switched position=\(self.position == .front ? "front" : "back")")
+            }
+            self.capturePhoto()
+            try? await Task.sleep(nanoseconds: 2_500_000_000)
+            self.startRecording()
+            self.probeLog("recording started")
+            try? await Task.sleep(nanoseconds: 3_000_000_000)
+            self.stopRecording()
+            self.probeLog("recording stopped")
+            try? await Task.sleep(nanoseconds: 1_000_000_000)
+            self.probeLog("done")
+        }
+    }
+    #endif
 
     // MARK: 操作
 
@@ -452,8 +498,11 @@ final class CameraViewModel: ObservableObject {
         isCapturing = true
         let failure = NSError(domain: "cq.camera", code: 1,
                               userInfo: [NSLocalizedDescriptionKey: "未取到照片数据"])
+        // 拍照瞬间摄位快照（镜像连接判定用，P111 方向表）——闭包在采集队列跑，
+        // 不能现场读 @Published。
+        let photoMirrored = position == .front
         manager.capturePhoto(highResolution: highResPhoto,
-                             depthDelivery: portraitBlurEnabled) { [weak self] buffer, depthData in
+                             depthDelivery: portraitBlurEnabled) { [weak self] buffer, depthData, metadata in
             // 回调在采集队列；单张照片的一次性处理在这里做，不抢主线程。
             // ciContext 线程安全，与预览/录制复用同一实例。
             // let（确定初始化）而非 var：Task 闭包是 @Sendable，捕获 var 直接编译错（P49）。
@@ -461,6 +510,41 @@ final class CameraViewModel: ObservableObject {
             if let buffer {
                 do {
                     var image = CIImage(cvPixelBuffer: buffer)
+                    // P111：方向在照片元数据里（iOS 26 photoOutput 不旋转 buffer）。
+                    // 摆正后再进效果链，否则美颜/贴纸的坐标全部错位。
+                    //
+                    // 有效方向表（iPhone 17 Pro / iOS 26.6 真机实证，B-02）：
+                    //   连接不镜像（后摄）：metadata 6 → 有效 6（1080×1920 端正）
+                    //   连接镜像    （前摄）：metadata 4 → 有效 6（直用 4 = 1920×1080 横躺）
+                    // ⚠️ 镜像连接下 metadata 与有效值的关系未成公式（4→6 仅此一点实证；
+                    //    横持场景未测）——未知组合按 metadata 原值走 + Warn（诚实降级 +
+                    //    留现场日志），新增实测后扩表。
+                    if let raw = metadata?[String(kCGImagePropertyOrientation)] {
+                        let value: UInt32
+                        if let n = raw as? NSNumber { value = n.uint32Value }
+                        else if let str = raw as? String, let v = UInt32(str) { value = v }
+                        else { value = 0 }
+                        var effective = value
+                        if photoMirrored && value == 4 {
+                            effective = 6  // 前摄竖屏实测（B-02 探针三轮回放定案）
+                        }
+                        if let exif = CGImagePropertyOrientation(rawValue: effective),
+                           effective != 0 {
+                            image = image.oriented(exif)
+                        }
+                        if effective != value {
+                            Self.photoLogger.warning("照片方向镜像修正 \(value, privacy: .public)→\(effective, privacy: .public)（P111 表）")
+                        } else if value == 0 {
+                            Self.photoLogger.warning("照片方向元数据缺失/不可解析，按原始缓冲出图（P111）")
+                        }
+                        #if DEBUG
+                        if ProcessInfo.processInfo.environment["CQ_CAM_PROBE"] != nil {
+                            fputs("[cam-probe] vm orient raw=\(raw) value=\(value) effective=\(effective)"
+                                  + " extent=\(image.extent)\n", stderr)
+                            fflush(stderr)
+                        }
+                        #endif
+                    }
                     if let renderer = self?.renderer {
                         image = renderer.process(image,
                                                  faces: renderer.faceBoxes.current(),

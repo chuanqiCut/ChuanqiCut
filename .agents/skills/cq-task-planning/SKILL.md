@@ -15,7 +15,7 @@ Spec 已确认 / 有人要开始改代码但还没有任务定义。
                     ↘ I（Implementation）
    I + T（Test/Eval）→ V（Review/Integration）
    ```
-2. **先冻结契约**：若任务涉及共享接口（PAL、C ABI、GFX、manifest 格式），必须拆出一个独立的**契约任务**，下游任务依赖它。这是防止返工的关键。
+2. **先冻结契约**：若任务涉及共享接口（Platform、C ABI、GFX、manifest 格式），必须拆出一个独立的**契约任务**，下游任务依赖它。这是防止返工的关键。
 3. **声明 write_set**，并检查：
    - 两个任务的 write_set 不得相交
    - 高冲突文件（`CMakeLists.txt`、`cq_sdk.h`、`*.pbxproj`、`build.gradle.kts`、`manifest.toml`）单独成任务或交给 Integrator

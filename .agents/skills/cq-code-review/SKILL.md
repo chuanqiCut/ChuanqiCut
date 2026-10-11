@@ -38,7 +38,7 @@ description: 代码审查。三种场景：①合并其他开发机的代码之�
    - Swift 6 发送域错误、async 上下文调 `RunLoop.main.run`（P45）、
      类型重复声明（MediaGridCell 案底）；
    - C++ 看是否真开了 `-Werror`（远端工具链旧）。
-5. **架构红线按 diff 面过一遍**：PAL 头零平台类型（`tools/pal/check_pal_headers.py`）、
+5. **架构红线按 diff 面过一遍**：Platform 头零平台类型（`tools/platform/check_platform_headers.py`）、
    公共头零第三方类型、UI 不直改模型（走 Command）、无浮点秒、无异常/无裸
    `new`（内核 `-fno-exceptions` + nothrow 约定）、时间一律 RationalTime。
 6. **风格 diff 审查**：按 `docs/CODESTYLE.md` 速查表逐条对照改动文件。

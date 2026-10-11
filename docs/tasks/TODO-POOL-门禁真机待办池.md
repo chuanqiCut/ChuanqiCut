@@ -367,3 +367,33 @@ SPM 临时产物一律 `swift test --disable-sandbox --scratch-path "$ROOT/build
     单摄档位回归（普通 Session preset 路径未动）
   - [ ] **Makeup/MetalFX 回归目检**：美妆五区域正常（irisMask/羽化修复后）、
     MetalFX 升采样画质（SDK 命名全对表后首次真编译）
+
+- **2026-10-11 20:xx 会话生命周期修复轮（集成机，50d5734）**：
+  - 已修入库：①退出拍摄页停会话（onDisappear 此前只复位息屏开关，stop 只挂退后台
+    ——摄像头绿点常开根因）；②wireCallbacks DEBUG 探针闭包 `self.renderer` 保留环
+    （manager↔VM 互持，DEBUG 构建 VM/会话永不释放=内存只涨根因）；③VM deinit 补
+    manager.stop() 兜底。验证 62/62 + iOS 壳绿。
+  - [ ] 真机验证：退出拍摄后绿点灭；反复进出拍摄页内存曲线平稳（浮层内存读数）；
+    进编辑器→返回拍摄页会话恢复正常
+  - **磨皮「慢 + 效果不好」诊断结论（待传哲拍板，未动刀）**：
+    - kernel 本身不是瓶颈：CAM-012 基线 9.85ms/帧@1080p（Intel Iris 640 宿主），
+      真机 GPU 应 1-3ms [E]；CAM-029 的 protect/σ_local 只是每中心像素几个
+      smoothstep，开销可忽略。
+    - 慢的构成是四件叠加：①检测桥 30Hz×3~4 个 Vision 全请求（FaceLandmarks468+
+      HumanBodyPose+RecognizeAnimals[+AnimalBodyPose]，2026-10-07 传哲提频 15→30
+      的代价 [E]6-15% CPU/ANE）；②蒙版混合链每帧 1~2 次全帧 CIBlendWithMask +
+      美白再加 2 个 CI filter；③录制时 appendVideo 同链再跑一遍（双开销）；
+      ④若引擎被黏性停用（连续 3 次 nil）整体掉进默认 CI 高斯（慢 ~2×且观感塑料）
+      ——真机日志 "beauty engine FALLBACK" 可判。
+    - 效果不好的结构性原因：脸框椭圆蒙版只盖脸（不含颈/额际外）+ σr≤0.11 保守
+      保边 + 半分辨率双边细节软；faces 时有时无的帧直通（磨皮断续感）。
+    - 方案拍板项：
+      - **A（推荐先走）**：不换引擎，链路瘦身 + 语义蒙版升级——磨皮/美白合并成
+        单次 BlendWithMask；蒙版从脸框椭圆换 VNGeneratePersonSegmentationRequest
+        （GPU 加速，iOS 15+，即 CAM-027「语义皮肤蒙版」的正确落地姿势）；检测桥
+        按需降频（无贴纸/美型时回 15Hz）。
+      - **B**：换磨皮内核为引导滤波/surface blur（自研 kernel 内改，契约与滑杆
+        映射不动），观感更均匀、保边更好。
+      - **C**：商美颜 SDK——与「业务下沉 C++/自研」红线及成本不符，不建议。
+    - 拍板需要的真机读数（浮层已可看）：processing ms（磨皮开/关对比）、
+      采集/渲染 fps、内存曲线、有无 FALLBACK 日志。

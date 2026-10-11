@@ -137,6 +137,7 @@ usage，而 CI 的 CIRenderDestination 要求 ShaderWrite → destination nil �
 activeFormat、`depthCapableDevice` 漏 `Self.`、闭包捕获 optional renderer 未解包）。
 metallib 实测 **9391B**（旧 8431B）+ 两 kernel 名齐全 |
 | **2026-10-11 收口轮**（本机集成机） | 两批工作区滞留改动（构建机批 + MultiCam 轮）**入库**（fdb4e97） | Camera `swift test` **62/62**；iOS 壳 BUILD SUCCEEDED（Xcode 17F113，先 pod install 纳入 CameraFormatSelector）；mac 壳 BUILD SUCCEEDED（ONLY_ACTIVE_ARCH；universal 双 arch 踩踏 = 池 [14] 另案）。**P93/P94 真机复验（MultiCam 档位切换不崩 + 档位生效）挂池 [15]** |
+| **2026-10-11 20:xx 会话生命周期修复轮** | 用户反馈：退出摄像头不灭/内存只涨/磨皮慢效果差 | 前两项实锤已修（50d5734）：onDisappear 停会话 + wireCallbacks DEBUG 探针 self 保留环 + deinit 兜底；62/62 + iOS 壳绿。磨皮诊断：kernel 非瓶颈（基线 9.85ms 宿主在册），慢=检测桥 30Hz 全家桶+蒙版链 1~2 次全帧 Blend+录制双跑+可能的黏性回落；效果差=脸框椭圆蒙版范围+保守 σr+半分辨率。**方案 A（语义分割蒙版+链路瘦身）/B（引导滤波）/C（商 SDK 不建议）待传哲拍板**，诊断全文在池 [15] |
 
 ### 调研 · 决策 · 池指针
 

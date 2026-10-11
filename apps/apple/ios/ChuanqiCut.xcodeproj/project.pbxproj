@@ -7,22 +7,36 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
-		325F298743450B4CD21190A6 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 9EF7CB009FB323759F8BB99B /* Assets.xcassets */; };
-		6B6BE2AE79C7C73CED177EF1 /* HomeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8729023B16699CBE4DC484A2 /* HomeView.swift */; };
-		8A611DCE76610CBD7F41B0FD /* ChuanqiCutApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = AADF251F4B6907944003FD75 /* ChuanqiCutApp.swift */; };
 		FDBAE799AD888F6071E45CBF /* libPods-ChuanqiCutApp.a in Frameworks */ = {isa = PBXBuildFile; fileRef = DF7935539D481599BC0B0344 /* libPods-ChuanqiCutApp.a */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
 		1A83AB2CF86A3C68FE357577 /* ChuanqiCutApp.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = ChuanqiCutApp.app; sourceTree = BUILT_PRODUCTS_DIR; };
-		3889BAEF520891965EBD4F36 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		79B587049CC24173DD281F47 /* Pods-ChuanqiCutApp.debug.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-ChuanqiCutApp.debug.xcconfig"; path = "Target Support Files/Pods-ChuanqiCutApp/Pods-ChuanqiCutApp.debug.xcconfig"; sourceTree = "<group>"; };
-		8729023B16699CBE4DC484A2 /* HomeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HomeView.swift; sourceTree = "<group>"; };
-		9EF7CB009FB323759F8BB99B /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
-		AADF251F4B6907944003FD75 /* ChuanqiCutApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChuanqiCutApp.swift; sourceTree = "<group>"; };
 		AFEF0A2F58D62C4B42DDCD31 /* Pods-ChuanqiCutApp.release.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-ChuanqiCutApp.release.xcconfig"; path = "Target Support Files/Pods-ChuanqiCutApp/Pods-ChuanqiCutApp.release.xcconfig"; sourceTree = "<group>"; };
 		DF7935539D481599BC0B0344 /* libPods-ChuanqiCutApp.a */ = {isa = PBXFileReference; explicitFileType = archive.ar; includeInIndex = 0; path = "libPods-ChuanqiCutApp.a"; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
+
+/* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
+		9803E204787C48A2BA56854C /* Exceptions for "iOSApp" folder in "ChuanqiCutApp" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Info.plist,
+			);
+			target = 96BA5DDDBEF9FE363EFC7AEE /* ChuanqiCutApp */;
+		};
+/* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
+
+/* Begin PBXFileSystemSynchronizedRootGroup section */
+		1DD4B5C7E9466EDDB9800FCB /* iOSApp */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				9803E204787C48A2BA56854C /* Exceptions for "iOSApp" folder in "ChuanqiCutApp" target */,
+			);
+			path = iOSApp;
+			sourceTree = "<group>";
+		};
+/* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
 		215BB252D489201F050044C7 /* Frameworks */ = {
@@ -36,17 +50,6 @@
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
-		4F56340210AA5EB3A74392B0 /* iOSApp */ = {
-			isa = PBXGroup;
-			children = (
-				9EF7CB009FB323759F8BB99B /* Assets.xcassets */,
-				AADF251F4B6907944003FD75 /* ChuanqiCutApp.swift */,
-				8729023B16699CBE4DC484A2 /* HomeView.swift */,
-				3889BAEF520891965EBD4F36 /* Info.plist */,
-			);
-			path = iOSApp;
-			sourceTree = "<group>";
-		};
 		D58307585B309EB94C03F096 /* Frameworks */ = {
 			isa = PBXGroup;
 			children = (
@@ -75,7 +78,7 @@
 		EAEC68A8E85CFF938C709BFA = {
 			isa = PBXGroup;
 			children = (
-				4F56340210AA5EB3A74392B0 /* iOSApp */,
+				1DD4B5C7E9466EDDB9800FCB /* iOSApp */,
 				E1D9F5250D1B55B927054886 /* Products */,
 				E29FFB947FEE7EED7E288533 /* Pods */,
 				D58307585B309EB94C03F096 /* Frameworks */,
@@ -98,6 +101,9 @@
 			buildRules = (
 			);
 			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				1DD4B5C7E9466EDDB9800FCB /* iOSApp */,
 			);
 			name = ChuanqiCutApp;
 			productName = ChuanqiCutApp;
@@ -137,7 +143,6 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				325F298743450B4CD21190A6 /* Assets.xcassets in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -192,8 +197,6 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				8A611DCE76610CBD7F41B0FD /* ChuanqiCutApp.swift in Sources */,
-				6B6BE2AE79C7C73CED177EF1 /* HomeView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

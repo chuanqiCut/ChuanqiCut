@@ -77,6 +77,12 @@ open ChuanqiCut.xcworkspace  # 注意开 workspace，不是 xcodeproj
 - **podspec 增删源文件后必须重跑 pod install**：Pods.xcodeproj 是文件清单快照，
   旧清单会编已改名/已删除的文件（2026-10-11 实踩：旧清单编已不存在的
   `pal_frame_provider.cpp`，iOS 壳构建红；pod install 刷新即愈）。
+- **app 目标源码已升级 synchronized groups（buildable folders，ADR-0037 台阶 2）**：
+  **app 内加/删文件 = 纯文件系统操作**（放进 iOSApp/ 或 MacApp/ 即自动进编译，
+  已实测），不需要动工程文件；Info.plist 已设成员例外（同目录不会误收进资源）。
+- **Agent 通道（ADR-0037 台阶 1）**：禁止裸编 `project.pbxproj` 文本；结构化改动
+  （构建设置 / 脚本阶段 / 文件引用）走 `tools/build/edit_project.rb`（xcodeproj gem，
+  与 pod install 同库，round-trip 安全）。
 - 禁止任何工具重新生成/覆盖 `ChuanqiCut.xcodeproj`——它不是产物，是真源。
 - Ruby 工具链：本机 `~/.rubies/ruby-3.4.11`；**Gemfile.lock 必须入库**（无 lock 会解析到
   不兼容的 CFPropertyList 3.0.9，P12）。gem 源用清华镜像（直连 rubygems.org 502）。

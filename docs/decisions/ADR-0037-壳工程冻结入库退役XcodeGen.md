@@ -58,3 +58,33 @@
 - metallib 产物：beauty_bilateral.metallib **9391B**（kernel：cq_beauty_down_h /
   cq_beauty_up_v_mix）、face_warp.metallib **7123B**（cq_face_warp）——非 96B 空壳。
 - 工程可移植性：pbxproj / contents.xcworkspacedata 零绝对路径。
+
+## 附录（2026-10-11 下午）：agent 友好性两台阶（传哲拍板「台阶 1+2」）
+
+冻结后剩余的 agent 不友好面 = app target 构建设置 / build phase / 新 target / app 内加文件
+（历史全部低频；Pod 源文件与 Info.plist 本就 agent 友好）。两台阶落地：
+
+1. **台阶 1 — agent 结构化编辑通道**：`tools/build/edit_project.rb`（xcodeproj gem 1.28.1，
+   与 pod install 同库，round-trip 安全）。**规则：agent 禁止裸编 project.pbxproj 文本，
+   结构化改动一律走脚本**（COCOAPODS.md §4）。
+2. **台阶 2 — app 目标升级 synchronized groups（buildable folders）**：iOSApp/ 与 MacApp/
+   转为 `PBXFileSystemSynchronizedRootGroup`（工程本就 objectVersion 77），**app 内加/删
+   文件 = 纯文件系统操作，零工程改动**（已实测：新增 Swift 文件未动工程即编译出 .o）。
+   pbxproj 缩至仅剩构建设置 + metallib 脚本阶段 + plist 例外。
+
+### 台阶 2 踩坑（P107）
+
+- **`sourceTree` 大小写敏感**：`"<Group>"`（大写 G）让同步组解析失败 → Sources 零文件 →
+  `_main` undefined 链接失败；必须 `"<group>"`（全工程既定 casing）。
+- **Info.plist 必须加成员例外**：同步组会自动把目录内 Info.plist 收进资源 →
+  `Multiple commands produce ...Info.plist`；用 `PBXFileSystemSynchronizedBuildFileExceptionSet
+  { target, membershipExceptions = [Info.plist] }` 排除（双端都已设）。
+
+### 验证（台阶 2 落地当日，全绿）
+
+- macOS：`xcodebuild -arch x86_64 ONLY_ACTIVE_ARCH=YES` → **BUILD SUCCEEDED**。
+- iOS：`-destination 'generic/platform=iphoneos'` → **BUILD SUCCEEDED**；
+  metallib 双产物 9391B/7123B 不回归。
+- **加文件冒烟**：iOSApp/ 新增 Swift 文件、零工程改动 → 自动编译出 AgentSyncProbe.o，
+  BUILD SUCCEEDED（探针已删）。
+- pbxproj 净变化 ±50 行/端（同步组替换 per-file 引用）。

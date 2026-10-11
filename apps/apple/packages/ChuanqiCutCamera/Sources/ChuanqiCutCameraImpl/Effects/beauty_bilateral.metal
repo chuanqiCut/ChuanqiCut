@@ -73,11 +73,14 @@ float4 cq_beauty_down_h(coreimage::sampler src,
     float2 center = cq_beauty_clamp_pos((src.coord() + 0.5f) * inv_scale, ext);
     float4 c0 = src.sample(center);
     float y0 = cq_beauty_luma(c0);
-    // CAM-029：肤色域自适应 σ（按中心亮度分档）+ 唇齿/眉眼色域保护（中心像素定案，
-    // 邻点共用同一保护系数——省逐 tap 计算，观感差异可忽略 [E]）。
-    float sigma_local = cq_beauty_sigma_local(sigma_range, y0);
+    // CAM-033 禁用亮度自适应 σ（传哲真机反馈「磨皮程度一直在变化」2026-10-11）：
+    // cq_beauty_sigma_local 按中心像素**绝对亮度**分档（0.6~1.4×）——手持时相机
+    // 自动曝光（AE）的帧间亮度摆动被直接调制进磨皮强度 = 程度脉动。该参数自
+    // CAM-029 落地起无 harness 实测（模块册在案）。固定 σ_range；亮度自适应留
+    // P2 引导滤波后以帧内归一化 + harness 实测定标再启用（cq_beauty_sigma_local
+    // 保留备查）。
     float protect = cq_beauty_protect(c0);
-    float sigma2 = 2.0f * sigma_local * sigma_local * max(protect, 0.15f);
+    float sigma2 = 2.0f * sigma_range * sigma_range * max(protect, 0.15f);
 
     float4 acc = c0;
     float wsum = 1.0f;

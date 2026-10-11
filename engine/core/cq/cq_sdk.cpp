@@ -191,6 +191,34 @@ int32_t cq_session_trim_clip(CQSession* session, uint64_t clip_id, int64_t durat
     return CodeOf(session->impl.SubmitTrimClip("trim-clip", clip_id, duration));
 }
 
+// ---- 片段 / 轨道结构操作与左缘裁剪（EDIT-007/008）--------------------------
+
+int32_t cq_session_trim_clip_in(CQSession* session, uint64_t clip_id, int64_t start_value,
+                                int32_t start_timescale) {
+    if (session == nullptr) return CodeOfEnum(cq::ChqStatusCode::kInvalidArgument);
+    if (start_timescale <= 0) return CodeOfEnum(cq::ChqStatusCode::kInvalidArgument);
+    const cq::ChqRationalTime start{start_value, start_timescale};
+    return CodeOf(session->impl.SubmitTrimClipIn("trim-clip-in", clip_id, start));
+}
+
+int32_t cq_session_split_clip(CQSession* session, uint64_t clip_id, int64_t at_value,
+                              int32_t at_timescale) {
+    if (session == nullptr) return CodeOfEnum(cq::ChqStatusCode::kInvalidArgument);
+    if (at_timescale <= 0) return CodeOfEnum(cq::ChqStatusCode::kInvalidArgument);
+    const cq::ChqRationalTime at{at_value, at_timescale};
+    return CodeOf(session->impl.SubmitSplitClip("split-clip", clip_id, at));
+}
+
+int32_t cq_session_remove_clip(CQSession* session, uint64_t clip_id) {
+    if (session == nullptr) return CodeOfEnum(cq::ChqStatusCode::kInvalidArgument);
+    return CodeOf(session->impl.SubmitRemoveClip("remove-clip", clip_id));
+}
+
+int32_t cq_session_remove_track(CQSession* session, uint64_t track_id) {
+    if (session == nullptr) return CodeOfEnum(cq::ChqStatusCode::kInvalidArgument);
+    return CodeOf(session->impl.SubmitRemoveTrack("remove-track", track_id));
+}
+
 int32_t cq_session_undo(CQSession* session) {
     if (session == nullptr) return CodeOfEnum(cq::ChqStatusCode::kInvalidArgument);
     return CodeOf(session->impl.SubmitUndo("undo"));

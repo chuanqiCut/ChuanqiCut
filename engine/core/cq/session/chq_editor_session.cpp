@@ -146,6 +146,42 @@ ChqStatus ChqEditorSession::SubmitTrimClip(const char* name, uint64_t clip_id,
     });
 }
 
+ChqStatus ChqEditorSession::SubmitSplitClip(const char* name, uint64_t clip_id,
+                                      const ChqRationalTime& at) {
+    ChqEditorModelState* model = BuiltinModel();
+    if (model == nullptr) return ChqStatus{ChqStatusCode::kInternal};
+    if (at.timescale <= 0) return ChqStatus{ChqStatusCode::kInvalidArgument};
+    return Submit(name, [model, clip_id, at]() -> ChqStatus {
+        return model->Execute(std::make_unique<ChqSplitClipCommand>(clip_id, at));
+    });
+}
+
+ChqStatus ChqEditorSession::SubmitRemoveClip(const char* name, uint64_t clip_id) {
+    ChqEditorModelState* model = BuiltinModel();
+    if (model == nullptr) return ChqStatus{ChqStatusCode::kInternal};
+    return Submit(name, [model, clip_id]() -> ChqStatus {
+        return model->Execute(std::make_unique<ChqRemoveClipCommand>(clip_id));
+    });
+}
+
+ChqStatus ChqEditorSession::SubmitRemoveTrack(const char* name, uint64_t track_id) {
+    ChqEditorModelState* model = BuiltinModel();
+    if (model == nullptr) return ChqStatus{ChqStatusCode::kInternal};
+    return Submit(name, [model, track_id]() -> ChqStatus {
+        return model->Execute(std::make_unique<ChqRemoveTrackCommand>(track_id));
+    });
+}
+
+ChqStatus ChqEditorSession::SubmitTrimClipIn(const char* name, uint64_t clip_id,
+                                       const ChqRationalTime& new_start) {
+    ChqEditorModelState* model = BuiltinModel();
+    if (model == nullptr) return ChqStatus{ChqStatusCode::kInternal};
+    if (new_start.timescale <= 0) return ChqStatus{ChqStatusCode::kInvalidArgument};
+    return Submit(name, [model, clip_id, new_start]() -> ChqStatus {
+        return model->Execute(std::make_unique<ChqTrimClipInCommand>(clip_id, new_start));
+    });
+}
+
 ChqStatus ChqEditorSession::SubmitUndo(const char* name) {
     ChqEditorModelState* model = BuiltinModel();
     if (model == nullptr) return ChqStatus{ChqStatusCode::kInternal};

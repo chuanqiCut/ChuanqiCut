@@ -143,6 +143,97 @@ ChqStatus ChqRemoveClipCommand::Undo(ChqTimeline& model) {
 }
 
 // ===========================================================================
+// ChqSplitClipCommand
+// ===========================================================================
+
+ChqStatus ChqSplitClipCommand::Do(ChqTimeline& model) {
+    const ChqClip* left = model.FindClip(clip_id_);
+    if (left == nullptr) return ChqStatus(ChqStatusCode::kInvalidArgument);
+    left_before_ = *left;
+
+    uint64_t right_id = 0;
+    ChqStatus s = model.SplitClip(clip_id_, at_, right_id);
+    if (!s.IsOk()) return s;
+    right_id_ = right_id;
+
+    // Redo 的全部输入此刻一次性捕获；任一取不到即内部不变量被破坏。
+    const ChqClip* left_after = model.FindClip(clip_id_);
+    const ChqClip* right_after = model.FindClip(right_id_);
+    if (left_after == nullptr || right_after == nullptr) {
+        return ChqStatus(ChqStatusCode::kInternal);
+    }
+    track_id_ = 0;
+    for (const ChqTrack& track : model.Tracks()) {
+        for (const ChqClip& c : track.clips) {
+            if (c.id == right_id_) {
+                track_id_ = track.id;
+                break;
+            }
+        }
+        if (track_id_ != 0) break;
+    }
+    if (track_id_ == 0) return ChqStatus(ChqStatusCode::kInternal);
+    left_after_ = *left_after;
+    right_after_ = *right_after;
+    captured_ = true;
+    return ChqStatus::Ok();
+}
+
+ChqStatus ChqSplitClipCommand::Undo(ChqTimeline& model) {
+    if (!captured_) return ChqStatus(ChqStatusCode::kInternal);
+    // 先删右半再还原左半：左半还原后的占位覆盖右半位置，顺序反了会被判重叠。
+    ChqStatus s = model.RemoveClip(right_id_);
+    if (!s.IsOk()) return s;
+    return model.ReplaceClip(left_before_);
+}
+
+ChqStatus ChqSplitClipCommand::Redo(ChqTimeline& model) {
+    if (!captured_) return ChqStatus(ChqStatusCode::kInternal);
+    // 重放 Do 会给右半分配新 id，历史里后续命令的引用会悬空 ——
+    // 用 Do 时捕获的快照恢复原 id（与 Insert/Remove 同一纪律）。
+    ChqStatus s = model.ReplaceClip(left_after_);
+    if (!s.IsOk()) return s;
+    return model.RestoreClip(track_id_, right_after_);
+}
+
+// ===========================================================================
+// ChqTrimClipInCommand（左缘裁剪）
+// ===========================================================================
+
+ChqStatus ChqTrimClipInCommand::Do(ChqTimeline& model) {
+    const ChqClip* clip = model.FindClip(clip_id_);
+    if (clip == nullptr) return ChqStatus(ChqStatusCode::kInvalidArgument);
+
+    // 右缘不动：Δ = new_start - start，同时落到媒体侧（source_in += Δ）
+    // 与时间线侧（duration -= Δ）。任一步算术失败即整体失败，模型不动。
+    old_clip_ = *clip;
+    ChqRationalTime delta;
+    ChqStatus s = SubRational(new_start_, clip->start, delta);
+    if (!s.IsOk()) return s;
+    ChqRationalTime new_source_in;
+    s = AddRational(clip->source.source_in, delta, new_source_in);
+    if (!s.IsOk()) return s;
+    ChqRationalTime new_duration;
+    s = SubRational(clip->duration, delta, new_duration);
+    if (!s.IsOk()) return s;
+
+    new_clip_ = *clip;
+    new_clip_.start = new_start_;
+    new_clip_.source.source_in = new_source_in;
+    new_clip_.duration = new_duration;
+    captured_ = true;
+
+    // 校验（duration > 0 / source_in >= 0 / 同轨不重叠）全在 ReplaceClip 内；
+    // 失败时模型未变更，历史不收这条命令。
+    return model.ReplaceClip(new_clip_);
+}
+
+ChqStatus ChqTrimClipInCommand::Undo(ChqTimeline& model) {
+    if (!captured_) return ChqStatus(ChqStatusCode::kInternal);
+    return model.ReplaceClip(old_clip_);
+}
+
+// ===========================================================================
 // ChqMoveClipCommand
 // ===========================================================================
 

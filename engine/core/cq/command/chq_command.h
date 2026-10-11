@@ -160,6 +160,64 @@ private:
 };
 
 // ---------------------------------------------------------------------------
+// 结构类：分割片段（EDIT-007）。一个命令产生两处变更：
+//   左半  —— 原 id 原位收缩（TrimClip 语义覆盖不到的 out_transition 置 kNone）；
+//   右半  —— 新 id（Do 时分配）。
+// Undo = 删右半 + 左半整体还原；Redo 不能重放 Do（会分配新右半 id），
+// 走 ReplaceClip(左) + RestoreClip(右，原 id) —— 与 Insert/Remove 同一纪律。
+// 快照粒度：左右两个**单个实体**（结构类允许的粒度，见文件头）。
+// ---------------------------------------------------------------------------
+class ChqSplitClipCommand : public ChqICommand {
+public:
+    ChqSplitClipCommand(uint64_t clip_id, const ChqRationalTime& at)
+        : clip_id_(clip_id), at_(at) {}
+
+    ChqStatus Do(ChqTimeline& model) override;
+    ChqStatus Redo(ChqTimeline& model) override;
+    ChqStatus Undo(ChqTimeline& model) override;
+    const char* Name() const override { return "split-clip"; }
+
+    // 首次 Do 后有效：右半实际分配的片段 id（UI 拿它做后续选择）。
+    uint64_t right_clip_id() const { return right_id_; }
+
+private:
+    uint64_t clip_id_;          // 左半（原片段）
+    ChqRationalTime at_;
+    uint64_t right_id_ = 0;     // 首次 Do 分配
+    uint64_t track_id_ = 0;     // 首次 Do 定位（Redo 的 RestoreClip 输入）
+    ChqClip left_before_{};     // Do 前的左半（Undo 还原依据）
+    ChqClip left_after_{};      // Do 后的左半（Redo 的 ReplaceClip 输入）
+    ChqClip right_after_{};     // Do 后的右半（Redo 的 RestoreClip 输入）
+    bool captured_ = false;
+};
+
+// ---------------------------------------------------------------------------
+// 编辑类：左缘裁剪（EDIT-008）。右缘（end = start + duration）不动，
+// 同时改三个耦合字段：start / source_in / duration。
+// 与 Move/Trim 不同，三条增量彼此约束（新 end == 旧 end），分开存会留下
+// 「只回放了一部分」的半更新窗口 —— 故存**单个实体**的变更前后快照
+// （粒度仍被限制在单个实体，见文件头；Redo = Do，id 稳定无需 Restore）。
+// ---------------------------------------------------------------------------
+class ChqTrimClipInCommand : public ChqICommand {
+public:
+    // new_start = 拖动左缘后的新时间线起点；source_in / duration 由内核按
+    // 「右缘不动」推导（source_in += Δ，duration -= Δ），调用方只给一个参数。
+    ChqTrimClipInCommand(uint64_t clip_id, const ChqRationalTime& new_start)
+        : clip_id_(clip_id), new_start_(new_start) {}
+
+    ChqStatus Do(ChqTimeline& model) override;
+    ChqStatus Undo(ChqTimeline& model) override;
+    const char* Name() const override { return "trim-clip-in"; }
+
+private:
+    uint64_t clip_id_;
+    ChqRationalTime new_start_;
+    ChqClip old_clip_{};   // 首次 Do 时捕获
+    ChqClip new_clip_{};   // 首次 Do 时推导
+    bool captured_ = false;
+};
+
+// ---------------------------------------------------------------------------
 // 编辑类：移动片段（只存增量 —— model.md 硬约束 #2 的原型）。
 // ---------------------------------------------------------------------------
 class ChqMoveClipCommand : public ChqICommand {

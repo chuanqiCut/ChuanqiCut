@@ -52,7 +52,7 @@ final class CameraViewModel: ObservableObject {
     /// 美颜参数（磨皮/美白）。实时预览即时生效；拍照按拍摄瞬间值处理；
     /// 录制在开始时锁定（录制中面板已禁用）。
     @Published var beauty = CameraBeautyParams() {
-        didSet { renderer?.setBeauty(beauty); updateDetectionPlan() }
+        didSet { renderer?.setBeauty(beauty); updateDetectionPlan(); segmenter.isEnabled = !beauty.isOff }
     }
     @Published var filter: CameraFilterPreset = .none {
         didSet { renderer?.setFilter(filter) }  // 录制中由视图层禁用滤镜条（锁定语义）
@@ -211,6 +211,9 @@ final class CameraViewModel: ObservableObject {
     private let manager = CameraManager()
     /// CAM-011 检测桥（CAM-019 接入美颜区域化）：offer 在采集队列非阻塞，
     /// 检测降频 30Hz [E] + 忙丢弃；onResult 在检测队列写入 renderer.faceBoxes（锁）。
+    /// 人像分割管道（CAM-035）：磨皮/美白开时 15Hz 产 mask（独立于 detector——
+    /// 前摄磨皮走 metadata 时 detect 早退，分割必须独立帧源，E5 实证裁决）。
+    private let segmenter = PortraitSegmenter()
     /// ⚠️ 人脸框**单一真源 = renderer.faceBoxes**：预览 draw / 拍照 / 录制三路消费
     /// 读同一个 store。此前 ViewModel 自建了第二个 store，检测结果只写进它，
     /// 预览侧永远读不到 → 美颜整帧兜底（2026-10-07 真机「还是滤镜效果」反馈根因，
@@ -266,6 +269,11 @@ final class CameraViewModel: ObservableObject {
             manager.onMetadataFaces = { [faceBoxes] rects, _ in
                 faceBoxes.update(with: rects.max(by: { $0.width * $0.height < $1.width * $1.height }))
             }
+            // 人像分割 mask（CAM-035）：分割队列回调 → store（渲染线程消费）。
+            segmenter.onMask = { [faceBoxes] mask in
+                faceBoxes.updateSegmentationMask(mask)
+            }
+            segmenter.isEnabled = !beauty.isOff
             detector.onResult = { [faceBoxes, weak detector] snapshot in
                 if CameraManager.faceCalib, let box = snapshot.face?.box {
                     fputs(String(format: "[face-calib] vision box=(%.4f,%.4f,%.4f,%.4f)\n",
@@ -962,6 +970,7 @@ final class CameraViewModel: ObservableObject {
         let recorderBox = self.recorderBox
         let detector = self.detector
         let frontDetector = self.frontDetector
+        let segmenter = self.segmenter
         #if DEBUG
         nonisolated(unsafe) var probeFrameCount = 0
         #endif
@@ -979,6 +988,7 @@ final class CameraViewModel: ObservableObject {
             #endif
             renderer.frameSlot.push(buffer)      // 预览（latest-wins）
             detector.offer(buffer, at: pts)      // 检测（内部降频+忙丢弃，永不阻塞采集）
+            segmenter.offer(buffer, at: pts)     // 人像分割（CAM-035；磨皮开才有效）
             recorderBox.get()?.appendVideo(sourceBuffer: buffer, at: pts)  // 录制
         }
         // CAM-021：前摄帧（仅双摄有流）→ 前帧槽 + 前检测桥；录制由后摄回调驱动，

@@ -54,6 +54,38 @@ public enum PortraitSkinMask {
         return multiply(base, keep).cropped(to: extent)
     }
 
+    // MARK: - 分割版（CAM-035 P3 前半）
+
+    /// 分割蒙版 ∩ 脸框椭圆：白 = 人像 ∩ 脸框 —— 磨皮/美白只上**皮肤区**，
+    /// 不再覆盖头发/背景边缘（传哲反馈「美白整个头部发白」的正解）。
+    /// 分割轮廓对小幅运动不敏感（像素级人像 vs 框级椭圆）→ 磨皮区域稳定。
+    ///
+    /// - Parameters:
+    ///   - segmentation: VNGeneratePersonSegmentation 输出（白=人像，原生低分辨率
+    ///     extent，与磨皮输入帧同坐标系——同源于 CIImage(cvPixelBuffer:)）。
+    ///     内部缩放到画面 extent 并轻羽化（轮廓锯齿 [E]）。
+    /// - Returns: nil 仅在脸框空/退化时（与 FaceMask.mask 一致）。seg 全黑 =
+    ///   输出全黑（该帧磨皮区域为零——分割认为画面无人像，诚实结果非错误）。
+    public static func skinMask(for image: CIImage, faceBoxes: [CGRect],
+                                segmentation: CIImage) -> CIImage? {
+        let extent = image.extent
+        guard let base = FaceMask.mask(forNormalizedBoxes: faceBoxes, in: extent) else {
+            return nil
+        }
+        let segExtent = segmentation.extent
+        guard segExtent.width >= 1, segExtent.height >= 1 else { return base }
+        let scaled = segmentation.transformed(by: CGAffineTransform(
+            scaleX: extent.width / segExtent.width,
+            y: extent.height / segExtent.height))
+        let feathered = scaled.clampedToExtent()
+            .applyingFilter("CIGaussianBlur", parameters: [kCIInputRadiusKey: 2.0])
+            .cropped(to: extent)
+        return base.applyingFilter("CIMultiplyCompositing", parameters: [
+            kCIInputBackgroundImageKey: feathered,
+            kCIInputImageKey: base,
+        ]).cropped(to: extent)
+    }
+
     // MARK: - 内部构造
 
     /// 「保留区」蒙版（白 = 皮肤候选区）= 「五官排除区」羽化后反相。

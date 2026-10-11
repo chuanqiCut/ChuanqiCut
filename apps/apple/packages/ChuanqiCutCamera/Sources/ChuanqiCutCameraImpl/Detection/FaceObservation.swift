@@ -230,7 +230,6 @@ public struct DetectionSnapshot: Sendable {
     public var body: BodyPoseObservation?
     /// 按置信度降序。
     public var animals: [AnimalObservation]
-
     public init(pts: CMTime, face: FaceObservation?, body: BodyPoseObservation?,
                 animals: [AnimalObservation]) {
         self.pts = pts

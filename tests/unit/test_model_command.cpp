@@ -315,9 +315,105 @@ void TestOrderInvariantAfterUndoRedo() {
     Check(sorted, "Undo/Redo 往返后仍按 start 升序");
 }
 
-}  // namespace
+// ---------------------------------------------------------------------------
+// EDIT-007：split-clip 命令
+// ---------------------------------------------------------------------------
 
-int main() {
+void TestSplitClipCommand() {
+    cq::ChqTimeline tl;
+    cq::ChqCommandHistory hist;
+    uint64_t track_id = 0, clip_id = 0;
+    hist.Execute(std::make_unique<cq::ChqAddTrackCommand>(cq::ChqTrackKind::kVideo), tl);
+    track_id = tl.Tracks().front().id;
+    hist.Execute(std::make_unique<cq::ChqInsertClipCommand>(track_id, MakeClip(1000, 5000)), tl);
+    clip_id = tl.FindClipAt(track_id, Ms(2000))->id;
+    const std::string fp_initial = Fingerprint(tl);
+    const int depth_before = static_cast<int>(hist.UndoDepth());
+
+    // 失败语义：切在边界 → 不入栈、不改模型、redo 分支不清
+    hist.Redo(tl);  // 先造一个 redo 分支：undo 一次再 redo 前执行失败用例
+    hist.Undo(tl);  // 栈里是 insert-clip；redo 分支持有它
+    hist.Execute(std::make_unique<cq::ChqInsertClipCommand>(track_id, MakeClip(20000, 1000)), tl);
+    // 上面这条 Execute 已丢弃 redo 分支（线性历史）。重新构造干净现场：
+    hist.Undo(tl);
+    hist.Undo(tl);
+    hist.Redo(tl);
+    hist.Redo(tl);
+    Check(Fingerprint(tl) == fp_initial, "现场重建：指纹回到初始态");
+
+    const int depth_after_setup = static_cast<int>(hist.UndoDepth());
+    Check(!hist.Execute(std::make_unique<cq::ChqSplitClipCommand>(clip_id, Ms(1000)), tl).IsOk(),
+          "切在 start 边界失败");
+    Check(static_cast<int>(hist.UndoDepth()) == depth_after_setup, "失败的 split 不入栈");
+    Check(Fingerprint(tl) == fp_initial, "失败的 split 不改模型");
+
+    // 正常分割：Do 生效、右半新 id、左半收缩
+    auto split = std::make_unique<cq::ChqSplitClipCommand>(clip_id, Ms(3000));
+    Check(hist.Execute(std::move(split), tl).IsOk(), "Execute SplitClip");
+    // 右半 id 只能经模型确认（命令已入栈，right_clip_id 不可再取 —— 与 add-clip 同约定）
+    Check(tl.FindTrack(track_id)->clips.size() == 2, "分割后两个片段");
+
+    const std::string fp_split = Fingerprint(tl);
+    hist.Undo(tl);
+    Check(Fingerprint(tl) == fp_initial, "Undo 后指纹与分割前一致（含转场字段）");
+    Check(tl.FindTrack(track_id)->clips.size() == 1, "Undo 后右半消失、左半还原");
+
+    hist.Redo(tl);
+    Check(Fingerprint(tl) == fp_split, "Redo 后指纹与分割后一致（右半原 id 恢复）");
+    Check(tl.FindClipAt(track_id, Ms(4000)) != nullptr, "Redo 后右半可命中");
+
+    // 撤销栈里左半原 id 依然有效：对左半再 trim 一次，然后连撤三条
+    const uint64_t left_id = tl.FindClipAt(track_id, Ms(2000))->id;
+    Check(left_id == clip_id, "左半保留原 id");
+    hist.Execute(std::make_unique<cq::ChqTrimClipCommand>(left_id, Ms(1000)), tl);
+    Check(tl.FindClip(left_id)->duration == Ms(1000), "分割后左半可继续编辑");
+    for (int i = 0; i < 3; ++i) hist.Undo(tl);
+    Check(Fingerprint(tl) == fp_initial, "连撤三条回到初始态（LIFO 引用有效）");
+}
+
+// ---------------------------------------------------------------------------
+// EDIT-008：trim-clip-in 命令（左缘裁剪）
+// ---------------------------------------------------------------------------
+
+void TestTrimClipInCommand() {
+    cq::ChqTimeline tl;
+    cq::ChqCommandHistory hist;
+    uint64_t track_id = 0, clip_id = 0;
+    hist.Execute(std::make_unique<cq::ChqAddTrackCommand>(cq::ChqTrackKind::kVideo), tl);
+    track_id = tl.Tracks().front().id;
+    hist.Execute(std::make_unique<cq::ChqInsertClipCommand>(track_id, MakeClip(1000, 5000)), tl);
+    clip_id = tl.FindClipAt(track_id, Ms(2000))->id;
+    const std::string fp_initial = Fingerprint(tl);
+
+    // 右缘不动：start 1s→2s 时 source_in += 1s、duration -= 1s
+    Check(hist.Execute(std::make_unique<cq::ChqTrimClipInCommand>(clip_id, Ms(2000)), tl).IsOk(),
+          "Execute TrimClipIn");
+    const cq::ChqClip* after = tl.FindClip(clip_id);
+    Check(after->start == Ms(2000), "新起点生效");
+    Check(after->duration == Ms(4000), "时长收缩 Δ");
+    Check(after->source.source_in == Ms(1000), "source_in 推进 Δ");
+    Check(after->source.source_duration == Ms(4000), "source_duration 收缩 Δ");
+
+    const std::string fp_trimmed = Fingerprint(tl);
+    hist.Undo(tl);
+    Check(Fingerprint(tl) == fp_initial, "Undo 回到初始态");
+    hist.Redo(tl);
+    Check(Fingerprint(tl) == fp_trimmed, "Redo 重放（id 稳定，无需 Restore）");
+
+    // 失败语义：左缘拖过素材起点（source_in < 0）→ 不入栈不改模型
+    const int depth = static_cast<int>(hist.UndoDepth());
+    Check(!hist.Execute(std::make_unique<cq::ChqTrimClipInCommand>(clip_id, Ms(500)), tl).IsOk(),
+          "左缘拖过素材入点失败");
+    Check(static_cast<int>(hist.UndoDepth()) == depth, "失败的 trim-in 不入栈");
+    Check(Fingerprint(tl) == fp_trimmed, "失败的 trim-in 不改模型");
+
+    // 失败语义：左缘越过右缘（duration ≤ 0）
+    Check(!hist.Execute(std::make_unique<cq::ChqTrimClipInCommand>(clip_id, Ms(7000)), tl).IsOk(),
+          "左缘越过右缘失败");
+    Check(Fingerprint(tl) == fp_trimmed, "越界失败不改模型");
+}
+
+
     std::setvbuf(stdout, nullptr, _IONBF, 0);
     std::printf("== ChuanqiCut Command / ChqCommandHistory 单测（MODEL-002）==\n");
 

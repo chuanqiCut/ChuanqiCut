@@ -84,6 +84,9 @@ final class FaceBoxStore {
     private var latestBodyAnchors: BodyReshapeAnchors?
     /// 美妆锚点（CAM-026）：区域关键点集合（唇/眉/眼/瞳），无脸 = nil（美妆直通）。
     private var latestMakeupAnchors: MakeupAnchors?
+    /// 人像分割 mask（CAM-035）：检测队列写 / 渲染与录制读；nil = 尚未产出
+    /// （分割 15Hz 跳跑 + 能力缺失）→ 消费方回落框级几何蒙版。
+    private var latestSegmentationMask: CIImage?
     /// 框帧间平滑状态：只在检测队列触碰（VisionDetector.onResult 串行回调），无锁。
     private var previousMain: CGRect?
 
@@ -124,6 +127,21 @@ final class FaceBoxStore {
         lock.lock()
         defer { lock.unlock() }
         latestBodyAnchors = anchors
+    }
+
+    /// 人像分割 mask 更新（CAM-035）：检测队列调用；nil 不清（mask 生命周期
+    /// 与脸框独立——无脸帧直通，mask 过期由脸框约束兜底）。
+    func updateSegmentationMask(_ mask: CIImage?) {
+        lock.lock()
+        defer { lock.unlock() }
+        if let mask { latestSegmentationMask = mask }
+    }
+
+    /// 渲染/录制线程读。
+    func currentSegmentationMask() -> CIImage? {
+        lock.lock()
+        defer { lock.unlock() }
+        return latestSegmentationMask
     }
 
     /// 检测队列调用：美妆锚点（CAM-026；无脸传 nil）。

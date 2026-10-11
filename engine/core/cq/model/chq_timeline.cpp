@@ -141,6 +141,96 @@ ChqStatus ChqTimeline::TrimClip(uint64_t clip_id, const ChqRationalTime& new_dur
     return ChqStatus::Ok();
 }
 
+ChqStatus ChqTimeline::ReplaceClip(const ChqClip& clip) {
+    ChqTrack* track = nullptr;
+    ChqClip* existing = find_clip_mut(clip.id, track);
+    if (existing == nullptr) return ChqStatus(ChqStatusCode::kInvalidArgument);
+
+    // kind 必须匹配所在轨道（与 Insert 同规则：音频片段不能原地变成视频）。
+    const ChqClipKind expected = (track->kind == ChqTrackKind::kVideo) ? ChqClipKind::kVideo
+                                                                 : ChqClipKind::kAudio;
+    if (clip.kind != expected) return ChqStatus(ChqStatusCode::kInvalidArgument);
+    if (clip.duration.value <= 0 || clip.duration.timescale <= 0) {
+        return ChqStatus(ChqStatusCode::kInvalidArgument);
+    }
+    // 素材内入点不能早于素材起点（左缘裁剪拖过头的第一道防线）。
+    if (clip.source.source_in.value < 0) {
+        return ChqStatus(ChqStatusCode::kInvalidArgument);
+    }
+    if (overlaps_in_track(*track, clip, existing)) {
+        return ChqStatus(ChqStatusCode::kInvalidArgument);
+    }
+
+    *existing = clip;
+    // start 可变（左缘裁剪），维持轨内按 start 升序的不变量。
+    std::sort(track->clips.begin(), track->clips.end(),
+              [](const ChqClip& a, const ChqClip& b) {
+                  return CompareRational(a.start, b.start) < 0;
+              });
+    return ChqStatus::Ok();
+}
+
+ChqStatus ChqTimeline::SplitClip(uint64_t clip_id, const ChqRationalTime& at,
+                                 uint64_t& out_right_id) {
+    ChqTrack* track = nullptr;
+    ChqClip* clip = find_clip_mut(clip_id, track);
+    if (clip == nullptr) return ChqStatus(ChqStatusCode::kInvalidArgument);
+
+    // ---- 先算术后变更：任何一步失败都不得动模型 ----
+    ChqRationalTime end;
+    ChqStatus s = clip->End(end);
+    if (!s.IsOk()) return s;
+    // 严格内开区间：切在 start / end 边界上等于没切（右半时长为零）。
+    if (CompareRational(at, clip->start) <= 0 || CompareRational(at, end) >= 0) {
+        return ChqStatus(ChqStatusCode::kInvalidArgument);
+    }
+
+    ChqRationalTime delta;  // 左半时长 = at - start，也是右半的媒体偏移量
+    s = SubRational(at, clip->start, delta);
+    if (!s.IsOk()) return s;
+    ChqRationalTime right_source_in;
+    s = AddRational(clip->source.source_in, delta, right_source_in);
+    if (!s.IsOk()) return s;
+    ChqRationalTime right_source_duration;
+    s = SubRational(clip->source.source_duration, delta, right_source_duration);
+    if (!s.IsOk()) return s;
+
+    // ---- 变更段：左半原位收缩，右半构造后插入 ----
+    const ChqTransitionKind orig_out_transition = clip->out_transition;  // 回滚留档
+    ChqClip right = *clip;
+    right.id = next_id_++;
+    right.start = at;
+    right.duration = delta;
+    right.source.source_in = right_source_in;
+    right.source.source_duration = right_source_duration;
+    // 分割点是媒体中段的切线：两侧的转场边界随之作废（出转场归左、入转场归右，
+    // 但都不再挂在切线上）。transition_duration 不动 —— 当前 setter 只产生 kNone，
+    // 引入非 kNone 转场时再补「共享 duration 的归属」语义。
+    clip->duration = delta;
+    clip->out_transition = ChqTransitionKind::kNone;
+    right.in_transition = ChqTransitionKind::kNone;
+
+    // 左半已收缩为 [start, at)，与右半 [at, end) 首尾相接不构成重叠；
+    // 排除左半后只需验证右半与更远的邻居不冲突。
+    if (overlaps_in_track(*track, right, clip)) {
+        // 理论不可达（右半落在原片段占位内），防御性回滚左半。
+        ChqRationalTime orig_duration;
+        if (SubRational(end, clip->start, orig_duration).IsOk()) {
+            clip->duration = orig_duration;
+            clip->out_transition = orig_out_transition;
+        }
+        return ChqStatus(ChqStatusCode::kInternal);
+    }
+
+    auto pos = track->clips.begin();
+    while (pos != track->clips.end() && CompareRational(pos->start, right.start) <= 0) {
+        ++pos;
+    }
+    track->clips.insert(pos, right);
+    out_right_id = right.id;
+    return ChqStatus::Ok();
+}
+
 const ChqClip* ChqTimeline::FindClip(uint64_t clip_id) const {
     for (const ChqTrack& track : tracks_) {
         for (const ChqClip& clip : track.clips) {

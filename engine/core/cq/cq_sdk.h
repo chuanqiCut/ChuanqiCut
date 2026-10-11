@@ -169,15 +169,36 @@ int32_t cq_session_add_clip(CQSession* session, uint64_t track_id, uint64_t asse
  * 与 add_clip 同一提交语义：Ok = 已入队；校验（片段存在 / duration > 0 /
  * 同轨不重叠）在 session 线程执行 —— 失败表现为版本不推进 + 观察者不回调。
  *
- * ⚠️ **裁剪只改 duration，不动 source_in**（MODEL-002 既定语义）。
- *    左边缘裁剪需要同时改 start + source_in + duration，是另一条命令，
- *    本期不提供 —— UI 不要假装支持左边缘裁剪。
+ * ⚠️ trim_clip 只改 duration，不动 start / source_in（右缘裁剪）。
+ *    trim_clip_in 是左缘裁剪（EDIT-008）：右缘（end = start + duration）不动，
+ *    start / source_in / duration 三字段由内核联动 —— 调用方只给新起点。
+ *    左缘拖过素材入点（source_in < 0）或越过右缘 → 校验失败。
  */
 int32_t cq_session_move_clip(CQSession* session, uint64_t clip_id, int64_t start_value,
                              int32_t start_timescale);
 
 int32_t cq_session_trim_clip(CQSession* session, uint64_t clip_id, int64_t duration_value,
                              int32_t duration_timescale);
+
+int32_t cq_session_trim_clip_in(CQSession* session, uint64_t clip_id, int64_t start_value,
+                                int32_t start_timescale);
+
+/* ---- 片段 / 轨道结构操作（EDIT-007；异步提交，经 ChqCommandHistory 可撤销）----
+ *
+ * split_clip：在时间线时刻 at 处把片段切成两半。at 必须严格落在片段内部
+ * （切在边界上无意义 → 校验失败）。左半保留原 id；右半由内核分配新 id，
+ * 调用方经 query_clips 轮询获取（与 add_clip 的「新 id 经查询确认」同一约定）。
+ * 分割点两侧的转场边界置 none（切线是媒体中段，不是媒体边界）。
+ *
+ * remove_clip / remove_track：删除。remove_track 连同轨内全部片段一起删除。
+ * 二者的 Undo 均以原 id 原位恢复（实体快照），历史里后续命令的 id 引用不失效。
+ */
+int32_t cq_session_split_clip(CQSession* session, uint64_t clip_id, int64_t at_value,
+                              int32_t at_timescale);
+
+int32_t cq_session_remove_clip(CQSession* session, uint64_t clip_id);
+
+int32_t cq_session_remove_track(CQSession* session, uint64_t track_id);
 
 /* ---- 撤销 / 重做（UIA-005；异步提交）----
  *

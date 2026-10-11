@@ -186,6 +186,8 @@ final class VisionDetector: @unchecked Sendable {
             animalPoseRequestRef = poseRequest
         }
 
+
+
         do {
             if CameraManager.faceCalib {
                 fputs("[face-calib] detect perform begin n=\(requests.count)\n", stderr)

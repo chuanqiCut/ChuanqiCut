@@ -31,8 +31,14 @@ enum PortraitSemantics {
     /// 闭包体会在**渲染/录制线程**执行 → 只准读 `FaceBoxStore` 带锁的最新值。
     static func installSkinMask(faceBoxStore: FaceBoxStore) {
         CameraBeautyEngine.semanticMask = { image, boxes in
-            PortraitSkinMask.skinMask(for: image, faceBoxes: boxes,
-                                      anchors: faceBoxStore.currentMakeupAnchors())
+            // CAM-035 P3 前半：分割 mask 可用 = 「人像 ∩ 脸框」（皮肤区，磨皮区域
+            // 稳定 + 美白不上头发）；不可用（15Hz 跳跑前/能力缺失）= 回落几何精修版
+            // （v1 框级 ∩ 非五官），再退 = 框级椭圆。
+            if let seg = faceBoxStore.currentSegmentationMask() {
+                return PortraitSkinMask.skinMask(for: image, faceBoxes: boxes, segmentation: seg)
+            }
+            return PortraitSkinMask.skinMask(for: image, faceBoxes: boxes,
+                                             anchors: faceBoxStore.currentMakeupAnchors())
         }
     }
 

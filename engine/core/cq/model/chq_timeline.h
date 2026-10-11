@@ -82,6 +82,23 @@ public:
     ChqStatus RemoveClip(uint64_t clip_id);
     ChqStatus MoveClip(uint64_t clip_id, const ChqRationalTime& new_start);
     ChqStatus TrimClip(uint64_t clip_id, const ChqRationalTime& new_duration);
+
+    // 原位整体替换片段内容（id 不变、不换轨）：左缘裁剪等「同时改 start /
+    // source_in / duration」的编辑用它一次提交，避免三条独立变更之间的半更新。
+    // 校验与 Insert 同基：id 必须已存在、kind 必须匹配所在轨道、duration > 0、
+    // source_in >= 0（素材内入点不能早于素材起点）、同轨不重叠（排除自身）。
+    // 成功后轨内按 start 升序重排（start 可变）。
+    ChqStatus ReplaceClip(const ChqClip& clip);
+
+    // 在时刻 at 处把片段切成两半（EDIT-007 分割）：
+    //   左半  —— 保留原 id，duration 收缩为 (at - start)，out_transition 置 kNone
+    //            （分割点是媒体中段的切线，不是媒体边界，转场不能挂在它上面）；
+    //   右半  —— 新分配 id，start = at，source_in += (at - start)，
+    //            source_duration -= (at - start)，in_transition 置 kNone。
+    // 校验：片段存在、at 严格落在 (start, end) 开区间内（切在边界上无意义）。
+    // 全部运算先算术后变更：任一步溢出/非法即整体失败，模型不留半切状态。
+    ChqStatus SplitClip(uint64_t clip_id, const ChqRationalTime& at, uint64_t& out_right_id);
+
     const ChqClip* FindClip(uint64_t clip_id) const;
 
     // 命中测试：返回覆盖时刻 t 的 clip（同轨最多一个，因为不重叠）

@@ -98,6 +98,13 @@ public:
     //   故撤销同样必须入队执行 —— 不能在调用线程直接翻栈。
     ChqStatus SubmitMoveClip(const char* name, uint64_t clip_id, const ChqRationalTime& start);
     ChqStatus SubmitTrimClip(const char* name, uint64_t clip_id, const ChqRationalTime& duration);
+    // 分割（EDIT-007）：在 at 处把片段切成两半；右半新 id 经 query_clips 轮询获取。
+    // 删除片段 / 删除轨道（EDIT-007）：结构类命令，Undo 走实体快照恢复原 id。
+    // 左缘裁剪（EDIT-008）：右缘不动，start / source_in / duration 三字段联动。
+    ChqStatus SubmitSplitClip(const char* name, uint64_t clip_id, const ChqRationalTime& at);
+    ChqStatus SubmitRemoveClip(const char* name, uint64_t clip_id);
+    ChqStatus SubmitRemoveTrack(const char* name, uint64_t track_id);
+    ChqStatus SubmitTrimClipIn(const char* name, uint64_t clip_id, const ChqRationalTime& new_start);
     ChqStatus SubmitUndo(const char* name);
     ChqStatus SubmitRedo(const char* name);
 

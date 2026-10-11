@@ -179,6 +179,116 @@ void TestEditOperations() {
     Check(!tl.RemoveClip(9999).IsOk(), "删除不存在的片段返回错误");
 }
 
+// ---------------------------------------------------------------------------
+// EDIT-007：分割
+// ---------------------------------------------------------------------------
+
+void TestSplitClip() {
+    cq::ChqTimeline tl;
+    uint64_t vt = 0;
+    tl.AddTrack(cq::ChqTrackKind::kVideo, vt);
+    uint64_t cid = 0;
+    tl.InsertClip(vt, MakeClip(cq::ChqClipKind::kVideo, 1000, 5000), cid);
+
+    // 边界与缺失：切在 start / end 上无意义；不存在的片段不可切
+    uint64_t sink = 0;
+    Check(!tl.SplitClip(cid, Ms(1000), sink).IsOk(), "切在 start 边界被拒绝");
+    Check(!tl.SplitClip(cid, Ms(6000), sink).IsOk(), "切在 end 边界被拒绝");
+    Check(!tl.SplitClip(9999, Ms(3000), sink).IsOk(), "不存在的片段不可切");
+    Check(tl.FindTrack(vt)->clips.size() == 1, "失败不产生半切状态");
+
+    // 正常分割：左半保 id 收缩，右半新 id 且媒体引用联动
+    uint64_t right_id = 0;
+    Check(tl.SplitClip(cid, Ms(3000), right_id).IsOk(), "分割成功");
+    Check(right_id != cid && right_id != 0, "右半获得新 id");
+
+    const cq::ChqClip* left = tl.FindClip(cid);
+    Check(left != nullptr && left->duration == Ms(2000), "左半收缩为 [start, at)");
+    Check(left->out_transition == cq::ChqTransitionKind::kNone, "左半出转场作废");
+
+    const cq::ChqClip* right = tl.FindClip(right_id);
+    Check(right != nullptr, "右半可命中");
+    Check(right->start == Ms(3000) && right->duration == Ms(3000), "右半占据 [at, end)");
+    Check(right->source.source_in == Ms(2000), "右半 source_in 推进 Δ");
+    Check(right->source.source_duration == Ms(3000), "右半 source_duration 收缩 Δ");
+    Check(right->in_transition == cq::ChqTransitionKind::kNone, "右半入转场作废");
+    Check(tl.FindTrack(vt)->clips.size() == 2, "分割后轨内两个片段");
+    Check(tl.Duration().value == Ms(6000).value, "分割不改变总时长");
+
+    // 分割后再插入新片段：id 仍唯一（next_id 单调推进）
+    uint64_t fresh = 0;
+    Check(tl.InsertClip(vt, MakeClip(cq::ChqClipKind::kVideo, 10000, 1000), fresh).IsOk(),
+          "分割后仍可插入");
+    Check(fresh != cid && fresh != right_id, "新插入 id 与两半都不冲突");
+
+    // 邻居共存：A [0,5s) 与 B [5s,10s)，分割 A 不与 B 冲突
+    cq::ChqTimeline tl2;
+    uint64_t t2 = 0, a = 0, b = 0, a2 = 0;
+    tl2.AddTrack(cq::ChqTrackKind::kVideo, t2);
+    tl2.InsertClip(t2, MakeClip(cq::ChqClipKind::kVideo, 0, 5000), a);
+    tl2.InsertClip(t2, MakeClip(cq::ChqClipKind::kVideo, 5000, 5000), b);
+    Check(tl2.SplitClip(a, Ms(2000), a2).IsOk(), "有邻居时分割成功");
+    Check(tl2.FindClip(a2) != nullptr && tl2.FindClip(a2)->duration == Ms(3000),
+          "右半与原邻居首尾相接不判重叠");
+}
+
+// ---------------------------------------------------------------------------
+// EDIT-008 模型基座：ReplaceClip（原位整体替换）
+// ---------------------------------------------------------------------------
+
+void TestReplaceClip() {
+    cq::ChqTimeline tl;
+    uint64_t vt = 0;
+    tl.AddTrack(cq::ChqTrackKind::kVideo, vt);
+    uint64_t c1 = 0, c2 = 0;
+    tl.InsertClip(vt, MakeClip(cq::ChqClipKind::kVideo, 1000, 4000), c1);  // 1–5s
+    tl.InsertClip(vt, MakeClip(cq::ChqClipKind::kVideo, 6000, 2000), c2);  // 6–8s
+
+    // 左缘裁剪形态：start 1s→2s、source_in 0→1s、duration 4s→3s（右缘 5s 不动）
+    cq::ChqClip reclip = *tl.FindClip(c1);
+    reclip.start = Ms(2000);
+    reclip.source.source_in = Ms(1000);
+    reclip.duration = Ms(3000);
+    Check(tl.ReplaceClip(reclip).IsOk(), "左缘裁剪形态的替换成功");
+    const cq::ChqClip* after = tl.FindClip(c1);
+    Check(after->start == Ms(2000) && after->duration == Ms(3000) &&
+          after->source.source_in == Ms(1000), "三字段联动生效");
+    Check(tl.FindTrack(vt)->clips.size() == 2, "替换不改变片段数");
+
+    // 替换为与邻居重叠 → 拒绝（排除自身判定）
+    cq::ChqClip overlap = *tl.FindClip(c1);
+    overlap.start = Ms(5000);
+    overlap.duration = Ms(3000);  // 5–8s，撞上 c2
+    Check(!tl.ReplaceClip(overlap).IsOk(), "替换后与邻居重叠被拒绝");
+
+    // 非法值：零时长 / 负 source_in / 不存在的 id / kind 不匹配
+    cq::ChqClip zero = *tl.FindClip(c1);
+    zero.duration = Ms(0);
+    Check(!tl.ReplaceClip(zero).IsOk(), "零时长被拒绝");
+    cq::ChqClip negative = *tl.FindClip(c1);
+    negative.source.source_in.value = -120;
+    Check(!tl.ReplaceClip(negative).IsOk(), "负 source_in 被拒绝");
+    cq::ChqClip ghost = *tl.FindClip(c1);
+    ghost.id = 9999;
+    Check(!tl.ReplaceClip(ghost).IsOk(), "不存在的 id 被拒绝");
+    cq::ChqClip wrong_kind = *tl.FindClip(c1);
+    wrong_kind.kind = cq::ChqClipKind::kAudio;
+    Check(!tl.ReplaceClip(wrong_kind).IsOk(), "kind 与轨道不匹配被拒绝");
+
+    // start 变化的替换维持轨内按 start 升序
+    cq::ChqClip reorder = *tl.FindClip(c1);
+    reorder.start = Ms(9000);  // 移到 c2 之后（8s 结束，不重叠）
+    reorder.duration = Ms(1000);
+    Check(tl.ReplaceClip(reorder).IsOk(), "替换可移动 start");
+    bool sorted = true;
+    int64_t prev = -1;
+    for (const cq::ChqClip& c : tl.FindTrack(vt)->clips) {
+        if (c.start.value < prev) sorted = false;
+        prev = c.start.value;
+    }
+    Check(sorted, "替换后仍按 start 升序");
+}
+
 }  // namespace
 
 int main() {
@@ -187,6 +297,8 @@ int main() {
     TestHitTest();
     TestDurationAndTransition();
     TestEditOperations();
+    TestSplitClip();
+    TestReplaceClip();
 
     std::printf("\n%s: %d checks, %d failures\n", g_failures == 0 ? "PASSED" : "FAILED",
                 g_checks, g_failures);

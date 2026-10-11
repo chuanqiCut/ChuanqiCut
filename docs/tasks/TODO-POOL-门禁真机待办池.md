@@ -399,6 +399,17 @@ SPM 临时产物一律 `swift test --disable-sandbox --scratch-path "$ROOT/build
     高频细节，单调性保持）——正解是 P2 引导滤波 k 纹理保留系数（RESEARCH-015）。
   - [ ] **磨皮最大强度引擎状态验证（需设备解锁+人脸对镜头）**：远程 D15 因锁屏
     未跑成；待验证 mix 上限后的观感（传哲目检）。
+  - [x] **「磨皮区域一直变化/美白整头发白」修复（P3 前半提前，CAM-035）**：
+    传哲实测双反馈的正解 = **人像分割蒙版 ∩ 脸框**（VNGeneratePersonSegmentation
+    .balanced）。实现：独立 PortraitSegmenter 管道（15Hz 闸门+忙丢弃，**不挂
+    detect**——前摄磨皮 metadata 路下 detect 早退，挂 detect 永不跑 E5 实证）；
+    mask 立即渲染成独立 bitmap（CIImage 持采集 pixelBuffer 会拖爆 pool，E6 实测
+    231↔283MB 锯齿）；PortraitSkinMask.skinMask(segmentation:) 契约纯函数
+    （缩放+羽化+乘法交集）+ 语义闭包分级回落（分割→几何精修→框椭圆）；
+    switchPosition 补 updateDetectionPlan（摄位切换刷新 metadata 兜底策略）。
+    E7 真机：磨皮0.6 全链满帧 ms 0.8-1.8、noface 冻结、无崩溃；内存 240-276MB
+    锯齿 = pool 正常回收（分割代价 +80MB 记录在案）。**待传哲目检**：美白只上
+    皮肤不整头白、磨皮区域不再跟框变、后摄切摄验证。
   - [ ] **P1 收尾·检测降频**（本轮实证驱动）：美颜脸框（faceRectangles/metadata）
     detectionHz 从 30Hz 降 10-15Hz（单次 12-20ms × 30Hz ≈ 半核，蒙版有 EMA 兜着
     无需 30Hz）；仅美型/贴纸锚点保持 30Hz（跟手）。改 VisionDetector plan 分档。

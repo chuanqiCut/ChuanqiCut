@@ -142,4 +142,34 @@ final class PortraitSkinMaskTests: XCTestCase {
                        luminance(src, at: CGPoint(x: rect.midX, y: rect.midY)), accuracy: 2,
                        "注入全黑蒙版 → 美颜完全不作用（证明蒙版真的是唯一作用区）")
     }
+    /// CAM-035 P3 前半：分割 ∩ 脸框——seg 全白时输出 = 框椭圆（交集不扩界）。
+    func testSegmentationAllWhiteEqualsBoxEllipse() {
+        let canvas = CGRect(x: 0, y: 0, width: 100, height: 100)
+        let image = CIImage(color: .gray).cropped(to: canvas)
+        let seg = CIImage(color: .white).cropped(to: CGRect(x: 0, y: 0, width: 25, height: 25))
+        guard let mask = PortraitSkinMask.skinMask(
+            for: image, faceBoxes: [CGRect(x: 0.25, y: 0.25, width: 0.5, height: 0.5)],
+            segmentation: seg) else {
+            return XCTFail("分割交集应产出蒙版")
+        }
+        // 蒙版 extent 必须覆盖画面（消费方按画面采样）
+        XCTAssertEqual(mask.extent, canvas)
+        // 框内中心 = 白（人像∩框），框外远角 = 黑
+        XCTAssertGreaterThan(sample(mask, at: CGPoint(x: 50, y: 50)), 200)
+        XCTAssertLessThan(sample(mask, at: CGPoint(x: 5, y: 95)), 30)
+    }
+
+    /// seg 全黑（分割判无人像）→ 输出全黑（磨皮区域为零，诚实结果非 nil）。
+    func testSegmentationAllBlackYieldsZeroRegion() {
+        let canvas = CGRect(x: 0, y: 0, width: 100, height: 100)
+        let image = CIImage(color: .gray).cropped(to: canvas)
+        let seg = CIImage(color: .black).cropped(to: CGRect(x: 0, y: 0, width: 25, height: 25))
+        guard let mask = PortraitSkinMask.skinMask(
+            for: image, faceBoxes: [CGRect(x: 0.25, y: 0.25, width: 0.5, height: 0.5)],
+            segmentation: seg) else {
+            return XCTFail("交集应产出蒙版")
+        }
+        XCTAssertLessThan(sample(mask, at: CGPoint(x: 50, y: 50)), 5, "分割无人像 → 区域为零")
+    }
 }
+

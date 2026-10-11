@@ -31,9 +31,5 @@ Pod::Spec.new do |s|
   s.dependency 'ChuanqiCutEngine'
   s.dependency 'SharedUI'
 
-  # ⚠️ CChuanqiCut clang module 可见性（SharedUI.podspec 2026-10-02 实测同款；
-  #    本 Pod 直接 import ChuanqiCut，必须自行注入 include 路径）
-  s.pod_target_xcconfig = {
-    'SWIFT_INCLUDE_PATHS' => '$(inherited) "$(PODS_TARGET_SRCROOT)/../../../../engine/bindings/swift/Sources/CChuanqiCut/include"'
-  }
+  # CChuanqiCut module 由 Engine 的正常 Pod 依赖传递，不再手工注入路径（ADR-0033）。
 end

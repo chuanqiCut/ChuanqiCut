@@ -3,7 +3,7 @@
 # 定位：
 #   * 相机全域（采集/预览渲染/录制/检测/美颜美型特效 + 契约层），2026-10-07 自
 #     iOSApp/Camera（App target 直编）与 SharedUI/Camera（契约层）迁出
-#     （ADR-0014 相机 = App 层资产域，不经 PAL/C ABI；UIA/CAM-001~005/011~019）。
+#     （ADR-0014 相机 = App 层资产域，不经 Platform/C ABI；UIA/CAM-001~005/011~019）。
 #   * **iOS 专属**：不声明 osx deployment target，mac 壳 Podfile 不引（SharedUI/
 #     Editor 不引用相机契约，横向零依赖，ADR-0031 决定 3）。
   #   * 依赖：仅 SharedUI 基座（CameraView 经 EditorEntryInjector 进入编辑器域，
@@ -63,11 +63,5 @@ Pod::Spec.new do |s|
   # 基座依赖（版本不锁，仓库内本地 :path 集成）
   s.dependency 'SharedUI'
 
-  # ⚠️ CChuanqiCut clang module 可见性（SharedUI.podspec 2026-10-02 实测同款）：
-  #    SharedUI 公开接口引用 ChuanqiCut 类型，依赖它的 pod 必须自行把 C module
-  #    的 include 路径注入 SWIFT_INCLUDE_PATHS，否则 import SharedUI 即报
-  #    unable to resolve module dependency: 'CChuanqiCut'。路径：本目录向上四级到仓库根。
-  s.pod_target_xcconfig = {
-    'SWIFT_INCLUDE_PATHS' => '$(inherited) "$(PODS_TARGET_SRCROOT)/../../../../engine/bindings/swift/Sources/CChuanqiCut/include"'
-  }
+  # CChuanqiCut module 由 Engine 的正常 Pod 依赖传递，不再手工注入路径（ADR-0033）。
 end

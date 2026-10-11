@@ -7,6 +7,7 @@
 
 import Foundation
 import SwiftUI
+import SharedUI           // ADR-0040：共享诊断面板
 
 #if DEBUG
 
@@ -63,18 +64,7 @@ struct CameraDebugOverlayView: View {
     let snapshot: CameraDebugSnapshot
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 2) {
-            Text(header).font(.system(size: 10, weight: .bold).monospaced())
-            ForEach(lines, id: \.self) { line in
-                Text(line).font(.system(size: 10).monospaced())
-            }
-        }
-        .foregroundStyle(.green)
-        .padding(6)
-        .background(.black.opacity(0.55), in: RoundedRectangle(cornerRadius: 6))
-        .allowsHitTesting(false)
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .padding(8)
+        DebugPanelView(title: header, lines: lines)
     }
 
     private var header: String {

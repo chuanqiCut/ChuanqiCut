@@ -9,23 +9,13 @@
 // （传哲 2026-10-11），本视图只吃快照，不感知开关来源。
 
 import SwiftUI
+import SharedUI           // ADR-0040：共享诊断面板（渲染收口到 SharedUI Debug 命名空间）
 
 struct DebugOverlayView: View {
     let snapshot: EditorDebugSnapshot
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 2) {
-            Text(header).font(.system(size: 10, weight: .bold).monospaced())
-            ForEach(lines, id: \.self) { line in
-                Text(line).font(.system(size: 10).monospaced())
-            }
-        }
-        .foregroundStyle(.green)
-        .padding(6)
-        .background(.black.opacity(0.55), in: RoundedRectangle(cornerRadius: 6))
-        .allowsHitTesting(false)   // 纯展示：不吃预览区手势
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .padding(8)
+        DebugPanelView(title: header, lines: lines)
     }
 
     private var header: String {

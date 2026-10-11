@@ -15,6 +15,7 @@ import Foundation
 import Darwin
 import os
 import ChuanqiCutEngine
+import SharedUI   // ADR-0040：DebugDefaults（诊断浮层默认态）
 
 // MARK: - 错误
 
@@ -63,7 +64,7 @@ public final class EditorViewModel: ObservableObject {
     /// 内核能力（预览区 / 导出 UI 可据此决定降级展示）。
     @Published public private(set) var capabilities: [Capability: CapabilityValue] = [:]
 
-    /// 预览门面（BIND-003 子步骤 6）。nil = 内核预览后端缺失（链接不到 PAL
+    /// 预览门面（BIND-003 子步骤 6）。nil = 内核预览后端缺失（链接不到 Platform
     /// 图形 / 解码后端），预览区据此**运行时**降级展示（红线 #3，不用编译期判断）。
     public private(set) var preview: Previewer?
 
@@ -261,9 +262,9 @@ public final class EditorViewModel: ObservableObject {
         refreshTimeline()
         refreshHistoryFlags()
         #if DEBUG
-        // DEBUG 浮层：CQ_DEBUG_OVERLAY=1 默认开（真机探针/走查免手点）；
-        // 采样器随可见性启停（2Hz，播放/暂停均可用）。
-        if ProcessInfo.processInfo.environment["CQ_DEBUG_OVERLAY"] == "1" {
+        // DEBUG 浮层：探针/走查默认开（ADR-0040 DebugDefaults）；正常图标启动关，
+        // 传输条天线按钮可开。采样器随可见性启停（2Hz，播放/暂停均可用）。
+        if DebugDefaults.overlayDefaultOn {
             debugOverlayVisible = true
             startDebugSampler()
         }

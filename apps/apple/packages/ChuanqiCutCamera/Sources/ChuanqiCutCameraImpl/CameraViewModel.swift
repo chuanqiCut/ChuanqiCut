@@ -6,6 +6,7 @@
 
 import AVFoundation
 import Combine
+import SharedUI   // ADR-0040：DebugDefaults（诊断浮层默认态）
 import CoreImage
 import CoreMedia
 import Foundation
@@ -290,6 +291,13 @@ final class CameraViewModel: ObservableObject {
             return
         }
         prepared = true
+        #if DEBUG
+        // DEBUG 浮层：探针/走查默认开（ADR-0040 DebugDefaults）+ 顶栏天线按钮可关。
+        if DebugDefaults.overlayDefaultOn {
+            debugOverlayVisible = true
+            startDebugSampler()
+        }
+        #endif
         CameraManager.requestAuthorization { [weak self] cameraGranted, micGranted in
             guard let self else { return }
             self.micAvailable = micGranted

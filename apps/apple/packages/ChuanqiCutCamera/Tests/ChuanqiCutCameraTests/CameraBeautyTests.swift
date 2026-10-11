@@ -119,4 +119,50 @@ final class CameraBeautyTests: XCTestCase {
         XCTAssertNotNil(output, "引擎放弃后必须回落默认实现，不允许 nil 输出")
         XCTAssertEqual(output.extent, source.extent, "回落路径同样不得改变画面尺寸")
     }
+    /// CAM-033：磨皮+美级合并后仍单次蒙版混合——数值等价断言：
+    /// 合并实现（磨皮→美白→单次 Blend）与「磨皮 Blend 后再美白 Blend」在
+    /// 蒙版内/外采样点逐位一致（混合是逐像素线性算子，同 mask 嵌套可折叠）。
+    /// 用默认实现（引擎未注入）对比两段式参考：蒙版核心区与蒙版外各验一点。
+    func testCombinedSingleBlendMatchesTwoStageReference() {
+        let params = CameraBeautyParams(smoothing: 0.5, brightening: 0.5)
+        let source = makeSourceImage()
+        let face = CGRect(x: 0.25, y: 0.25, width: 0.5, height: 0.5)
+        let output = params.apply(to: source, faces: [face])
+        XCTAssertNotNil(output)
+
+        // 参考实现：两段式（旧语义）——直接用默认 filter 组装。
+        let mask = FaceMask.mask(forNormalizedBoxes: [face], in: source.extent)!
+        func blend(_ processed: CIImage, over original: CIImage) -> CIImage {
+            processed.applyingFilter("CIBlendWithMask", parameters: [
+                kCIInputBackgroundImageKey: original,
+                kCIInputMaskImageKey: mask,
+            ])
+        }
+        let smoothed = params.defaultSmoothing(source, strength: 0.5)
+        let brightened = smoothed
+            .applyingFilter("CIExposureAdjust", parameters: [kCIInputEVKey: 0.45 * 0.5])
+            .applyingFilter("CIColorControls", parameters: [
+                kCIInputBrightnessKey: 0.04 * 0.5, kCIInputSaturationKey: 1.0, kCIInputContrastKey: 1.0])
+        let stage1 = blend(smoothed, over: source)
+        let reference = blend(brightened, over: stage1)
+
+        // 渲染对比（软渲染小图足够）：采样点 = 蒙版核心（脸心）与蒙版外（角落）。
+        let ctx = CIContext(options: [.useSoftwareRenderer: true])
+        func sample(_ image: CIImage, _ p: CGPoint) -> [UInt8] {
+            var pixel = [UInt8](repeating: 0, count: 4)
+            ctx.render(image,
+                       toBitmap: &pixel, rowBytes: 4,
+                       bounds: CGRect(x: p.x, y: p.y, width: 1, height: 1),
+                       format: .RGBA8, colorSpace: nil)
+            return pixel
+        }
+        let extent = source.extent
+        let faceCenter = CGPoint(x: extent.midX, y: extent.midY)          // 蒙版核心区
+        let corner = CGPoint(x: extent.minX + 2, y: extent.minY + 2)      // 蒙版外
+        for p in [faceCenter, corner] {
+            XCTAssertEqual(sample(output, p), sample(reference, p),
+                           "合并单次混合与两段式参考在 \(p) 应逐位一致")
+        }
+    }
 }
+

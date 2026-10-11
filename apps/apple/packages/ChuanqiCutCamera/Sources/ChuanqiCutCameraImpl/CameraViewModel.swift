@@ -52,7 +52,7 @@ final class CameraViewModel: ObservableObject {
     /// 美颜参数（磨皮/美白）。实时预览即时生效；拍照按拍摄瞬间值处理；
     /// 录制在开始时锁定（录制中面板已禁用）。
     @Published var beauty = CameraBeautyParams() {
-        didSet { renderer?.setBeauty(beauty) }
+        didSet { renderer?.setBeauty(beauty); updateDetectionPlan() }
     }
     @Published var filter: CameraFilterPreset = .none {
         didSet { renderer?.setFilter(filter) }  // 录制中由视图层禁用滤镜条（锁定语义）
@@ -60,13 +60,13 @@ final class CameraViewModel: ObservableObject {
     /// 美型参数（CAM-013：瘦脸/大眼/下巴）。语义与美颜一致：预览即时生效；
     /// 拍照按拍摄瞬间值处理；录制在开始时锁定。
     @Published var reshape = CameraReshapeParams() {
-        didSet { renderer?.setReshape(reshape) }
+        didSet { renderer?.setReshape(reshape); updateDetectionPlan() }
     }
     /// 贴纸目录（CAM-014）：bundle 清单加载；空目录 = 贴纸入口整体隐藏（无假功能）。
     @Published private(set) var stickerCatalog: [StickerAsset] = []
     /// 当前选中贴纸；nil = 无。实时预览即时生效；录制在开始时锁定。
     @Published var selectedStickerID: String? {
-        didSet { renderer?.setSticker(stickerCatalog.first { $0.id == selectedStickerID }) }
+        didSet { renderer?.setSticker(stickerCatalog.first { $0.id == selectedStickerID }); updateDetectionPlan() }
     }
     /// 最近一次录制产物（非 nil 时相机页展示「存相册/去编辑/放弃」面板）。
     @Published private(set) var recordedURL: URL?
@@ -171,6 +171,7 @@ final class CameraViewModel: ObservableObject {
             if applied {
                 self.dualCamEnabled = enabled
                 self.renderer?.setDualMode(enabled)
+                self.updateDetectionPlan()   // 双摄下 metadata 脸框路待标定 → 回退 Vision 兜底
                 if !enabled {
                     self.pipShowsFront = true
                     self.renderer?.setPiPShowsFront(true)
@@ -189,7 +190,7 @@ final class CameraViewModel: ObservableObject {
     }
     /// 美体参数（CAM-025：瘦腰/长腿）。语义与美颜一致：预览即时生效；录制锁定。
     @Published var bodyReshape = BodyReshapeParams() {
-        didSet { renderer?.setBodyReshape(bodyReshape) }
+        didSet { renderer?.setBodyReshape(bodyReshape); updateDetectionPlan() }
     }
     /// 美妆（CAM-026：唇/腮/眼影/眉/美瞳区域着色）。预览即时生效；录制锁定。
     @Published var makeup = MakeupParams() {
@@ -260,6 +261,11 @@ final class CameraViewModel: ObservableObject {
             // CAM-027：把皮肤语义蒙版装进美颜契约层（读同一 faceBoxes 的最新锚点）。
             // 不安装则 CameraBeauty 走 CAM-019 框级椭圆，逐位等价。
             PortraitSemantics.installSkinMask(faceBoxStore: faceBoxes)
+            // 系统人脸框（CAM-033）：磨皮蒙版数据源（零 Vision 成本）。取最大框
+            //（单主脸策略与 Vision 桥一致）；空数组 = 目标离开 → update(nil) 清空。
+            manager.onMetadataFaces = { [faceBoxes] rects, _ in
+                faceBoxes.update(with: rects.max(by: { $0.width * $0.height < $1.width * $1.height }))
+            }
             detector.onResult = { [faceBoxes, weak detector] snapshot in
                 faceBoxes.update(with: snapshot.face?.box)
                 faceBoxes.updateAnchors(snapshot.face.flatMap(CameraReshapeAnchors.init(face:)))
@@ -944,6 +950,25 @@ final class CameraViewModel: ObservableObject {
         manager.onAudioBuffer = { sampleBuffer in
             recorderBox.get()?.appendAudio(sampleBuffer: sampleBuffer)
         }
+        updateDetectionPlan()
+    }
+
+    // MARK: 检测计划（CAM-033：按需 Vision，RESEARCH-015 决策 1）
+
+    /// 功能开关 → Vision 请求集合。任何影响检测需求的美颜参数变化都会调用；
+    /// 规则纯函数在契约层 BeautyDetectionPlan（单测锁定）。
+    /// 双摄模式下 metadata 脸框路属待真机标定 → 回退 Vision faceRectangles 兜底。
+    private func updateDetectionPlan() {
+        let sticker = selectedStickerID != nil
+        let flags = BeautyFeatureFlags(
+            faceAnchors: !reshape.isOff || sticker,
+            bodyAnchors: !bodyReshape.isOff,
+            animalSticker: sticker)
+        let metadataOK = manager.isMetadataFacesActive && !dualCamEnabled
+        detector.requests = BeautyDetectionPlan.requests(
+            for: flags,
+            faceRectNeeded: !beauty.isOff,
+            metadataFacesAvailable: metadataOK)
     }
 }
 

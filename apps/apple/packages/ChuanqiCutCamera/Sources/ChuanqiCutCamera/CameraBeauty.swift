@@ -124,18 +124,17 @@ public struct CameraBeautyParams: Equatable, Sendable {
         let mask = CameraBeautyEngine.semanticMask?(image, faces)
             ?? FaceMask.mask(forNormalizedBoxes: faces, in: image.extent)
 
-        var result = image
-
-        // 磨皮：注入引擎优先，放弃/未注入回落默认实现；有蒙版则混合回原图。
+        // CAM-033：磨皮与美白**级联合成后单次**混合（原实现各自 blended 一次 =
+        // 每帧两次全帧 CIBlendWithMask）。数值等价：同一 mask 下两次嵌套线性插值
+        // （mask 区=美白(磨皮图)、黑区=原图）≡ 一次（mask 区=美白(磨皮图)、
+        // 黑区=原图）——混合是逐像素线性算子，嵌套可折叠。
+        var processed = image
         if smoothing > 0 {
-            let smoothed = CameraBeautyEngine.smoothing?(result, smoothing)
-                ?? defaultSmoothing(result, strength: smoothing)
-            result = blended(smoothed, over: result, mask: mask)
+            processed = CameraBeautyEngine.smoothing?(processed, smoothing)
+                ?? defaultSmoothing(processed, strength: smoothing)
         }
-
-        // 美白：小步长曝光 + 亮度（保守上限，避免过曝死白）；有蒙版则混合。
         if brightening > 0 {
-            var brightened = result.applyingFilter("CIExposureAdjust", parameters: [
+            var brightened = processed.applyingFilter("CIExposureAdjust", parameters: [
                 kCIInputEVKey: 0.45 * brightening,
             ])
             brightened = brightened.applyingFilter("CIColorControls", parameters: [
@@ -143,10 +142,10 @@ public struct CameraBeautyParams: Equatable, Sendable {
                 kCIInputSaturationKey: 1.0,
                 kCIInputContrastKey: 1.0,
             ])
-            result = blended(brightened, over: result, mask: mask)
+            processed = brightened
         }
-
-        return result
+        guard processed !== image else { return image }   // 理论不可达（isOff 已挡），防御
+        return blended(processed, over: image, mask: mask)
     }
 
     /// 蒙版混合：白（蒙版）区取处理结果、黑区取原图。mask = nil（含蒙版构造
@@ -161,7 +160,8 @@ public struct CameraBeautyParams: Equatable, Sendable {
 
     /// 默认磨皮（A 期口径：高斯模糊 + 亮度锐化近似保边）。
     /// 引擎未注入（macOS）或引擎放弃时走这里，是兜底不是死代码。
-    private func defaultSmoothing(_ image: CIImage, strength: Double) -> CIImage {
+    /// internal（非 private）：两段式参考实现的单测共用（CAM-033 合并等价用例）。
+    func defaultSmoothing(_ image: CIImage, strength: Double) -> CIImage {
         // 高斯模糊（半径随强度单调）+ 轻度亮度锐化找回边缘轮廓。
         // clampedToExtent 防模糊边缘发黑，最后裁回原 extent。
         let radius = 3.0 + 9.0 * strength

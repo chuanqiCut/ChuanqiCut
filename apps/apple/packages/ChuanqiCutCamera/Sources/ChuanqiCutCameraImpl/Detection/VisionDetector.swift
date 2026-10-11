@@ -46,6 +46,18 @@ final class VisionDetector: @unchecked Sendable {
         set { configLock.lock(); _smoothingStrength = min(max(newValue, 0), 1); configLock.unlock() }
     }
 
+    // MARK: 请求开关（CAM-033，RESEARCH-015 决策 1：按需检测）
+
+    /// 应跑的 Vision 请求集合。规则纯函数在契约层 `BeautyDetectionPlan.requests`，
+    /// ViewModel 按功能开关装配；本类只消费。默认 = 历史全家桶（兼容旧装配），
+    /// 但 ViewModel 在 wireCallbacks 时会立即覆盖为按需集合。
+    /// 空集 = 本会话零 Vision 调用（磨皮脸框走采集栈 metadataOutput，零检测成本）。
+    private var _requests: Set<BeautyVisionRequest> = [.faceLandmarks, .bodyPose, .animal]
+    var requests: Set<BeautyVisionRequest> {
+        get { configLock.lock(); defer { configLock.unlock() }; return _requests }
+        set { configLock.lock(); _requests = newValue; configLock.unlock() }
+    }
+
     /// 单点置信度低于该值按缺失处理（dropout → 平滑层保持上一帧）[E]。
     private let pointConfidenceFloor: Float = 0.3
 
@@ -104,6 +116,9 @@ final class VisionDetector: @unchecked Sendable {
     func offer(_ pixelBuffer: CVImageBuffer, at pts: CMTime) {
         let seconds = pts.seconds
         guard seconds.isFinite else { return }
+        // CAM-033：请求集合为空 = 本会话零 Vision（磨皮脸框走 metadataOutput）——
+        // 采集帧直接丢弃，不占检测队列、不进忙检查。
+        guard !requests.isEmpty else { return }
         let minInterval = 1.0 / detectionHz   // 先取配置，避免双锁嵌套
         stateLock.lock()
         if busy || (lastPtsSeconds.map { seconds - $0 < minInterval } ?? false) {
@@ -137,17 +152,25 @@ final class VisionDetector: @unchecked Sendable {
 
         // 单次 handler 跑全部请求（一次图像分析，Vision 内部共享预处理）。
         // 帧已被 connection 转成竖屏，按 .up 处理（真机冒烟校验项，见任务卡）。
+        // CAM-033：请求集合按需装配（BeautyDetectionPlan），不再全家桶常开。
+        let plan = requests
+        guard !plan.isEmpty else { return }   // offer 已挡，防御（读到旧空集合）
         let handler = VNImageRequestHandler(cvPixelBuffer: pixelBuffer, orientation: .up, options: [:])
-        let faceRequest = VNDetectFaceLandmarksRequest()
-        let bodyRequest = VNDetectHumanBodyPoseRequest()
-        let animalRequest = VNRecognizeAnimalsRequest()
-        var requests: [VNRequest] = [faceRequest, bodyRequest, animalRequest]
+        var faceRequest: VNRequest?
+        if plan.contains(.faceLandmarks) {
+            faceRequest = VNDetectFaceLandmarksRequest()
+        } else if plan.contains(.faceRectangles) {
+            faceRequest = VNDetectFaceRectanglesRequest()   // 单阶段兜底（metadata 不可用）
+        }
+        let bodyRequest = plan.contains(.bodyPose) ? VNDetectHumanBodyPoseRequest() : nil
+        let animalRequest = plan.contains(.animal) ? VNRecognizeAnimalsRequest() : nil
+        var requests: [VNRequest] = [faceRequest, bodyRequest, animalRequest].compactMap { $0 }
 
         // 动物姿态 iOS 17+：可用则加入（门控，不做假能力）。
         // 类型引用一律经基类 VNRequest/VNObservation（iOS 17 专属类型不能出现在
         // 无门控的作用域），具体化在 convertAnimals 的门控分支里做。
         var animalPoseRequestRef: VNRequest?
-        if #available(iOS 17.0, *) {
+        if plan.contains(.animalPose), #available(iOS 17.0, *) {
             let poseRequest = VNDetectAnimalBodyPoseRequest()
             requests.append(poseRequest)
             animalPoseRequestRef = poseRequest
@@ -163,9 +186,17 @@ final class VisionDetector: @unchecked Sendable {
             return
         }
 
-        var face = convertFace(faceRequest.results)
-        var body = convertBody(bodyRequest.results)
-        var animals = convertAnimals(animalRequest.results,
+        // 人脸转换按请求档位：landmarks（锚点级）或仅框（磨皮蒙版兜底）。
+        // 请求集合互斥（faceLandmarks / faceRectangles 二选一，BeautyDetectionPlan 保证）。
+        var face: FaceObservation?
+        if plan.contains(.faceLandmarks) {
+            face = convertFace(faceRequest?.results as? [VNFaceObservation])
+        } else if plan.contains(.faceRectangles) {
+            face = convertFaceBox(faceRequest?.results as? [VNFaceObservation])
+        }
+        var body = convertBody(bodyRequest?.results as? [VNHumanBodyPoseObservation])
+        // poseResults 传基类型数组：iOS17 具体类型 cast 在 convertAnimals 门控分支内。
+        var animals = convertAnimals(animalRequest?.results as? [VNRecognizedObjectObservation],
                                      poseResults: animalPoseRequestRef?.results ?? [])
 
         // 帧间平滑（SharedUI 纯函数；状态在检测队列独占）。
@@ -244,6 +275,25 @@ final class VisionDetector: @unchecked Sendable {
             box: visionRectToImageNormalized(box),
             yaw: main.yaw?.doubleValue,
             pitch: main.pitch?.doubleValue,
+            roll: main.roll?.doubleValue,
+            confidence: Double(main.confidence))
+    }
+
+    /// 仅框转换（CAM-033：faceRectangles 兜底档）。无关键点（region 全空）——
+    /// 消费方 FaceMask 只用 box；美型/贴纸在该档位未开启（BeautyDetectionPlan 保证）。
+    private func convertFaceBox(_ observations: [VNFaceObservation]?) -> FaceObservation? {
+        guard let main = observations?.max(by: {
+            $0.boundingBox.width * $0.boundingBox.height <
+            $1.boundingBox.width * $1.boundingBox.height
+        }) else { return nil }
+        let empty = LandmarkRegion(points: [])
+        return FaceObservation(
+            contour: empty, leftEyebrow: empty, rightEyebrow: empty,
+            leftEye: empty, rightEye: empty, nose: empty, noseCrest: empty,
+            medianLine: empty, outerLips: empty, innerLips: empty,
+            leftPupil: nil, rightPupil: nil,
+            box: visionRectToImageNormalized(main.boundingBox),
+            yaw: main.yaw?.doubleValue, pitch: main.pitch?.doubleValue,
             roll: main.roll?.doubleValue,
             confidence: Double(main.confidence))
     }

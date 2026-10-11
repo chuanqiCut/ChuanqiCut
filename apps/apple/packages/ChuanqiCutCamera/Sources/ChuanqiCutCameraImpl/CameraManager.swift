@@ -133,6 +133,21 @@ final class CameraManager: NSObject, @unchecked Sendable {
 
     private var videoInput: AVCaptureDeviceInput?
     private var frontVideoInput: AVCaptureDeviceInput?
+
+    // MARK: 系统人脸框（CAM-033，RESEARCH-015 决策 1）
+
+    /// 采集栈原生人脸框输出：**零 Vision 调用、零图像转换**（AVFoundation 在采集
+    /// 管线内送脸框），磨皮/美白蒙版的数据源。landmark（美型/贴纸锚点）仍走
+    /// VisionDetector（按需）。
+    private let metadataOutput = AVCaptureMetadataOutput()
+    private let metadataQueue = DispatchQueue(label: "cq.camera.metadata")
+    /// metadataOutput 是否已成功挂会话（VM 装配 BeautyDetectionPlan 的判据之一；
+    /// 双摄模式下 metadata 框路属待真机标定，VM 侧对双摄回退 Vision 兜底）。
+    private(set) var isMetadataFacesActive = false
+    /// metadata 脸框回调（metadataQueue）：rect 已转视频帧归一化坐标
+    /// （origin 左上 0...1，CAM-011 契约同向）。**空数组也回调**（目标离开画面
+    /// → 消费方 FaceBoxStore 清空语义）。磨皮关闭时消费方也可忽略。
+    var onMetadataFaces: ((_ rects: [CGRect], _ mirrored: Bool) -> Void)?
     private var audioInput: AVCaptureDeviceInput?
     private(set) var currentPosition: Position = .back
     /// 双摄模式（sessionQueue 独占；开关经 setDualCamEnabled）。
@@ -682,6 +697,18 @@ final class CameraManager: NSObject, @unchecked Sendable {
             applyMirrorIfFront(connection, for: position)
         }
 
+        // 系统人脸框（CAM-033）：磨皮蒙版数据源（零 Vision 成本）。加输出需在
+        // commitConfiguration 前；metadata 无帧方向语义，rect 转换在回调里经
+        // outputRectConverted 对齐视频帧坐标系（镜像补偿在契约层纯函数）。
+        if session.canAddOutput(metadataOutput) {
+            metadataOutput.metadataObjectTypes = [.face]
+            metadataOutput.setMetadataObjectsDelegate(self, queue: metadataQueue)
+            session.addOutput(metadataOutput)
+            isMetadataFacesActive = true
+        } else {
+            isMetadataFacesActive = false
+        }
+
         // 音频输出（可选：麦克风被拒时跳过，录制降级为无声视频）。
         let audioOutput = AVCaptureAudioDataOutput()
         audioOutput.setSampleBufferDelegate(relay, queue: audioQueue)
@@ -972,5 +999,27 @@ private final class DepthRelay: NSObject, AVCaptureDepthDataOutputDelegate {
                          timestamp: CMTime,
                          connection: AVCaptureConnection) {
         onDepth?(depthData, timestamp)
+    }
+}
+
+// MARK: - AVCaptureMetadataOutputObjectsDelegate（CAM-033 系统人脸框）
+
+extension CameraManager: AVCaptureMetadataOutputObjectsDelegate {
+
+    func metadataOutput(_ output: AVCaptureMetadataOutput,
+                        didOutput metadataObjects: [AVMetadataObject],
+                        from connection: AVCaptureConnection) {
+        guard let callback = onMetadataFaces else { return }
+        // rect 转换目标 = 主画面 videoOutput（磨皮蒙版只服务主画面；PiP 的人脸链
+        // 走 VisionDetector 桥）。镜像读主 connection —— metadataQueue 读 connection
+        // 状态是 AVFoundation 允许的轻量操作（属性快照）。
+        let mirrored = videoOutput.connection(with: .video)?.isVideoMirrored ?? false
+        let rects = metadataObjects.compactMap { metadata -> CGRect? in
+            guard metadata.type == .face else { return nil }
+            let converted = videoOutput.outputRectConverted(fromMetadataOutputRect: metadata.bounds)
+            return MetadataFaceGeometry.contractRect(fromConvertedRect: converted, mirrored: mirrored)
+        }
+        // 空数组也回调：目标离开画面 → FaceBoxStore 清空语义（与 Vision 快照对齐）。
+        callback(rects, mirrored)
     }
 }

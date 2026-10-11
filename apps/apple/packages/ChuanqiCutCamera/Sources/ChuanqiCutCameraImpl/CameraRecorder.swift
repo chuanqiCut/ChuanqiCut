@@ -149,16 +149,12 @@ final class CameraRecorder: @unchecked Sendable {
                 kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA,
                 kCVPixelBufferWidthKey as String: width,
                 kCVPixelBufferHeightKey as String: height,
-                // CAM-018：池缓冲显式标 sRGB —— 不标则 CI 线性→gamma 转换结果
-                // 按未标记写出，播放器按 sRGB 解读 → 产物与预览颜色不一致
-                // （SPEC-CAM-018-019 §1.2；池若实际不接受该键，真机冒烟后
-                //  按任务卡备选方案自建带色彩空间的 CVPixelBufferPool）。
-                // 修正（P83，2026-10-07）：kCVPixelBufferColorSpaceKey 不存在于
-                // SDK（美颜合并轮凭记忆书写，App target 首次真编译才炸）；
-                // 色彩空间附件键是 CVImageBuffer 系的 kCVImageBufferCGColorSpaceKey
-                // （iOS 4.0+，CVPixelBuffer 继承生效），值 = CGColorSpaceRef。
-                kCVImageBufferCGColorSpaceKey as String:
-                    CGColorSpace(name: CGColorSpace.sRGB) ?? CGColorSpaceCreateDeviceRGB(),
+                // ⚠️ P112（B-02 真机探针实证）：这里**禁止** kCVImageBufferCGColorSpaceKey
+                // —— iOS 26.6 上它让 AVAssetWriter.startWriting 以 -11800
+                //（底层 FigXPC -17281）直接失败，writer .failed、录制 0 帧。
+                // 隔离复现：adaptor 先建+色键必炸、去键即愈、adaptor 后建即愈。
+                // CAM-018 的 sRGB 标记改为渲染后经 CVBufferSetAttachment 附着
+                // 在 buffer 上（见 appendVideo，色彩一致性诉求等价）。
             ])
 
         var audioInput: AVAssetWriterInput?
@@ -191,7 +187,30 @@ final class CameraRecorder: @unchecked Sendable {
         lock.lock()
         defer { lock.unlock() }
         guard let writer, !sessionStarted, !isFinished else { return }
-        guard writer.startWriting() else { return }  // 失败在 finish 时经 writer.error 暴露
+        // P112：startWriting 的失败此前被静默吞掉（错误被后续 append 的错误覆盖），
+        // 案情一直错位到 append 头上——探针在此处即时取证。
+        let started = writer.startWriting()
+        #if DEBUG
+        if ProcessInfo.processInfo.environment["CQ_CAM_PROBE"] != nil {
+            let nsError = writer.error as NSError?
+            fputs("[cam-probe] startWriting=\(started)"
+                  + " status=\(writer.status.rawValue)"
+                  + " err=\(nsError?.domain ?? "nil")/\(nsError?.code ?? -1)"
+                  + " \(nsError?.localizedDescription ?? "nil")\n", stderr)
+            if let nsError, !started {
+                for (key, value) in nsError.userInfo {
+                    fputs("[cam-probe]   userInfo[\(key)] = \(value)\n", stderr)
+                }
+                // 对照组：同目录裸写 10B（区分「沙盒不可写」与「writer 管线问题」）。
+                let control = outputURL.deletingLastPathComponent()
+                    .appendingPathComponent("cq_write_control.txt")
+                let writable = (try? Data("probe".utf8).write(to: control)) != nil
+                fputs("[cam-probe]   control write=\(writable) url=\(outputURL.path)\n", stderr)
+                fflush(stderr)
+            }
+        }
+        #endif
+        guard started else { return }
         writer.startSession(atSourceTime: time)
         sessionStarted = true
         sessionStartPTS = time
@@ -259,7 +278,26 @@ final class CameraRecorder: @unchecked Sendable {
         }
         // render(toCVPixelBuffer:) 非 throws（P48）；CI 内部失败不会抛出到此层。
         ciContext.render(image, to: pixelBuffer)
+        // CAM-018 色彩一致性：sRGB 标记附着在 buffer 上（原放在 adaptor 源属性，
+        // P112 实证毒化 startWriting——附件方式等价且安全）。
+        CVBufferSetAttachment(pixelBuffer, kCVImageBufferCGColorSpaceKey,
+                              sRGBColorSpace, CVAttachmentMode.shouldPropagate)
 
+        #if DEBUG
+        if ProcessInfo.processInfo.environment["CQ_CAM_PROBE"] != nil {
+            let fmt = CVPixelBufferGetPixelFormatType(pixelBuffer)
+            let chars = [UInt8((fmt >> 24) & 0xFF), UInt8((fmt >> 16) & 0xFF),
+                         UInt8((fmt >> 8) & 0xFF), UInt8(fmt & 0xFF)]
+            var fourcc = ""
+            for ch in chars { fourcc.append(Character(UnicodeScalar(ch))) }
+            let dims = "\(CVPixelBufferGetWidth(pixelBuffer))x\(CVPixelBufferGetHeight(pixelBuffer))"
+            let pts = CMTimeGetSeconds(time)
+            let hasPool = adaptor.pixelBufferPool != nil
+            fputs("[cam-probe] append dims=\(dims) fmt=\(fourcc) pts=\(pts)"
+                  + " pool=\(hasPool) ready=\(videoInput.isReadyForMoreMediaData)\n", stderr)
+            fflush(stderr)
+        }
+        #endif
         guard videoInput.isReadyForMoreMediaData else { return }
         // append 返回值必须检查：失败帧不计入进度（旧实现无条件计数 = 失败伪装成
         // 正常写入），原因按 30 次节流落日志（P60：静默失败不能复现）。
@@ -274,6 +312,19 @@ final class CameraRecorder: @unchecked Sendable {
                 lock.lock()
                 let writerError = writer.error
                 lock.unlock()
+                #if DEBUG
+                if ProcessInfo.processInfo.environment["CQ_CAM_PROBE"] != nil {
+                    let nsError = writerError as NSError?
+                    let domain = nsError?.domain ?? "nil"
+                    let code = nsError?.code ?? -1
+                    let desc = writerError?.localizedDescription ?? "nil"
+                    let underlying = nsError?.userInfo[NSUnderlyingErrorKey] ?? "nil"
+                    fputs("[cam-probe] append FAIL #\(failures) domain=\(domain)"
+                          + " code=\(code) desc=\(desc) underlying=\(underlying)"
+                          + " writerStatus=\(writer.status.rawValue)\n", stderr)
+                    fflush(stderr)
+                }
+                #endif
                 Self.logger.error("视频帧 append 失败 #\(failures, privacy: .public)：\(writerError?.localizedDescription ?? "未知", privacy: .public)")
             }
         }
@@ -337,6 +388,26 @@ final class CameraRecorder: @unchecked Sendable {
                 lock.lock()
                 let writerError = writer.error
                 lock.unlock()
+                #if DEBUG
+                if ProcessInfo.processInfo.environment["CQ_CAM_PROBE"] != nil {
+                    let pts = CMTimeGetSeconds(CMSampleBufferGetPresentationTimeStamp(sampleBuffer))
+                    let nsError = writerError as NSError?
+                    let domain = nsError?.domain ?? "nil"
+                    let code = nsError?.code ?? -1
+                    let desc = writerError?.localizedDescription ?? "nil"
+                    var rate: Double = 0
+                    var channels: UInt32 = 0
+                    if let fmtDesc = CMSampleBufferGetFormatDescription(sampleBuffer),
+                       let asbd = CMAudioFormatDescriptionGetStreamBasicDescription(fmtDesc) {
+                        rate = asbd.pointee.mSampleRate
+                        channels = asbd.pointee.mChannelsPerFrame
+                    }
+                    fputs("[cam-probe] audio FAIL #\(failures) domain=\(domain)"
+                          + " code=\(code) desc=\(desc) pts=\(pts)"
+                          + " rate=\(rate) ch=\(channels)\n", stderr)
+                    fflush(stderr)
+                }
+                #endif
                 Self.logger.error("音频帧 append 失败 #\(failures, privacy: .public)：\(writerError?.localizedDescription ?? "未知", privacy: .public)")
             }
         }
@@ -425,10 +496,15 @@ final class CameraRecorder: @unchecked Sendable {
         }
         guard bufferWidth > 0, bufferHeight > 0 else { return nil }
         var direct: CVPixelBuffer?
+        // ⚠️ IOSurface 背板必带（P112）：硬编管线（VideoToolbox/Fig）只吃
+        // IOSurface-backed buffer——直配缺这个键时 append 以 AVFoundation -11800
+        //（底层 FigXPC -17281）拒收，writer 进入 .failed 不可恢复（B-02 真机实证：
+        // pool 未就绪的首帧全部走本路径，录制 0 帧全案真因）。
         let attributes: [CFString: Any] = [
             kCVPixelBufferPixelFormatTypeKey: kCVPixelFormatType_32BGRA,
             kCVPixelBufferWidthKey: bufferWidth,
             kCVPixelBufferHeightKey: bufferHeight,
+            kCVPixelBufferIOSurfacePropertiesKey: [:] as CFDictionary,
         ]
         guard CVPixelBufferCreate(kCFAllocatorDefault, bufferWidth, bufferHeight,
                                   kCVPixelFormatType_32BGRA, attributes as CFDictionary,

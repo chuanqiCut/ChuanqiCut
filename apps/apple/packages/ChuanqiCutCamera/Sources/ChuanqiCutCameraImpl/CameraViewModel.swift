@@ -341,26 +341,142 @@ final class CameraViewModel: ObservableObject {
         fflush(stderr)
     }
 
+    /// P112 隔离实验：最小 AVAssetWriter（1080×1920 视频单轨、合成帧、脱离相机
+    /// 会话）——startWriting 在此失败 = 系统级（mediaserverd/OS），成功 = 真实
+    /// 录制上下文（文件 URL/尺寸/时序）问题。
+    nonisolated private func standaloneWriterSmoke() {
+        func smokeLog(_ text: String) {
+            fputs("[cam-probe] smoke \(text)\n", stderr)
+            fflush(stderr)
+        }
+        let mode = ProcessInfo.processInfo.environment["CQ_CAM_PROBE"] ?? ""
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("writer_smoke.mp4")
+        try? FileManager.default.removeItem(at: url)
+        guard let writer = try? AVAssetWriter(outputURL: url, fileType: .mp4) else {
+            smokeLog("writer init FAIL")
+            return
+        }
+        let dims: (Int, Int) = (mode == "front") ? (1080, 1920) : (640, 480)
+        // 变体开关（P112 二分）：CQ_SMOKE_VARIANT=C = 完全复刻真实 Recorder 构造
+        //（realtime=true + adaptor 先建 + 色彩空间键）；A = 仅 realtime；缺省 = 全关。
+        let variant = ProcessInfo.processInfo.environment["CQ_SMOKE_VARIANT"] ?? ""
+        let realtime = (variant == "C" || variant == "A")
+        let input = AVAssetWriterInput(mediaType: .video, outputSettings: [
+            AVVideoCodecKey: AVVideoCodecType.h264,
+            AVVideoWidthKey: dims.0, AVVideoHeightKey: dims.1,
+        ])
+        input.expectsMediaDataInRealTime = realtime
+        writer.add(input)
+        var adaptor: AVAssetWriterInputPixelBufferAdaptor?
+        if variant == "C" || variant == "D" {
+            var sourceAttributes: [String: Any] = [
+                kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA,
+                kCVPixelBufferWidthKey as String: dims.0,
+                kCVPixelBufferHeightKey as String: dims.1,
+            ]
+            if variant == "C" {
+                sourceAttributes[kCVImageBufferCGColorSpaceKey as String] =
+                    CGColorSpace(name: CGColorSpace.sRGB) ?? CGColorSpaceCreateDeviceRGB()
+            }
+            adaptor = AVAssetWriterInputPixelBufferAdaptor(assetWriterInput: input,
+                sourcePixelBufferAttributes: sourceAttributes)
+            smokeLog("adaptor pre-created (variant \(variant))")
+        }
+        let started = writer.startWriting()
+        smokeLog("startWriting=\(started) status=\(writer.status.rawValue)")
+        guard started else {
+            let e = writer.error as NSError?
+            smokeLog("err=\(e?.domain ?? "nil")/\(e?.code ?? -1) \(e?.localizedDescription ?? "nil")")
+            return
+        }
+        // append 的前置：必须先 startSession（缺它 = append 失败 → writer .failed
+        // → 对 .failed 调 markAsFinished 抛异常——smoke 首轮崩溃真因）。
+        writer.startSession(atSourceTime: CMTime(seconds: 0, preferredTimescale: 600))
+        var pixelBuffer: CVPixelBuffer?
+        CVPixelBufferCreate(kCFAllocatorDefault, dims.0, dims.1, kCVPixelFormatType_32BGRA,
+                            [kCVPixelBufferIOSurfacePropertiesKey: [:] as CFDictionary] as CFDictionary,
+                            &pixelBuffer)
+        if let pb = pixelBuffer {
+            CVPixelBufferLockBaseAddress(pb, [])
+            if let base = CVPixelBufferGetBaseAddress(pb) {
+                memset(base, 0x60, CVPixelBufferGetDataSize(pb))
+            }
+            CVPixelBufferUnlockBaseAddress(pb, [])
+            let appendAdaptor = adaptor ?? AVAssetWriterInputPixelBufferAdaptor(
+                assetWriterInput: input,
+                sourcePixelBufferAttributes: [
+                    kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA,
+                    kCVPixelBufferWidthKey as String: dims.0,
+                    kCVPixelBufferHeightKey as String: dims.1])
+            let time = CMTime(seconds: 0, preferredTimescale: 600)
+            appendAdaptor.append(pb, withPresentationTime: time)
+            smokeLog("append status=\(writer.status.rawValue)")
+        }
+        // markAsFinished 仅合法于 .writing（.failed 上调用抛异常——P110 同族）。
+        if writer.status == .writing {
+            input.markAsFinished()
+        }
+        writer.finishWriting {
+            let ok = writer.status == .completed
+            let size = (try? FileManager.default.attributesOfItem(atPath: url.path))?[.size] ?? 0
+            smokeLog("finish status=\(writer.status.rawValue) size=\(size) \(ok ? "PASS" : "FAIL")")
+        }
+    }
+
     func runDeviceProbeIfRequested() {
         guard !probeStarted, phase == .running,
               let mode = ProcessInfo.processInfo.environment["CQ_CAM_PROBE"] else { return }
         probeStarted = true
         probeLog("start mode=\(mode) position=\(position == .front ? "front" : "back")")
+        // P112：smoke 挪到 detached 线程 + 2.5s 延迟——与真实录制同上下文
+        //（非主线程、采集满负荷交付中）。若此时失败而主线程成功 = 上下文触发。
+        Task.detached { [weak self] in
+            try? await Task.sleep(nanoseconds: 2_500_000_000)
+            fputs("[cam-probe] smoke (detached, 2.5s) start\n", stderr)
+            fflush(stderr)
+            self?.standaloneWriterSmoke()
+        }
         Task { @MainActor [weak self] in
             guard let self else { return }
             if mode == "front" {
                 self.switchPosition()
-                try? await Task.sleep(nanoseconds: 1_200_000_000)
+                // 轮询等切换落地（switchPosition 是 sessionQueue 异步——固定睡
+                // 1.2s 与队列忙闲竞态，B-02 曾读回 back 导致拍照/镜像判定全错位）。
+                for _ in 0..<50 {
+                    if self.position == .front { break }
+                    try? await Task.sleep(nanoseconds: 100_000_000)
+                }
                 self.probeLog("switched position=\(self.position == .front ? "front" : "back")")
             }
             self.capturePhoto()
             try? await Task.sleep(nanoseconds: 2_500_000_000)
+            self.probeLog("before startRecording")
             self.startRecording()
             self.probeLog("recording started")
             try? await Task.sleep(nanoseconds: 3_000_000_000)
             self.stopRecording()
             self.probeLog("recording stopped")
-            try? await Task.sleep(nanoseconds: 1_000_000_000)
+            try? await Task.sleep(nanoseconds: 1_500_000_000)
+            // 产物回传：CQ_LOG_UPLOAD=host:port → HTTP PUT（WiFi 直传，绕开
+            // devicectl 文件拷贝的不可靠——B-02 实测多次 0 该厂商）。
+            if let endpoint = ProcessInfo.processInfo.environment["CQ_LOG_UPLOAD"] {
+                let fm = FileManager.default
+                let all = (try? fm.contentsOfDirectory(
+                    at: fm.temporaryDirectory, includingPropertiesForKeys: nil)) ?? []
+                let recordings = all.filter { $0.lastPathComponent.hasPrefix("cq_rec_") }
+                let newestRecording = recordings.max { $0.lastPathComponent < $1.lastPathComponent }
+                let photo = all.first { $0.lastPathComponent == "cam_probe_photo.png" }
+                let newest = [newestRecording, photo].compactMap { $0 }
+                for fileURL in newest {
+                    guard let data = try? Data(contentsOf: fileURL) else { continue }
+                    var request = URLRequest(url: URL(string: "http://\(endpoint)/\(fileURL.lastPathComponent)")!)
+                    request.httpMethod = "PUT"
+                    request.httpBody = data
+                    let uploaded = try? await URLSession.shared.data(for: request)
+                    self.probeLog("upload \(fileURL.lastPathComponent) \(data.count)B -> \(uploaded != nil ? "ok" : "fail")")
+                }
+            }
             self.probeLog("done")
         }
     }
@@ -433,7 +549,8 @@ final class CameraViewModel: ObservableObject {
             sticker: stickerCatalog.first { $0.id == selectedStickerID },  // 贴纸锁定（CAM-014）
             dualComposer: dualComposer,
             faceBoxes: faceBoxes, // 人脸框/锚点实时读取（蒙版跟随 + warp/贴纸跟随，WYSIWYG）
-            withAudio: micAvailable)
+            withAudio: micAvailable
+                && ProcessInfo.processInfo.environment["CQ_CAM_PROBE_NOAUDIO"] == nil)
         recorderBox.set(recorder)
         isRecording = true
         recordingStartedAt = Date()   // 录制计时 UI（View 端 TimelineView 渲染）

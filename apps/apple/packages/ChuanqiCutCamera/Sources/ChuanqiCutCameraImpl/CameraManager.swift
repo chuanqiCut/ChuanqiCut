@@ -67,8 +67,23 @@ final class CameraManager: NSObject, @unchecked Sendable {
 
     /// 双摄机型（A12+）用 MultiCamSession；其余机型退回普通 Session（单摄行为不变）。
     private static func makeSession() -> AVCaptureSession {
-        AVCaptureMultiCamSession.isMultiCamSupported ? AVCaptureMultiCamSession() : AVCaptureSession()
+        // CQ_CAM_FORCE_PLAIN=1：强制普通 AVCaptureSession（P112 二分实验——
+        // MultiCam 会话下 AVAssetWriter startWriting/首帧 append 以 FigXPC -17281
+        // 失败，本开关验证「MultiCam × Writer」是否为根因；按结论定终态）。
+        let useMultiCam = AVCaptureMultiCamSession.isMultiCamSupported
+            && ProcessInfo.processInfo.environment["CQ_CAM_FORCE_PLAIN"] == nil
+        return useMultiCam ? AVCaptureMultiCamSession() : AVCaptureSession()
     }
+
+    /// 当前会话是否是 MultiCam（**决定采集档位怎么设**，见 `applyCaptureQualityLocked`）。
+    ///
+    /// ⚠️ 实测（2026-10-09，iPhone 17 Pro）：`AVCaptureMultiCamSession` **不支持
+    /// sessionPreset** —— 对它 `setSessionPreset:` 直接抛
+    /// `NSInvalidArgumentException: AVCaptureSessionPreset1920x1080 is not a supported preset`
+    /// 而崩溃（不是返回 false，也不是 canSetSessionPreset 能拦住的）。Apple 的口径是
+    /// multi-cam 必须**逐设备设 activeFormat**。iPhone 15/17 这类机型
+    /// `isMultiCamSupported` 恒为 true，所以这条路径是**默认路径**，不是边界情况。
+    private var isMultiCamSession: Bool { session is AVCaptureMultiCamSession }
 
     /// 设备级双摄支持（CAM-021：UI 依此置灰开关，SPEC A8 不支持机型诚实降级）。
     static var isMultiCamSupported: Bool { AVCaptureMultiCamSession.isMultiCamSupported }
@@ -207,7 +222,12 @@ final class CameraManager: NSObject, @unchecked Sendable {
         sessionQueue.async { [weak self] in
             guard let self, self.configured, !self.dualCamEnabled else { return }
             self.currentPosition = position
+            // ⚠️ 必须用配置事务包裹（P113）：裸改输入时移除/添加**即时生效**，
+            // 新旧输入交接的若干帧以默认方向（传感器横向）流出 → 预览横屏闪现
+            //（B-02 用户实测）。事务内变更在 commit 才原子生效，方向已就位。
+            self.session.beginConfiguration()
             self.reconfigureVideoInputLocked(position: position)
+            self.session.commitConfiguration()
             Task { @MainActor in
                 onDone(position)
             }

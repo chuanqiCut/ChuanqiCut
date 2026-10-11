@@ -68,6 +68,15 @@ sleep 30; pkill -f "devicectl device process launch"
    `CQ_CAM_FACE_CALIB=1`，日志回传后解出映射常数、修 MetadataFaceGeometry、
    闸门翻 true（零成本启用 metadata 路）。
 
+## 输出稳定性量化（磨皮脉动取证）
+
+```bash
+# 探针自动录像回传后，抽帧算脸区域高频能量时序：
+#   磨皮强度脉动 → 高频能量大幅振荡；固定强度 → 残余变化仅运动/AE/编码噪声量级
+swift tools/probe/analyze_frames.swift /tmp/probe_upload/cq_rec_xxx.mp4 > /tmp/a.csv
+# 判读：变异系数（CV）与帧间变化率——本轮实测 CV 9.3% / 帧间 5.7% = 稳定
+```
+
 ## 局限（需要传哲的场景）
 
 - 脸框标定受控数据（人脸对镜头）

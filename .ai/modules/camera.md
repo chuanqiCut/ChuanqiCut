@@ -118,6 +118,7 @@ usage，而 CI 的 CIRenderDestination 要求 ShaderWrite → destination nil �
 | CAM-027 | 人像理解底座（皮肤/头发/人像分割） | ⚠️ **v1 已落地 2026-10-08 晚**（几何级精修）：契约层 `PortraitSkinMask`（脸框 ∩ 非眼/眉/唇区）+ `CameraBeautyEngine.semanticMask` **注入点**（`apply(to:faces:)` 签名零改动，nil=老行为）+ Impl 薄壳 `Detection/PortraitSemantics.swift` + ViewModel 装配 1 处 + 7 用例；`FaceBoxStore` 补 `@unchecked Sendable`（并发契约变更，门禁需确认）。**本期不做**头发分割（SDK 15 无符号）与肤色聚类（归 CAM-028）——均已写进文件注释。构建机验证/真机 = 池 [9] |
 | CAM-029 | 磨皮/美白算法升级 | ⚠️ 2026-10-08：只落地「②色域兜底（`cq_beauty_protect`）」+「③自适应 σ（`cq_beauty_sigma_local`）」，且**只在 pass1 `cq_beauty_down_h`**；①细节回注与④美白唇保护未做；`BeautyKernel` 参数面未动（常量写死）；无 harness 剖面实测 = 池 [9] |
 | **算法定则（传哲 2026-10-07）** | 美颜/美型/美体/美妆/道具/人脸跟踪/AR 一切人像能力必须算法驱动，无算法即无效果，**不得退化为滤镜式全画面修改** | 已落实：CameraBeauty.apply nil 语义 全画面兜底→**直通**（旧契约用例同步改） |
+| **CAM-033 P1 检测裁剪（2026-10-11，RESEARCH-015 拍板后一期）** | metadataOutput 系统脸框（零 Vision）+ Vision 按需开关（BeautyDetectionPlan 契约纯函数）+ 磨皮美白单次混合 | ✅ 代码落地 7082df3：Camera swift test **73/73**（+11）；iOS 壳 BUILD SUCCEEDED。真机标定/零 Vision 日志核验挂池 [15]。P2（CAM-034 磨皮内核）/P3（CAM-035 蒙版语义）待开工 |
 | **MultiCam preset 崩溃（2026-10-09，P93/P94）** | `AVCaptureMultiCamSession` 不支持 `sessionPreset`（设了抛 NSException）+ 其 activeFormat 必须落在 `isMultiCamSupported` 子集 | ✅ 已修并入库（fdb4e97，2026-10-11 收口轮）：multiCam 走逐设备 activeFormat；选择规则抽成契约层纯函数 `CameraFormatSelector.bestIndex`（5 例单测）；新增 input 重放档位。真机复验挂池 [15] |
 
 ### 测试与门禁记录（阶段批）

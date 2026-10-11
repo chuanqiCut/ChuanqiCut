@@ -370,6 +370,11 @@ SPM 临时产物一律 `swift test --disable-sandbox --scratch-path "$ROOT/build
   - [ ] **P93/P94 复验**：双摄会话下切换 720p/1080p/4K 不崩（preset 异常已根除），
     档位实际生效（activeFormat 分辨率对得上），帧率切换后仍准（选 format 后重放）；
     单摄档位回归（普通 Session preset 路径未动）
+  - [ ] **CAM-033（P1 检测裁剪）真机**：①metadata 脸框标定——前/后摄×竖/横持下
+    磨皮蒙版对位正确（错位修 MetadataFaceGeometry 调用方常数）；②美颜全关时
+    DEBUG 日志零 Vision perform（totalDetections 不再增长）；③仅磨皮时同样零
+    Vision（脸框来自采集栈）；④双摄下磨皮蒙版正常（回退 Vision 兜底路径）；
+    ⑤检测耗时 lastDetectionDurationMs 对比改前（baselines 回填）
   - [ ] **Makeup/MetalFX 回归目检**：美妆五区域正常（irisMask/羽化修复后）、
     MetalFX 升采样画质（SDK 命名全对表后首次真编译）
 

@@ -566,3 +566,13 @@
 - **DEBUG 浮层**（877cbdd）：EditorDebugSnapshot 2Hz + DebugOverlayView + 传输条开关，
   后续设置模块接管。
 - **待回填**：A3 录像尺寸（拉取未完成）、横持拍照、B 组听感/打分、C 组走查（问卷 B-02）。
+
+## 2026-10-11 17:06 · P112 端到端终验通过 + WiFi 探针通道落地
+- **终验**（iPhone 17 Pro，探针 36 轮）：前摄录像 1080×1920 / 3.19s / 含音轨 / 5.71MB
+  经 CQ_LOG_UPLOAD HTTP 通道回传 Mac 核验；append 零失败、pool 正常装配、smoke 全 PASS。
+- **根因链**（三层）：P110 守卫死锁 → P112 adaptor 色键毒化 startWriting → P113 切摄
+  无事务横屏闪现；另 P111 前摄照片元数据方向（已验）。
+- **工具资产**：真机探针（CQ_CAM_PROBE/AUTO_ROUTE/DEMO_AUTOPLAY/DEBUG_OVERLAY）+
+  WiFi 产物回传（CQ_LOG_UPLOAD）+ 隔离矩阵 smoke（CQ_SMOKE_VARIANT）——录制回归
+  从此探针先行。
+- **待办**：warp/pool kernel 两案、横持方向、B 组人工项（问卷 B-02）。

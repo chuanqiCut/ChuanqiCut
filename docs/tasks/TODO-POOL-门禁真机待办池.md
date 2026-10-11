@@ -331,7 +331,11 @@ SPM 临时产物一律 `swift test --disable-sandbox --scratch-path "$ROOT/build
   的官方发布口径与本地单 arch 验证口径分离；修完跑一次真通用构建作验收。
 - 关池条件：通用双 arch mac 构建 BUILD SUCCEEDED（清 DerivedData 口径）。
 
-### [15] 相机录像 P112/P113 修复收尾 + warp/pool kernel 两案（⏳ 待真机）
+### [15] 相机录像 P112/P113 修复收尾 + warp/pool kernel 两案（录制端到端 ✅，余项待修）
+
+- **2026-10-11 17:06 端到端终验通过**：前摄探针录像 1080×1920 / 3.19s / 含音轨 /
+  5.71MB 回传 Mac 核验；append 零失败（pool=true 装配正常）；smoke 全 PASS。
+  P112/P113/P110 三案关闭；**A3 录像方向机器面已验**（WYSIWYG 听感/体感归 B 组人工项）。
 
 - 来源：集成机 2026-10-11 真机探针批（5abcc11 / 37e2833；传哲实测报错驱动）
 - 已修待终验（设备解锁后重跑 CQ_CAM_PROBE 一轮）：

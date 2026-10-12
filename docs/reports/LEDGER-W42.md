@@ -610,3 +610,47 @@
   曾整模块丢失（CocoaPods 无 DEBUG 宏注入 + 条件编译包裹 → 已去条件编译）。
 - **验证**：iOS 全量构建 SUCCEEDED；探针 smoke PASS；浮层拖拽/滚动/全局开关为
   视觉组件待传哲目检。
+
+## 2026-10-12 12:10 · 真机日志纠偏三案（导入 967ms / 美型跳过 / drawable 崩溃）
+
+> 决策与实现者：集成机（WorkBuddy，Claude）· 2026-10-12 · 传哲回传真机日志后拍板「继续吧」→
+> 指定**跑全量 `run_gate.sh`**（2026-10-12 11:43）。
+
+### 输入（传哲真机日志，2026-10-12 回传）
+1. `[import] probe 970ms` + `WARN 慢调用 demuxer Open(含 ScanKeyframes) took 967ms`
+   + Thread Performance Checker「User-interactive 等 Default QoS」—— 主线程阻塞 ~1s。
+2. `Warp kernel function 'cq_face_warp' does not have a coreimage:destination argument`
+   → `warp engine FALLBACK` —— **美型一直静默跳过**（CAM-033 只修了 sampler，没修 destination）。
+3. 长跑后 3 次 `MTLTextureDescriptor has invalid pixelFormat (0)` 断言 →
+   `Debug session ended with code 9`（signal 9 = jetsam SIGKILL）。
+4. 播放段 footprint 188.0→200.2→251.9→263.9→282.4MB（t=2→10s，1080×1920）。
+
+### 决策
+- **P122**：Platform 工厂不是零成本构造 —— `CreateMediaDemuxer` 内部就全量 Open，
+  MEDIA-026 的 OpenLight 优化被工厂吃掉。「轻量」必须在**工厂层**分叉，不能只在实例方法层。
+- **P123**：CIWarpKernel 首参必须 `coreimage::destination`，裸 `float2` 没有 coreimage 标记。
+- **P124**：drawable 的格式/尺寸是不可信输入；signal 9 先怀疑 jetsam，Metal 断言常是下游症状。
+- **不做的**：①导入链路异步化（要动 @MainActor 边界，单独建卡）；②临时内存埋点
+  （先用 Xcode Memory Graph 取证，取证前不改代码）；③PHAsset 元数据后台化（池 [17]）。
+
+### 写集（7 文件）
+- `engine/core/cq/platform/chq_media.h`（+`CreateMediaDemuxerLight` 声明）
+- `engine/platform/apple/media/media_demux.mm`（+轻量工厂实现）
+- `engine/core/cq/media/chq_media_probe_abi.cpp`（改用轻量工厂，去掉多余的 OpenLight 调用）
+- `tests/unit/test_media_demux_apple.cpp`（+4 断言：时长与全量一致 / GetStreamCount==0 /
+  不可读包 / 工厂成功）
+- `apps/apple/packages/ChuanqiCutCamera/.../Effects/face_warp.metal`（首参 → `coreimage::destination`）
+- `apps/apple/packages/ChuanqiCutCamera/.../Effects/FaceWarp.swift`（注释补契约）
+- `apps/apple/packages/ChuanqiCutCamera/.../CameraRenderer.swift`（drawable 退化校验 + error 留痕）
+
+### 验证（本机实测，Intel x86_64 / macOS 26.7.1 / Xcode 26.6）
+- `bash tools/ci/run_gate.sh`：**PASS=14 FAIL=0 SKIP=0**（22m14s）。
+  core-dbg **48/48**、core-rel **48/48**；apple-swift-bindings 26、camera 77、import 16、
+  editor 65、player 52，**全部 0 failure**；deps/headers/artifacts/golden 均 PASS。
+- 新增 4 项断言随 `platform_apple_demux`（Test #28）Passed 通过。
+- **未验**：`face_warp.metal` 的 `-fcikernel` 编译**不在门禁内**（门禁无 iOS 壳构建步骤），
+  已单独补跑 `-scheme ChuanqiCutApp -destination generic/platform=iOS`（结果见下条）。
+
+### 拍板/待回收
+- 传哲拍板：跑全量门禁（已跑，绿）。
+- 问卷 `docs/reviews/QUESTIONNAIRE-2026-10-12-真机批-日志纠偏三案.md` 已出，**未回收不得标记完成**。

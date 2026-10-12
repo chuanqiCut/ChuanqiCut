@@ -239,7 +239,18 @@ public:
 };
 
 // 工厂（由 Platform 平台实现）。返回 ChqPlatformPtr。
+//
+// ⚠️ CreateMediaDemuxer 会做**全量 Open**（建 AVAssetReader + 逐样本扫描
+// 关键帧）。真机 iPhone（1080×1920 素材）实测 967ms（2026-10-12 导入日志）。
+// 只想要时长的调用方（cq_media_probe_duration）必须走下面的 Light 变体。
 ChqStatus CreateMediaDemuxer(const ChqMediaSource& src, ChqPlatformPtr<ChqIMediaDemuxer>& out_demuxer);
+
+// 轻量工厂（MEDIA-026 补完，2026-10-12）：只做 OpenLight（加载容器时长），
+// **不做全量 Open** —— 不建 reader、不扫关键帧、不碰 VT。
+// 仅 cq_media_probe_duration 使用；需要读帧/seek 的调用方仍走 CreateMediaDemuxer。
+// 返回的 demuxer 已处于 OpenLight 完成态，调用方直接 GetDuration 即可（不要再调 OpenLight）。
+ChqStatus CreateMediaDemuxerLight(const ChqMediaSource& src,
+                                  ChqPlatformPtr<ChqIMediaDemuxer>& out_demuxer);
 ChqStatus CreateFrameProvider(const ChqMediaSource& src, ChqPlatformPtr<ChqIFrameProvider>& out_provider);
 ChqStatus CreateMediaMuxer(ChqPlatformPtr<ChqIMediaMuxer>& out_muxer);
 

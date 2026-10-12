@@ -750,4 +750,25 @@ ChqStatus CreateMediaDemuxer(const ChqMediaSource& src, ChqPlatformPtr<ChqIMedia
     return ChqStatus::Ok();
 }
 
+// 轻量工厂（MEDIA-026 补完，2026-10-12）：构造后**只 OpenLight**，不碰全量 Open。
+//
+// 为什么必须单独一个工厂：CreateMediaDemuxer 内部就会全量 Open（建 reader +
+// ScanKeyframes），而 cq_media_probe_duration 只要 duration —— 先全量再轻量
+// 等于白付一次 967ms（真机 2026-10-12 导入日志：Open(含 ScanKeyframes) 967ms，
+// 主线程 Thread Performance Checker 报优先级反转）。
+ChqStatus CreateMediaDemuxerLight(const ChqMediaSource& src,
+                                  ChqPlatformPtr<ChqIMediaDemuxer>& out_demuxer) {
+    AppleDemuxer* d = new AppleDemuxer();
+    @autoreleasepool {  // MEDIA-027：逐帧入口自带 autorelease pool
+        ChqStatus s = d->OpenLight(src);
+        if (!s.IsOk()) {
+            d->Destroy();
+            out_demuxer.reset();
+            return s;
+        }
+    }
+    out_demuxer = ChqPlatformPtr<ChqIMediaDemuxer>(d);
+    return ChqStatus::Ok();
+}
+
 }  // namespace cq

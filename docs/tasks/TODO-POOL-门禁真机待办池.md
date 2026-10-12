@@ -503,3 +503,28 @@ SPM 临时产物一律 `swift test --disable-sandbox --scratch-path "$ROOT/build
   - [ ] ②Podsimulator 排除该文件（source_files 条件化）
   - [ ] ③阶段批门禁对相机包改真机构建口径（不推荐：门禁降档）
 - 影响：阶段批门禁第 5 步（iOS 壳构建）不可绿；编辑器线全壳证据被挡。
+
+### [17] 2026-10-12 真机日志批的三个未结项（内存 / 主线程 / 相册元数据）
+
+- 来源：集成机 / 相机线 + 编辑线（2026-10-12 真机日志回传批）
+- 现象（同一份日志的三条独立线索，都已定位到代码但**未取证或未修**）：
+  1. **内存单调上升 → signal 9（jetsam）**：播放段 `footprint` 188.0→200.2→251.9→
+     263.9→282.4MB（t=2→10s，1080×1920 BGRA ≈ 8.3MB/帧），随后相机会话长跑 3300+
+     帧，末段 Metal 断言后进程被杀。解码队列已由 MEDIA-027 封顶 12 帧（≈100MB），
+     **但「切到相机页后编辑器解码器/预览器是否仍在持帧」未取证**。三个候选
+     （全部 `hypothesis`，未实测）：①编辑会话未随切页释放，12 帧队列 + 预览器
+     常驻；②CIContext 逐帧 DAG 缓存（每帧新建 CIImage + CIVector 参数 → 新中间
+     纹理）；③相机侧 scratch/FX 纹理随转屏重建而泄漏。
+     取证手段：Xcode Memory Graph / Instruments Allocations，看是 CVPixelBuffer
+     堆积还是 CI 缓存。
+  2. **主线程同步 I/O 仍在（红线 #8）**：`importMedia` 是 @MainActor 同步调用，
+     即使 probe 降到 OpenLight（毫秒级），`OpenLight` 内部仍是
+     `dispatch_semaphore_wait` 等 Default QoS 的 AVFoundation 回调 —— 优先级反转
+     的结构没变，只是时长短了。是否要改成异步导入链路需单独建卡决策。
+  3. **`Missing prefetched properties for PHAssetOriginalMetadataProperties`**：
+     PhotoLibraryImporter 在主队列按需取 PHAsset 元数据（Photos 明确警告会掉帧）。
+     应改为 `PHImageManager`/`requestMetadata` 后台取或批量预取。
+- 待办：[ ] 真机 iPhone 17 Pro：复现路径（导入相册 1080×1920 → 播放 30s → 切相机
+  长跑 2min），抓 Memory Graph + footprint 曲线；[ ] 确认切页后编辑器会话是否释放；
+  [ ] 美型 warp 修destination 后真机是否出现 `warp engine INSTALLED`
+- 验收回填：baselines「真机内存」段（当前**未实测**）；LEDGER-W42

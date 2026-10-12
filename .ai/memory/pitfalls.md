@@ -2012,3 +2012,60 @@ TASK-CAM-012 剩余风险栏其实预判了（"若真机上 CI 工作空间表�
 - **防复发规则**：①凡是「candidate（新值）/ origin（旧值）」并存的操作，**禁止**从
   模型指针取值构造目标实体——目标实体只能由 candidate 派生；②单测必须同时断言
   「新值生效 + 旧值还原」两个方向（只测还原测不出 moved 取错）。
+
+## P122：Platform 工厂 `CreateMediaDemuxer` 内部含全量 Open，吃掉 OpenLight 优化（2026-10-12，真机导入日志，已修）
+
+- **现象**：真机导入相册视频，`[import] probe 970ms`，日志
+  `慢调用 demuxer Open(含 ScanKeyframes) took 967ms（阈值 500ms）`，且整段跑在
+  **主线程**（Thread Performance Checker 报 User-interactive 等 Default QoS 的优先级反转）。
+  但 MEDIA-026 明明已经把探测改成 OpenLight 了。
+- **根因**：`CreateMediaDemuxer()`（media_demux.mm）在工厂内部就 `d->Open(src)`
+  —— 建 AVAssetReader + `ScanKeyframes()` 逐样本扫全文件。core 层的
+  `cq_media_probe_duration` 拿到手的 demuxer **已经全量打开过了**，之后再调
+  `OpenLight` 只是第二次加载 duration，省时为 0。**core 层看不到工厂内部的代价**
+  ——这是本坑的可怕之处：ABI 代码读起来完全正确。
+- **影响范围**：任何「只要时长」的调用方；本地小素材（本机无大文件）永远测不出来。
+- **修**：新增 `CreateMediaDemuxerLight(src, out)`（chq_media.h 声明 + media_demux.mm
+  实现 = 构造 + `OpenLight`，不 Open），probe ABI 改用它；单测钉死
+  「轻量 demuxer 的 `GetStreamCount()==0` 且不可读包」（= 没建 reader）。
+- **验证状态**：已修，待门禁 + 真机回填导入耗时。
+- **防复发规则**：①**Platform 工厂不是零成本的构造函数** —— 凡是「工厂 + 再调用一个
+  轻量方法」的组合，必须先读工厂实现确认它没做重活；②「轻量」语义要在**工厂层**
+  就分叉，不能只在实例方法层（否则代价已经付过了）；③真机大素材的耗时只有真机
+  日志能暴露，本地毫秒级的结论不能当验收。
+
+## P123：CIWarpKernel 首参必须是 `coreimage::destination`，裸 `float2` 不算（2026-10-12，真机日志，已修）
+
+- **现象**：真机 `Warp kernel function 'cq_face_warp' does not have a coreimage:destination
+  argument.` → `CIWarpKernel(...)` 返回 nil → 美型**诚实跳过**（日志写得很清楚，但
+  此前两轮都把「跳过」当成了成功路径之外的既成事实）。
+- **根因**：CAM-033 只把 v1 的 `coreimage::sampler src` 换成了裸 `float2 dest_coord`。
+  CI 是靠**参数类型上的 coreimage 标记**识别 destination 的，裸 `float2` 没有标记
+  —— sampler 的错误没了，destination 的错误来了。两次都是「凭 CI 会帮我注入坐标
+  的直觉写签名」。
+- **影响范围**：全部 `CIWarpKernel`；**编译期与模拟器都不报错**，只有真机加载那一行
+  notice/error 能证明（metallib 里函数存在 ≠ kernel 可加载）。
+- **修**：`float2 cq_face_warp(coreimage::destination dest, ...)` + `dest.coord()`。
+- **验证状态**：已修，待真机确认 `warp engine INSTALLED` 出现。
+- **防复发规则**：①CI kernel 签名**照抄 CoreImage.h 的 coreimage 类型**，不写裸向量；
+  ②改完 shader 必须以「真机日志里出现 INSTALLED」为完成判据 —— 编译绿、bundle 里
+  有 metallib、函数能 grep 到，**这三条全是伪绿**（P60 同族第三击）；
+  ③`BeautyKernel`/`FaceWarp` 的 FALLBACK 分支是 error 级日志，真机日志批要专门扫。
+
+## P124：`drawable.texture.pixelFormat` 可能是 `MTLPixelFormatInvalid`(0)（2026-10-12，真机崩溃日志，已修）
+
+- **现象**：真机长跑后连续 3 次
+  `-[MTLTextureDescriptorInternal validateWithDevice:] failed assertion
+  MTLTextureDescriptor has invalid pixelFormat (0)`，随后
+  `Debug session ended with code 9: Terminated due to signal 9`（jetsam SIGKILL）。
+- **根因**：`CameraRenderer.draw` 直接拿 `drawable.texture.pixelFormat` 去建 scratch /
+  MetalFX 纹理。MTKView 的 drawable **不保证**格式有效（视图脱离窗口 / 资源紧张时
+  给出退化 drawable），格式 = 0 时 Metal 校验层直接断言。
+- **影响范围**：相机预览；Metal 校验开启的 Debug 构建必崩，Release 是 makeTexture 返回
+  nil 后静默黑屏（更糟）。
+- **修**：draw 入口先校验 `drawableW/H > 0 && pixelFormat != .invalid`，退化则**跳过本拍
+  并打 error 留痕**（不是静默 return —— 静默等于没发生过，P60）。
+- **验证状态**：已修，待真机确认不再出现该断言。
+- **防复发规则**：①凡是「从别的对象的纹理/格式派生自己的资源」的地方，格式与尺寸
+  都当成**不可信输入**先校验；②`signal 9` 在 iOS 上首先怀疑 **jetsam（内存）**，
+  Metal 断言往往是内存吃紧的下游症状 —— 不要只修断言就宣布修好崩溃。

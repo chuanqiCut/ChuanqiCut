@@ -89,8 +89,11 @@ final class FaceWarp: @unchecked Sendable {
         // ROI：源可能被采样到 dest 外扩最大位移处（kernel 内有 clamp，
         // 外扩只为让 CI 不裁掉边缘所需像素；maxRadius 与 kernel 同基准 = 帧高）。
         let maxShift = (radii.max() ?? 0) * extent.height
-        // CIWarpKernel 契约：首参 dest 坐标由 CI 注入（不进 arguments）；
-        // 画面信息以 float4 ext 传入（旧版 sampler 只读 extent/coord，CAM-033 重写）。
+        // CIWarpKernel 契约：首参必须是 **`coreimage::destination`**（shader 侧带
+        // coreimage 类型，不是裸 float2），dest 坐标由 CI 注入、不进 arguments；
+        // 画面信息以 float4 ext 传入。两次踩坑见 face_warp.metal 头注释（CAM-033
+        // 修 sampler、2026-10-12 修 destination）——改 shader 签名后**必须真机看
+        // 这一条 notice**，只有加载成功才算数（P60 伪绿教训）。
         let ext = CIVector(x: extent.origin.x, y: extent.origin.y,
                            z: extent.width, w: extent.height)
         let args: [Any] = [ext] + slots + [radiiA, radiiB, activeCount]

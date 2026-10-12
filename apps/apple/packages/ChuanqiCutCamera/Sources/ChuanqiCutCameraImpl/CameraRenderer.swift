@@ -712,10 +712,26 @@ final class CameraPreviewRenderer: NSObject, MTKViewDelegate, @unchecked Sendabl
         let mainStore = mainIsBack ? faceBoxes : frontFaceBoxes
         let pipStore = mainIsBack ? frontFaceBoxes : faceBoxes
 
-        guard let drawable = view.currentDrawable,
-              let commandBuffer = commandQueue.makeCommandBuffer(),
+        guard let drawable = view.currentDrawable else {
+            return  // 无 drawable：跳过本拍（启动初期 / 视图未上窗口的常态）
+        }
+        // ⚠️ drawable 合同**不保证** pixelFormat/尺寸有效。真机 2026-10-12：长跑
+        // 后连续 3 次 `-[MTLTextureDescriptorInternal validateWithDevice:] failed
+        // assertion: MTLTextureDescriptor has invalid pixelFormat (0)`，随后进程被
+        // signal 9（jetsam）杀掉 —— 拿退化 drawable 的 pixelFormat（MTLPixelFormatInvalid
+        // = 0）去建纹理，校验层直接断言。内存吃紧 / 视图脱离窗口时 MTKView 会给
+        // 出这种退化 drawable，故**建纹理前必须校验**，且必须留痕（P60：静默跳过
+        // 等于没有发生过）。
+        let drawableFormat = drawable.texture.pixelFormat
+        let drawableW = drawable.texture.width
+        let drawableH = drawable.texture.height
+        guard drawableW > 0, drawableH > 0, drawableFormat != .invalid else {
+            Self.logger.error("预览跳过本拍：drawable 退化 fmt=\(drawableFormat.rawValue, privacy: .public) \(drawableW, privacy: .public)x\(drawableH, privacy: .public)")
+            return
+        }
+        guard let commandBuffer = commandQueue.makeCommandBuffer(),
               let buffer = mainSlot.latest() else {
-            return  // 尚无帧 / 无 drawable：跳过本拍，不报错（启动初期常态）
+            return  // 尚无帧：跳过本拍，不报错（启动初期常态）
         }
         #if DEBUG
         let debugStart = DispatchTime.now()
@@ -741,7 +757,7 @@ final class CameraPreviewRenderer: NSObject, MTKViewDelegate, @unchecked Sendabl
         let height = Int(extent.height)
         guard width > 0, height > 0,
               let scratch = obtainScratch(width: width, height: height,
-                                          pixelFormat: drawable.texture.pixelFormat) else {
+                                          pixelFormat: drawableFormat) else {
             return
         }
 
@@ -765,9 +781,9 @@ final class CameraPreviewRenderer: NSObject, MTKViewDelegate, @unchecked Sendabl
         if currentFXUpscaleEnabled() {
             if let upscaled = runFXUpscale(commandBuffer: commandBuffer, input: scratch,
                                            frameWidth: width, frameHeight: height,
-                                           drawableWidth: drawable.texture.width,
-                                           drawableHeight: drawable.texture.height,
-                                           pixelFormat: drawable.texture.pixelFormat) {
+                                           drawableWidth: drawableW,
+                                           drawableHeight: drawableH,
+                                           pixelFormat: drawableFormat) {
                 presentTexture = upscaled
                 presentWidth = upscaled.width
                 presentHeight = upscaled.height
@@ -778,12 +794,10 @@ final class CameraPreviewRenderer: NSObject, MTKViewDelegate, @unchecked Sendabl
         //    - colorAttachment 是 framebufferOnly 纹理唯一合法写法；
         //    - v 轴符号 = 行序补偿（真机颠倒修正），u/v 比例 = aspect-fill 铺满；
         //    - clamp_to_edge：采样窗浮点误差不露边。
-        let drawableW = drawable.texture.width
-        let drawableH = drawable.texture.height
-        guard drawableW > 0, drawableH > 0,
-              let renderPass = view.currentRenderPassDescriptor,
+        // drawableW/H 与 drawableFormat 已在函数开头校验过（见那里的注释）。
+        guard let renderPass = view.currentRenderPassDescriptor,
               let encoder = commandBuffer.makeRenderCommandEncoder(descriptor: renderPass),
-              let pipeline = obtainPipeline(pixelFormat: drawable.texture.pixelFormat) else {
+              let pipeline = obtainPipeline(pixelFormat: drawableFormat) else {
             return
         }
         let coverScale = max(Float(drawableW) / Float(presentWidth),

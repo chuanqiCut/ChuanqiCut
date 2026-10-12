@@ -171,6 +171,29 @@ int main() {
           "seek 后首包 pts >= 2.0s（确实跳到中段）");
     (void)after_seek_ok;
 
+    // ---- 轻量工厂（MEDIA-026 补完，2026-10-12）----
+    // 真机教训：cq_media_probe_duration 曾先 CreateMediaDemuxer（工厂内部就做
+    // 全量 Open，含逐样本 ScanKeyframes；真机 1080x1920 素材实测 967ms，整段打在
+    // 主线程）再 OpenLight —— MEDIA-026 的省时完全被抵消。这里把「轻量工厂只
+    // 加载时长、不建 reader / 不枚举轨道 / 不扫关键帧」钉成回归锁。
+    std::printf("\n[轻量工厂] CreateMediaDemuxerLight（只 OpenLight）\n");
+    cq::ChqPlatformPtr<cq::ChqIMediaDemuxer> light;
+    s = cq::CreateMediaDemuxerLight(src, light);
+    Check(s.IsOk() && light, "CreateMediaDemuxerLight 打开成功");
+    if (light) {
+        cq::ChqRationalTime light_dur{0, 1};
+        s = light->GetDuration(light_dur);
+        Check(s.IsOk(), "轻量 demuxer GetDuration 成功");
+        std::printf("  轻量时长 = %s\n", RationalStr(light_dur).c_str());
+        Check(cq::CompareRational(light_dur, dur) == 0,
+              "轻量时长与全量 demuxer 完全一致（轻量不是近似）");
+        Check(light->GetStreamCount() == 0,
+              "轻量 demuxer 未建轨道（= 没做全量 Open / 没扫关键帧）");
+        cq::ChqMediaPacket lp{};
+        Check(light->ReadPacket(lp).code == cq::ChqStatusCode::kIoNotFound,
+              "轻量 demuxer 不可读包（无 reader，返回流末尾而非崩溃）");
+    }
+
     std::printf("\n== 结果：%d 项检查，%d 项失败 ==\n", g_checks, g_failures);
     return g_failures == 0 ? 0 : 1;
 }

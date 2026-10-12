@@ -6,9 +6,12 @@
 //    链接器不拉入本 archive member —— 隔离成立。新增此类 TU 时须登记
 //    ADR-0011 §3 的 TU 表。
 //
-// 为什么探测走「整 provider 打开再关」：时长来自 demuxer 解析（容器头），
-// provider 是现有唯一封装了「打开 → 拿 duration」的入口；探测是用户导入时
-// 的低频动作，打开/关闭一次的开销（毫秒级）可接受，不值得另开旁路。
+// 为什么探测走「开 demuxer 再关」：时长来自 demuxer 解析（容器头），demuxer 是
+// 现有唯一封装了「打开 → 拿 duration」的入口；探测是用户导入时的低频动作。
+//
+// ⚠️ 但**必须是轻量 demuxer**（CreateMediaDemuxerLight）：全量 demuxer 的 Open
+// 会建 AVAssetReader 并逐样本扫描关键帧，真机大素材 967ms（2026-10-12 实测），
+// 而探测只需要 duration —— 见下面 §1 的注释与 media_demux.mm 的 OpenLight。
 
 #include "cq/cq_sdk.h"
 
@@ -33,13 +36,16 @@ int32_t cq_media_probe_duration(const char* path, int64_t* out_value,
     // MEDIA-026：探测走 **demuxer OpenLight**（只读容器时长），不再走完整
     // provider 打开 —— 全量 Open 对大文件做逐样本关键帧扫描（秒级），而探测
     // 只需要 duration。解码会话/VT/扫描全部不触碰。
+    //
+    // ⚠️ 2026-10-12 补完：必须走 **CreateMediaDemuxerLight**，不能用
+    // CreateMediaDemuxer —— 后者在工厂内部就做了全量 Open（含 ScanKeyframes），
+    // 真机 1080×1920 素材实测 967ms 且整段打在主线程（导入卡顿 + Thread
+    // Performance Checker 优先级反转）。这一点在真机日志里暴露前无人发现，
+    // 因为本地素材太小、Open 也是毫秒级。
     cq::ChqPlatformPtr<cq::ChqIMediaDemuxer> demuxer;
-    cq::ChqStatus s = cq::CreateMediaDemuxer(src, demuxer);
+    cq::ChqStatus s = cq::CreateMediaDemuxerLight(src, demuxer);
     if (!s.IsOk()) return static_cast<int32_t>(s.code);
     if (!demuxer) return static_cast<int32_t>(cq::ChqStatusCode::kInternal);
-
-    s = demuxer->OpenLight(src);
-    if (!s.IsOk()) return static_cast<int32_t>(s.code);
 
     cq::ChqRationalTime duration;
     s = demuxer->GetDuration(duration);

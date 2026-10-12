@@ -528,3 +528,19 @@ SPM 临时产物一律 `swift test --disable-sandbox --scratch-path "$ROOT/build
   长跑 2min），抓 Memory Graph + footprint 曲线；[ ] 确认切页后编辑器会话是否释放；
   [ ] 美型 warp 修destination 后真机是否出现 `warp engine INSTALLED`
 - 验收回填：baselines「真机内存」段（当前**未实测**）；LEDGER-W42
+
+### [18] 门禁不覆盖 App 壳构建 —— metallib / 壳内 Swift 改动整类漏网（⏳ 待决策）
+
+- 来源：集成机 / 2026-10-12 真机日志纠偏批（`32895d3`）
+- 现象：`tools/ci/run_gate.sh` 的 14 步里**没有 iOS / macOS App 壳构建**（只有 XCFramework
+  + 各功能 Pod 的 `swift test`）。`build/gate-logs/ios-app-build-device.log` 是 2026-10-09
+  手跑留下的，不是门禁产物。
+- 后果（本批实证）：`face_warp.metal` 改签名后**门禁全绿但 shader 一行没被编译过** ——
+  `*.metal` 由壳工程 postBuildScripts 以 `-fcikernel` 编成 metallib，SPM 包测试不碰；
+  同理壳内的 `ChuanqiCutApp` 目标源码也不进包测试。CIWarpKernel 这类「只有真机加载
+  才知道对不对」的改动，门禁给的是**伪绿**（P123 就是在真机日志里才暴露的）。
+- 待办：[ ] 集成机决策：把 `-workspace apps/apple/ios/ChuanqiCut.xcworkspace
+  -scheme ChuanqiCutApp -destination generic/platform=iOS` 加进门禁（约 10min，
+  与池 [16] MetalFX 模拟器红相关：真机壳不受影响）
+  [ ] 同期把 macOS 壳（带 `-arch x86_64 ONLY_ACTIVE_ARCH=YES`）一并纳入
+- 验收回填：门禁步骤清单 + LEDGER-W42

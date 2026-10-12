@@ -12,8 +12,8 @@
 | 批号 | `B-2026-10-12-日志纠偏` |
 | 主题 | 导入探测 967ms 主线程阻塞 / 美型 warp 一直跳过 / 预览 drawable 退化崩溃 |
 | 关联 | pitfalls P122 / P123 / P124；池 [17]；LEDGER-W42 |
-| 提交 | （提交后回填 commit） |
-| 机器侧填写人与时间 | 集成机（WorkBuddy），2026-10-12 |
+| 提交 | `32895d3` |
+| 机器侧填写人与时间 | 集成机（WorkBuddy），2026-10-12 12:10 |
 | 集成机环境 | macOS 26.7.1 / Xcode 26.6 / Swift 6.3.3 / **Intel x86_64**（无 ANE、无 ProRes 硬编） |
 
 ## 1. 这批改了什么（面向人）
@@ -39,12 +39,18 @@
 
 | 命令 | 结果 | 备注 |
 |---|---|---|
-| `bash tools/ci/run_gate.sh` | （回填） | 传哲 2026-10-12 指定跑全量 |
-| `ctest --test-dir build -R media_demux` | （回填） | 含新增 4 项轻量工厂断言 |
-| `-scheme ChuanqiCutApp -destination generic/platform=iOS` | （回填） | metallib 需真机 SDK 才编 `-fcikernel` |
-| `-scheme ChuanqiCutMacApp -arch x86_64 ONLY_ACTIVE_ARCH=YES` | （回填） | Mac 壳，本批未直接触达 Mac 路径 |
+| `bash tools/ci/run_gate.sh` | **PASS=14 FAIL=0 SKIP=0**（22m14s） | 传哲 2026-10-12 指定跑全量 |
+| `ctest` core-dbg / core-rel | **48/48 / 48/48** | `platform_apple_demux`（#28）含新增 4 项轻量工厂断言，Passed |
+| `swift test`：bindings / camera / import / editor / player | 26 / 77 / 16 / 65 / 52，**全 0 failure** | CameraRenderer 的 Swift 改动由此编译验证 |
+| `cd apps/apple/ios && xcodebuild -workspace ChuanqiCut.xcworkspace -scheme ChuanqiCutApp -destination generic/platform=iOS build` | **BUILD SUCCEEDED**（1m31s） | 壳工程在 `apps/apple/ios/`，不在仓库根。`face_warp.metallib` 已重建（12:12，5808B），`-fcikernel` 两阶段编译通过 |
+| `python3 tests/golden/verify.py --json` | PASS | |
 
 **没跑的项目**：真机项（无可用设备，归传哲）。
+⚠️ **门禁不含 App 壳构建**（池 [18]）——上面第 4 行是手跑补的，不是门禁产物。
+并且：**metallib 编译通过 ≠ CIWarpKernel 能加载**，签名对不对只有真机那一行
+`warp engine INSTALLED` 能证明（P123）。
+
+**Mac 壳未跑**：本批未触达 macOS 专属路径（`apps/apple/mac`），相机/导入链路属 iOS 壳。
 
 ## 3. 已知偏差与本期明确不做
 

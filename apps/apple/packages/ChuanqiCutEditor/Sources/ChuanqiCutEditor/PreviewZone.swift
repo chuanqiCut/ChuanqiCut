@@ -22,6 +22,9 @@ struct PreviewZone: View {
     let renderEpoch: UInt64
     /// 时间线无片段（显示引导态；点按不触发播放）。
     let showsEmptyState: Bool
+    /// U1（S11）：预览区选中描边判定 —— 有选中片段时预览四周画红框（对标 App图2/4）。
+    /// 描边只覆盖**预览画布本身**，不延伸到两侧黑边。
+    let isClipSelected: Bool
     /// 点按预览 = 播放/暂停（走既有 togglePlayback）。
     let onTogglePlayback: () -> Void
     /// 引导态主操作（打开媒体抽屉）。
@@ -51,6 +54,14 @@ struct PreviewZone: View {
 
             if showsEmptyState {
                 emptyStateOverlay
+            }
+
+            // U1（S11）：选中描边。只在有选中片段且非引导态时画 ——
+            // 引导态本身已有圆角面板，再叠红框会打架。
+            if !showsEmptyState && isClipSelected {
+                Rectangle()
+                    .stroke(TimelinePalette.previewSelectionBorder.color,
+                            lineWidth: TimelinePalette.previewSelectionBorderWidth)
             }
 
             // 点按 = 播放/暂停。空态时点击交给引导按钮（overlay 在上，收不到）。

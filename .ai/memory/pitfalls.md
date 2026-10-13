@@ -2095,15 +2095,55 @@ TASK-CAM-012 剩余风险栏其实预判了（"若真机上 CI 工作空间表�
 - **根因**：Grep 工具底层是 **ripgrep**，正则语法是 **Rust regex** —— `\|` 是**转义后的字面竖线
   字符**，不是「或」。于是实际搜的是字符串 `processors|collectProcessNodes`，自然 0 命中。
   多模式交替在 ripgrep 里应当直接写 `|`（不转义）。
-- **补充实测（避免矫枉过正）**：本机 shell 的 BSD grep（BRE）**是支持 `\|` 做交替的**
-  —— 实测 `printf 'a|b\nfoo\n' | grep "a\|b"` 正常命中 `a|b`。所以这是**工具差异**，
-  不是"所有 grep 都不行"。两个环境两套语法，最稳的写法是**一律 `grep -E` / 裸 `|`**。
+- **更正（2026-10-13 晚，第三次复发后查明，之前的"补充实测"结论是错的）**：
+  本机 shell 里的 `grep` **根本不是 BSD grep**，而是 **toybox 0.8.13**，路径
+  `/Applications/WorkBuddy.app/Contents/Resources/app.asar.unpacked/cli/vendor/shim/brokered-bin/grep`。
+  toybox grep **不支持 `\|` 交替**。之前那条实测写"支持"，是**实验设计无区分力**导致的假阳性：
+  当时用样本 `printf 'a|b\nfoo\n' | grep "a\|b"`，无论 `\|` 是交替还是字面竖线都会命中第一行。
+  **有区分力的实验**应该是（验后者不会被前者的字面含义掩饰）：
+  `printf 'aa\nbb\nhitTest\n' | grep -n "hitTest\|nonexistent"` → toybox 返回 **exit 1（不命中）**，
+  而 `grep -nE "hitTest|nonexistent"` → 正常命中。**结论：一律用 `grep -E`。**
 - **影响范围**：任何"用多关键词搜代码确认某机制**是否存在**"的判断。
   危险点在于它是**静默**的 —— 0 命中看起来和"确实没有"一模一样。
 - **防复发规则**：①凡得出「仓库里没有 X」的**否定性结论**，必须换一种写法
   （`grep -E "X|Y"` 或 `grep -rl "X"` 单模式各搜一次）**交叉复核**再落笔；
   ②跨工具时不要凭记忆套正则语法，先拿一个**已知必然命中的样本**验一次语法
   （本次就是靠"文件里明明有"才发现的）。
+
+### P126 复发记录 · 第三次（同一晚，Bash 里，UIA-041 U0 验收核验时）
+
+做「双实现是否真的消除」的验收核验时，在 Bash 里跑
+`grep -n "hitTest\|dropTrackRow\|deltaSeconds" UIKit/EditorTimelineUIView.swift` → **零命中**，
+差点据此宣布验收通过。改用单关键词 `grep -n "hitTest"` 才发现 L414 还在。
+同一个晚上连续踩了两次（第 2 次 → 第 3 次），两次都差点带进交付结论。
+
+**由此确认的最稳写法**（本机一律如此，不要再用记忆里的 BSD 语法）：
+```
+grep -nE "pat1|pat2|pat3" file      # 多模式：一律 -E
+grep -rn  "single" dir              # 单模式：无所谓
+python3 逐行扫                       # 关键否定结论的兜底复核手段（最可靠）
+```
+
+### P126 复发记录（第二次，2026-10-13 晚，RESEARCH-017 → UIA-041 开工前捞出）
+
+**这次不只是惊吓，是污染了交付物**：RESEARCH-017 §2 的对照表里被写成
+「S3 选中态视觉 ❌ 无选中视觉层（grep selected/handle 零命中）」。
+而事实两侧都有实现：
+
+- UIKit  `TimelineContentView.applySelectionBorder()`（EditorTimelineUIView.swift L330-340）
+- SwiftUI `EditorTimelineView.draw()`（EditorTimelineView.swift L362-372）
+
+二者都用 `Theme.primaryText`（= 白）lineWidth 2。真正缺的只有**左右把手**和**片段中央时长数字**。
+
+**为什么第二次才抓到**：第一次 (RESEARCH-016) 是靠"我知道那里明明有符号"反向发现的；
+这次是对**自己仓库**做"有没有"的断言 —— 恰恰是最不该信 0 命中的场景，却没交叉复核。
+而且这个假阴性没有任何人察觉，直接跟着调研文档进入了排期与任务卡的依据里。
+
+**修订防复发规则（在原①②基础上加③）**：
+③ 对**自己仓库的现状盘点**（写「现状 vs 目标」对照表、写任务卡验收项这类），
+   **每个否定结论必须至少两个独立关键词各搜一次**，且在文档里标上行号来源；
+   拿不到行号支撑的「❌ 没有」，一律降级写成 `[待核]`，不许写成确定结论。
+   本次就是因为「没有行号」也照样通过了 review。
 
 ## P127：合并快检在本机的三个环境事实（2026-10-13，B0 提交轮，已证实 verified）
 
@@ -2124,3 +2164,58 @@ TASK-CAM-012 剩余风险栏其实预判了（"若真机上 CI 工作空间表�
   尤其第 2 条会让人误报"SharedUI 测试通过"。
 - **防复发规则**：①跑 ctest 一律带全路径；②SharedUI 窄检的结论措辞固定为
   「编译 + 无测试目标」；③SPM 命令默认带 `--disable-sandbox`。
+
+## P128：本会话模型不支持读图——截图类需求不能"看图说话"（2026-10-13，RESEARCH-017，已证实 verified）
+
+传哲给了 6 张对标 App iOS 真机截图（IMG_2636/2637/2638/2639/2640/2641），逐张调用读图工具，
+**全部返回 "the current model does not support images. Content filtered."** —— 不是路径错、
+不是文件损坏，是**当前会话所用模型本身不具备读图能力**。
+
+- **踩法**：拿到 `image_local_path` 就直接读，失败后容易误判成"路径写错/文件没落地"而去反复改路径，
+  白白烧几轮。
+- **正确处置**：
+  1. **第一次读图失败就停**，不要换姿势重试（模型能力问题，重试无意义）；
+  2. **立即如实告知传哲**：我没能实际看到图，下面的规格表是"文字转述"不是"视觉核验"；
+  3. 规格改为**从用户的话术 + 既有调研 + 代码现状**三方推导，并在文档里显式标注
+     「截图证据为视觉转述，验收以走查清单为准，不承诺逐像素一致」；
+  4. **反向索取可文本化的替代材料**：录屏（可抽帧后仍需读图，故优先要"参数/尺寸/层级"的
+     文字描述）> 放大截图 > 原图。最有效的是让传哲**用文字说尺寸与层级**。
+- **影响范围**：任何"看截图/看录屏/看 UI"的需求。RESEARCH-017 §1 的 S1~S12 规格表即在此前提下产出，
+  其中把手尺寸 `[E]` 8pt 是估算，必须等真机问卷校准。
+- **防复发规则**：涉及图像的交付，**结论里必须带一句能力声明**，不得让传哲误以为我看过图。
+
+## P129：本机 macOS 的 `swift build/test` **完全跳过 `#if os(iOS)` 里的文件** —— UIKit 侧改动 SPM 全绿也是伪证（2026-10-13，UIA-041 U1，已证实 verified）
+
+UIA-041 做 U1 时改了 `UIKit/EditorTimelineUIView.swift`（469 行，整文件包在 `#if os(iOS) … #endif` 里）。
+`swift build --disable-sandbox` 每次都报 **Build complete**，但实际一次都没编译过这个文件 ——
+iOS 壳构建一把把这**10 个错误**全抖了出来：
+
+```
+cannot assign value of type 'CGColor' to type 'UIColor'      // UIView.backgroundColor 要 UIColor
+cannot find 'trackHeaderLayers' in scope                     // 成员加进了错误的类（内容视图 vs 外层）
+cannot find 'buildTrackHeaders' in scope
+value of type 'Any' has no member 'count'                    // CATextLayer.string 是 Any?，要 `as? String`
+cannot convert value of type 'CGPoint' to expected argument type 'CGSize'
+cannot find 'TimelinePalette' in scope                       // podspec 文件清单快照过期
+```
+
+**四条各自独立的教训**：
+
+1. **`swift build` 的 "Build complete" 不等于这个文件被编译过。**
+   凡是整文件在 `#if os(iOS)` 里（本仓：`UIKit/Editor*UIView.swift`、`EditorViewController.swift`），
+   本机 macOS 的 SPM 构建会**整文件跳过**。改了这些文件，**唯一有效验证是 iOS 壳构建**：
+   `cd apps/apple/ios && xcodebuild -workspace ChuanqiCut.xcworkspace -scheme ChuanqiCutApp -destination generic/platform=iOS build`
+2. **iOS 与 macOS 是两个独立的 Pods 工程**，各自有自己的 `Pods.xcodeproj` 文件清单快照。
+   在 `apps/apple/ios` 跑 `bundle exec pod install` **不会影响** `apps/apple/mac`。
+   podspec 增删/改名文件后必须**两端各跑一次**（本次 mac 端就因漏跑报 `cannot find 'TimelinePalette' in scope`）。
+3. macOS 壳的 destination 写法：`-destination generic/platform=macOS` 会报
+   "destination implies architecture, architecture must not also be specified"（配 `-arch`），
+   而 `generic/platform=macOS,arch=x86_64` 报 "Unable to find a device"。
+   **可用写法是不带 destination**：`xcodebuild -workspace ChuanqiCut.xcworkspace -scheme ChuanqiCutMacApp -arch x86_64 ONLY_ACTIVE_ARCH=YES build`。
+4. **`UIView.backgroundColor` 要 `UIColor` 不是 `CGColor`** —— 与 `CALayer.backgroundColor`（要 CGColor）
+   正好相反，同一份 palette 必须同时提供两种取值（见 `TimelinePalette.RGBA.uiColor` / `.cgColor`）。
+
+- **影响范围**：任何 Apple 端 UI 改动。`swift test` 数字**不能替代**壳构建结论。
+- **防复发规则**：改了 `apps/apple/packages/**/UIKit/**` 或任何 os(iOS) 文件后，
+  ① 必跑 iOS 壳构建；② 若动过 podspec 涉及的文件集合，两端 `bundle exec pod install` 都要跑；
+  ③ 改了共享的配色/几何常量，两端壳都要编一遍。

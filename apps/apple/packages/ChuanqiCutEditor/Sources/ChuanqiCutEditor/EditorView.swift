@@ -43,6 +43,7 @@ public struct EditorView: View {
                             continuous: viewModel.isPlaying,
                             renderEpoch: viewModel.renderEpoch,
                             showsEmptyState: viewModel.timeline.clips.isEmpty,
+                            isClipSelected: viewModel.selectedClipId != nil,
                             onTogglePlayback: { viewModel.togglePlayback() },
                             onOpenMedia: { showMediaSheet = true })
                 // 画布比例取景（UIA-040）：渲染目标已随画布 resize，容器随之钳比。

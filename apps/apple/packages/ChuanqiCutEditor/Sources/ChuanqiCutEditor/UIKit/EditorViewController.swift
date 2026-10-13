@@ -29,11 +29,15 @@ final class EditorViewController: UIViewController {
     private var previewMTKView: PreviewMTKView?
     /// 预览画布比例约束（UIA-040；画布变化时重建，multiplier 不可变）。
     private var previewAspectConstraint: NSLayoutConstraint?
+    /// U1（S11）：选中红框的比例约束（随画布重建）。
+    private var previewSelectionBorderConstraint: NSLayoutConstraint?
     private let previewFallback = UILabel()
     private let emptyStateView = UIView()
     private let transportBar = EditorTransportBarView()
     private let timelineView = EditorTimelineUIView()
     private let toolbarView = EditorToolbarUIView()
+    /// U1（S11）：预览区选中红框。贴在预览画布外沿，默认隐藏。
+    private let previewSelectionBorder = UIView()
 
     /// 时间码去抖（60fps 直更只在文本变化时写 label）。
     private var lastTimecode = ""
@@ -105,13 +109,13 @@ final class EditorViewController: UIViewController {
             toolbarView.heightAnchor.constraint(equalToConstant: Theme.Size.bottomToolbarHeight),
         ])
 
-        timelineView.onCommitDrag = { [weak self] drag in
-            self?.commitDrag(drag)
+        // UIA-041/U0：Intent 出口统一。宿主是**唯一**把 Intent 翻译成 VM 命令的地方
+        // （命中判定与命令选择都已不在 UIKit 侧 —— 见 TrackInteraction）。
+        timelineView.onIntents = { [weak self] intents in
+            self?.apply(intents)
         }
-        // 点按选中（UIA-039）：命中 → 选中/切换，空白 → 取消。
-        timelineView.onClipTapped = { [weak self] clipId in
-            self?.viewModel.selectClip(clipId)
-        }
+        // U1（S7）：主轨右端「+」→ 打开素材选择（复用既有导入路径，不新增分支）。
+        timelineView.onRequestAppend = { [weak self] in self?.onOpenMedia() }
         // 拖时间线 = 拖播放头（UIA-038，红条恒中央）；播放中不抢播放头。
         timelineView.onScrub = { [weak self] seconds in
             guard let self, !self.viewModel.isPlaying else { return }
@@ -180,6 +184,21 @@ final class EditorViewController: UIViewController {
                 previewFallback.centerYAnchor.constraint(equalTo: previewContainer.centerYAnchor),
             ])
         }
+
+        // U1（S11）：预览选中红框 —— 与 MTK 画布同宽（aspect 起的黑边不在框内）。
+        previewSelectionBorder.isHidden = true
+        previewSelectionBorder.isUserInteractionEnabled = false
+        previewSelectionBorder.layer.borderColor = TimelinePalette.previewSelectionBorder.cgColor
+        previewSelectionBorder.layer.borderWidth = TimelinePalette.previewSelectionBorderWidth
+        previewContainer.addSubview(previewSelectionBorder)
+        NSLayoutConstraint.activate([
+            previewSelectionBorder.centerXAnchor.constraint(equalTo: previewContainer.centerXAnchor),
+            previewSelectionBorder.centerYAnchor.constraint(equalTo: previewContainer.centerYAnchor),
+        ])
+        previewSelectionBorderConstraint = previewSelectionBorder.widthAnchor
+            .constraint(equalTo: previewSelectionBorder.heightAnchor,
+                        multiplier: max(0.2, min(5.0, viewModel.canvasAspect)))
+        previewSelectionBorderConstraint?.isActive = true
 
         // 空态引导（对照 PreviewZone.emptyStateOverlay）
         let icon = UIImageView(image: UIImage(systemName: "film.stack")?
@@ -301,12 +320,14 @@ final class EditorViewController: UIViewController {
         updatePlayheadUI()
     }
 
-    /// 选中态灌入（UIA-039）：分割/删除按钮可用性 + 时间线选中描边。
+    /// 选中态灌入（UIA-039）：分割/删除按钮可用性 + 时间线描边 + 预览区红框（U1 S11）。
     /// 选中变化与 reload 都会走这里；播放头变化只影响分割可用性（见 updatePlayheadUI）。
     private func refreshSelectionState() {
+        let selected = viewModel.selectedClipId != nil
         toolbarView.setSplitEnabled(viewModel.canSplitSelected)
-        toolbarView.setDeleteEnabled(viewModel.selectedClipId != nil)
+        toolbarView.setDeleteEnabled(selected)
         timelineView.setSelectedClip(viewModel.selectedClipId)
+        previewSelectionBorder.isHidden = !selected
     }
 
     private func reloadTimeline() {
@@ -334,6 +355,11 @@ final class EditorViewController: UIViewController {
                                            multiplier: aspect, constant: 0)
         c.isActive = true
         previewAspectConstraint = c
+        // 选中红框跟画布同比例（aspect 切换时一起重建）。
+        previewSelectionBorderConstraint?.isActive = false
+        previewSelectionBorderConstraint = previewSelectionBorder.widthAnchor
+            .constraint(equalTo: previewSelectionBorder.heightAnchor, multiplier: aspect)
+        previewSelectionBorderConstraint?.isActive = true
     }
 
     /// 播放头秒值（唯一换算点；红线 #4：其余位置只读 RationalTime 本值）。
@@ -387,37 +413,13 @@ final class EditorViewController: UIViewController {
                              renderEpoch: viewModel.renderEpoch)
     }
 
-    // MARK: - 命令提交（语义逐字对照 SwiftUI 版 EditorTimelineView.commit）
+    // MARK: - Intent → ViewModel 命令（UIA-041/U0）
 
-    private func commitDrag(_ d: ClipDrag) {
-        let ts = RationalTime.projectTimescale
-        // 跨轨（UIA-040）：落点行解析回 trackId；类型不匹配/重叠由内核拒绝，
-        // refreshFromKernel 回真值。
-        let tracks = viewModel.timeline.tracks
-        if d.targetTrackRow != d.originTrackRow, d.targetTrackRow < tracks.count {
-            let ticks = Int64((d.previewStart * Double(ts)).rounded())
-            viewModel.moveClipToTrack(clipId: d.clipId, to: tracks[d.targetTrackRow].trackId,
-                                      start: RationalTime(value: ticks, timescale: ts))
-            viewModel.refreshFromKernel()
-            return
-        }
-        switch d.region {
-        case .trimEnd:
-            let ticks = Int64((d.previewDuration * Double(ts)).rounded())
-            viewModel.trimClip(clipId: d.clipId,
-                               duration: RationalTime(value: ticks, timescale: ts))
-        case .trimStart:
-            // 左缘裁剪（EDIT-008）：提交新起点，start / sourceIn / duration
-            // 由内核按「右缘不动」联动推导。
-            let ticks = Int64((d.previewStart * Double(ts)).rounded())
-            viewModel.trimClipIn(clipId: d.clipId,
-                                 start: RationalTime(value: ticks, timescale: ts))
-        case .move:
-            let ticks = Int64((d.previewStart * Double(ts)).rounded())
-            viewModel.moveClip(clipId: d.clipId,
-                               to: RationalTime(value: ticks, timescale: ts))
-        }
-        viewModel.refreshFromKernel()
+    /// 取代原先 30 行的 `commitDrag(_:)`。判定全在 reducer、翻译全在
+    /// `TrackIntentApplier`，这里只剩一行转发 —— 与 SwiftUI 侧完全对称。
+    private func apply(_ intents: [TrackIntent]) {
+        guard !intents.isEmpty else { return }
+        TrackIntentApplier.apply(intents, to: viewModel)
     }
 
     // ⚠️ deinit 不碰 displayLink（Swift 6：deinit 非隔离，不能访问 MainActor 存储）。

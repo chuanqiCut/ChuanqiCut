@@ -201,6 +201,54 @@ struct TimelineLayout {
         return ticks
     }
 
+    /// U1（UIA-041）：带样式信息的刻度序列。
+    ///
+    /// 取代各展示层自己解释 `(second, major)` 元组 —— 主次判定、下一步长在哪
+    /// 这些知识放在几何层，SwiftUI 与 UIKit 画出**同一个形状**。
+    /// `dotOffsetSeconds` 是通往下一个主刻度的<｜hy_place▁holder▁no▁813｜>（画圆点分隔符用），最后一个主刻度为 0
+    /// （其后不再有点）。
+    struct StyledTick: Equatable {
+        let second: Double
+        let isMajor: Bool
+        /// 到下一个主刻度的距离（秒）；0 = 其后无点。
+        let dotOffsetSeconds: Double
+
+        var hasDot: Bool { dotOffsetSeconds > 0 }
+    }
+
+    func styledRulerTicks() -> [StyledTick] {
+        let raw = rulerTicks()
+        var result: [StyledTick] = []
+        // 先算出「主刻度的步长」：major 的出现周期 = step×5（见 rulerTicks）。
+        let step = rulerStepSeconds
+        let majorStep = step * 5
+        for (index, tick) in raw.enumerated() {
+            guard tick.major else {
+                result.append(StyledTick(second: tick.second, isMajor: false,
+                                         dotOffsetSeconds: 0))
+                continue
+            }
+            let next = raw[(index + 1)...].first(where: { $0.major })?.second
+            let gap = next.map { $0 - tick.second } ?? majorStep
+            // 只在间距正常（非负且约等于 majorStep）时给点；异常间距视为不规则边界，不画。
+            let valid = gap > 0 && abs(gap - majorStep) < step / 2
+            result.append(StyledTick(second: tick.second, isMajor: true,
+                                     dotOffsetSeconds: valid ? majorStep : 0))
+        }
+        return result
+    }
+
+    /// 当前刻度步长（秒）—— `rulerTicks` 里选出 `step` 的那套逻辑，抽出来给 U1 的圆点用。
+    var rulerStepSeconds: Double {
+        let frame = TimelineZoomMath.defaultFrameDuration
+        let candidates: [Double] = [frame, frame * 2, frame * 5,
+                                    0.1, 0.25, 0.5, 1, 2, 5, 10, 30, 60, 300, 600]
+        for c in candidates {
+            if CGFloat(c) * pixelsPerSecond >= 60 { return c }
+        }
+        return candidates.last ?? 1
+    }
+
     /// 播放头的 x 坐标。
     func playheadX(playheadSeconds: Double) -> CGFloat {
         x(forSeconds: playheadSeconds)

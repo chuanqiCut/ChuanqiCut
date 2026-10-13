@@ -118,3 +118,27 @@
 - FFmpeg LGPL v2.1+ 处置**已定**（2026-10-11 传哲拍板，ADR-0036）：ARCH-002 §5.1 路径 1（App 内声明 + 源码可获得 + 可重链接归档），义务载体 engine/NOTICE.md；SDK 本体 License 仍待定。
 - PERF-001 尚未建立正式性能基线；Intel Mac 无 ANE/ProRes 硬编，不得用其数字作产品阈值。
 - 2026-10-08 以前 baselines 中“本机实测”仍需逐条归属真实机器 A/B/C。
+
+## Apple 端 UI 改动的验证口径（2026-10-13 起，P129）
+- **本机 macOS 的 `swift build/test` 完全跳过 `#if os(iOS)` 里的文件**（如 `UIKit/Editor*UIView.swift`
+  `EditorViewController.swift`）→ SPM 全绿**不是** UIKit 侧改动的证据。
+- Apple 端 UI 批的最小自证 = **两端壳构建**：
+  * `cd apps/apple/ios && xcodebuild -workspace ChuanqiCut.xcworkspace -scheme ChuanqiCutApp -destination generic/platform=iOS build`
+  * `cd apps/apple/mac && xcodebuild -workspace ChuanqiCut.xcworkspace -scheme ChuanqiCutMacApp -arch x86_64 ONLY_ACTIVE_ARCH=YES build`
+    （⚠️ macOS 壳**不要带 `-destination`** —— 带 `-arch` 会报 "destination implies architecture"）
+- **iOS 与 macOS 是两个独立 Pods 工程**：podspec 触及的文件增删/改名 → **两端各跑一次
+  `bundle exec pod install`**，否则报 `cannot find 'X' in scope`（文件清单快照过期）。
+- 检索纪律（P126 更正）：本机 `grep` 是 **toybox 0.8.13**，**不支持 `\|`**，多模式一律 `grep -E`；
+  关键否定结论用 python 逐行扫交叉复核。
+
+## 轨道区交互与视觉（UIA-041 起）
+- **唯一判定/命令真源 = `TrackInteraction.swift`**（reducer 值类型 + `TrackIntentApplier`）；
+  两个展示层（SwiftUI `EditorTimelineView` / UIKit `EditorTimelineUIView`）只翻译事件、消费 Intent。
+  新增展示层前先确认它不会重新引入第二份判定。
+- 轨道区配色走 **`TimelinePalette`**（本包内），不直接改 `SharedUI/Theme`（写集边界）；
+  RGBA 一处定义，取 `.cgColor`(CALayer) / `.uiColor`(UIView.backgroundColor) / `.color`(SwiftUI)。
+- **把手宽度必须复用 `TimelineLayout.trimHandleWidth`** —— 保证「看到的」=「按得中的」。
+- 内核**无写 `CQTrackInfo.muted` 的 ABI**（只能单向读出）→ 轨道头做 disabled 只读态，
+  欠账 **池 [19]**；ABI 到位前不要做能点的原声开关（假功能）。
+- 视觉规格源于传哲给的 6 张对标 App截图，但**本会话模型不支持读图（P128），我并没实际看到**，
+  故尺寸/配色一律标 [E]，以真机问卷回收校准为准（不得让用户误以为我看过图）。

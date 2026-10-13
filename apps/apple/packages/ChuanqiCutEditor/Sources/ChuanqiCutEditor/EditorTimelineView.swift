@@ -60,7 +60,12 @@ public struct TimelineState: Equatable {
 ///
 /// internal（非 private）：夹取规则（负起点 / 过短时长）是容易错的边界，
 /// 要能单测（见 TimelineInteractionTests）。
-struct ClipDrag {
+///
+/// UIA-041/U0：`Equatable` 是因为它现在是 `TrackInteractionState` 的成员 ——
+/// reducer 的状态必须可比，测试才能直接断言「拖拽前后状态」。
+/// ⚠️ 位置仍在 View 文件里是历史遗留（下一步把它搬进 TrackInteraction 域时应一并处理，
+/// 本批刻意不做移动—— UIDiff 会与本批的重构混在一起，review 代价高于收益）。
+struct ClipDrag: Equatable {
     let clipId: UInt64
     let region: ClipHitRegion
     /// 拖拽起点：片段原本的 start / duration（秒）。
@@ -139,8 +144,9 @@ public struct EditorTimelineView: View {
     @State private var zoomBase: CGFloat?
     /// scrub 锚点（拖动开始时的播放头时刻；nil = 不在 scrub 中）。
     @State private var scrubAnchorSeconds: Double?
-    /// 片段拖拽（nil = 不在拖拽中）。
-    @State private var drag: ClipDrag?
+    /// 交互状态机（UIA-041/U0）：**唯一的拖拽状态容器**。
+    /// 命中判定、位移换算、命令拼装全部在 `TrackInteraction` 里，本视图不再各持一份。
+    @State private var trackState = TrackInteractionState.idle
 
     public init() {}
 
@@ -166,11 +172,10 @@ public struct EditorTimelineView: View {
                 tracks: viewModel.timeline.tracks,
                 clips: viewModel.timeline.clips,
                 anchorX: geo.size.width / 2)
-            let override = drag?.override
-            // 跨轨预览（UIA-040）：目标行 ≠ 起始行时，片段画在目标行上。
-            let rowOverride: Int? = drag.flatMap {
-                $0.targetTrackRow != $0.originTrackRow ? $0.targetTrackRow : nil
-            }
+            // UIA-041/U0：渲染态唯一来源 = reducer 派生。
+            let render = TrackInteraction.renderState(trackState)
+            let override = render.override
+            let rowOverride = render.rowOverride
             // Canvas 是转义闭包：读 revision 建立重绘依赖（图到达 → 重画）。
             let revision = thumbnails.revision
 
@@ -182,39 +187,54 @@ public struct EditorTimelineView: View {
             .clipped()
             .background(Theme.timelineBackground)
             // 点按选中（对标 App范式：选中态是工具栏动作的靶子）；点空白 = 取消选中。
+            // UIA-041：不再在这里判 hitTest —— 统一走 reducer 的 .tap 事件。
             .onTapGesture { location in
-                let hit = layout.hitTest(location)
-                viewModel.selectClip(hit?.clip.clipId)
+                apply(TrackInteraction.reduce(&trackState, event: .tap(location: location),
+                                              layout: layout))
             }
             .gesture(
                 DragGesture(minimumDistance: 2)
                     .onChanged { value in
-                        if drag != nil {
-                            drag?.deltaSeconds = Double(value.translation.width / pixelsPerSecond)
-                            // 跨轨落点（UIA-040）：Δy 按行距取整夹取（纯函数）。
-                            drag?.targetTrackRow = ClipDrag.dropTrackRow(
-                                originRow: drag?.originTrackRow ?? 0,
-                                deltaY: value.translation.height,
-                                rowPitch: 44 + TimelineLayout.trackSpacing,
-                                rowCount: layout.tracks.count)
+                        if trackState.drag != nil {
+                            apply(TrackInteraction.reduce(
+                                &trackState, event: .dragChanged(translation: value.translation),
+                                layout: layout))
                         } else if scrubAnchorSeconds != nil {
                             // scrub：拖动 = 拖播放头（帧栅格取整，UIA-038）
-                            let t = max(0, (scrubAnchorSeconds ?? 0)
-                                + Double(value.translation.width / pixelsPerSecond))
-                            scrub(to: TimelineZoomMath.snapToFrame(
-                                seconds: t, frameDuration: TimelineZoomMath.defaultFrameDuration))
+                            let t = scrubAnchorSeconds ?? 0
+                            scrub(to: TrackInteraction.scrubSeconds(
+                                anchorSeconds: t, translationWidth: value.translation.width,
+                                layout: layout))
+                        } else if !trackState.isScrubbing {
+                            // 首次移动：合成 began（判断这次是「编辑片段」还是「scrub」），
+                            // 再把首段位移喂给 changed —— 与 UIKit 的 UIPan 事件序列对齐。
+                            apply(TrackInteraction.reduce(
+                                &trackState, event: .dragBegan(location: value.startLocation),
+                                layout: layout))
+                            if trackState.drag == nil {
+                                // 没命中片段 → 进 scrub，锚点 = 当前播放头。
+                                scrubAnchorSeconds = playheadSeconds
+                            } else {
+                                apply(TrackInteraction.reduce(
+                                    &trackState,
+                                    event: .dragChanged(translation: value.translation),
+                                    layout: layout))
+                            }
                         } else {
-                            // 首次移动：判定这次拖拽是「编辑片段」还是「scrub」
-                            beginDragIfNeeded(at: value.startLocation, layout: layout)
+                            let t = scrubAnchorSeconds ?? 0
+                            scrub(to: TrackInteraction.scrubSeconds(
+                                anchorSeconds: t, translationWidth: value.translation.width,
+                                layout: layout))
                         }
                     }
                     .onEnded { value in
-                        if var d = drag {
-                            d.deltaSeconds = Double(value.translation.width / pixelsPerSecond)
-                            commit(d)
-                            drag = nil
+                        if trackState.drag != nil {
+                            apply(TrackInteraction.reduce(
+                                &trackState, event: .dragEnded(translation: value.translation),
+                                layout: layout))
                         }
                         scrubAnchorSeconds = nil
+                        trackState.isScrubbing = false
                     }
             )
             .simultaneousGesture(
@@ -268,18 +288,14 @@ public struct EditorTimelineView: View {
 
     // MARK: 手势
 
-    private func beginDragIfNeeded(at point: CGPoint, layout: TimelineLayout) {
-        guard let hit = layout.hitTest(point) else {
-            scrubAnchorSeconds = Double(viewModel.playhead.value)
-                / Double(viewModel.playhead.timescale)  // 空白处 → scrub
-            return
-        }
-        let startSeconds = Double(hit.clip.start.value) / Double(hit.clip.start.timescale)
-        let durationSeconds = Double(hit.clip.duration.value) / Double(hit.clip.duration.timescale)
-        let originRow = layout.trackRow(forTrackId: hit.clip.trackId) ?? 0
-        drag = ClipDrag(clipId: hit.clip.clipId, region: hit.region,
-                        originStart: startSeconds, originDuration: durationSeconds,
-                        originTrackRow: originRow, targetTrackRow: originRow)
+    /// Intent 翻译层（UIA-041/U0）：**本视图唯一执行副作用的地方**。
+    ///
+    /// 此前这里是一份 30 行的 `commit(_:)`，与 UIKit 侧逐字相同。现在 reducer 吐 Intent，
+    /// 翻译落在 `TrackIntentApplier`（全仓一份），本视图只剩这一行调用。
+    /// 红线 #5 由此落到一个机械的检查点上：这里除了转发 Intent，**没有任何别的出路**。
+    private func apply(_ intents: [TrackIntent]) {
+        guard !intents.isEmpty else { return }
+        TrackIntentApplier.apply(intents, to: viewModel)
     }
 
     /// scrub：推播放头（帧栅格取整已在调用方做）。播放中不抢播放头。
@@ -288,37 +304,6 @@ public struct EditorTimelineView: View {
         let ts = RationalTime.projectTimescale
         viewModel.setPlayhead(RationalTime(value: Int64((seconds * Double(ts)).rounded()),
                                            timescale: ts))
-    }
-
-    /// 松手：提交**一条**命令，并主动回到内核真值（防幽灵位置，见文件头）。
-    private func commit(_ d: ClipDrag) {
-        let ts = RationalTime.projectTimescale
-        let tracks = viewModel.timeline.tracks
-        // 跨轨（UIA-040）：落点行解析回 trackId；行越界/类型不匹配由内核拒绝，
-        // refreshFromKernel 回真值。
-        if d.targetTrackRow != d.originTrackRow, d.targetTrackRow < tracks.count {
-            let ticks = Int64((d.previewStart * Double(ts)).rounded())
-            viewModel.moveClipToTrack(clipId: d.clipId, to: tracks[d.targetTrackRow].trackId,
-                                      start: RationalTime(value: ticks, timescale: ts))
-        } else {
-            switch d.region {
-            case .trimEnd:
-                let ticks = Int64((d.previewDuration * Double(ts)).rounded())
-                viewModel.trimClip(clipId: d.clipId,
-                                   duration: RationalTime(value: ticks, timescale: ts))
-            case .trimStart:
-                // 左缘裁剪（EDIT-008）：提交新起点，start / sourceIn / duration
-                // 由内核按「右缘不动」联动推导。
-                let ticks = Int64((d.previewStart * Double(ts)).rounded())
-                viewModel.trimClipIn(clipId: d.clipId,
-                                     start: RationalTime(value: ticks, timescale: ts))
-            case .move:
-                let ticks = Int64((d.previewStart * Double(ts)).rounded())
-                viewModel.moveClip(clipId: d.clipId,
-                                   to: RationalTime(value: ticks, timescale: ts))
-            }
-        }
-        viewModel.refreshFromKernel()
     }
 
     // MARK: 绘制（全部几何来自 TimelineLayout）
@@ -337,20 +322,34 @@ public struct EditorTimelineView: View {
         // 标尺
         let ruler = CGRect(x: 0, y: 0, width: size.width, height: layout.rulerHeight)
         context.fill(Path(ruler), with: .color(Theme.timelineRuler))
-        for (second, major) in layout.rulerTicks() {
-            guard second >= 0 else { continue }
-            let x = layout.x(forSeconds: second)
+        for tick in layout.styledRulerTicks() {
+            guard tick.second >= 0 else { continue }
+            let x = layout.x(forSeconds: tick.second)
+            let height = tick.isMajor ? TimelinePalette.majorTickHeight
+                                      : TimelinePalette.minorTickHeight
             let line = Path { p in
-                p.move(to: CGPoint(x: x, y: layout.rulerHeight - (major ? 10 : 5)))
+                p.move(to: CGPoint(x: x, y: layout.rulerHeight - height))
                 p.addLine(to: CGPoint(x: x, y: layout.rulerHeight))
             }
-            context.stroke(line, with: .color(Theme.timelineTick), lineWidth: 1)
-            if major {
+            context.stroke(line, with: .color(TimelinePalette.tick.color), lineWidth: 1)
+            if tick.isMajor {
                 let text = context.resolve(
-                    Text(EditorTimelineView.formatSeconds(second))
+                    Text(EditorTimelineView.formatSeconds(tick.second))
                         .font(.caption2.monospaced())
-                        .foregroundColor(Theme.secondaryText))
+                        .foregroundColor(TimelinePalette.tickLabel.color))
                 context.draw(text, at: CGPoint(x: x + 3, y: layout.rulerHeight / 2))
+                // U1：主刻度之间的圆点分隔符（与 UIKit 侧同阈值，见 makeTickDot）。
+                if tick.hasDot, CGFloat(tick.dotOffsetSeconds) * layout.pixelsPerSecond >= 48 {
+                    let dotSeconds = tick.second + tick.dotOffsetSeconds / 2
+                    if dotSeconds <= layout.visibleRange.upperBound {
+                        let r = TimelinePalette.tickDotRadius
+                        let dotX = layout.x(forSeconds: dotSeconds)
+                        context.fill(Path(ellipseIn: CGRect(
+                            x: dotX - r, y: layout.rulerHeight / 2 - r,
+                            width: r * 2, height: r * 2)),
+                            with: .color(TimelinePalette.tickLabel.color))
+                    }
+                }
             }
         }
 
@@ -366,9 +365,12 @@ public struct EditorTimelineView: View {
             drawThumbnails(for: clip, rect: rect, context: context)
             // 边框压在缩略图上，遮住边缘溢出；选中态白描边（对标 App范式 ⑤）
             if isSelected {
-                context.stroke(path, with: .color(Theme.primaryText), lineWidth: 2)
+                context.stroke(path, with: .color(TimelinePalette.selectionBorder.color),
+                               lineWidth: TimelinePalette.selectionBorderWidth)
+                // U1：选中态附件 —— 左右把手 + 中央时长数字（RESEARCH-017 S3）。
+                drawSelectionChrome(clip: clip, rect: rect, context: &context)
             } else {
-                context.stroke(path, with: .color(Theme.timelineClipBorder), lineWidth: 1)
+                context.stroke(path, with: .color(TimelinePalette.clipBorder.color), lineWidth: 1)
             }
             if rect.width > 24 {
                 let label = context.resolve(
@@ -380,15 +382,51 @@ public struct EditorTimelineView: View {
             }
         }
 
-        // 播放头：恒在 anchorX（视口中央，UIA-038）
+        // 播放头：恒在 anchorX（视口中央，UIA-038）。U1：红 → 白 + 顶部小把手。
         let px = layout.playheadX(playheadSeconds: layout.scrollSeconds)
         if px >= 0 && px <= size.width {
             let head = Path { p in
                 p.move(to: CGPoint(x: px, y: 0))
                 p.addLine(to: CGPoint(x: px, y: size.height))
             }
-            context.stroke(head, with: .color(Theme.playhead), lineWidth: 2)
+            context.stroke(head, with: .color(TimelinePalette.playhead.color),
+                           lineWidth: TimelinePalette.playheadWidth)
+            let knob = CGRect(x: px - TimelinePalette.playheadKnobSize.width / 2, y: 0,
+                              width: TimelinePalette.playheadKnobSize.width,
+                              height: TimelinePalette.playheadKnobSize.height)
+            context.fill(Path(roundedRect: knob,
+                              cornerRadius: TimelinePalette.playheadKnobCornerRadius),
+                         with: .color(TimelinePalette.playhead.color))
         }
+    }
+
+    /// 选中态附件（与 UIKit 侧 `applySelectionChrome` 同形态）。
+    /// 把手宽度同样取 `TimelineLayout.trimHandleWidth` —— 保证「看到的」=「按得中的」。
+    private func drawSelectionChrome(clip: ClipInfo, rect: CGRect,
+                                     context: inout GraphicsContext) {
+        if rect.width >= TimelinePalette.handleMinimumClipWidth {
+            let inset = TimelinePalette.handleInsetY
+            let w = TimelinePalette.handleWidth
+            let left = CGRect(x: rect.minX, y: rect.minY + inset, width: w,
+                              height: rect.height - inset * 2)
+            let right = CGRect(x: rect.maxX - w, y: rect.minY + inset, width: w,
+                               height: rect.height - inset * 2)
+            for bar in [left, right] {
+                context.fill(Path(roundedRect: bar,
+                                  cornerRadius: TimelinePalette.handleCornerRadius),
+                             with: .color(TimelinePalette.selectionBorder.color))
+            }
+        }
+        guard rect.width >= TimelinePalette.durationLabelMinimumClipWidth else { return }
+        let text = context.resolve(
+            Text(EditorTimelineView.durationText(clip.durationSeconds))
+                .font(.system(size: TimelinePalette.durationLabelFontSize, weight: .semibold)
+                    .monospacedDigit())
+                .foregroundColor(TimelinePalette.durationLabel.color))
+        let box = CGRect(x: rect.midX - 22, y: rect.midY - 8, width: 44, height: 16)
+        context.fill(Path(roundedRect: box, cornerRadius: 3),
+                     with: .color(TimelinePalette.durationLabelBadge.color))
+        context.draw(text, at: CGPoint(x: box.midX, y: box.midY))
     }
 
     /// 缩略图槽位绘制（UIA-037）：已到达的画图，未到达透底色。
@@ -419,5 +457,11 @@ public struct EditorTimelineView: View {
     static func formatSeconds(_ s: Double) -> String {
         let total = Int(s.rounded())
         return String(format: "%d:%02d", total / 60, total % 60)
+    }
+
+    /// 时长文案（`3.3s`）。UIKit 侧同名函数见 TimelineContentView.durationText ——
+    /// 两处都应是同一形态，UIA-042 收敛 UI 组件时合并。
+    static func durationText(_ seconds: Double) -> String {
+        String(format: "%.1fs", seconds)
     }
 }

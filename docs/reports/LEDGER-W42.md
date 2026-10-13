@@ -831,3 +831,142 @@
 **⑤ 开工顺序（按 ADR-0034「一批未验收不叠加」）**
 - B0 问卷回收 → 方可开 B4；B5.5 在 B4 之后。
 - 当前**不**在 B0 之上叠加任何批次。
+
+---
+
+## 补记五：UIA-041 U0（轨道交互收敛）—— 2026-10-13 夜，WorkBuddy（集成机）
+
+**传哲拍板**（本轮选项 A）：直接开 UIA-041（U0 交互收敛 + U1 视觉保真）。
+立项前提：U 线写集仅 `apps/apple/packages/ChuanqiCutEditor/**`，与 B0 的 `engine/**` 不相交，
+故不违反 ADR-0034「一批未验收不叠加」，B0 问卷未回收也可并行。
+
+### 1. 开工前的自查纠错（先纠错，后动手）
+
+- **纠 RESEARCH-017 §2 S3 行的误判**：初版写「S3 选中态视觉 ❌ 无选中视觉层
+  （grep selected/handle 零命中）」。实为 **P126 ripgrep `\|` 字面量导致的假阴性** ——
+  白描边两侧均有实现（`TimelineContentView.applySelectionBorder` L330-340 /
+  `EditorTimelineView.draw` L362-372，均为 `Theme.primaryText`=白 lineWidth 2）。
+  真正缺的只有**左右把手 + 片段中央时长数字**。已留痕更正 RESEARCH-017 §2 与 §6。
+- **P128**：本会话模型不支持读图（6 张对标 App截图未实际看到），规格为转述，已在坑册登记。
+
+### 2. 事实：双份实现消除（可机器复核）
+
+新增 `Sources/ChuanqiCutEditor/TrackInteraction.swift`（reducer 域，不 import SwiftUI/UIKit）：
+`TrackGestureEvent` / `TrackIntent` / `TrackClipEdit` / `TrackInteractionState` /
+`TrackRenderState` / `TrackInteraction`（reduce + renderState + ownsPan + scrubSeconds）/
+`TrackIntentApplier`（Intent→VM，全仓一份）。
+
+验收核验（`/usr/bin/grep -nE`，且用 python 逐行扫交叉复核 -P126 后不该再信单次 grep）：
+
+| 对象 | 命中判定 hitTest | 命令调用 moveClip/trimClip/… | projectTimescale 换算 |
+|---|---|---|---|
+| `EditorTimelineView.swift`（SwiftUI） | 无 | 无 | 仅 scrub→setPlayhead |
+| `UIKit/EditorTimelineUIView.swift` | 无 | 无 | 无 |
+| `UIKit/EditorViewController.swift` | 无 | 无 | 仅 scrub→setPlayhead |
+| **`TrackInteraction.swift`** | **全部在此** | **全部在此** | **编辑换算全部在此** |
+
+残留的两点（**不是重复，已核**）：①`ClipDrag` 定义体仍在 View 文件里（历史遗留，
+本批刻意不搬家，避免 diff 混批，已在代码注释标 TODO）；②两侧各留 scrub→setPlayhead
+的数行（平台原生滚动差异，见 TrackInteraction 文件头「刻意不收敛」一节）。
+
+### 3. 收敛中修掉的两处双实现行为分歧（这是 U0 的实际收益，务必留痕）
+
+| # | 分歧 | 修前 | 修后 | 证明用例 |
+|---|---|---|---|---|
+| ① | 零位移是否提交 | UIKit 有 `>1e-9` 守卫；**SwiftUI 无条件提交** → 撤销栈不一致 | 统一不提交（在 reducer 里） | `testZeroDeltaDragEmitsNothing` |
+| ② | 末次位移取哪个 | UIKit 沿用最后 changed；SwiftUI 用 ended 重算 → 快甩落到不同帧 | 统一以 ended 的累计位移为准 | `testDragEndedUsesFinalTranslation` |
+
+另：`testCrossTrackWithoutHorizontalDeltaStillCommits` 钉住「纯跨轨也必须提交」
+（水平 zero 但轨道变了，`shouldCommit` 的 `||` 语义，防止以后误改回 `&&` 丢操作）。
+
+### 4. 数字（本机：macOS 26.7.1 / Xcode 26.6 / Intel x86_64；2026-10-13 实测）
+
+- `swift build --disable-sandbox`：**Build complete，0 error 0 warning**
+- `swift test --disable-sandbox`：**Executed 81 tests, 0 failures**（8.5s）
+  —— 基线 65 → 81：**新增 16**（`TrackInteractionReducerTests`）
+- 新增测试文件：`Tests/ChuanqiCutEditorTests/TrackInteractionReducerTests.swift`
+  （16 用例：tap / drag 生命周期 / 跨轨 / 渲染态派生 / ownsPan / scrub 数学）
+
+### 5. 状态
+
+- U0 **代码完成 + 机器自证完成**；UIA-041 整体**未标记完成**（U1 未做完 + 问卷未回收）。
+- **未跑**：全量 `run_gate.sh`（未申请）、iOS 壳构建（UI 批的必跑项，见记忆 #18 缺口）、真机问卷。
+- 待办（不丢）：`ClipDrag` 搬进 TrackInteraction 域；U1 视觉保真；UI 批的 iOS 壳构建。
+
+### 6. 顺带登记的环境事实（已写入 pitfalls）
+
+- **P126 更正**：本机 shell 的 `grep` 是 **toybox 0.8.13**（非 BSD），**不支持 `\|`**，
+  一律用 `grep -E`。此前「BSD grep 支持 \|」的实测结论**是错的**（实验无区分力）。
+- 本晚 P126 复发 2 次（RESEARCH-017 定稿时 + U0 验收核验时），均靠「换写法复核」捞出。
+
+---
+
+## 补记六：UIA-041 U1（轨道区视觉保真）+ 壳构建收紧 —— 2026-10-13 深夜，WorkBuddy（集成机）
+
+### 1. U1 落地项（对照 RESEARCH-017 S1~S4/S7/S11，两侧同形态）
+
+新增 `Sources/ChuanqiCutEditor/TimelinePalette.swift`（**分域色表**）：
+- **不越界改 SharedUI/Theme**（写集约束，ADR-0034）。`Theme.playhead` 仍是红色由轨道区之外的消费者继续用；
+  轨道区自本批起用 `TimelinePalette.playhead`（白）。TODO 已写：二选一后整表迁移，不许长期两套并存。
+- **不 import SwiftUI/UIKit 存储**，只依赖 CoreGraphics；`RGBA` 同时提供 `.cgColor`（CALayer）与
+  `.uiColor`（UIView.backgroundColor）/ `.color`（SwiftUI）—— **一处 RGB，三种取法**，不许抄两份。
+
+| 规格 | SwiftUI 侧 | UIKit 侧 |
+|---|---|---|
+| S3 选中：白描边（**已有，非新增**）+ 左右把手 + 中央时长数字 | `drawSelectionChrome` | `applySelectionChrome` + `selectionChromeLayers` |
+| S4 播放头红→白 + 顶部小把手 | `draw` | `playheadOverlay` + `playheadKnob` |
+| S1 刻度主/次 + 圆点分隔 | `draw`（消费 `layout.styledRulerTicks()`） | `rebuild`（同） |
+| S7 主轨右端「+」 | **未做**（本批 Scope 见下 §4） | `addButton` + `onRequestAppend` → `onOpenMedia()` |
+| S11 预览选中红框 | `PreviewZone.isClipSelected` | `previewSelectionBorder` |
+| S2 轨道头（原声状态） | **未做** | `buildTrackHeaders`（**disabled 只读态**） |
+
+共享纯函数下沉：`TimelineLayout.styledRulerTicks()/rulerStepSeconds`
+（主次判定与「下一个主刻度在哪」属几何知识，两展示层不再各解一遍元组）。
+
+### 2. 坦白项（不藏）
+
+- **S2 轨道头只能显示不能点**：内核**没有写 `muted` 的 ABI**
+  （`CQTrackInfo.muted` 经 `cq_sdk.cpp:488` 单向填出；全仓无 `cq_session_set_track_muted`）。
+  按任务卡「不做假开关」做成 disabled 只读态，显示**真实回读值**。欠账 → **池 [19]**。
+- **S7 只做了 UIKit 侧**，SwiftUI 侧（`EditorTimelineView`）未加「+」 —— 本批未铺满，记 §4。
+- 我**没看到那 6 张截图**（P128）：所有尺寸/配色是 [E]，以 §3 问卷回收校准为准。
+
+### 3. 数字（本机 macOS 26.7.1 / Xcode 26.6 / Intel x86_64；2026-10-13 实测，**全部为真实命令输出**）
+
+| 验证项 | 命令 | 结果 |
+|---|---|---|
+| 包编译 | `swift build --disable-sandbox` | Build complete（**⚠️ 不算证据，见 §5**） |
+| 包测试 | `swift test --disable-sandbox` | **Executed 81 tests, 0 failures**（8.9s） |
+| **iOS 壳构建** | `xcodebuild -workspace apps/apple/ios/ChuanqiCut.xcworkspace -scheme ChuanqiCutApp -destination generic/platform=iOS build` | **BUILD SUCCEEDED** |
+| **macOS 壳构建** | `cd apps/apple/mac && xcodebuild -workspace ChuanqiCut.xcworkspace -scheme ChuanqiCutMacApp -arch x86_64 ONLY_ACTIVE_ARCH=YES build` | **BUILD SUCCEEDED**|
+| 全量门禁 | `run_gate.sh` | **未跑**（未申请） |
+
+### 4. 状态与剩余
+
+- UIA-041 = U0 ✅ + U1 **部分**（SwiftUI 侧缺 S7「+」与 S2 轨道头）。
+  卡面状态写「📋 未标记完成」，原因：U1 未铺满 + **问卷未回收**（ADR-0034）。
+- 未做/待办（均已在卡面或池里挂号，不丢）：
+  SwiftUI 侧 S7「+」与 S2 轨道头；`ClipDrag` 搬进 TrackInteraction 域；U2 起的信息架构批。
+
+### 5. 本批最有价值的工程教训 → **P129**（已入坑册）
+
+**`swift build/test` 报全绿，但 `#if os(iOS)` 里的文件在 macOS 上根本没被编译。**
+UIKit 侧改完一遍，`swift build` 全程 "Build complete"；iOS 壳构建一把抖出 10 个错误
+（CGColor≠UIColor、成员加错类、`CATextLayer.string` 是 `Any?`、`CGPoint`≠`CGSize`、
+Pods 清单过期）。连带两条：**iOS/mac 是两个独立 Pods 工程，podspec 文件变动要两端各
+`bundle exec pod install` 一次**（本次 mac 端漏跑就报 `cannot find 'TimelinePalette' in scope`）；
+macOS 壳 destination 的可用写法是**不带 destination** 的 `-arch x86_64 ONLY_ACTIVE_ARCH=YES`。
+
+**这条改变了以后 UI 批的最小自证口径**：Apple 端 UI 改动，`swift test` 数字**不能替代**两端壳构建。
+
+### 6. 本批交付物
+
+- 代码（写集 `apps/apple/packages/ChuanqiCutEditor/**`)：`TrackInteraction.swift`(新)、
+  `TimelinePalette.swift`(新)、`EditorTimelineView.swift`、`UIKit/EditorTimelineUIView.swift`、
+  `UIKit/EditorViewController.swift`、`PreviewZone.swift`、`TimelineLayout.swift`、`EditorView.swift`、
+  `Tests/…/TrackInteractionReducerTests.swift`(新, 16 用例)
+- 文档：`RESEARCH-017`（§2 S3 行 + §6 更正版）、`TASK-UIA-041`、
+  `docs/reviews/QUESTIONNAIRE-UIA-041-轨道交互收敛与视觉保真.md`(新)
+- 池：`docs/tasks/TODO-POOL-门禁真机待办池.md` **[19]**（内核缺 set track muted ABI）
+- 坑册：**P128**（模型不支持读图）、**P126 更正+第三/四次复发**（本机 grep 是 toybox 0.8.13，不支持 `\|`）、
+  **P129**（os(iOS) 文件在 macOS SPM 中不编译 + 两端 Pods 各跑一次 pod install）

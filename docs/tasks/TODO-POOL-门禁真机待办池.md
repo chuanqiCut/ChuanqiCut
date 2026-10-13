@@ -544,3 +544,26 @@ SPM 临时产物一律 `swift test --disable-sandbox --scratch-path "$ROOT/build
   与池 [16] MetalFX 模拟器红相关：真机壳不受影响）
   [ ] 同期把 macOS 壳（带 `-arch x86_64 ONLY_ACTIVE_ARCH=YES`）一并纳入
 - 验收回填：门禁步骤清单 + LEDGER-W42
+
+### [19] 内核缺「设置轨道静音」ABI —— 轨道头原声开关只能显示不能点（⏳ 待决策）
+
+- 来源：集成机 / 2026-10-13 UI 线 UIA-041 U1（`f?` 本批），由轨道头 S2 落地时捞出
+- 现象：`CQTrackInfo.muted` **只能读不能写**。
+  * 读：`cq_sdk.cpp:488` `out->muted = t.muted ? 1 : 0;`（单向填出）
+  * 写：**全仓搜不到** `cq_session_set_track_muted` 或任何改 `ChqTrack::muted` 的
+    Command/SDK 入口（`ChqTrack.muted` 只在 `chq_timeline.h:72` 有默认值 `false`，
+    `chq_editor_model_state.cpp:94` 与 `chq_preview_mixer.cpp:446` 消费它）。
+  * 对比：`enabled` 同理（`cq_sdk.h:245` 注释已写「0/1」），颗粒度更细，也缺写。
+- 后果：**UI 侧无法做「原声开关」**，只能显示回读状态。做能点的开关 = 点了没反应的假功能
+  （违背 ADR-0034「严禁临时方案/不做假功能」）。当前 UI 实现刻意做成 **disabled 只读态**
+  （见 `TimelineContentView.buildTrackHeaders`，2026-10-13）。
+- 连带影响：音频面板（U2/UIA-042）、混音 UI（B5）、**导出时的静音轨处理**（B4 可见出口
+  若要支持「导出不含静音轨」必须先有这个状态的可写性）。
+- 待办：
+  [ ] 内核侧决策：Command（`ChqCommand::SetTrackMuted`）+ SDK  thin wrapper
+      `cq_session_set_track_muted(session, track_id, muted)` —— 需进 CommandHistory（可撤销）
+      ，.edit approval 前先确认 B4/B5 的导出/混音是否依赖它（若要，优先级上调）
+  [ ] 绑定层 Swift：`EditorViewModel.setTrackMuted(trackId:muted:)` 穿透
+  [ ] UI：把 `buildTrackHeaders` 里的 disabled 态换成真开关（届时一行改回）
+  [ ] 同期评估 `enabled`（单开关）是否也要写 —— 与其他268效果开关的关系
+- 验收回填：本池条目 + LEDGER-W42 + RESEARCH-017 §2 S2 行

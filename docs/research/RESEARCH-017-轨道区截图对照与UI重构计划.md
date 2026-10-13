@@ -37,7 +37,7 @@
 | S1 刻度尺 | ✅ `rulerTicks()` + CATextLayer 已有 | 样式微调（圆点分隔、密度随缩放） |
 | S2 缩略图胶片条 | ✅ UIA-037（`TimelineThumbnails` 并发3/LRU240） | — |
 | S2 轨道头（原声开关/设置封面） | ❌ 行内无轨道头 | **纯 UI**；原声开关接 `track.muted`（ABI 已回读） |
-| S3 选中态视觉 | ❌ 手势命中有三区语义（左缘/右缘/中间，`ClipHitRegion`），**但无选中视觉层**（grep selected/handle 零命中） | **纯 UI**：白描边+把手+时长数字，一个 `selectionLayer` |
+| S3 选中态视觉 | ⚠️ **描边已有**（`TimelineContentView.applySelectionBorder` L330-340 / `EditorTimelineView.draw` L362-372，均已用 `Theme.primaryText`=白 lineWidth 2）；**缺的是把手与中央时长数字** | **纯 UI**：在既有描边之上补左右把手 + 片段中央时长数字 |
 | S4 播放头 | ✅ 中央恒定 scrub（UIA-038） | 颜色红→白 + 顶部小把手（样式） |
 | S5 音频占位条 | ❌ | **纯 UI**；点击行为接 drawer(audio)（已有抽屉位） |
 | S6 音频轨行 + 波形 | ❌ 布局 `trackRow(forTrackId:)` 已支持多行，但数据只有视频主轨；无波形 | **显示层可先行**；真实添加能力在 B5（EDIT-011）；波形数据需音频线出峰值接口 |
@@ -88,7 +88,17 @@ reducer 输出的"待提交命令"在拖拽中走 PreviewSync、松手走 Execut
 
 - 现状核验为代码事实（文件与行号可复验）；截图要素为**视觉转述**，验收以"复刻形状走查清单"为准，
   不承诺逐像素一致（同 RESEARCH-008 §7）；
+- **本节更正版 2026-10-13（纠 §2 S3 行，留痕不改原意）**：
+  首版写「S3 选中态视觉 ❌ 无选中视觉层（grep selected/handle 零命中）」——**此结论为假阴性导致的误判**。
+  事实：白描边在两侧均已实现（UIKit `TimelineContentView.applySelectionBorder` L330-340、
+  SwiftUI `EditorTimelineView.draw` L362-372，均为 `Theme.primaryText`(=白) lineWidth 2）。
+  **根因 = P126 复发**：当时用 Grep 工具搜 `selected\|handle`，而该工具底层是 ripgrep（Rust 正则），
+  `\|` 是**字面竖线**而非「或」，于是零命中。**教训（上升到纪律）**：检索工具报 0 命中时，
+  必须先怀疑工具语义、再怀疑代码缺失 —— 分两个关键词各查一遍交叉验证，确认后再下结论。
+  真正缺失的只有「左右把手」与「片段中央时长数字」两项。
 - 把手尺寸/配色等为 [E] 估算，以 U1 问卷真机走查校准；
+  ⚠️ U1 开工实测：`TimelineLayout.trimHandleWidth = 8`pt（手势判定宽度），与本文 [E] 估的 8pt 巧合一致 ——
+  U1 把手**沿用同一常量**，保证「看到的把手」=「按得中的热区」（这是唯一值得说的话）。
 - 本计划不含性能数字；U0 完成后回填"双实现消除"的回归证据（`swift test` 用例数）。
 
 ## 7. 签名

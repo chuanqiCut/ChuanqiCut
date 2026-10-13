@@ -202,6 +202,48 @@ ChqStatus ChqEditorSession::SubmitSetCanvas(const char* name, int32_t width, int
     });
 }
 
+ChqStatus ChqEditorSession::SubmitAddClipEffect(const char* name, uint64_t clip_id,
+                                                const ChqEffectBinding& effect) {
+    ChqEditorModelState* model = BuiltinModel();
+    if (model == nullptr) return ChqStatus{ChqStatusCode::kInternal};
+    // effect 按值进 lambda（异步安全：提交返回后调用方即可销毁其缓冲区）。
+    return Submit(name, [model, clip_id, effect]() -> ChqStatus {
+        return model->Execute(std::make_unique<ChqAddClipEffectCommand>(clip_id, effect));
+    });
+}
+
+ChqStatus ChqEditorSession::SubmitRemoveClipEffect(const char* name, uint64_t clip_id,
+                                                   const std::string& effect_id) {
+    ChqEditorModelState* model = BuiltinModel();
+    if (model == nullptr) return ChqStatus{ChqStatusCode::kInternal};
+    return Submit(name, [model, clip_id, effect_id]() -> ChqStatus {
+        return model->Execute(std::make_unique<ChqRemoveClipEffectCommand>(clip_id, effect_id));
+    });
+}
+
+ChqStatus ChqEditorSession::SubmitSetClipEffectParam(const char* name, uint64_t clip_id,
+                                                     const std::string& effect_id,
+                                                     const std::string& key,
+                                                     const ChqPropertyValue& value) {
+    ChqEditorModelState* model = BuiltinModel();
+    if (model == nullptr) return ChqStatus{ChqStatusCode::kInternal};
+    return Submit(name, [model, clip_id, effect_id, key, value]() -> ChqStatus {
+        return model->Execute(
+            std::make_unique<ChqSetEffectParamCommand>(clip_id, effect_id, key, value));
+    });
+}
+
+ChqStatus ChqEditorSession::SubmitSetClipEffectEnabled(const char* name, uint64_t clip_id,
+                                                       const std::string& effect_id,
+                                                       bool enabled) {
+    ChqEditorModelState* model = BuiltinModel();
+    if (model == nullptr) return ChqStatus{ChqStatusCode::kInternal};
+    return Submit(name, [model, clip_id, effect_id, enabled]() -> ChqStatus {
+        return model->Execute(
+            std::make_unique<ChqSetEffectEnabledCommand>(clip_id, effect_id, enabled));
+    });
+}
+
 ChqStatus ChqEditorSession::SubmitUndo(const char* name) {
     ChqEditorModelState* model = BuiltinModel();
     if (model == nullptr) return ChqStatus{ChqStatusCode::kInternal};

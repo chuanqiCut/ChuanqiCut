@@ -352,6 +352,70 @@ ChqRationalTime ChqTimeline::Duration() const {
 }
 
 // ===========================================================================
+// 效果栈（MODEL-003；片段级属性）
+// ===========================================================================
+// 全部经 find_clip_mut 定位：片段不存在即 kInvalidArgument，与既有编辑方法
+// 同一纪律（先校验后变更）。效果不存在与片段不存在分开报（kIoNotFound /
+// kInvalidArgument）—— 调用方要能区分"没挂这效果"和"片段没了"。
+
+ChqStatus ChqTimeline::AddClipEffect(uint64_t clip_id, const ChqEffectBinding& effect) {
+    ChqTrack* track = nullptr;
+    ChqClip* clip = find_clip_mut(clip_id, track);
+    if (clip == nullptr) return ChqStatus(ChqStatusCode::kInvalidArgument);
+    // Append 自带校验：空 id / 栈内同 id → kInvalidArgument（失败时栈不动）。
+    return clip->effects.Append(effect);
+}
+
+ChqStatus ChqTimeline::RemoveClipEffect(uint64_t clip_id, const std::string& effect_id) {
+    ChqTrack* track = nullptr;
+    ChqClip* clip = find_clip_mut(clip_id, track);
+    if (clip == nullptr) return ChqStatus(ChqStatusCode::kInvalidArgument);
+    return clip->effects.Remove(effect_id);  // 不存在 → kIoNotFound
+}
+
+ChqStatus ChqTimeline::SetClipEffectParam(uint64_t clip_id, const std::string& effect_id,
+                                          const std::string& key,
+                                          const ChqPropertyValue& value) {
+    ChqTrack* track = nullptr;
+    ChqClip* clip = find_clip_mut(clip_id, track);
+    if (clip == nullptr) return ChqStatus(ChqStatusCode::kInvalidArgument);
+    ChqEffectBinding* effect = clip->effects.Find(effect_id);
+    if (effect == nullptr) return ChqStatus(ChqStatusCode::kIoNotFound);
+    // 空 key 由 bag 拒绝（kInvalidArgument）；失败时参数袋不动。
+    return effect->params.Set(key, value);
+}
+
+ChqStatus ChqTimeline::EraseClipEffectParam(uint64_t clip_id, const std::string& effect_id,
+                                            const std::string& key) {
+    ChqTrack* track = nullptr;
+    ChqClip* clip = find_clip_mut(clip_id, track);
+    if (clip == nullptr) return ChqStatus(ChqStatusCode::kInvalidArgument);
+    ChqEffectBinding* effect = clip->effects.Find(effect_id);
+    if (effect == nullptr) return ChqStatus(ChqStatusCode::kIoNotFound);
+    if (!effect->params.Erase(key)) return ChqStatus(ChqStatusCode::kIoNotFound);
+    return ChqStatus::Ok();
+}
+
+ChqStatus ChqTimeline::SetClipEffectEnabled(uint64_t clip_id, const std::string& effect_id,
+                                            bool enabled) {
+    ChqTrack* track = nullptr;
+    ChqClip* clip = find_clip_mut(clip_id, track);
+    if (clip == nullptr) return ChqStatus(ChqStatusCode::kInvalidArgument);
+    ChqEffectBinding* effect = clip->effects.Find(effect_id);
+    if (effect == nullptr) return ChqStatus(ChqStatusCode::kIoNotFound);
+    effect->enabled = enabled;
+    return ChqStatus::Ok();
+}
+
+ChqStatus ChqTimeline::ReplaceClipEffects(uint64_t clip_id, const ChqEffectStack& stack) {
+    ChqTrack* track = nullptr;
+    ChqClip* clip = find_clip_mut(clip_id, track);
+    if (clip == nullptr) return ChqStatus(ChqStatusCode::kInvalidArgument);
+    clip->effects = stack;
+    return ChqStatus::Ok();
+}
+
+// ===========================================================================
 // 显式恢复（Command 回放 / 序列化载入专用，见 timeline.h 注释）
 // ===========================================================================
 

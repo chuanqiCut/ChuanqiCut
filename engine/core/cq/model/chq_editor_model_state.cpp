@@ -104,6 +104,9 @@ uint64_t ChqEditorModelState::Fingerprint(const ChqTimeline& timeline) {
             Mix(h, static_cast<uint64_t>(c.in_transition));
             Mix(h, static_cast<uint64_t>(c.out_transition));
             MixTime(h, c.transition_duration);
+            // MODEL-003：效果栈（含每个效果的启用位与全部参数）。漏了它就会出现
+            // 「改了属性但 digest 不变」的假阴性 —— UI 不刷新、装配缓存不失效。
+            Mix(h, c.effects.Fingerprint());
         }
     }
     return h;

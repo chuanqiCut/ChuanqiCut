@@ -70,6 +70,11 @@ std::string Fingerprint(const cq::ChqTimeline& tl) {
                           static_cast<int>(c.in_transition),
                           static_cast<int>(c.out_transition));
             fp += buf;
+            // MODEL-003：效果栈指纹一并计入（与 ChqEditorModelState::Fingerprint
+            // 的字段覆盖对齐 —— 本文件的用例目前不建效果，但字段覆盖不许先缺）。
+            std::snprintf(buf, sizeof(buf), "E|%llu;",
+                          static_cast<unsigned long long>(c.effects.Fingerprint()));
+            fp += buf;
         }
     }
     return fp;

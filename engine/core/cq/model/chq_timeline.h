@@ -21,6 +21,7 @@
 
 #include "cq/base/chq_status.h"
 #include "cq/base/chq_rational_time.h"
+#include "cq/model/chq_property.h"  // MODEL-003：效果栈（片段级属性）
 
 namespace cq {
 
@@ -50,6 +51,11 @@ struct ChqClip {
     ChqTransitionKind in_transition = ChqTransitionKind::kNone;
     ChqTransitionKind out_transition = ChqTransitionKind::kNone;
     ChqRationalTime transition_duration;  // 转场时长（kNone 时应为 0）
+
+    // MODEL-003：效果栈（有序，顺序即渲染顺序）。与转场正交 —— 转场吃的是
+    // 片段间重叠区间，效果吃的是片段自身内容，两者可同时存在。
+    // B0 只立数据：渲染消费归 RENDER-011（B7），装配器如实上报 effects_dropped。
+    ChqEffectStack effects;
 
     // 结束时刻 = start + duration（不含出转场）。
     ChqStatus End(ChqRationalTime& out) const;
@@ -121,6 +127,24 @@ public:
 
     // 总时长 = 所有轨道中最大的「clip 结束时刻 + 出转场时长」
     ChqRationalTime Duration() const;
+
+    // ---- 效果栈（MODEL-003；片段级属性，全部经 Command 层提交，见 chq_command.h）----
+    // 校验纪律与既有方法一致：先校验后变更，失败模型不动、返回错误码。
+    //   clip 不存在 → kInvalidArgument；效果不存在 → kIoNotFound（如实区分
+    //   "片段没了"与"效果没了"—— 前者是结构错误，后者只是没挂这个效果）。
+    ChqStatus AddClipEffect(uint64_t clip_id, const ChqEffectBinding& effect);
+    ChqStatus RemoveClipEffect(uint64_t clip_id, const std::string& effect_id);
+    // 参数覆盖写（key 原先不存在 = 新增；存在 = 改值）。空 key → kInvalidArgument。
+    ChqStatus SetClipEffectParam(uint64_t clip_id, const std::string& effect_id,
+                                 const std::string& key, const ChqPropertyValue& value);
+    // 删参数。key 不存在 → kIoNotFound（供 SetEffectParam 命令的"原先无此 key"
+    // 撤销路径使用，UI 不直接调）。
+    ChqStatus EraseClipEffectParam(uint64_t clip_id, const std::string& effect_id,
+                                   const std::string& key);
+    ChqStatus SetClipEffectEnabled(uint64_t clip_id, const std::string& effect_id, bool enabled);
+    // 整栈替换（MODEL-003 移除效果命令的 Undo 用：移除会丢掉原次序，
+    // 逐条 Append 还原会改变其余效果的相对顺序，故回放整栈）。
+    ChqStatus ReplaceClipEffects(uint64_t clip_id, const ChqEffectStack& stack);
 
     // ---- 显式恢复（仅供 Command 回放 / 序列化载入使用，业务代码不要调）----
     // 与 AddTrack/InsertClip 的区别：**使用实体自带的 id，不分配新 id**。

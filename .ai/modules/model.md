@@ -2,6 +2,12 @@
 
 > **归属**：A 线（编辑器/UI；时间线模型与命令） —— 归属表见 docs/tasks/PLAN-三线并行.md §1a / ADR-0029（双机分工与门禁跑批，2026-10-07）
 
+> **落地状态（2026-10-12，MODEL-003 / B0）**：EffectBinding 数据模型已落地 ——
+> `engine/core/cq/model/chq_property.h`（属性值/属性袋/效果栈）挂到 ChqClip，
+> 属性变更走 Command（红线 #5），最小 C ABI 已暴露。**效果目录（默认参数）与
+> 渲染消费未实现**（EFFECT-001 / RENDER-011）；关键帧与插值引擎未动（anim 模块）。
+> 属性标量用 float（非时间量；契约头门禁禁 double），时间字段仍一律 RationalTime。
+
 **边界**：`core/src/model/`、`core/src/command/`、`core/src/anim/`
 
 ## 职责
@@ -108,3 +114,7 @@ UIA-005 把它接到 `ChqEditorModelState::Undo/Redo` 与 `cq_session_undo/redo`
 ### 调研 · 决策 · 池指针
 
 - ADR-0012（命令提交时机）· 红线 #5（UI 不直改模型）
+- **RESEARCH-016（2026-10-13，对标平台/对标 App SDK 逆向）**：§1.2 给出 NLE 模型层级（Node→TimeSpaceNode→
+  Model/Track/Slot/Segment）与 **ChqClip vs 其轨道槽位模型 缺口表**（transform / layer / speed /
+  keyframes / mask / audioFilter / relative 布局均缺）；§2.3 建议做 B0 前补齐并连带设计 relative
+  布局（否则改画布比例时子元素漂移）。**状态：建议待拍板，未排期。**

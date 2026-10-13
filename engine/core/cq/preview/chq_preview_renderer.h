@@ -1,9 +1,18 @@
-// ChuanqiCut — 预览渲染器（BIND-003 子步骤 4）
+// ChuanqiCut — 预览渲染器（BIND-003 子步骤 4；B0 起渲染路径经 RenderGraph）
 //
 // 职责：回答「时间线在 pts 这一刻，画面是什么」。
-//   ChqTimeline（哪个片段） + ChqAssetRegistry（片段指向哪个文件） + ChqFrameProvider（取帧）
-//   + 零拷贝导入（CVPixelBuffer → 纹理） + ChqIBlitPass（画到离屏 RT）
+//   B0 之后的链路：ChqGraphAssembler（时间线 + 画布 → 一张 RenderGraph）
+//   → ChqRenderEvaluator::Prepare（取帧 + 零拷贝导入，CPU 侧）
+//   → ChqIGfxDevice::RenderFrame（回调 evaluator 编码 blit pass，GPU 侧）
 //   → 导出 RT 背后的纹理句柄给 UI 层显示。
+//
+// 为什么要换掉手写路径（红线 #9 / ADR-0034）：导出（B4）必须复用**同一张图**。
+// 在此之前预览是一条手写路径，继续往上堆能力（多轨/滤镜/转场）必然逼出第二条
+// 渲染路径 —— 本仓库已在「相机滤镜 vs 编辑器特效」上付过一次这个代价（ADR-0014）。
+//
+// ⚠️ 本类同时实现 ChqIFrameSource：取帧与导入的**跨帧状态**（provider 表、
+// MEDIA-024 的展示区间复用）归本类所有，故通过接缝注入给执行器，而不是让执行器
+// 复制一份 —— 同一条理由：两套逻辑必然漂移。
 //
 // ⚠️ 导出的是**中性句柄** `TextureHandle`（opaque 指针），Swift 侧 reinterpret 为
 //    MTLTexture。**绝不**走「读回像素 → Swift 再上传」：CPU 往返每帧一次会直接
@@ -12,8 +21,8 @@
 // 硬约束：零平台类型、零 FFmpeg 类型、禁用异常（错误一律 ChqStatus）。
 //
 // 本期明确**不支持**（不要假装支持，见 TASK-BIND-003 §五）：
-//   * 多轨合成 —— 只渲染**第一条命中的视频轨**，叠加/转场合成等 RenderGraph
-//     （RENDER-001）落地后再补。
+//   * 多轨合成 —— 只渲染**第一条命中的视频轨**（B0 起装配器会发 Warn，不再只是
+//     一句代码注释）；叠加/转场合成归 RENDER-011（B7）。
 //   * 变速 / retime —— MODEL-001 无该字段，时间线时长与素材时长 1:1 映射。
 //   （宽高比适配已支持 —— 见 ChqFitMode / ADR-0018；片段级缩放/位移仍归 MODEL-003。）
 
@@ -39,19 +48,20 @@
 #include "cq/platform/chq_common.h"                       // TextureHandle / ChqTextureFormat / ChqPlatformPtr
 #include "cq/platform/chq_gfx.h"                          // ChqIRenderTarget / ChqINativeImageImporter
 #include "cq/preview/chq_preview_frame_source.h"      // ChqIPreviewFrameSource（预览泵的接缝）
+#include "cq/render/chq_fit_mode.h"                   // ChqFitMode（已下沉到 render 层，供 RenderGraph 共用）
+#include "cq/render/chq_frame_source.h"               // ChqIFrameSource（取帧接缝，注入给执行器）
+#include "cq/render/chq_graph_assembler.h"            // ChqGraphAssembler
+#include "cq/render/chq_render_evaluator.h"           // ChqRenderEvaluator
+#include "cq/render/chq_render_graph.h"               // ChqRenderGraph
 
 namespace cq {
 
 // 源帧 → 画布的宽高比适配模式（UIA-014 / ADR-0018）。
 // 实现接缝 = 编码器视口：三种模式都是「把全屏 blit 变换到一个矩形」，
 // bar 区即清屏色黑（清屏不受视口影响，视口外无写入）。
-enum class ChqFitMode : int32_t {
-    kStretch = 0,  // 拉伸铺满（引入 ChqFitMode 前的既有行为，默认值）
-    kContain = 1,  // 内切居中：letterbox / pillarbox，不裁内容
-    kCover = 2,    // 外接居中：裁剪铺满，不留 bar
-};
+// ⚠️ 定义已移至 render/chq_fit_mode.h（B0：RenderGraph 与预览共用，避免 render 反向依赖 preview）。
 
-class ChqPreviewRenderer : public ChqIPreviewFrameSource {
+class ChqPreviewRenderer : public ChqIPreviewFrameSource, public ChqIFrameSource {
 public:
     struct Config {
         uint32_t width = 1920;
@@ -108,6 +118,13 @@ public:
     ChqStatus RenderFrame(const ChqRationalTime& pts, TextureHandle& out_texture,
                        const ChqCancelToken& token) override;
 
+    // ---- ChqIFrameSource（取帧接缝，供 RenderGraph 执行器消费）----
+    // 内部持有 provider 表与 MEDIA-024 的展示区间复用状态；**不是**每帧新建的纯函数。
+    // 线程约定与 RenderFrame 相同（挂泵后只由泵线程调用）。
+    ChqStatus Acquire(uint64_t asset_id, const ChqRationalTime& src_time,
+                      const ChqAssetRegistry& assets, TextureHandle& out_tex, uint32_t& out_w,
+                      uint32_t& out_h, bool* out_reused, const ChqCancelToken& token) override;
+
     // 重建离屏渲染目标（预览分辨率变化时）。会丢弃当前 RT 与其纹理句柄。
     // 线程约定同上（挂泵后只由泵线程调用，走 `ChqPreviewPump::RequestResize`）。
     ChqStatus Resize(uint32_t width, uint32_t height) override;
@@ -144,6 +161,11 @@ public:
 
     // 上一帧的各阶段耗时（见 Timings 注释）。首帧之前全 0。
     const Timings& LastTimings() const { return timings_; }
+
+    // ---- B0：RenderGraph 装配与执行（预览与导出共用同一装配器）----
+    ChqGraphAssembler assembler_;
+    ChqRenderGraph graph_;
+    ChqRenderEvaluator evaluator_;
 
     // ---- 上一帧的可观测量（供单测与运行时诊断，不是渲染结果本身）----
     bool LastHitClip() const { return last_hit_clip_; }
@@ -190,8 +212,15 @@ private:
     // [last_import_pts_, +duration) 且素材相同 → 直接重画 imported_（跳过
     // acquire+import），消除「区间内重复请求走慢路径重解 GOP」的尖刺。
     // 纹理独立于 provider 生命周期（IOSurface 锁在纹理上），provider 重建无需失效。
+    // ⚠️ 这些状态归本类（不是执行器）：B0 之后取帧由 RenderGraph 执行器经
+    //    ChqIFrameSource 接缝回调本类的 Acquire，复用判据仍只有一份。
     bool last_import_valid_ = false;
     uint64_t last_import_asset_ = 0;
+    // B0：Acquire 内部的两段耗时（取帧/导入），由 RenderFrame 读回写进 Timings。
+    // 为什么不直接用返回值带回：执行器只按节点执行，不该知道预览的计时分段；
+    // 而分段本身是预览的可观测性要求（「慢在取帧还是 GPU」决定不同优化动作）。
+    int64_t staged_acquire_ns_ = 0;
+    int64_t staged_import_ns_ = 0;
     // CORE-010：这两个限流计数器提到 Release —— 它们被 Trace 级的诊断使用，
     // 而 Release 下 CQ_LOG_TRACE_WF 展开为空，if 体会被优化掉；留着成员开销为零。
     int debug_import_logs_ = 0;

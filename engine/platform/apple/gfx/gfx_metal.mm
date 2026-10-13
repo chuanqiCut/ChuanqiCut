@@ -8,8 +8,9 @@
 //   * 每个 Platform 概念 1:1 映射 Metal 概念（见 .ai/modules/platform-apple.md 概念映射表）。
 //   * 资源生命周期走 ChqPlatformPtr + Destroy()（与 ChqIPlatformResource 契约一致）；本 .mm 用 ARC 管理
 //     Objective-C 对象，Destroy() 把成员置 nil 释放并 delete this。
-//   * ShaderModule 支持 Platform-Native 源码（MSL，`is_platform_native=true`）；SPIR-V 路径
-//     本期未实现（SHADER-001 的 MSL 生成尚未接入），返回 kInternal。
+//   * ShaderModule 接受 Platform-Native 源码（MSL，`is_platform_native=true`）。运行时**不吃**
+//     SPIR-V：SHADER-001 的 Portable GLSL → SPIR-V → MSL 转译发生在**构建期**
+//     （tools/shaders/build_shaders.py），运行时只认 MSL，故 SPIR-V 输入返回 kInternal。
 //   * ChqINativeImageImporter（PALA-002）已实现：CVMetalTextureCacheCreateTextureFromImage
 //     零拷贝；失败时退化为 CPU 拷贝（out_cpu_fallback=true）。
 //   * 错误一律 ChqStatus，无异常（内核禁用异常）。
@@ -596,7 +597,8 @@ public:
     ChqStatus CreateShaderModule(const ChqShaderModuleDesc& desc, ChqPlatformPtr<ChqIShaderModule>& out) override {
         if (device_ == nil) return ChqStatus(ChqStatusCode::kInternal);
         if (!desc.is_platform_native) {
-            // SPIR-V -> MSL 转译尚未接入（SHADER-001），本期仅支持 Platform-Native MSL 源码。
+            // 运行时转译未实现，也不需要实现：SHADER-001 的 Portable GLSL → MSL 转译在
+            // 构建期完成（产物 build/generated/shaders/blit_msl.h），运行时只接受 MSL 源。
             return ChqStatus(ChqStatusCode::kInternal);
         }
         const char* src_ptr = static_cast<const char*>(desc.code);

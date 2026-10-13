@@ -21,6 +21,7 @@
 #include "cq/base/chq_status.h"
 #include "cq/platform/chq_capabilities.h"
 #include "chq_session_impl.h"
+#include "cq/model/chq_property.h"  // MODEL-003：效果属性（C ABI 的直接依赖，显式列出）
 #include "cq/model/chq_timeline.h"
 #include "cq/preview/chq_player_clock.h"
 #include "cq/session/chq_editor_session.h"
@@ -243,6 +244,208 @@ int32_t cq_session_get_canvas(const CQSession* session, int32_t* out_width, int3
     if (!snap) return CodeOfEnum(cq::ChqStatusCode::kInternal);  // 自定义状态无模型
     *out_width = snap->CanvasWidth();
     *out_height = snap->CanvasHeight();
+    return CodeOfEnum(cq::ChqStatusCode::kOk);
+}
+
+// ---- 片段效果属性（MODEL-003）------------------------------------------------
+
+namespace {
+
+// 字符串拷贝 + 截断标记（同 CQAssetInfo.path 的手法：截断要说出来，
+// 不能让调用方把一个被切过的 id 当完整 id 用）。
+void CopyStrTrunc(char* dst, size_t dst_size, const std::string& src, bool& truncated) {
+    const bool cut = src.size() >= dst_size;
+    std::strncpy(dst, src.c_str(), dst_size - 1);
+    dst[dst_size - 1] = '\0';
+    if (cut) truncated = true;
+}
+
+// ChqPropertyType → ABI type 码（显式映射：枚举重排不应悄悄改变 ABI 数值）。
+int32_t PropTypeToAbi(cq::ChqPropertyType t) {
+    switch (t) {
+        case cq::ChqPropertyType::kInt64: return 0;
+        case cq::ChqPropertyType::kFloat: return 1;
+        case cq::ChqPropertyType::kBool: return 2;
+        case cq::ChqPropertyType::kColor: return 3;
+        case cq::ChqPropertyType::kVec2: return 4;
+    }
+    return -1;  // 枚举封闭，不可达；出现即内部不一致
+}
+
+void FillEffectParamInfo(const std::string& key, const cq::ChqPropertyValue& v,
+                         CQEffectParamInfo* out) {
+    bool truncated = false;
+    CopyStrTrunc(out->key, sizeof(out->key), key, truncated);
+    out->type = PropTypeToAbi(v.type);
+    out->i = v.i;
+    for (int i = 0; i < 4; ++i) out->v[i] = v.v[i];
+    out->b = v.b ? 1 : 0;
+    out->truncated = truncated ? 1 : 0;
+}
+
+}  // namespace
+
+int32_t cq_session_add_clip_effect(CQSession* session, uint64_t clip_id,
+                                   const char* effect_id, const char* effect_name) {
+    if (session == nullptr || effect_id == nullptr || effect_name == nullptr) {
+        return CodeOfEnum(cq::ChqStatusCode::kInvalidArgument);
+    }
+    cq::ChqEffectBinding effect;
+    effect.effect_id = effect_id;    // 入队前拷贝：提交异步，调用方缓冲区可能先失效
+    effect.effect_name = effect_name;
+    return CodeOf(session->impl.SubmitAddClipEffect("add-clip-effect", clip_id, effect));
+}
+
+int32_t cq_session_remove_clip_effect(CQSession* session, uint64_t clip_id,
+                                      const char* effect_id) {
+    if (session == nullptr || effect_id == nullptr) {
+        return CodeOfEnum(cq::ChqStatusCode::kInvalidArgument);
+    }
+    return CodeOf(
+        session->impl.SubmitRemoveClipEffect("remove-clip-effect", clip_id, effect_id));
+}
+
+int32_t cq_session_set_clip_effect_enabled(CQSession* session, uint64_t clip_id,
+                                           const char* effect_id, int32_t enabled) {
+    if (session == nullptr || effect_id == nullptr) {
+        return CodeOfEnum(cq::ChqStatusCode::kInvalidArgument);
+    }
+    return CodeOf(session->impl.SubmitSetClipEffectEnabled("set-clip-effect-enabled", clip_id,
+                                                           effect_id, enabled != 0));
+}
+
+int32_t cq_session_set_clip_effect_param_i64(CQSession* session, uint64_t clip_id,
+                                             const char* effect_id, const char* key,
+                                             int64_t value) {
+    if (session == nullptr || effect_id == nullptr || key == nullptr) {
+        return CodeOfEnum(cq::ChqStatusCode::kInvalidArgument);
+    }
+    return CodeOf(session->impl.SubmitSetClipEffectParam(
+        "set-effect-param", clip_id, effect_id, key, cq::ChqPropertyValue::I64(value)));
+}
+
+int32_t cq_session_set_clip_effect_param_float(CQSession* session, uint64_t clip_id,
+                                               const char* effect_id, const char* key,
+                                               float value) {
+    if (session == nullptr || effect_id == nullptr || key == nullptr) {
+        return CodeOfEnum(cq::ChqStatusCode::kInvalidArgument);
+    }
+    return CodeOf(session->impl.SubmitSetClipEffectParam(
+        "set-effect-param", clip_id, effect_id, key, cq::ChqPropertyValue::F(value)));
+}
+
+int32_t cq_session_set_clip_effect_param_bool(CQSession* session, uint64_t clip_id,
+                                              const char* effect_id, const char* key,
+                                              int32_t value) {
+    if (session == nullptr || effect_id == nullptr || key == nullptr) {
+        return CodeOfEnum(cq::ChqStatusCode::kInvalidArgument);
+    }
+    return CodeOf(session->impl.SubmitSetClipEffectParam(
+        "set-effect-param", clip_id, effect_id, key, cq::ChqPropertyValue::B(value != 0)));
+}
+
+int32_t cq_session_set_clip_effect_param_color(CQSession* session, uint64_t clip_id,
+                                               const char* effect_id, const char* key,
+                                               float r, float g, float b, float a) {
+    if (session == nullptr || effect_id == nullptr || key == nullptr) {
+        return CodeOfEnum(cq::ChqStatusCode::kInvalidArgument);
+    }
+    return CodeOf(session->impl.SubmitSetClipEffectParam(
+        "set-effect-param", clip_id, effect_id, key, cq::ChqPropertyValue::Color(r, g, b, a)));
+}
+
+int32_t cq_session_set_clip_effect_param_vec2(CQSession* session, uint64_t clip_id,
+                                              const char* effect_id, const char* key,
+                                              float x, float y) {
+    if (session == nullptr || effect_id == nullptr || key == nullptr) {
+        return CodeOfEnum(cq::ChqStatusCode::kInvalidArgument);
+    }
+    return CodeOf(session->impl.SubmitSetClipEffectParam(
+        "set-effect-param", clip_id, effect_id, key, cq::ChqPropertyValue::Vec2(x, y)));
+}
+
+int32_t cq_session_clip_effect_count(const CQSession* session, uint64_t clip_id,
+                                     int32_t* out_count) {
+    if (session == nullptr || out_count == nullptr) {
+        return CodeOfEnum(cq::ChqStatusCode::kInvalidArgument);
+    }
+    std::shared_ptr<const cq::ChqTimeline> snap = session->impl.CurrentTimeline();
+    if (!snap) return CodeOfEnum(cq::ChqStatusCode::kInternal);
+    const cq::ChqClip* clip = snap->FindClip(clip_id);
+    if (clip == nullptr) return CodeOfEnum(cq::ChqStatusCode::kInvalidArgument);
+    *out_count = static_cast<int32_t>(clip->effects.Size());
+    return CodeOfEnum(cq::ChqStatusCode::kOk);
+}
+
+int32_t cq_session_query_clip_effects(const CQSession* session, uint64_t clip_id,
+                                      CQEffectInfo* out, int32_t capacity, int32_t* out_count) {
+    if (session == nullptr || out_count == nullptr || (out != nullptr && capacity <= 0)) {
+        return CodeOfEnum(cq::ChqStatusCode::kInvalidArgument);
+    }
+    std::shared_ptr<const cq::ChqTimeline> snap = session->impl.CurrentTimeline();
+    if (!snap) return CodeOfEnum(cq::ChqStatusCode::kInternal);
+    const cq::ChqClip* clip = snap->FindClip(clip_id);
+    if (clip == nullptr) return CodeOfEnum(cq::ChqStatusCode::kInvalidArgument);
+
+    const auto& effects = clip->effects.Effects();
+    *out_count = static_cast<int32_t>(effects.size());
+    if (out == nullptr) return CodeOfEnum(cq::ChqStatusCode::kOk);  // 两段式：仅查总数
+    int32_t written = 0;
+    for (const cq::ChqEffectBinding& e : effects) {
+        if (written >= capacity) break;
+        CQEffectInfo& dst = out[written];
+        bool truncated = false;
+        CopyStrTrunc(dst.effect_id, sizeof(dst.effect_id), e.effect_id, truncated);
+        CopyStrTrunc(dst.effect_name, sizeof(dst.effect_name), e.effect_name, truncated);
+        dst.enabled = e.enabled ? 1 : 0;
+        dst.param_count = static_cast<int32_t>(e.params.Size());
+        dst.truncated = truncated ? 1 : 0;
+        ++written;
+    }
+    *out_count = written;
+    return CodeOfEnum(cq::ChqStatusCode::kOk);
+}
+
+int32_t cq_session_clip_effect_param_count(const CQSession* session, uint64_t clip_id,
+                                           const char* effect_id, int32_t* out_count) {
+    if (session == nullptr || effect_id == nullptr || out_count == nullptr) {
+        return CodeOfEnum(cq::ChqStatusCode::kInvalidArgument);
+    }
+    std::shared_ptr<const cq::ChqTimeline> snap = session->impl.CurrentTimeline();
+    if (!snap) return CodeOfEnum(cq::ChqStatusCode::kInternal);
+    const cq::ChqClip* clip = snap->FindClip(clip_id);
+    if (clip == nullptr) return CodeOfEnum(cq::ChqStatusCode::kInvalidArgument);
+    const cq::ChqEffectBinding* effect = clip->effects.Find(effect_id);
+    if (effect == nullptr) return CodeOfEnum(cq::ChqStatusCode::kIoNotFound);
+    *out_count = static_cast<int32_t>(effect->params.Size());
+    return CodeOfEnum(cq::ChqStatusCode::kOk);
+}
+
+int32_t cq_session_query_clip_effect_params(const CQSession* session, uint64_t clip_id,
+                                            const char* effect_id, CQEffectParamInfo* out,
+                                            int32_t capacity, int32_t* out_count) {
+    if (session == nullptr || effect_id == nullptr || out_count == nullptr ||
+        (out != nullptr && capacity <= 0)) {
+        return CodeOfEnum(cq::ChqStatusCode::kInvalidArgument);
+    }
+    std::shared_ptr<const cq::ChqTimeline> snap = session->impl.CurrentTimeline();
+    if (!snap) return CodeOfEnum(cq::ChqStatusCode::kInternal);
+    const cq::ChqClip* clip = snap->FindClip(clip_id);
+    if (clip == nullptr) return CodeOfEnum(cq::ChqStatusCode::kInvalidArgument);
+    const cq::ChqEffectBinding* effect = clip->effects.Find(effect_id);
+    if (effect == nullptr) return CodeOfEnum(cq::ChqStatusCode::kIoNotFound);
+
+    // map 有序 ⇒ 输出顺序稳定（与 ChqPropertyBag::Fingerprint 的遍历序一致）。
+    const auto& entries = effect->params.Entries();
+    *out_count = static_cast<int32_t>(entries.size());
+    if (out == nullptr) return CodeOfEnum(cq::ChqStatusCode::kOk);  // 两段式：仅查总数
+    int32_t written = 0;
+    for (const auto& kv : entries) {
+        if (written >= capacity) break;
+        FillEffectParamInfo(kv.first, kv.second, &out[written]);
+        ++written;
+    }
+    *out_count = written;
     return CodeOfEnum(cq::ChqStatusCode::kOk);
 }
 

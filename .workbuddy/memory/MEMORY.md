@@ -85,6 +85,23 @@
 - FFmpeg 头在 C++ TU 必须 extern "C" 包裹（FFmpeg 9 头无自带保护）；消费 libffmpeg.a 需
   CoreFoundation/CoreVideo/CoreMedia/VideoToolbox 框架（hwcontext 拉入，P105）。
 
+## 竞品参考：对标平台/对标 App iOS 编辑 SDK（RESEARCH-016，2026-10-13 逆向）
+
+材料 `/Users/zhuning/Documents/test/`（**只有头文件、无 .m**，结论由声明推断），
+详见 `docs/research/RESEARCH-016-对标平台编辑SDK架构逆向与借鉴评估.md`。**避免重复调研，先看它。**
+
+- **分层与直觉相反**：`其媒体引擎层`（623 头，最大）是**媒体引擎层**不是 App 层（实测 VC 数 = 0）；
+  `其编辑语义层`（134 头）才是编辑语义层。依赖单向：UI → NLE → 其媒体引擎层 → 算法（实测反向引用 0）。
+- **`commit` / `done` 是两层**：commit = 渲染同步点（高频、触发 diff、不入 undo 栈）；
+  done = 事务边界（两次 done 之间合成一条 undo）。对比我们 `ChqCommandHistory::Execute` 三件事合一，
+  「拖拽结束只提一条」目前靠纪律而非机制 —— 拟加 PreviewSync 通道（**待传哲拍板**）。
+- **他们不如我们的地方（勿被"大厂也这么干"说服）**：预览与导出是**两条管线**
+  （`其编辑器会话` vs `其编辑器组件*`）→ 我们红线 #9 更先进；双数据模型（其数据模型 + 其播放数据层 + 转换器）；
+  Meepo 与 其轨道 UI 组件库 **100 个同名头文件**（两代并存，ADR-0014 同款坑）。
+- **跨层 API 纪律（待拍板，未生效）**：他们把 5 态 `其播放器状态枚举` 降级成 `BOOL`、
+  丢掉 seek 完成回调，根因是**引擎侧没给状态订阅通道**（注释还自相矛盾："不能KVO" vs "可监听"）。
+  拟立规矩：跨层签名枚举必须具名、异步必须有完成回调、**禁止用标量布尔表达状态机**。
+
 ## 未决事项
 - FFmpeg LGPL v2.1+ 处置**已定**（2026-10-11 传哲拍板，ADR-0036）：ARCH-002 §5.1 路径 1（App 内声明 + 源码可获得 + 可重链接归档），义务载体 engine/NOTICE.md；SDK 本体 License 仍待定。
 - PERF-001 尚未建立正式性能基线；Intel Mac 无 ANE/ProRes 硬编，不得用其数字作产品阈值。

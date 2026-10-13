@@ -6,11 +6,14 @@
 //   * rendered_upto_tick_ 只由混音线程写（Sync 经 reanchor_epoch_ 间接重锚），
 //     免锁；同步状态经 sync_mu_（临界区微秒级，主线程零阻塞）。
 //   * 读取失败/EOF 不伪造数据：缺口 = 静音 + 节流日志 + 计数。
+//   * 求和/削波走 AUDIO-004 混音原语（chq_mix.h）—— 全仓只有一套混音实现，
+//     本类只做「哪段样本进哪个偏移」的编排，不做样本数学。
 
 #include "cq/audio/chq_preview_mixer.h"
 
 #include <algorithm>
 
+#include "cq/audio/chq_mix.h"
 #include "cq/base/chq_logging.h"
 
 namespace cq {
@@ -18,6 +21,11 @@ namespace cq {
 namespace {
 
 constexpr int kMixLogThrottle = 100;  // 读取失败/欠载日志的节流系数
+
+// 轨增益：模型 ChqTrack 尚无音量字段（mute 已有，音量属模型线写集），
+// 当前恒 1.0 直通。**模型立音量字段后，此处即唯一改点** —— 混音数学本身
+// 已在 chq_mix.h 支持任意增益（含反相），无需再动本类。
+constexpr float kTrackGainUnity = 1.0f;
 
 // 节流告警（Release 可见 —— 可闻缺口是「链路病了」的最外层症状，别塞回 NDEBUG）。
 void WarnThrottled(const char* what, int& count, const char* detail) {
@@ -433,7 +441,6 @@ void ChqPreviewAudioMixer::MixBlock(int64_t block_start_tick,
     }
     const int64_t block_end_tick = block_start_tick + block_ticks_;
     const size_t ch = static_cast<size_t>(cfg_.spec.channels);
-    const size_t total = static_cast<size_t>(cfg_.spec.frames_per_block) * ch;
 
     for (const ChqTrack& track : snap->timeline->Tracks()) {
         if (!track.enabled || track.muted) {
@@ -486,21 +493,33 @@ void ChqPreviewAudioMixer::MixBlock(int64_t block_start_tick,
                 static_cast<int64_t>(e->fifo.size() / ch));
             if (want_frames > 0) {
                 const int64_t dst_frame0 = TicksToFrames(copy_from - block_start_tick);
-                const size_t dst_base = static_cast<size_t>(dst_frame0) * ch;
-                for (int64_t i = 0; i < want_frames; ++i) {
-                    const size_t src = static_cast<size_t>(i) * ch;
-                    const size_t dst = dst_base + src;
-                    if (dst + ch > total) {
-                        break;  // 防御：块内越界（舍入边界）即止
-                    }
-                    for (size_t c = 0; c < ch; ++c) {
-                        acc_[dst + c] += e->fifo[src + c];
+                // 块内空间防御（舍入边界可能出现 ±1 帧）：放不下的尾部不消费，
+                // 留在 FIFO 里由下一块的「过期前缀丢弃」逻辑收掉。clamp 显式写在
+                // 调用点，混音原语本身保持全有或全无（可单测，见 test_audio_mix）。
+                const int64_t block_frames =
+                    static_cast<int64_t>(cfg_.spec.frames_per_block);
+                int64_t fit_frames = want_frames;
+                if (dst_frame0 + fit_frames > block_frames) {
+                    fit_frames = block_frames - dst_frame0;
+                }
+                if (fit_frames > 0) {
+                    const ChqStatus ms = MixAccumulateRange(
+                        acc_.data(), static_cast<size_t>(block_frames),
+                        static_cast<uint32_t>(ch), e->fifo.data(), 0,
+                        static_cast<size_t>(fit_frames),
+                        static_cast<size_t>(dst_frame0), kTrackGainUnity);
+                    if (ms.IsOk()) {
+                        const size_t erase_samples = static_cast<size_t>(fit_frames) * ch;
+                        e->fifo.erase(e->fifo.begin(),
+                                      e->fifo.begin() +
+                                          static_cast<std::ptrdiff_t>(erase_samples));
+                        e->fifo_start_tick += FramesToTicks(fit_frames);
+                    } else {
+                        // 不可达防御：参数已在上面 clamp/校验。真到了这里 = 内部
+                        // 不一致，Warn 留痕（Release 可见）且不推进消费位置。
+                        WarnThrottled("混音累加被拒", e->warn_count, "内部不一致");
                     }
                 }
-                const size_t erase_samples = static_cast<size_t>(want_frames) * ch;
-                e->fifo.erase(e->fifo.begin(),
-                              e->fifo.begin() + static_cast<std::ptrdiff_t>(erase_samples));
-                e->fifo_start_tick += FramesToTicks(want_frames);
             }
             if (ov_e >= e->clip_end_tick) {
                 // 片段在本块内结束：残余（FillFifo 的整块超额部分）一并丢弃；
@@ -513,13 +532,10 @@ void ChqPreviewAudioMixer::MixBlock(int64_t block_start_tick,
     }
 
     // 削波（求和可能超 [-1,1]；不做母带级限制器 —— 预览 MVP 语义，写明）。
-    for (size_t i = 0; i < total; ++i) {
-        if (acc_[i] > 1.0f) {
-            acc_[i] = 1.0f;
-        } else if (acc_[i] < -1.0f) {
-            acc_[i] = -1.0f;
-        }
-    }
+    // 走 AUDIO-004 混音原语：硬削波到 [-1,1]，非有限值（解码异常/累加溢出的
+    // 下游）按 0 处置，输出恒在 [-1,1]。
+    (void)MixClipRange(acc_.data(), static_cast<size_t>(cfg_.spec.frames_per_block),
+                       static_cast<uint32_t>(cfg_.spec.channels));
 }
 
 }  // namespace cq

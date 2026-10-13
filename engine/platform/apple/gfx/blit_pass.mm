@@ -1,7 +1,12 @@
-// ChuanqiCut — Apple 全屏拷贝 pass（Platform-Native shader 路径）
+// ChuanqiCut — Apple 全屏拷贝 pass（Portable shader 驱动的 MSL 路径）
 //
 // 实现 Platform 契约 `cq::CreateBlitPass`（core/include/cq/platform/gfx.h）。
-// MSL 源码在 platform/apple/shaders/blit_fullscreen_msl.h，不进 core。
+//
+// shader 来源（红线 #6 / SHADER-001）：作者写的是 **Portable 层**
+// shaders/src/blit.{vert,frag}（Vulkan GLSL 450），构建期经 glslang → SPIR-V →
+// spirv-cross 转译成 MSL，产物落在 build/generated/shaders/blit_msl.h。
+// 本文件 include 的是**那份生成物**，不再内联手写 MSL——Portable 是唯一事实来源，
+// 平台侧只保留「MSL 是 Metal 能吃的格式」这一层事实。
 //
 // 为什么本文件在 platform/apple 而不是 core：平台原生 shader 按红线 #6 只允许出现在
 // platform/<platform>/；且 Platform 不能反向依赖 GFX 层，故 ChqIBlitPass 定义也落在 Platform。
@@ -10,10 +15,24 @@
 
 #include "cq/platform/chq_gfx.h"
 #include "gfx_metal_internal.h"  // ToShaderHandle / ToPipelineHandle / ToBufferHandle / ToSamplerHandle
-#include "shaders/blit_fullscreen_msl.h"
+#include "blit_msl.h"  // 构建期生成（build/generated/shaders/），非源码目录
 
 namespace cq {
 namespace {
+
+// 全屏三角形（比两个三角形的 quad 少一次光栅化接缝）。
+//   clip(-1,-1)=屏幕左下 → uv(0,1)；clip(-1,3)=屏幕左上之外 → uv(0,-1)
+//   插值后：屏幕上边 → v=0（图像顶行），屏幕下边 → v=1（图像底行）。
+// 顶点布局：pos.xy(float2) + uv.xy(float2)，stride = 16 该厂商。
+//
+// ⚠️ 几何与 uv 映射**不得随意改动**：uv(0,0)=图像左上 的约定已由
+//    test_preview_renderer.cpp 的「RT 顶红 / 底蓝」与 test_gfx_device.cpp 的四角断言
+//    锁定。改了会让画面上下颠倒。
+inline constexpr float kBlitVerts[3 * 4] = {
+    -1.0f, -1.0f, 0.0f, 1.0f,
+     3.0f, -1.0f, 2.0f, 1.0f,
+    -1.0f,  3.0f, 0.0f, -1.0f,
+};
 
 class AppleBlitPass final : public ChqIBlitPass {
 public:
@@ -42,11 +61,13 @@ private:
         if (ready_) return ChqStatus::Ok();
         if (device_ == nullptr) return ChqStatus(ChqStatusCode::kInvalidArgument);
 
+        // 生成的 MSL 是 Metal 源码（不是 SPIR-V），故仍走 platform-native 入口：
+        // 转译发生在构建期，运行时不依赖任何 shader 编译器。
         ChqShaderModuleDesc vd;
         vd.stage = ChqShaderStage::kVertex;
         vd.code = static_cast<const void*>(apple::shaders::kBlitVertMsl);
         vd.code_size = std::strlen(apple::shaders::kBlitVertMsl);
-        vd.is_platform_native = true;  // MSL 源，非 SPIR-V
+        vd.is_platform_native = true;  // MSL 源（Portable GLSL 转译产物），非 SPIR-V
         ChqStatus s = device_->CreateShaderModule(vd, vs_);
         if (!s.IsOk()) return s;
         if (!vs_) return ChqStatus(ChqStatusCode::kInternal);
@@ -61,7 +82,7 @@ private:
 
         ChqBufferDesc bd;
         bd.usage = ChqBufferUsage::kVertex;
-        bd.size_bytes = sizeof(apple::shaders::kBlitVerts);
+        bd.size_bytes = sizeof(kBlitVerts);
         s = device_->CreateBuffer(bd, vbuf_);
         if (!s.IsOk()) return s;
         if (!vbuf_) return ChqStatus(ChqStatusCode::kInternal);
@@ -69,7 +90,7 @@ private:
         s = vbuf_->Map(mapped);
         if (!s.IsOk()) return s;
         if (mapped == nullptr) return ChqStatus(ChqStatusCode::kInternal);
-        std::memcpy(mapped, apple::shaders::kBlitVerts, sizeof(apple::shaders::kBlitVerts));
+        std::memcpy(mapped, kBlitVerts, sizeof(kBlitVerts));
         vbuf_->Unmap();
 
         ChqSamplerDesc sd;

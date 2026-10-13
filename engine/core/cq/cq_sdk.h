@@ -217,6 +217,94 @@ int32_t cq_session_set_canvas(CQSession* session, int32_t width, int32_t height)
 
 int32_t cq_session_get_canvas(const CQSession* session, int32_t* out_width, int32_t* out_height);
 
+/* ---- 片段效果属性（MODEL-003；异步提交，经 ChqCommandHistory 可撤销）----
+ *
+ * 效果是**数据**（chq_property.h）：一个片段挂一条有序效果栈，每个效果有
+ * 启用位与一张参数袋。B0 只立数据与撤销链；渲染消费归 RENDER-011（B7），
+ * 在此之前装配器对带效果的片段如实上报（预览/导出行为与无效果时一致）。
+ *
+ * 与 add_clip 同一提交语义：Ok = 已入队；校验（片段存在 / 效果存在 /
+ * 同 id 不重复）在 session 线程执行 —— 失败表现为版本不推进 +
+ * 观察者不回调，调用方经查询接口确认最终状态。
+ *
+ * 参数取值一律走**类型化** setter（与 cq_session_add_clip 的显式
+ * value/timescale 同一风格）：i64 / float / bool / color / vec2。
+ *   ⚠️ 标量用 float 不用 double：本头文件在契约头门禁扫描范围内
+ *      （tools/platform/check_platform_headers.py 禁 double token），
+ *      且非时间量浮点用 float 与 platform/chq_gfx.h 的 clear_color 同先例。
+ *      **时间永远不进属性**（红线 #4）—— 属性里没有任何时间字段。
+ *
+ * effect_id / effect_name / key 由内核在入队时拷贝，调用方的缓冲区
+ * 在提交返回后即可释放。
+ */
+
+/* 效果查询条目（query_clip_effects 写入）。 */
+typedef struct CQEffectInfo {
+    char effect_id[128];   /* NUL 结尾；超长截断（truncated = 1） */
+    char effect_name[128]; /* 展示名；超长截断（truncated = 1） */
+    int32_t enabled;       /* 0/1（单效果开关；与轨道 muted 正交） */
+    int32_t param_count;   /* 该效果参数袋大小（供两段式查询参数） */
+    int32_t truncated;     /* 任一字符串字段被截断 → 1（值不可信） */
+} CQEffectInfo;
+
+/* 参数查询条目（query_clip_effect_params 写入）。
+ * type 决定哪组字段有效：0=i64(i) 1=float(v[0]) 2=bool(b)
+ * 3=color(v[0..3]) 4=vec2(v[0..1])。 */
+typedef struct CQEffectParamInfo {
+    char key[128];
+    int32_t type;
+    int64_t i;
+    float v[4];
+    int32_t b;
+    int32_t truncated; /* key 被截断 → 1 */
+} CQEffectParamInfo;
+
+int32_t cq_session_add_clip_effect(CQSession* session, uint64_t clip_id,
+                                   const char* effect_id, const char* effect_name);
+
+int32_t cq_session_remove_clip_effect(CQSession* session, uint64_t clip_id,
+                                      const char* effect_id);
+
+int32_t cq_session_set_clip_effect_enabled(CQSession* session, uint64_t clip_id,
+                                           const char* effect_id, int32_t enabled);
+
+int32_t cq_session_set_clip_effect_param_i64(CQSession* session, uint64_t clip_id,
+                                             const char* effect_id, const char* key,
+                                             int64_t value);
+
+int32_t cq_session_set_clip_effect_param_float(CQSession* session, uint64_t clip_id,
+                                               const char* effect_id, const char* key,
+                                               float value);
+
+int32_t cq_session_set_clip_effect_param_bool(CQSession* session, uint64_t clip_id,
+                                              const char* effect_id, const char* key,
+                                              int32_t value);
+
+int32_t cq_session_set_clip_effect_param_color(CQSession* session, uint64_t clip_id,
+                                               const char* effect_id, const char* key,
+                                               float r, float g, float b, float a);
+
+int32_t cq_session_set_clip_effect_param_vec2(CQSession* session, uint64_t clip_id,
+                                              const char* effect_id, const char* key,
+                                              float x, float y);
+
+/* ---- 效果查询（**同步读**已发布快照；契约同 query_clips：状态码 + out_count）----
+ * 两段式：先 out=NULL 拿总数分配缓冲，再带缓冲取数据。
+ * clip 不存在 → 7000 (kInvalidArgument)；effect_id 不存在 → 1001 (kIoNotFound)。 */
+
+int32_t cq_session_clip_effect_count(const CQSession* session, uint64_t clip_id,
+                                     int32_t* out_count);
+
+int32_t cq_session_query_clip_effects(const CQSession* session, uint64_t clip_id,
+                                      CQEffectInfo* out, int32_t capacity, int32_t* out_count);
+
+int32_t cq_session_clip_effect_param_count(const CQSession* session, uint64_t clip_id,
+                                           const char* effect_id, int32_t* out_count);
+
+int32_t cq_session_query_clip_effect_params(const CQSession* session, uint64_t clip_id,
+                                            const char* effect_id, CQEffectParamInfo* out,
+                                            int32_t capacity, int32_t* out_count);
+
 /* ---- 撤销 / 重做（UIA-005；异步提交）----
  *
  * 命令历史是 **session 线程状态**（非线程安全），故 undo/redo 也必须入队：

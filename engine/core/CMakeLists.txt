@@ -41,6 +41,9 @@ add_library(cq_core STATIC
     # MODEL-001：时间线数据模型（ChqTimeline / ChqTrack / ChqClip / Transition）。
     # 先于 UIA-003 落地：没有时间线模型，预览就没有"播放头在哪、该显示哪个片段"。
     cq/model/chq_timeline.cpp
+    # MODEL-003：效果属性系统（属性值/属性袋/效果栈）。B0 渲染地基第二块：
+    # 效果从此是数据而非硬编码分支；渲染消费归 RENDER-011，本批只立结构与撤销链。
+    cq/model/chq_property.cpp
     # MODEL-002：Command 模式与 ChqCommandHistory（Undo/Redo）。
     # 红线 #5 的执行点：UI 变更全部经 Command；历史在 session 线程串行使用。
     cq/command/chq_command.cpp
@@ -54,6 +57,16 @@ add_library(cq_core STATIC
     # 不做 RenderGraph（RENDER-001）—— 预览只需要"渲染一帧"，
     # 节点图/依赖分析/pass 调度等真有多 pass 合成需求时再补。
     cq/gfx/chq_gfx_device.cpp
+    # RENDER-001（B0 渲染地基）：RenderGraph —— 节点 DAG + 拓扑排序（含环检测）、
+    # 装配器（预览/导出/纯音频三图同源，红线 #9 的可执行形式）、执行器（CPU 取帧 /
+    # GPU 编码两阶段）、时钟源（预览=墙钟 Pull，导出=步进）。
+    # ⚠️ 这四个 TU **不调任何 Platform 工厂**（只用 GFX/Platform 的接口指针），
+    #    故可以安全进 cq_core，不会给不消费渲染的目标牵出 Platform 依赖
+    #    （静态库按 archive member 拉符号，见 ADR-0011）。
+    cq/render/chq_clock_source.cpp
+    cq/render/chq_render_graph.cpp
+    cq/render/chq_graph_assembler.cpp
+    cq/render/chq_render_evaluator.cpp
     # BIND-003 子步骤 4：预览渲染器（ChqTimeline + ChqAssetRegistry + 取帧 + 零拷贝导入 → 离屏 RT）。
     # 平台无关：取帧走 ChqIFrameProviderFactory 接缝、绘制走 ChqIBlitPass 接缝。
     cq/preview/chq_preview_renderer.cpp
@@ -83,6 +96,9 @@ add_library(cq_core STATIC
     # 预览混音器（时间线→PCM 编排，详见 chq_preview_mixer.h 时钟语义）。
     cq/audio/chq_track_reader.cpp
     cq/audio/chq_preview_mixer.cpp
+    # AUDIO-004：多轨混音原语（float32 增益累加 + 硬削波，纯函数零分配）。
+    # 预览混音器的内联求和/削波已切换到此实现 —— 全仓只有一套混音路径。
+    cq/audio/chq_mix.cpp
     # AUDIO-002：音频预览 C ABI。引用 Platform 音频工厂符号的唯一 TU，
     # 单独成 TU（与 cq/preview/chq_sdk_preview.cpp 同一论证）：不消费音频
     # 预览的目标链接 cq_core 不牵出 Platform 音频依赖。

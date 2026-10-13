@@ -21,7 +21,9 @@ add_library(cq_platform_apple STATIC
     # BIND-003 子步骤 4/5：预览链路的两个 Apple 装配点。
     # 两者都实现 **Platform 契约**（工厂声明在 core/cq/platform/{gfx,media}.h），
     # 故这里没有对应的 .h —— 声明在 Platform，实现在各平台。
-    #   gfx/blit_pass.mm             —— CreateBlitPass（MSL 源在 gfx/shaders/）
+    #   gfx/blit_pass.mm             —— CreateBlitPass
+#                                   （MSL 由 SHADER-001 的 Portable 链在构建期生成，
+#                                    见下方「Portable shader → MSL」段）
     #   media/frame_provider_apple.mm —— CreateFrameProvider（PALA-010 + PALA-011 → MEDIA-020）
     gfx/blit_pass.mm
     media/frame_provider_apple.mm
@@ -38,6 +40,45 @@ target_include_directories(cq_platform_apple PUBLIC
     ${CMAKE_SOURCE_DIR}/engine/core)
 
 target_link_libraries(cq_platform_apple PUBLIC cq_core)
+
+# ===========================================================================
+# SHADER-001：Portable shader（shaders/src/*.glsl）→ MSL 生成链
+#
+# 红线 #6：Portable 层是跨平台基线，平台特化只能来自转译或 platform/ 下的**可选**覆盖。
+# 故这里在**构建期**跑 glslang → SPIR-V → spirv-cross → MSL，把产物写成 build/ 下的
+# 一个 .h，由 blit_pass.mm include。
+#
+# 为什么走构建期而不是运行时转译：运行时转译要把 glslang / SPIR-V-Cross 链进 App
+# （体积 + 启动耗时），而 shader 集合是编译期已知的常量——没有理由付出这个代价。
+#
+# 产物必须在 CMAKE_BINARY_DIR 下：AGENTS 禁止提交 shader 生成产物，放 build/ 既满足
+# 「不入库」，又能被 .mm 直接 include（无需运行时 IO）。
+# ===========================================================================
+find_package(Python3 COMPONENTS Interpreter REQUIRED)
+
+set(CQ_GENERATED_SHADER_DIR "${CMAKE_BINARY_DIR}/generated/shaders")
+set(CQ_BLIT_MSL_HEADER "${CQ_GENERATED_SHADER_DIR}/blit_msl.h")
+
+add_custom_command(
+    OUTPUT "${CQ_BLIT_MSL_HEADER}"
+    COMMAND "${CMAKE_COMMAND}" -E make_directory "${CQ_GENERATED_SHADER_DIR}"
+    COMMAND "${Python3_EXECUTABLE}" "${CMAKE_SOURCE_DIR}/tools/shaders/build_shaders.py"
+            --repo-root "${CMAKE_SOURCE_DIR}"
+            --out-dir "${CQ_GENERATED_SHADER_DIR}"
+    DEPENDS "${CMAKE_SOURCE_DIR}/tools/shaders/build_shaders.py"
+            "${CMAKE_SOURCE_DIR}/shaders/src/blit.vert"
+            "${CMAKE_SOURCE_DIR}/shaders/src/blit.frag"
+    COMMENT "SHADER-001: glslang → SPIR-V → spirv-cross → MSL (blit)"
+    其编辑器组件)
+
+# 用中间 target 承接依赖：直接 add_dependencies 到一个 custom command 的 OUTPUT 文件
+# 在部分 CMake 版本上不生效，target 形态则是明确支持的。
+add_custom_target(cq_shaders_msl DEPENDS "${CQ_BLIT_MSL_HEADER}")
+add_dependencies(cq_platform_apple cq_shaders_msl)
+
+# PRIVATE 而非 PUBLIC：生成目录只被本目录的 .mm 消费，不进导出接口
+# （CMake 会拒绝把 build/ 下的路径放进 INTERFACE_INCLUDE_DIRECTORIES）。
+target_include_directories(cq_platform_apple PRIVATE "${CQ_GENERATED_SHADER_DIR}")
 
 # 语言标准锁 C++20（含 OBJCXX），禁用 GNU 扩展。
 cq_require_cxx20(cq_platform_apple)

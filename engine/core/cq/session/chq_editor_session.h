@@ -110,6 +110,20 @@ public:
                                     const ChqRationalTime& new_start);
     // 画布比例（UIA-040）：项目级属性，可撤销。
     ChqStatus SubmitSetCanvas(const char* name, int32_t width, int32_t height);
+    // ---- 效果属性（MODEL-003；异步提交，经 ChqCommandHistory 可撤销）----
+    // 校验（片段存在 / 效果存在 / 同 id 不重复）在 session 线程执行，
+    // 失败表现为版本不推进 + 观察者不回调（与既有提交同一语义）。
+    // effect_id / key 由本层在入队时拷贝进 lambda（提交是异步的，
+    // 调用方的缓冲区不能活到 session 线程执行那一刻）。
+    ChqStatus SubmitAddClipEffect(const char* name, uint64_t clip_id,
+                                  const ChqEffectBinding& effect);
+    ChqStatus SubmitRemoveClipEffect(const char* name, uint64_t clip_id,
+                                     const std::string& effect_id);
+    ChqStatus SubmitSetClipEffectParam(const char* name, uint64_t clip_id,
+                                       const std::string& effect_id, const std::string& key,
+                                       const ChqPropertyValue& value);
+    ChqStatus SubmitSetClipEffectEnabled(const char* name, uint64_t clip_id,
+                                         const std::string& effect_id, bool enabled);
     ChqStatus SubmitUndo(const char* name);
     ChqStatus SubmitRedo(const char* name);
 

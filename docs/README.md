@@ -128,6 +128,7 @@ cat docs/handoff/HANDOFF-004-*.md      # 3. 最近交接（状态以最新一份
 | 文档 | 角色 |
 |---|---|
 | [`WEEKLY-*.md`](reports/WEEKLY-2026-W41.md) | **周报**（2026-10-07 立，传哲拍板）：项目介绍/当前架构/本周进度/关键数字/下周目标/风险，集成机每周出刊（规则见 [reports/README](reports/README.md)） |
+| [`WEEKLY-2026-W42.md`](reports/WEEKLY-2026-W42.md) | 最新一期（截至 2026-10-12）：在固定六节外扩充**技术细节 / Pipeline / 优点与缺陷 / 优化路径 / 分工进展** |
 
 ---
 

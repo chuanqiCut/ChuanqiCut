@@ -2,6 +2,14 @@
 
 > **归属**：C 线（内核/媒体/渲染） —— 归属表见 docs/tasks/PLAN-三线并行.md §1a / ADR-0029（双机分工与门禁跑批，2026-10-07）
 
+> **落地状态（2026-10-12，SHADER-001 / B0）**：Portable 层第一步已落地并**双壳构建
+> 验证**：`shaders/src/blit.{vert,frag}` → glslang 16.0.0（SPIR-V）→ SPIRV-Cross（MSL）
+> → 构建期生成 `blit_msl.h`（落 `build/generated/shaders/`，不入库）。工具链
+> scope=build。**两端接线**：CMake custom command（`engine/platform/apple/CMakeLists.txt`）
+> + podspec `script_phases`（Xcode/Pods 侧，`ChuanqiCutCore.podspec`）——
+> 两套构建系统写同一份幂等产物。手写 MSL（`blit_fullscreen_msl.h`）已退役。
+> 反射（*.json）/ 多 shader 管理 / Platform-Native 加速未做。
+
 **可手改**：`shaders/src/*.glsl`（Portable）、`platform/<platform>/shaders/*`（Platform-Native）
 **不可手改**：`shaders/generated/`（产物，不入库）
 

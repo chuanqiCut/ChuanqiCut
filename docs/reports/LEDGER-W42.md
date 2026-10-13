@@ -654,3 +654,142 @@
 ### 拍板/待回收
 - 传哲拍板：跑全量门禁（已跑，绿）。
 - 问卷 `docs/reviews/QUESTIONNAIRE-2026-10-12-真机批-日志纠偏三案.md` 已出，**未回收不得标记完成**。
+
+---
+
+## 2026-10-12 19:08｜周报 W42 出刊（集成机，本机）
+
+### 决策
+- 传哲要求出周报，内容扩到七块：整体项目 / 技术细节 / Pipeline / 当前实现优缺点 /
+  未来优化路径 / 分工与进展 / 下周计划。本机（集成机）出刊，落 `docs/reports/WEEKLY-2026-W42.md`。
+- 覆盖窗口定为 **2026-10-08 ~ 10-12**：W41 周报正文只写到 10-07，10-08~10-11 无周报覆盖。
+- **口径决定**：周报里「已实现 vs 规划中」必须分项写死 —— 明确写「**现在还不能导出成片**
+  （`cq_sdk.h` 无 `cq_export*`）」「RenderGraph 未开工」「SPIR-V 链零文件」，
+  不因门禁 PASS=14 而把愿景写成现状（呼应 P99「绿而空」）。
+- 分工按四条线报（集成机 / A 编辑·AI / B 相机 / C 内核媒体渲染），不按机器报 ——
+  本机同工作区多 agent 并行已是常态，机器口径会误导。
+
+### 写集
+- `docs/reports/WEEKLY-2026-W42.md`（新增）
+- `docs/README.md`（§6 周报表补 W42 索引行）
+- 本文件（append）
+
+### 验证
+- 数字全部来自既有实测（门禁 / baselines / 台账 / 模块册），**本轮未新跑门禁**。
+- 引用前逐条区分实测 vs [E] vs hypothesis；`baselines.md` 的 PERF-001 未建已在周报里明写。
+- 已知文档漂移（已写进周报 §5.2）：RESEARCH-010 缺口清单 4 条已被 10-11/10-12 提交推翻但未回填；
+  `docs/api/engine-api.md` 生成源路径失效且缺 6 个新函数；TASK-CAM-034/035 卡片状态未回填。
+
+### 拍板/待回收
+- 无新拍板（本周报不含代码改动）。
+- 下周三项待传哲拍板已写进周报 §9：①B0（RENDER-001）范围 + shader spike ②池 [18] 门禁加壳
+  ③池 [17] 内存取证方式（取证前不改代码）。
+
+---
+
+## 2026-10-12 21:55｜B0 渲染地基三块落地（RENDER-001 + SHADER-001 + MODEL-003）（集成机，本机）
+
+### 决策
+- 传哲拍板 B0 开工，授权「该写的代码一口气写出来，然后统一跑真机」；音频/视频/渲染多线并行。
+- **RENDER-001**：取 Pull（与泵线程请求驱动逐该厂商一致，保「与原 blit 路径像素一致」出口）；
+  装配器三图同源（kPreview/kExport/kAudioOnly，红线 #9 的可执行形式）；B0 只装配命中轨，
+  多轨命中 Warn + 只取第一条；节点上限 32 / 输入上限 4（B0 图固定 3 节点）。
+- **SHADER-001**：双层链 Portable GLSL 450 → glslang(SPIR-V) → SPIRV-Cross(MSL) → 构建期拼
+  `blit_msl.h`；工具链（glslang 16.0.0 / SPIRV-Cross）scope=build、产物不入库。
+- **MODEL-003**：效果即数据（ChqPropertyValue/Bag + ChqEffectBinding/Stack 挂 ChqClip）；
+  属性袋用 std::map 保序（指纹与插入序无关，unordered_map 会漂）；
+  **标量用 float 不用 double**（契约头门禁禁 double token，与 chq_gfx.h clear_color 先例一致）；
+  **时间不进属性**（红线 #4 的前提，属性只装图形参数）；属性变更一律走 Command（红线 #5），
+  四条新命令；「新建参数」的撤销走擦除而非写假默认值（不留幽灵参数）。
+- **效果应用不进 B0**：装配器对带**启用**效果的片段如实上报 effects_dropped（Warn，
+  Release 可见），消费归 RENDER-011（B7）—— 不许「加了却没效果」的静默失败。
+- **壳工程接线补齐（集成机职责）**：shader agent 只接了 CMake 侧（custom command），
+  Pods/Xcode 侧零接线 → 壳工程会直接编不过 `blit_msl.h`。本机在 podspec 声明
+  `script_phases`（before_compile）+ HEADER_SEARCH_PATHS 补生成目录，两套构建系统
+  写同一份幂等产物（仓库根 build/generated/shaders/）。**不许为壳工程回退成手写 MSL**
+  （那正是 ADR-0014 两套路径的复刻）。
+
+### 写集（本批；与 DEPS-012 / 其它线无交叠）
+- 新增：`engine/core/cq/render/`（clock_source / render_graph / graph_assembler /
+  render_evaluator / fit_mode / fit_viewport / frame_source，7 头 + 4 实现）、
+  `engine/core/cq/model/chq_property.{h,cpp}`、`shaders/src/blit.{vert,frag}`、
+  `tools/shaders/build_shaders.py`、`tests/unit/test_render_graph.cpp`、
+  `tests/unit/test_model_property.cpp`、`tests/unit/test_c_abi_property.c`
+- 修改：`chq_timeline.{h,cpp}`（ChqClip 挂效果栈 + 7 个效果方法）、`chq_command.{h,cpp}`
+  （4 条属性命令）、`chq_editor_model_state.cpp`（digest 混入效果栈指纹）、
+  `chq_editor_session.{h,cpp}`（4 个 Submit*）、`cq_sdk.{h,cpp}`（11 个 ABI 函数 +
+  2 个查询结构体）、`chq_preview_renderer.{h,cpp}`（改走 RenderGraph）、
+  `engine/platform/apple/gfx/blit_pass.mm`（消费生成 MSL）、
+  `engine/platform/apple/CMakeLists.txt`、`engine/ChuanqiCutCore.podspec`
+  （script_phases + header search path）、`engine/core/CMakeLists.txt`、
+  `tests/CMakeLists.txt`、`tests/unit/test_model_command.cpp`（本地指纹覆盖 effects）
+
+### 验证（本机实测，Intel x86_64 / macOS 26.7.1 / Xcode 26.6 / Swift 6.3.3）
+- `tools/build/build_core.sh --platform=apple --config=Debug`：**0 error / 0 warning**（-Werror）；
+  `--config=Release` 同（Release 是发布必经路径，两边都跑）。
+- `ctest --test-dir build`：**Debug 51/51 Passed**（76.8s）、**Release 51/51 Passed**（74.9s）。
+  批前基线 48；本批 +render_graph(49) +model_property +c_abi_property。
+- 新用例断言数：`model_property` **179 checks 0 failures**；`c_abi_property` **76 checks 0 failures**；
+  `render_graph` 全过（含新增的 effects_dropped 两例）；`preview_renderer` 51 项全过
+  （RenderGraph 接入后像素一致：contain 清屏黑 / 真值像素保持）。
+- `platform_header_gate` PASS（新模型头的 float 用法合规，未触发 double 规则）。
+- SHADER-001 链通：glslang -V --target-env vulkan1.1 → spirv-cross --msl →
+  `xcrun -sdk macosx metal -c` rc=0（spike 时实测）。
+- **未跑/未收**：全量 `run_gate.sh`（须传哲同意，未跑）；iOS 壳构建进行中（见下）；
+  macOS 壳构建未跑；真机问卷未出未收。**B0 不得标记完成**（问卷未回收）。
+
+### 拍板/待回收
+- 传哲拍板：B0 开工 + 「一口气写代码后统一跑真机」（授权在；真机部分未执行）。
+- 音频线（AUDIO-004 多轨 PCM 混音）agent 因 **429 限流失败**（重置 2026-10-13 10:38 UTC+8），
+  **未产出任何代码** —— 待限流恢复后重派，或由集成机串行补写。
+- 视频线未定卡：候选 FFmpegFrameProvider（与 DEPS-012 线交叠）或导出编排器；
+  按 ADR-0034「一批未验收不得叠加」，待 B0 真机问卷回收后再开。
+- 两个技术待答复（不阻塞本批）：①build_shaders.py 的 Python3 依赖（CMake 侧已
+  find_package(Python3)，Xcode 侧用系统 python3）；②UI 侧 PreviewFrameRenderer.swift
+  手写 MSL 是否并入 Portable 链（建议不在本批动，先登记）。
+
+### 补记（2026-10-12 22:50，同批追加，append-only 不改上文）
+- 壳构建补齐（承接上条「iOS 壳构建进行中」）：`pod install`（iOS + mac 两端）后
+  **iOS `ChuanqiCutApp` generic/platform=iOS：BUILD SUCCEEDED**（1m14s）；
+  **macOS `ChuanqiCutMacApp -arch x86_64 ONLY_ACTIVE_ARCH=YES：BUILD SUCCEEDED**（48s）。
+  podspec script phase 两端实际执行（Xcode 警告可见），`blit_msl.h` 生成后被找到。
+- Mac 侧首次构建失败一次：起跑早于 mac `pod install` 完成（Pods 工程还是旧清单，
+  blit_pass.mm 编不过）—— 刷新后即绿。**教训固化：podspec 增删文件/改 script phase 后，
+  两端都必须重跑 `bundle exec pod install` 再构建，顺序不能反。**
+- 真机问卷已出：`docs/reviews/QUESTIONNAIRE-B0-B0渲染地基三块.md`（未回收）。
+
+### 补记二（2026-10-12 收工复核，同批追加，append-only 不改上文）
+- **数字复跑（本机 Intel x86_64，无新代码变更，仅文档）**：`ctest` Debug
+  **51/51 Passed（100%，75.57s）**；`cq_tests_model_property` **179 checks / 0 failures**；
+  `cq_tests_c_abi_property` **76 checks / 0 failures**。与 22:30 段一致。
+- 模块册注记落点修正：`.ai/modules/shader.md`「落地状态」块从标题后移到归属行之后
+  （render.md / model.md 落点本就正确）。
+- 新增 pitfalls **P125**：podspec 加 `script_phases` 不重跑 pod install = 生成头缺失，
+  报错点骗人（.mm include 行）；规则 = podspec 任何改动必须双端 pod install。
+- 两个技术待答复的**结论**（不再挂起）：
+  ① build_shaders.py 纯标准库；CMake 用 `Python3_EXECUTABLE`、podspec 用 PATH
+     `python3`；真正硬依赖是 `build/tools/{glslang,spirv-cross}`（tools/deps 产物、
+     不入库）→ 新克隆机必须**先 tools/deps 再 pod install / 构建 core**，否则脚本
+     以可读诊断退出（不静默假绿）。
+  ② UI 侧 `PreviewFrameRenderer.swift` 手写 MSL **不并入** Portable 链（本批决策：
+     UI 包耦合 engine 构建产物属新架构问题，按「一批未验收不叠加」不夹带）；
+     已把该文件头注释改准（指向 `blit_pass.mm` 的 `kBlitVerts` + SHADER-001 链），
+     并如实写明"UI 呈现 shader 仍是手写平台原生版本"。是否让 UI 消费引擎生成的
+     MSL 留待传哲拍板。
+
+### 补记三（2026-10-13 13:xx，AUDIO-004 编码轮，append-only 不改上文）
+- **AUDIO-004 开工（传哲 12:52 授权「音频线跑起来吧」；429 重置 10:38 已过）**。
+  scope 裁决：只做混音原语（`chq_mix.{h,cpp}` 的 `MixAccumulateRange` 增益累加 +
+  `MixClipRange` 硬削波，非有限值按 0）+ 预览混音器改用它，**不做** AudioGraph 多输入
+  扩展 / 母带限制器 / solo / 非 float32 总线 / dB 换算 / 模型音量字段（理由见卡）。
+- **消灭并行实现**：预览混音器内联求和 + 削波已删，改调 `chq_mix.h` 原语（ADR-0014 教训）。
+  增益取点以 `kTrackGainUnity` 命名常量留出（模型无音量字段前恒 1.0）。
+- **实测（本机 Intel x86_64）**：`build_core.sh` Debug/Release 各 **0 error 0 warning（-Werror）**；
+  `ctest` Debug **52/52**（批前 B0 基线 51，+core_audio_mix）；`ctest -R audio` 两端各 **5/5**；
+  `core_audio_mix` **57 检查 0 失败**；平台头门禁 43 头 0 违规。
+- **未做**：全量 `run_gate.sh` 未跑（须传哲同意）；音频无真机可听感验收路径（PALA-030 未做）
+  → **不出音频真机问卷**；AUDIO-004 不标记完成（等 B0 问卷回收 + 全量门禁后再并批）。
+- **写集不相交核验**：AUDIO-004 写集（chq_mix.* / 预览混音器 cpp / 双 CMake / 单测）与 B0 批
+  （model_property / cq_sdk 等）只在 `engine/core/CMakeLists.txt`、`tests/CMakeLists.txt`
+  两个热点文件交叠 → 由集成机串行改、改完即构建验证（已做），未动 B0 已落文件一字。
+- **全部改动未提交 git**（与 B0 批同池，合并快检须传哲同意）。

@@ -308,4 +308,94 @@ ChqStatus ChqTrimClipCommand::Undo(ChqTimeline& model) {
     return model.TrimClip(clip_id_, old_duration_);
 }
 
+// ===========================================================================
+// ChqAddClipEffectCommand（MODEL-003）
+// ===========================================================================
+
+ChqStatus ChqAddClipEffectCommand::Do(ChqTimeline& model) {
+    // Append 自带校验（空 id / 栈内同 id）；失败时栈不动、不入历史。
+    return model.AddClipEffect(clip_id_, effect_);
+}
+
+ChqStatus ChqAddClipEffectCommand::Undo(ChqTimeline& model) {
+    return model.RemoveClipEffect(clip_id_, effect_.effect_id);
+}
+
+// ===========================================================================
+// ChqRemoveClipEffectCommand（MODEL-003）
+// ===========================================================================
+
+ChqStatus ChqRemoveClipEffectCommand::Do(ChqTimeline& model) {
+    const ChqClip* clip = model.FindClip(clip_id_);
+    if (clip == nullptr) return ChqStatus(ChqStatusCode::kInvalidArgument);
+    if (clip->effects.Find(effect_id_) == nullptr) {
+        return ChqStatus(ChqStatusCode::kIoNotFound);
+    }
+    stack_before_ = clip->effects;  // 整栈快照（含原次序）—— Undo 的唯一依据
+    captured_ = true;
+    return model.RemoveClipEffect(clip_id_, effect_id_);
+}
+
+ChqStatus ChqRemoveClipEffectCommand::Undo(ChqTimeline& model) {
+    if (!captured_) return ChqStatus(ChqStatusCode::kInternal);
+    return model.ReplaceClipEffects(clip_id_, stack_before_);
+}
+
+ChqStatus ChqRemoveClipEffectCommand::Redo(ChqTimeline& model) {
+    if (!captured_) return ChqStatus(ChqStatusCode::kInternal);
+    return model.RemoveClipEffect(clip_id_, effect_id_);
+}
+
+// ===========================================================================
+// ChqSetEffectParamCommand（MODEL-003）
+// ===========================================================================
+
+ChqStatus ChqSetEffectParamCommand::Do(ChqTimeline& model) {
+    const ChqClip* clip = model.FindClip(clip_id_);
+    if (clip == nullptr) return ChqStatus(ChqStatusCode::kInvalidArgument);
+    const ChqEffectBinding* effect = clip->effects.Find(effect_id_);
+    if (effect == nullptr) return ChqStatus(ChqStatusCode::kIoNotFound);
+    if (key_.empty()) return ChqStatus(ChqStatusCode::kInvalidArgument);
+    // 捕获旧值（含"原先没有该 key"）；key 非法由 SetClipEffectParam 再拦一次
+    // （双保险：模型层是校验的真源，这里提前拒只是为了让命令根本不入栈）。
+    const ChqPropertyValue* old = effect->params.Find(key_);
+    had_old_ = (old != nullptr);
+    if (old != nullptr) old_value_ = *old;
+    captured_ = true;
+    return model.SetClipEffectParam(clip_id_, effect_id_, key_, new_value_);
+}
+
+ChqStatus ChqSetEffectParamCommand::Undo(ChqTimeline& model) {
+    if (!captured_) return ChqStatus(ChqStatusCode::kInternal);
+    if (had_old_) {
+        return model.SetClipEffectParam(clip_id_, effect_id_, key_, old_value_);
+    }
+    // 原先没有该 key：擦除，不留幽灵参数。
+    return model.EraseClipEffectParam(clip_id_, effect_id_, key_);
+}
+
+ChqStatus ChqSetEffectParamCommand::Redo(ChqTimeline& model) {
+    if (!captured_) return ChqStatus(ChqStatusCode::kInternal);
+    // 不重跑 Do：那会把"当前值"重新捕获成旧值（Undo 后当前值恰是旧值时
+    // 虽侥幸正确，但那是巧合不是契约）。显式重放新值。
+    return model.SetClipEffectParam(clip_id_, effect_id_, key_, new_value_);
+}
+
+// ===========================================================================
+// ChqSetEffectEnabledCommand（MODEL-003）
+// ===========================================================================
+
+ChqStatus ChqSetEffectEnabledCommand::Do(ChqTimeline& model) {
+    const ChqClip* clip = model.FindClip(clip_id_);
+    if (clip == nullptr) return ChqStatus(ChqStatusCode::kInvalidArgument);
+    const ChqEffectBinding* effect = clip->effects.Find(effect_id_);
+    if (effect == nullptr) return ChqStatus(ChqStatusCode::kIoNotFound);
+    old_enabled_ = effect->enabled;
+    return model.SetClipEffectEnabled(clip_id_, effect_id_, new_enabled_);
+}
+
+ChqStatus ChqSetEffectEnabledCommand::Undo(ChqTimeline& model) {
+    return model.SetClipEffectEnabled(clip_id_, effect_id_, old_enabled_);
+}
+
 }  // namespace cq

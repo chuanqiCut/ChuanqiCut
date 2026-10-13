@@ -513,6 +513,32 @@ cq_require_cxx20(cq_tests_model_command)
 apply_cq_warnings(cq_tests_model_command)
 add_test(NAME model_command COMMAND cq_tests_model_command)
 
+# ---- MODEL-003：效果属性系统（属性值/袋/栈、四条属性命令、digest 覆盖）----
+# 验收：类型安全读取（不猜不转）、指纹与插入序无关、栈保序与重复拒绝、
+# Do/Undo/Redo 往返（含"新建参数撤销后无幽灵"）、50 深往返指纹回初始态、
+# digest 真断言（同值 set 只推进版本不变 digest）、与轨级标志正交。
+# 只链 cq_core：属性是纯模型层能力，不牵出任何 Platform 依赖。
+add_executable(cq_tests_model_property
+    unit/test_model_property.cpp)
+target_include_directories(cq_tests_model_property PRIVATE
+    ${CMAKE_SOURCE_DIR}/engine/core)
+target_link_libraries(cq_tests_model_property PRIVATE cq_core)
+cq_require_cxx20(cq_tests_model_property)
+apply_cq_warnings(cq_tests_model_property)
+add_test(NAME model_property COMMAND cq_tests_model_property)
+
+# ---- MODEL-003：效果属性 C ABI（真正的 C 翻译单元）----
+# 与 test_c_abi_edit.c 同性质：cq_sdk.h 混进 C++ 类型即编译失败。
+# 端到端覆盖：add/remove/enabled/五类参数 setter、两段式查询、
+# undo 整栈还原、digest 端到端变化、失败语义与同步参数校验。
+add_executable(cq_tests_c_abi_property
+    unit/test_c_abi_property.c)
+set_target_properties(cq_tests_c_abi_property PROPERTIES LINKER_LANGUAGE CXX)
+target_include_directories(cq_tests_c_abi_property PRIVATE
+    ${CMAKE_SOURCE_DIR}/engine/core)
+target_link_libraries(cq_tests_c_abi_property PRIVATE cq_core)
+add_test(NAME c_abi_property COMMAND cq_tests_c_abi_property)
+
 # ---- BIND-003 子步骤 1：素材表（asset_id → MediaSource）----
 # 重点：验证 unordered_map 重哈希后 MediaSource.path 裸指针仍然有效（SSO 陷阱）。
 add_executable(cq_tests_asset_registry
@@ -609,6 +635,19 @@ cq_require_cxx20(cq_tests_core_audio_preview_mixer)
 apply_cq_warnings(cq_tests_core_audio_preview_mixer)
 add_test(NAME core_audio_preview_mixer COMMAND cq_tests_core_audio_preview_mixer)
 
+# ---- AUDIO-004：多轨混音原语 ----
+# 增益语义（含 0/负/>1）、多轨累加顺序不敏感、硬削波与非有限值处置、
+# 分码纪律（拒绝即不写内存，哨兵比对）、部分区间帧偏移、
+# 音频线程零分配实测（operator new 增量 = 0）。
+add_executable(cq_tests_core_audio_mix
+    unit/test_audio_mix.cpp)
+target_include_directories(cq_tests_core_audio_mix PRIVATE
+    ${CMAKE_SOURCE_DIR}/engine/core)
+target_link_libraries(cq_tests_core_audio_mix PRIVATE cq_core)
+cq_require_cxx20(cq_tests_core_audio_mix)
+apply_cq_warnings(cq_tests_core_audio_mix)
+add_test(NAME core_audio_mix COMMAND cq_tests_core_audio_mix)
+
 # ---- AIEDIT-001：EditPlan 校验器 + golden 样例集（58 例）----
 # 手写 JSON 解析 + 结构/语义校验；红线 4 时间浮点机器检查。
 # golden 目录通过编译宏注入（测试二进制运行时读取 JSON 夹具）。
@@ -637,3 +676,14 @@ target_link_libraries(cq_tests_media_ffmpeg_probe PRIVATE cq_core cq_ffmpeg)
 cq_require_cxx20(cq_tests_media_ffmpeg_probe)
 apply_cq_warnings(cq_tests_media_ffmpeg_probe)
 add_test(NAME media_ffmpeg_probe COMMAND cq_tests_media_ffmpeg_probe)
+
+# ---- RENDER-001（B0）：RenderGraph 单测 ----
+# 纯逻辑用例（假 frame source / 假 encoder），不依赖 GPU：
+# 覆盖图结构校验（含环检测）、指纹、装配器三用途、执行器两阶段与视口决策、时钟源。
+# 真机/真 GPU 的像素一致性由 preview_renderer 用例守（跑完整链路）。
+add_executable(cq_tests_render_graph
+    unit/test_render_graph.cpp)
+target_link_libraries(cq_tests_render_graph PRIVATE cq_core)
+cq_require_cxx20(cq_tests_render_graph)
+apply_cq_warnings(cq_tests_render_graph)
+add_test(NAME render_graph COMMAND cq_tests_render_graph)

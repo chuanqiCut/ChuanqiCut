@@ -47,6 +47,28 @@ Pod::Spec.new do |s|
   s.public_header_files = 'core/cq/cq_sdk.h'
   s.header_mappings_dir = 'core/cq'
 
+  # SHADER-001：Portable shader → MSL 的**构建期生成**（Xcode/Pods 侧接线）。
+  # CMake 侧由 engine/platform/apple/CMakeLists.txt 的 custom command 完成
+  # （产物落 ${CMAKE_BINARY_DIR}/generated/shaders）；Pods/Xcode 构建不经过
+  # CMake，若不在这里补接线，blit_pass.mm 的 `#include "blit_msl.h"` 在壳工程
+  # 里直接编不过（生成物只在 CMake 构建里存在）——那就是"CMake 绿、壳工程红"
+  # 的又一处分裂，本项目已在两套渲染路径上付过代价（ADR-0014），不许再犯。
+  # 产物落仓库根 build/generated/shaders/（.gitignore 忽略；与 CMake 侧同一
+  # 路径，两套构建系统写同一份幂等产物，不互相覆盖）。
+  s.script_phases = [
+    {
+      :name => 'SHADER-001: Portable shader -> MSL (blit_msl.h)',
+      :script => <<-SH,
+set -e
+REPO_ROOT="${PODS_TARGET_SRCROOT}/.."
+OUT_DIR="${REPO_ROOT}/build/generated/shaders"
+mkdir -p "${OUT_DIR}"
+python3 "${REPO_ROOT}/tools/shaders/build_shaders.py" --repo-root "${REPO_ROOT}" --out-dir "${OUT_DIR}"
+SH
+      :execution_position => :before_compile,
+    }
+  ]
+
   s.frameworks = 'Foundation', 'Metal', 'AVFoundation', 'CoreMedia',
                  'VideoToolbox', 'CoreVideo', 'CoreGraphics',
                  'AudioToolbox', 'QuartzCore'
@@ -82,6 +104,7 @@ Pod::Spec.new do |s|
                              '"$(PODS_TARGET_SRCROOT)/platform/apple/base" ' \
                              '"$(PODS_TARGET_SRCROOT)/platform/apple/gfx" ' \
                              '"$(PODS_TARGET_SRCROOT)/platform/apple/media" ' \
+                             '"$(PODS_TARGET_SRCROOT)/../build/generated/shaders" ' \
                              '"$(PODS_TARGET_SRCROOT)/vendor/libffmpeg.xcframework/macos-arm64_x86_64/Headers"'
   }
 end

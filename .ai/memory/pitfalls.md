@@ -2069,3 +2069,38 @@ TASK-CAM-012 剩余风险栏其实预判了（"若真机上 CI 工作空间表�
 - **防复发规则**：①凡是「从别的对象的纹理/格式派生自己的资源」的地方，格式与尺寸
   都当成**不可信输入**先校验；②`signal 9` 在 iOS 上首先怀疑 **jetsam（内存）**，
   Metal 断言往往是内存吃紧的下游症状 —— 不要只修断言就宣布修好崩溃。
+
+## P125：podspec 加 `script_phases` 后不重跑 pod install = 生成头缺失，报错点骗人（2026-10-12，SHADER-001 壳接线，已修 verified）
+
+- **现象**：`ChuanqiCutCore.podspec` 加了 `script_phases`（构建期跑
+  `tools/shaders/build_shaders.py` 生成 `blit_msl.h`），`pod install` 未重跑 →
+  mac 壳 `blit_pass.mm` 编译失败：`'blit_msl.h' file not found`。报错点在
+  **include 那一行**，与 podspec/script phase 毫无字面关联。
+- **根因**：`Pods.xcodeproj` 是 podspec 的**快照**（P107 的文件清单维度 + 本条新增的
+  **script phase 维度**）。podspec 改文件清单或改 script_phases，两端都必须重跑
+  `bundle exec pod install`，否则 Xcode 侧跑的是旧构建阶段表。
+- **影响范围**：凡走 Pods 的 Apple 壳；CMake 侧**不受影响**（custom command 当场生效），
+  所以会呈现"core 单测全绿 + 壳构建红"的割裂形态。
+- **修**：iOS/mac 两端 `bundle exec pod install` 后重建 → 均 SUCCEEDED，script phase
+  实际执行（日志可见 `[shaders] 生成 .../blit_msl.h`）。
+- **防复发规则**：①podspec 任何改动（文件 glob / script_phases / 依赖 / 搜索路径）
+  都视为**必须双端重跑 pod install** 的变更，没有例外；②"CMake 绿 ≠ Pods 绿"，
+  壳构建结论必须来自 pod install 之后。
+
+## P126：搜索工具里写 `\|` 会静默 0 命中 —— 多模式搜索假阴性（2026-10-13，RESEARCH-016，已证实 verified）
+
+- **现象**：用 Grep 工具搜 `processors\|collectProcessNodes`，返回 **0 命中**；
+  而这两个符号就明明白白写在 `其编辑语义层/Headers/其时空节点模型+iOS.h:117-119`。
+  差点据此在调研文档里写成「该机制不存在 / 语义不明」。
+- **根因**：Grep 工具底层是 **ripgrep**，正则语法是 **Rust regex** —— `\|` 是**转义后的字面竖线
+  字符**，不是「或」。于是实际搜的是字符串 `processors|collectProcessNodes`，自然 0 命中。
+  多模式交替在 ripgrep 里应当直接写 `|`（不转义）。
+- **补充实测（避免矫枉过正）**：本机 shell 的 BSD grep（BRE）**是支持 `\|` 做交替的**
+  —— 实测 `printf 'a|b\nfoo\n' | grep "a\|b"` 正常命中 `a|b`。所以这是**工具差异**，
+  不是"所有 grep 都不行"。两个环境两套语法，最稳的写法是**一律 `grep -E` / 裸 `|`**。
+- **影响范围**：任何"用多关键词搜代码确认某机制**是否存在**"的判断。
+  危险点在于它是**静默**的 —— 0 命中看起来和"确实没有"一模一样。
+- **防复发规则**：①凡得出「仓库里没有 X」的**否定性结论**，必须换一种写法
+  （`grep -E "X|Y"` 或 `grep -rl "X"` 单模式各搜一次）**交叉复核**再落笔；
+  ②跨工具时不要凭记忆套正则语法，先拿一个**已知必然命中的样本**验一次语法
+  （本次就是靠"文件里明明有"才发现的）。

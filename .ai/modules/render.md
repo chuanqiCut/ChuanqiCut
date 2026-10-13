@@ -2,6 +2,14 @@
 
 > **归属**：C 线（内核/媒体/渲染） —— 归属表见 docs/tasks/PLAN-三线并行.md §1a / ADR-0029（双机分工与门禁跑批，2026-10-07）
 
+> **落地状态（2026-10-12，RENDER-001 / B0）**：目标架构的**第一步**已落地 ——
+> 节点 DAG + 拓扑排序（Kahn，含环检测）+ 结构指纹（FNV-1a）+ 三用途装配器
+> （kPreview/kExport/kAudioOnly）+ 两阶段执行器（CPU Prepare / GPU Encode）+ 时钟源
+> （步进/实时）。实现在 `engine/core/cq/render/`（ADR-0033 共置布局；本册路径
+> `core/src/graph/` 是 ADR-0033 前的旧布局，未同步更新）。**Pass 合并 / 纹理别名 /
+> LOD / 效果节点均未实现**（归 RENDER-011，B7）；Pull 模型（预览请求驱动），音频线
+> push 30Hz 由 ChqIClockSource 在同一装配器下区分。效果只如实上报 effects_dropped。
+
 **边界**：`core/src/graph/`、`core/src/effect/`、`core/src/color/`
 
 ## 职责

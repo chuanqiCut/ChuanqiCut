@@ -293,6 +293,99 @@ private:
     ChqRationalTime old_duration_{0, 1};  // 首次 Do 时捕获
 };
 
+// ---------------------------------------------------------------------------
+// 结构类：给片段添加效果（MODEL-003）。Undo = 按 effect_id 移除。
+// Redo 用默认（= 重新 Do）：效果 id 由调用方给出、追加恒在栈尾，
+// 重放得到与首次 Do 完全一致的状态 —— 与 ChqAddTrackCommand 不同
+// （那条重放会分配新 id，必须覆写 Redo 走 RestoreTrack）。
+// ---------------------------------------------------------------------------
+class ChqAddClipEffectCommand : public ChqICommand {
+public:
+    ChqAddClipEffectCommand(uint64_t clip_id, const ChqEffectBinding& effect)
+        : clip_id_(clip_id), effect_(effect) {}
+
+    ChqStatus Do(ChqTimeline& model) override;
+    ChqStatus Undo(ChqTimeline& model) override;
+    const char* Name() const override { return "add-clip-effect"; }
+
+private:
+    uint64_t clip_id_;
+    ChqEffectBinding effect_;  // 输入参数（深拷贝：字符串 + 参数袋）
+};
+
+// ---------------------------------------------------------------------------
+// 结构类：移除片段效果（MODEL-003）。Do 时捕获整条效果栈快照（单实体粒度，
+// 同 ChqRemoveTrackCommand 的轨道快照）：移除会丢掉原次序，逐条 Append
+// 还原会改变其余效果的相对顺序，而顺序是渲染语义，不能漂。
+// Undo = 整栈替换还原；Redo = 再移除一次。
+// ---------------------------------------------------------------------------
+class ChqRemoveClipEffectCommand : public ChqICommand {
+public:
+    ChqRemoveClipEffectCommand(uint64_t clip_id, std::string effect_id)
+        : clip_id_(clip_id), effect_id_(std::move(effect_id)) {}
+
+    ChqStatus Do(ChqTimeline& model) override;
+    ChqStatus Undo(ChqTimeline& model) override;
+    ChqStatus Redo(ChqTimeline& model) override;
+    const char* Name() const override { return "remove-clip-effect"; }
+
+private:
+    uint64_t clip_id_;
+    std::string effect_id_;
+    ChqEffectStack stack_before_{};  // Do 时捕获（Undo 的整栈还原依据）
+    bool captured_ = false;
+};
+
+// ---------------------------------------------------------------------------
+// 编辑类：设效果参数（MODEL-003）。存 key + 新旧值（增量，model.md #2）。
+// "原先没有该 key"（首次拖滑块创建覆盖）用 had_old_ = false 表达，
+// Undo 走擦除而不是写回一个假默认值 —— 否则模型里会留下一个
+// 「用户从没设过、撤销也删不掉」的幽灵参数。
+// ---------------------------------------------------------------------------
+class ChqSetEffectParamCommand : public ChqICommand {
+public:
+    ChqSetEffectParamCommand(uint64_t clip_id, std::string effect_id, std::string key,
+                             ChqPropertyValue new_value)
+        : clip_id_(clip_id),
+          effect_id_(std::move(effect_id)),
+          key_(std::move(key)),
+          new_value_(new_value) {}
+
+    ChqStatus Do(ChqTimeline& model) override;
+    ChqStatus Undo(ChqTimeline& model) override;
+    ChqStatus Redo(ChqTimeline& model) override;
+    const char* Name() const override { return "set-effect-param"; }
+
+private:
+    uint64_t clip_id_;
+    std::string effect_id_;
+    std::string key_;
+    ChqPropertyValue new_value_;
+    ChqPropertyValue old_value_{};  // 首次 Do 时捕获（had_old_ = false 时无意义）
+    bool had_old_ = false;
+    bool captured_ = false;
+};
+
+// ---------------------------------------------------------------------------
+// 编辑类：效果启用开关（MODEL-003）。只存新旧布尔（与 ChqSetCanvasCommand
+// 同型的标量编辑）。与轨道 muted 正交：muted 静音整条轨，这个是单效果开关。
+// ---------------------------------------------------------------------------
+class ChqSetEffectEnabledCommand : public ChqICommand {
+public:
+    ChqSetEffectEnabledCommand(uint64_t clip_id, std::string effect_id, bool enabled)
+        : clip_id_(clip_id), effect_id_(std::move(effect_id)), new_enabled_(enabled) {}
+
+    ChqStatus Do(ChqTimeline& model) override;
+    ChqStatus Undo(ChqTimeline& model) override;
+    const char* Name() const override { return "set-effect-enabled"; }
+
+private:
+    uint64_t clip_id_;
+    std::string effect_id_;
+    bool new_enabled_;
+    bool old_enabled_ = true;  // 首次 Do 时捕获
+};
+
 }  // namespace cq
 
 #endif /* CQ_CORE_COMMAND_CHQ_COMMAND_H_ */

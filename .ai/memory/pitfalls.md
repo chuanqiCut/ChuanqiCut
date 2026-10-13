@@ -2104,3 +2104,23 @@ TASK-CAM-012 剩余风险栏其实预判了（"若真机上 CI 工作空间表�
   （`grep -E "X|Y"` 或 `grep -rl "X"` 单模式各搜一次）**交叉复核**再落笔；
   ②跨工具时不要凭记忆套正则语法，先拿一个**已知必然命中的样本**验一次语法
   （本次就是靠"文件里明明有"才发现的）。
+
+## P127：合并快检在本机的三个环境事实（2026-10-13，B0 提交轮，已证实 verified）
+
+在集成机跑「合并快检」时连续踩到三个**环境事实**（不是代码问题，但会让人误判成失败）：
+
+1. **`ctest` 不在 PATH** → 直接敲 `ctest` 报 `command not found: ctest`。
+   本机 cmake 装在 `~/.workbuddy/binaries/cmake/CMake.app`，须用全路径：
+   `/Users/zhuning/.workbuddy/binaries/cmake/CMake.app/Contents/bin/ctest --test-dir build`
+   （`cmake` 自己是否在 PATH 也一并确认，别想当然。）
+2. **SharedUI 包没有 Tests 目标** → `swift test` 编译成功后报
+   `error: no tests found; create a target in the 'Tests' directory`。
+   这是**包结构如此，不是失败**。所谓"SharedUI `swift test` 窄检"在本仓实际只能验证**编译**，
+   报告时必须如实写成「编译 PASS，该包无测试目标」，不能写成「测试通过」。
+3. **SPM 在本会话沙箱里跑不起来** → 报 `sandbox-exec: sandbox_apply: Operation not permitted`
+   （沙箱嵌套）。加 `--disable-sandbox` 即可正常跑，**不必**为此禁用整个会话沙箱。
+
+- **影响范围**：任何「合并快检」结论。三条都会让"其实是通过的"看起来像失败，
+  尤其第 2 条会让人误报"SharedUI 测试通过"。
+- **防复发规则**：①跑 ctest 一律带全路径；②SharedUI 窄检的结论措辞固定为
+  「编译 + 无测试目标」；③SPM 命令默认带 `--disable-sandbox`。

@@ -25,7 +25,19 @@
   （各自跑出来的版本不同）。交叉点核查命令：`git show --name-only <c>` 逐个核自己的提交里
   有没有混进对方文件。
 - **可追溯三件套（ADR-0034，2026-10-10 起必用）**：`docs/reports/LEDGER-W42.md`（决策与实现台账，append-only，含模型/时间/写集/验证/拍板）、`docs/reviews/TEMPLATE-真机问卷.md`（交付必附）、`docs/reviews/QUESTIONNAIRE-<批号>-<主题>.md`（实例）。
-- **编辑功能对齐路线**：`RESEARCH-010` §5 的 B0~B8 批次。地基先行：B0 = RENDER-001 最小 RenderGraph + MODEL-003 属性系统 + SHADER-001 Portable shader，这是红线 #9（预览与导出共用 RenderGraph）的必然要求；B4 才是第一个可见出口（导出闭环）。当前全部未开工。
+- **编辑功能对齐路线（2026-10-13 已重构，见 ADR-0040）**：`RESEARCH-010` §5 批次表已更新。
+  - B0 渲染地基 **已提交 `2e8b55d`**（ctest 52/52）；**真机问卷未回收 → 按 ADR-0034 未标记完成**。
+  - B1 模型命令 ✅；B2 部分（AUDIO-004 `chq_mix` 已提交，PALA-030 未做）；B3/B4+ 未开工。
+  - **新增 B5.5「空间与交互地基」（传哲 2026-10-13 拍板：B4 之后、B6/B7 之前）**：
+    `MODEL-004`（ChqTransform + layer + speed + keyframes）+ `EDIT-012`（commit/done 双层 PreviewSync）。
+    由来：RESEARCH-016 比对出 `ChqClip` 缺 transform/layer/speed/keyframes/relative，
+    原批次表没给这些数据留地基，照原排期到 B7 才补会重演 ADR-0014。放 B4 后是为**不推迟可见出口**。
+  - B6/B7 自此**可并行**（都只依赖 B0+B5.5）；B8 仍串在 B7 后。**B3 持久化建议排到 B5.5 之后**。
+  - **B0 问卷回收前，不得在 B0 之上叠加任何批次**（ADR-0034）。
+- **本机 `ctest` 不在 PATH**：须用
+  `/Users/zhuning/.workbuddy/binaries/cmake/CMake.app/Contents/bin/ctest --test-dir build`。
+  另：SharedUI 包**无 Tests 目标**，`swift test` 恒 `no tests found`（非失败，只能验编译）；
+  SPM 在本会话须加 `--disable-sandbox`（沙箱嵌套）。详见 pitfalls **P127**。
 - 热点文件（`cq_sdk.h`、CMake、podspec、Podfile、project.yml、构建脚本、真源、CI）及 ABI/依赖变更须由集成机处理。
 - 收工同步顺序：模块册 → 必要 ADR → TASK → HANDOFF → pitfalls → baselines → 当日日志 → 本文件（仅新增长期规则时）。
 - 构建产物不得入库；临时编译统一放根 `/build/`。SPM 必须指定 `--scratch-path "$ROOT/build/spm/<包>"`。

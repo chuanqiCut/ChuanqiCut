@@ -793,3 +793,41 @@
   （model_property / cq_sdk 等）只在 `engine/core/CMakeLists.txt`、`tests/CMakeLists.txt`
   两个热点文件交叠 → 由集成机串行改、改完即构建验证（已做），未动 B0 已落文件一字。
 - **全部改动未提交 git**（与 B0 批同池，合并快检须传哲同意）。
+
+### 补记四（2026-10-13 20:1x，RESEARCH-016 调研 + B0 提交 + B5.5 排期重构，append-only 不改上文）
+
+**① RESEARCH-016 交付（传哲发起「看下对标平台的设计思路」）**
+- 材料 `/Users/zhuning/Documents/test/`（7 模块 / 1335 头 / 78808 行，**只有头文件无 .m**）
+  → 结论全部由声明推断，运行时/性能一律标 hypothesis。4 路并行探索 + 本人逐条实测复核。
+- 产出 `docs/research/RESEARCH-016-对标平台编辑SDK架构逆向与借鉴评估.md`。
+
+**② 传哲三项拍板（2026-10-13，AskUserQuestion 三问全选推荐项）**
+1. B0 的 53 项未提交改动 → **现在提交**（授权我跑合并快检）；
+2. B0 真机问卷（8 检查点）→ **传哲近期跑真机填**；
+3. 新地基批次位置 → **B4 之后、B6/B7 之前**。
+
+**③ B0 提交（合并快检后）** commit `2e8b55d`，工作区归零。
+- `build_core.sh --platform=apple Debug`：PASS（**3m49s**，0 error / 0 warning，-Werror）
+- `ctest`：Debug **52/52 Passed**（78.66s；B0 问卷记录为 51，+core_audio_mix）
+- 冲突标记扫描 **0**；PAL 旧名残留 **0**（`core/src/` 仅出现在历史调研文档描述中，非写集路径）
+- SharedUI `swift test`：编译 PASS（3.36s），**该包无 Tests 目标**（`no tests found`，非失败，
+  已如实记为"窄检退化为编译验证"）
+- **未跑**：全量 `run_gate.sh`（未申请）、真机（问卷交付传哲）、`golden verify.py`（本批不产帧）
+- 状态：B0 **已提交但未标记完成**（问卷未回收，ADR-0034）。
+
+**④ 排期重构：ADR-0040 新增 B5.5「空间与交互地基」**
+- 依据：RESEARCH-016 §2.3 比对出 `ChqClip`（`chq_timeline.h:44-62`）缺
+  transform / layer / speed / keyframes / relative 布局 / audioFilter，
+  而 RESEARCH-010 原批次表**无任何一批为这些数据立地基** —— 照原排期到 B7 才补，
+  会重演 ADR-0014 返工。
+- 位置：B4 之后、B6 之前（**第一个可见出口不推迟**；仍在依赖它的 B6/B7 之前立住）。
+- 立卡：`TASK-MODEL-004`（ChqTransform + layer + speed + keyframes 数据槽）、
+  `TASK-EDIT-012`（commit/done 双层 PreviewSync 通道）。
+- 修订：`RESEARCH-010` §5.2 批次表 + §5.3 拓扑已更新（B6/B7 自此可并行，B8 仍串在 B7 后）。
+- 连带决策：**B3 持久化建议排到 B5.5 之后**（否则序列化要改两遍；若提前做必须可扩展）。
+- **明确不采纳**（对标平台做法，逐条理由见 ADR-0040 §5）：整模型快照 undo、双数据模型、
+  预览/导出两条管线（**本仓红线 #9 更先进，不动摇**）、浮点秒、标量 BOOL 表达状态机。
+
+**⑤ 开工顺序（按 ADR-0034「一批未验收不叠加」）**
+- B0 问卷回收 → 方可开 B4；B5.5 在 B4 之后。
+- 当前**不**在 B0 之上叠加任何批次。

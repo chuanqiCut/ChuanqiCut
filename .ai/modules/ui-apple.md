@@ -779,3 +779,8 @@ RESEARCH-004/005 结论全部维持，本文补**操作层**，关键增量：
   - **修订（2026-10-11 本机复核）**：① §2 仓库名勘误——`codewithhera/VideoEditTimeline` 实为 `codewithhera/VideoEditTimeline-and-TrimView`（404 核出后经 GitHub API 确认，功能描述 ripple/snapping 属实），三仓库存在性已逐一验证；② §5.2 事实修正——`Track.enabled/muted` **已在** core（timeline.h:65-66）且 `CQTrackInfo` 已回读（cq_sdk.h:202-203），新命令仅需 `locked` 字段 + set 命令，`hidden` 建议并入 `enabled`；③ §5.3 补对齐 **SPEC-UIA-019**（已定 PanelRoute/PanelHost/PanelKit），`PanelDescriptor`/`PanelRegistry` 定位为其数据声明层扩展，UIA-019 立项时合并设计防撞车。
   - **增量（2026-10-11 第二轮，应传哲指示深挖 其轨道 UI 组件库）**：重新下载 `其轨道 UI 组件库@0.3.3`（CDN 直链 200），**读交互核心头文件内容**（RESEARCH-012 只做了文件名分类），新增 RESEARCH-013 **§2.5**：① 装配形状——TimelineView 是 UIScrollView、8 个按片段类型划分的 ViewModel + 10 枚举、编辑态集中在 EditingContext 协议且 `notifyEditorChangedWithCommit:` 显式带 commit（与 ADR-0012 同构）；② **轨道区交互机制 8 条实证**——长按拿起/四向拖拽（跨轨）/边缘自动滚动（3 个 CADisplayLink+速度曲线，**§5 原方案遗漏**）/吸附三要素（点集+方向+阈值）/双击/触觉/尾部插入提示/**分割不在轨道区**（头文件无 split 手势语义，印证底部编辑条方案）；③ 关键帧 UI 形态（帧点画在片段内、随 trim 联动收缩，记 UIA-030 后设计池）；④ 缩略图管线对照——TimelineThumbnailStore 缺「变速按 speed/scale 重取」「最近邻缓存命中」两条能力；⑤ 实战坑——该厂商注释自证「UI 时间与引擎时间存在 1 帧差」，timescale=60000 的取整纪律要进 TimelineLayout（pitfalls 候选）。§5.1/§5.4/§7/§8 已联动更新。合规：只读头文件，未链接未运行未反汇编（边界同 RESEARCH-012 §1.5.6）。
 - pitfalls P78/P79（Player 编译与行为修复案底）/ **P101**（商用 SDK 文档抓取技巧坑）/ **P102**（公开 podspec 仓库 + CDN 直链这条取数路径）
+- **RESEARCH-017（2026-10-13，对标 App轨道区截图对照与 UI 重构计划）**：6 张对标 App截图 → S1~S12 规格表；
+  逐项对照判定 **9/12 项为纯 UI**。U 线分批：U0 交互收敛（TrackInteraction reducer，解双实现红线边缘）
+  → U1 视觉保真（选中态/轨道头/播放头/刻度/右端+） → U2 轨道信息架构（占位条/空音频行）
+  → U3 手感三件套（吸附/边缘滚动/触觉） → U4 波形 → U5 真能力点亮（等 B5/B7）。
+  立卡 **UIA-041**（U0+U1，写集仅 apps/，与 B0 不相交可并行）。

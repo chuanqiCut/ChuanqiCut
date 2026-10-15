@@ -784,3 +784,89 @@ RESEARCH-004/005 结论全部维持，本文补**操作层**，关键增量：
   → U1 视觉保真（选中态/轨道头/播放头/刻度/右端+） → U2 轨道信息架构（占位条/空音频行）
   → U3 手感三件套（吸附/边缘滚动/触觉） → U4 波形 → U5 真能力点亮（等 B5/B7）。
   立卡 **UIA-041**（U0+U1，写集仅 apps/，与 B0 不相交可并行）。
+
+---
+
+# UIA-042 落地（2026-10-14）：编辑器 UIKit 布局统一 SnapKit + 预览红框修复
+
+ADR-0041（已批准）/ TASK-UIA-042。用户原始日志：`Unable to simultaneously satisfy constraints`
+（涉及 `previewSelectionBorder` 的 center/比例约束与系统 mask 约束冲突）。
+
+## 根因（两条独立）
+
+1. **`NSAutoresizingMaskLayoutConstraint` 冲突**：红框漏设
+   `translatesAutoresizingMaskIntoConstraints=false` → 系统 mask 约束与手写约束互不满足。
+2. **布局欠定**：红框只有 center+比例约束、无定尺约束 → 解成 0×0 不可见（U1 S11 假功能）。
+
+两条合起来即「约束冲突 + 功能不可见」的孪生故障（pitfalls **P130**）。
+
+## 改动（写集 `apps/apple/packages/ChuanqiCutEditor/**` + `ChuanqiCutEditor.podspec`）
+
+- `ChuanqiCutEditor.podspec`：`s.ios.dependency 'SnapKit', '~> 5.7.0'`（iOS 专属，钉 5.7.1，MIT）。
+- `EditorViewController.swift`：`import SnapKit`；四区栈 + 预览子视图改 DSL；
+  `applyCanvasAspect()` 用 `snp.remakeConstraints`——MTK `top/bottom+centerX+width=height×aspect`、
+  红框 `center+height=容器+width=height×aspect`（修正 0×0）。
+- `EditorTransportBarView` / `EditorToolbarUIView` / `EditorTimelineUIView`：原生
+  `NSLayoutConstraint.activate` + 手动关 mask 全替换为 SnapKit。
+- iOS `bundle exec pod install` 落地 SnapKit 5.7.1；mac 端 mac 专属依赖不拉入、pod install 通过。
+
+## 验证（本机 macOS 26.7.1 / Xcode 26.6 / Swift 6.3.3 / Intel x86_64，2026-10-14 实测）
+
+| 验证项 | 结果 |
+|---|---|
+| iOS 壳构建 `-scheme ChuanqiCutApp -destination generic/platform=iOS` | **BUILD SUCCEEDED** |
+| macOS 壳构建 `-scheme ChuanqiCutMacApp -arch x86_64 ONLY_ACTIVE_ARCH=YES` | **BUILD SUCCEEDED** |
+| `grep` UIKit/ 下 `NSLayoutConstraint`/`translatesAutoresizingMaskIntoConstraints` | 仅注释命中 |
+| `swift test`（Editor 包） | **未跑**：macOS SPM 跳过 `#if os(iOS)`（P129），不以之替代壳构建 |
+
+⚠️ **未标记完成**：真机问卷 `docs/reviews/QUESTIONNAIRE-UIA-042-预览选中红框与布局保真.md`
+已生成但**未回收**（ADR-0034 交付节奏）。
+
+### 2026-10-14 追加：进编辑页必现 SIGSEGV 修复（真机联调，iPhone 17 Pro / iOS 26.6.1）
+
+- **现象**：进编辑页必崩（signal 11）；在 Xcode 暂停看表现为"卡住"，栈停在
+  trait 传播 → `[UIView superview]` → `CALayerGetSuperlayer`。
+- **根因**：`TimelineContentView.rebuild` 的 `layer.sublayers?.forEach { $0.removeFromSuperlayer() }`
+  全清的是 UIView 的 backing layer → **子视图（「+」按钮）的 layer 被一起拔掉** →
+  UIKit 仍持有该 view 而 layer 离树 → CA 首次提交事务解引用野指针（**P131**）。
+- **修复**：`TimelineContentView` 新增自绘专用容器层 `canvasLayer`
+  （`layer.addSublayer(canvasLayer)` + `layoutSubviews` 内 `frame = bounds`），
+  自绘层 9 处全改挂 `canvasLayer`，清空只清 `canvasLayer.sublayers`。
+- **联调基建（保留，DEBUG only）**：
+  - `iOSApp/DebugCrashDumper.swift`：SIGSEGV/SIGBUS/SIGABRT → `Thread.callStackSymbols`
+    打 stderr（`devicectl --console` 可见）。因为 devicectl 启动的崩溃**不落 .ips**，
+    lldb `device process attach` 也取不到栈（**P132**）。
+  - `HomeView`：`CQ_AUTO_PUSH_EDITOR=1` 进首页即自动 push 编辑页 —— 真机无法脚本点按，
+    这条是复现 push 转场路径的自动入口。
+  - 符号化配方：`iOS DeviceSupport/<版本>/Symbols` + `atos -o <镜像> -l <基址> <地址>`
+    （基址 = 崩溃地址 − 日志里的文件内偏移）。
+- **验证**：push 路径与直挂路径各 25s 零 crash；iOS/macOS 双端壳 BUILD SUCCEEDED；
+  **待传哲目检**时间线图层位置（已写入 QUESTIONNAIRE-UIA-042）。
+
+### 2026-10-15 追加：治理落地（P131 门禁化）
+
+- 新增 `tools/compliance/check_uiview_layer_hygiene.py`（Apple 端 UIView 图层卫生），
+  已接入 `tools/ci/run_gate.sh` **步骤 2c（layer-hygiene）**。
+- 实测：当前 `apps/apple` 116 文件 PASS；修复前版本精确命中 `EditorTimelineUIView.swift:321`；
+  反例探测文件零误报。
+- 复盘文档：`docs/reviews/REVIEW-2026-10-14-进编辑页SIGSEGV复盘.md`（含「CR 为何拦不住
+  跨版本组合效应型缺陷」的评估）。
+
+### 2026-10-15 追加：UIA-043 编辑页视觉改版（对标 App单色系）
+
+- **起因**：传哲真机截图反馈编辑页丑，要求按对标 App范式整改（UI/操作照抄，代码自己实现）。
+  诊断结论：UIA-032 已立对**结构**，丑在**视觉执行**（空态悬浮卡片+蓝按钮 / 底栏 58pt 压扁 /
+  撤销重做靠 spacer 硬顶开 / 播放钮灰圆底 / 空时间线露孤立刻度尺 / 顶栏右上空白）。
+- **拍板三事项**：撤销重做迁到「播放+时间码」同栏（底栏只留工具位）；顶栏导出本期置灰显示；
+  编辑页转单色系（蓝 accent 退场，主操作白底黑字）。
+- **新增分域色表** `EditorChromePalette.swift` + `EditorChrome` 尺寸阶梯 —— 沿用 UIA-041 的
+  `TimelinePalette` 手法：**不动跨包的 `SharedUI/Theme`**，只在编辑器域停用蓝色。
+  Theme 整表收敛仍归 UIA-033。
+- **交互零变更**：撤销/重做只是出口换挂载（仍是 VM.undo/redo + refreshFromKernel），
+  播放仍是 togglePlayback —— 本批纯视觉 + 出口迁移。
+- **验证**：iOS/macOS 双壳 BUILD SUCCEEDED；layer-hygiene PASS（117 文件 / R1 0）；
+  两端 pod install 已跑。**未跑全量门禁**（待传哲授权）。
+- **未覆盖**：iOS 横屏（regular 分支，走 SwiftUI `PreviewZone`/`EditorTransportBar`）
+  与 macOS 编辑页仍是旧样式 —— 归「横屏 / macOS 惯例化」后续立项。
+- **问卷**：`QUESTIONNAIRE-UIA-043-编辑页视觉改版与042回归.md`（传哲裁定 C，与 UIA-042 同 commit，
+  旧 042 问卷作废）。

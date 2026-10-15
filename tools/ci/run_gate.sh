@@ -8,6 +8,7 @@
 #   1. deps      依赖治理 manifest 校验（需 Python >= 3.11 / tomllib）
 #   2. headers   Platform/公共头纯净性（tools/platform/check_platform_headers.py）
 #   2b. artifacts 产物入库检查（P84：.build/、根 build/、DerivedData 等一律不得被 git 跟踪）
+#   2c. layer-hygiene Apple 端 UIView 图层卫生（P131：禁清空 backing layer 的 sublayers）
 #   3. core-dbg  内核 Debug 构建 + 全量单测（-Werror）
 #   4. core-rel  内核 Release 构建 + 全量单测（-Werror + LTO）
 #   5. apple     XCFramework 三切片 + Swift 绑定测试 + SharedUI/功能 Pod 测试
@@ -124,6 +125,11 @@ else
     echo "==> [artifacts] PASS（无构建产物被 git 跟踪）"
     PASS=$((PASS+1))
 fi
+
+# 2c. Apple 端 UIView 图层卫生（P131：禁清空 UIView backing layer 的 sublayers ——
+#     子视图的 layer 也挂在那里，全清会让 UIKit 持有「有 view / 无 layer」的畸形状态 →
+#     CA 首次提交事务时 superview 读到野指针 SIGSEGV。见 REVIEW-2026-10-14）
+run_step "layer-hygiene" python3 tools/compliance/check_uiview_layer_hygiene.py apps/apple
 
 # 3. 内核 Debug + 全量单测
 run_step "core-dbg" tools/build/build_core.sh --platform=apple --config=Debug --test

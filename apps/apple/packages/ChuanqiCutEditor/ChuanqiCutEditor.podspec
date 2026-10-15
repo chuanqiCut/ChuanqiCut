@@ -31,5 +31,13 @@ Pod::Spec.new do |s|
   s.dependency 'ChuanqiCutEngine'
   s.dependency 'SharedUI'
 
+  # UIA-042 / ADR-0041：编辑器 UIKit 布局统一走 SnapKit（约束 DSL）。
+  # * iOS 专属：SnapKit 只被 `#if os(iOS)` 的 UIKit 布局代码 import，macOS 端不引入
+  #   （macOS App 无 UIKit 布局代码，不白背一个依赖）。
+  # * MIT（ARCH-002 §5 ALLOW 级）；版本由两端 Podfile.lock 钉死（当前 5.7.1）。
+  # * SPM Package.swift 不引：该包只是 macOS `swift test` 宿主，`#if os(iOS)`
+  #   文件在 macOS 上整文件跳过；App 侧行为以本 podspec 为准（同 SharedUI 惯例）。
+  s.ios.dependency 'SnapKit', '~> 5.7.0'
+
   # CChuanqiCut module 由 Engine 的正常 Pod 依赖传递，不再手工注入路径（ADR-0033）。
 end

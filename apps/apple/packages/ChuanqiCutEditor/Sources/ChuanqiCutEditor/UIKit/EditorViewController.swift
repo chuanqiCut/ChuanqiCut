@@ -2,7 +2,12 @@
 // EditorViewController — 编辑页 UIKit 容器（UIA-034，ADR-0024）
 //
 // 竖排三区（对照 SwiftUI 版 verticalLayout）：预览（弹性，直嵌 PreviewMTKView
-// + 空态引导/点按播放）→ 传输条 44 → 时间线 140 → 工具栏 58。
+// + 空态引导/点按播放）→ 传输条 44 → 时间线 140 → 工具栏 84（UIA-043：58 → 84）。
+//
+// UIA-043（对标 App单色系视觉改版，纯视觉 + 出口迁移，**零交互变更**）：
+//   * 底栏 84 / 图标 22；撤销·重做**迁到传输条**（与播放、时间码同栏）；
+//   * 空态去掉悬浮卡片，元素直接落在预览区，主操作白底黑字；
+//   * 空时间线不画刻度尺与播放头（EditorTimelineUIView.setEmpty）。
 //
 // 每帧驱动（ADR-0024 决定 4）：CADisplayLink 仅播放中运行，直读
 // viewModel.playhead → 时间线播放头层 + 传输条时间码，**不经 SwiftUI**；
@@ -14,6 +19,7 @@
 import UIKit
 import SwiftUI
 import Combine
+import SnapKit
 import ChuanqiCutEngine
 import SharedUI  // 基座：Theme（ADR-0031）
 
@@ -27,10 +33,6 @@ final class EditorViewController: UIViewController {
     // 区块视图
     private let previewContainer = UIView()
     private var previewMTKView: PreviewMTKView?
-    /// 预览画布比例约束（UIA-040；画布变化时重建，multiplier 不可变）。
-    private var previewAspectConstraint: NSLayoutConstraint?
-    /// U1（S11）：选中红框的比例约束（随画布重建）。
-    private var previewSelectionBorderConstraint: NSLayoutConstraint?
     private let previewFallback = UILabel()
     private let emptyStateView = UIView()
     private let transportBar = EditorTransportBarView()
@@ -97,17 +99,15 @@ final class EditorViewController: UIViewController {
         stack.axis = .vertical
         stack.distribution = .fill
         stack.spacing = 0
-        stack.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(stack)
-        NSLayoutConstraint.activate([
-            stack.topAnchor.constraint(equalTo: view.topAnchor),
-            stack.bottomAnchor.constraint(equalTo: view.bottomAnchor),
-            stack.leadingAnchor.constraint(equalTo: view.leadingAnchor),
-            stack.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-            transportBar.heightAnchor.constraint(equalToConstant: Theme.Size.transportBarHeight),
-            timelineView.heightAnchor.constraint(equalToConstant: Theme.Size.timelineHeightCompact),
-            toolbarView.heightAnchor.constraint(equalToConstant: Theme.Size.bottomToolbarHeight),
-        ])
+        // UIA-042 / ADR-0041：布局一律 SnapKit —— snp.makeConstraints 会自动把
+        // translatesAutoresizingMaskIntoConstraints 置 false，根除「忘关掩码 →
+        // NSAutoresizingMaskLayoutConstraint 与手写约束冲突」整类 bug（见 P130）。
+        stack.snp.makeConstraints { $0.edges.equalToSuperview() }
+        // UIA-043：尺寸阶梯改读编辑器域 `EditorChrome`（不再用 SharedUI 的 58pt 底栏）。
+        transportBar.snp.makeConstraints { $0.height.equalTo(EditorChrome.transportHeight) }
+        timelineView.snp.makeConstraints { $0.height.equalTo(EditorChrome.timelineHeight) }
+        toolbarView.snp.makeConstraints { $0.height.equalTo(EditorChrome.toolbarHeight) }
 
         // UIA-041/U0：Intent 出口统一。宿主是**唯一**把 Intent 翻译成 VM 命令的地方
         // （命中判定与命令选择都已不在 UIKit 侧 —— 见 TrackInteraction）。
@@ -126,11 +126,13 @@ final class EditorViewController: UIViewController {
         transportBar.onTogglePlayback = { [weak self] in
             self?.viewModel.togglePlayback()
         }
-        toolbarView.onUndo = { [weak self] in
+        // UIA-043：撤销/重做出口迁到传输条（命令链路一字未改，仍是 VM.undo/redo
+        // + refreshFromKernel；换的只有触发它的那个按钮挂在哪个视图上）。
+        transportBar.onUndo = { [weak self] in
             self?.viewModel.undo()
             self?.viewModel.refreshFromKernel()
         }
-        toolbarView.onRedo = { [weak self] in
+        transportBar.onRedo = { [weak self] in
             self?.viewModel.redo()
             self?.viewModel.refreshFromKernel()
         }
@@ -160,16 +162,9 @@ final class EditorViewController: UIViewController {
             let mtk = PreviewMTKView(preview: preview,
                                      pump: viewModel.previewPump,
                                      pts: viewModel.playhead)
-            mtk.translatesAutoresizingMaskIntoConstraints = false
-            previewContainer.addSubview(mtk)
-            NSLayoutConstraint.activate([
-                mtk.topAnchor.constraint(equalTo: previewContainer.topAnchor),
-                mtk.bottomAnchor.constraint(equalTo: previewContainer.bottomAnchor),
-                mtk.centerXAnchor.constraint(equalTo: previewContainer.centerXAnchor),
-            ])
             // 宽由画布比例约束给出（applyCanvasAspect），多余宽度自然留黑边 —— 预览即画布。
+            previewContainer.addSubview(mtk)
             previewMTKView = mtk
-            applyCanvasAspect()
         } else {
             // 预览后端缺失：如实降级（对照 PreviewZone 降级文案），不伪装可用。
             previewFallback.text = "预览不可用\n当前平台缺少预览后端"
@@ -177,65 +172,65 @@ final class EditorViewController: UIViewController {
             previewFallback.textAlignment = .center
             previewFallback.font = .preferredFont(forTextStyle: .subheadline)
             previewFallback.textColor = UIColor(Theme.tertiaryText)
-            previewFallback.translatesAutoresizingMaskIntoConstraints = false
             previewContainer.addSubview(previewFallback)
-            NSLayoutConstraint.activate([
-                previewFallback.centerXAnchor.constraint(equalTo: previewContainer.centerXAnchor),
-                previewFallback.centerYAnchor.constraint(equalTo: previewContainer.centerYAnchor),
-            ])
+            previewFallback.snp.makeConstraints { $0.center.equalToSuperview() }
         }
 
         // U1（S11）：预览选中红框 —— 与 MTK 画布同宽（aspect 起的黑边不在框内）。
+        // 尺寸约束在 applyCanvasAspect（center + 高满容器 + 宽=aspect×高）；
+        // 2026-10-14 修复：此前只有 center + 比例约束（既缺 translates 又缺定尺），
+        // 红框实为 0×0 不可见（P130），U1 S11 等于假功能。
         previewSelectionBorder.isHidden = true
         previewSelectionBorder.isUserInteractionEnabled = false
         previewSelectionBorder.layer.borderColor = TimelinePalette.previewSelectionBorder.cgColor
         previewSelectionBorder.layer.borderWidth = TimelinePalette.previewSelectionBorderWidth
         previewContainer.addSubview(previewSelectionBorder)
-        NSLayoutConstraint.activate([
-            previewSelectionBorder.centerXAnchor.constraint(equalTo: previewContainer.centerXAnchor),
-            previewSelectionBorder.centerYAnchor.constraint(equalTo: previewContainer.centerYAnchor),
-        ])
-        previewSelectionBorderConstraint = previewSelectionBorder.widthAnchor
-            .constraint(equalTo: previewSelectionBorder.heightAnchor,
-                        multiplier: max(0.2, min(5.0, viewModel.canvasAspect)))
-        previewSelectionBorderConstraint?.isActive = true
 
         // 空态引导（对照 PreviewZone.emptyStateOverlay）
+        //
+        // UIA-043：**不再套半透明卡片** —— 对标 App的空态元素直接落在预览区上。
+        // 卡片套层在纯黑底上会多出一块更亮的矩形（视觉噪音），主色也从蓝改单色系
+        // 的白底黑字胶囊。
         let icon = UIImageView(image: UIImage(systemName: "film.stack")?
-            .applyingSymbolConfiguration(UIImage.SymbolConfiguration(pointSize: 36)))
-        icon.tintColor = UIColor(Theme.tertiaryText)
+            .applyingSymbolConfiguration(UIImage.SymbolConfiguration(pointSize: 34, weight: .light)))
+        icon.tintColor = EditorChromePalette.chromeEmptyGlyph.uiColor
         icon.contentMode = .center
         let title = UILabel()
         title.text = "导入素材开始创作"
-        title.font = .preferredFont(forTextStyle: .headline)
-        title.textColor = UIColor(Theme.secondaryText)
+        title.font = .systemFont(ofSize: 14, weight: .regular)
+        title.textColor = EditorChromePalette.chromeEmptyText.uiColor
         title.textAlignment = .center
         let openMedia = UIButton(type: .system)
         openMedia.setTitle("打开素材库", for: .normal)
-        openMedia.setImage(UIImage(systemName: "plus"), for: .normal)
-        openMedia.tintColor = .white
-        openMedia.backgroundColor = UIColor(Theme.accent)
-        openMedia.layer.cornerRadius = 8
-        openMedia.contentEdgeInsets = UIEdgeInsets(top: 10, left: 16, bottom: 10, right: 16)
+        openMedia.setImage(UIImage(systemName: "plus",
+                                   withConfiguration: UIImage.SymbolConfiguration(pointSize: 12,
+                                                                                  weight: .semibold)),
+                           for: .normal)
+        openMedia.tintColor = EditorChromePalette.chromePrimaryText.uiColor
+        openMedia.setTitleColor(EditorChromePalette.chromePrimaryText.uiColor, for: .normal)
+        openMedia.backgroundColor = EditorChromePalette.chromePrimaryFill.uiColor
+        openMedia.layer.cornerRadius = EditorChrome.primaryCornerRadius
+        openMedia.titleLabel?.font = .systemFont(ofSize: 13, weight: .medium)
+        openMedia.contentEdgeInsets = UIEdgeInsets(top: 9, left: 18, bottom: 9, right: 18)
         openMedia.addAction(UIAction { [weak self] _ in self?.onOpenMedia() }, for: .touchUpInside)
 
         let column = UIStackView(arrangedSubviews: [icon, title, openMedia])
         column.axis = .vertical
-        column.spacing = 12
+        column.spacing = 14
         column.alignment = .center
-        column.translatesAutoresizingMaskIntoConstraints = false
-        emptyStateView.backgroundColor = UIColor(Theme.previewBackground).withAlphaComponent(0.72)
-        emptyStateView.layer.cornerRadius = 16
+        column.setCustomSpacing(16, after: title)
+        // 卡片退场：容器完全透明，只做居中容器（宽度钳制保留，防长文案溢出）。
+        emptyStateView.backgroundColor = .clear
         emptyStateView.addSubview(column)
-        emptyStateView.translatesAutoresizingMaskIntoConstraints = false
+        column.snp.makeConstraints { $0.center.equalToSuperview() }
         previewContainer.addSubview(emptyStateView)
-        NSLayoutConstraint.activate([
-            column.centerXAnchor.constraint(equalTo: emptyStateView.centerXAnchor),
-            column.centerYAnchor.constraint(equalTo: emptyStateView.centerYAnchor),
-            emptyStateView.centerXAnchor.constraint(equalTo: previewContainer.centerXAnchor),
-            emptyStateView.centerYAnchor.constraint(equalTo: previewContainer.centerYAnchor),
-            emptyStateView.widthAnchor.constraint(lessThanOrEqualTo: previewContainer.widthAnchor, constant: -48),
-        ])
+        emptyStateView.snp.makeConstraints {
+            $0.center.equalToSuperview()
+            $0.width.lessThanOrEqualToSuperview().offset(-48)
+        }
+
+        // MTK + 选中红框的画布比例约束（一起安装；两者已都在 previewContainer 层级内）。
+        applyCanvasAspect()
 
         // 点按预览 = 播放/暂停（空态时点击落在引导层，不触发）
         let tap = UITapGestureRecognizer(target: self, action: #selector(previewTapped))
@@ -262,12 +257,12 @@ final class EditorViewController: UIViewController {
         viewModel.$canUndo
             .dropFirst().receive(on: DispatchQueue.main)
             .sink { [weak self] _ in Task { @MainActor in
-                self?.toolbarView.setUndoEnabled(self?.viewModel.canUndo ?? false)
+                self?.transportBar.setUndoEnabled(self?.viewModel.canUndo ?? false)
             } }.store(in: &cancellables)
         viewModel.$canRedo
             .dropFirst().receive(on: DispatchQueue.main)
             .sink { [weak self] _ in Task { @MainActor in
-                self?.toolbarView.setRedoEnabled(self?.viewModel.canRedo ?? false)
+                self?.transportBar.setRedoEnabled(self?.viewModel.canRedo ?? false)
             } }.store(in: &cancellables)
 
         // 选中态（UIA-039）：分割/删除按钮可用性 + 时间线描边。
@@ -282,9 +277,10 @@ final class EditorViewController: UIViewController {
             .dropFirst().receive(on: DispatchQueue.main)
             .sink { [weak self] mode in Task { @MainActor in
                 guard let self else { return }
+                // UIA-043：底栏整条重建后撤销/重做不在其中，真实状态推给传输条。
                 self.toolbarView.setMode(mode)
-                self.toolbarView.setUndoEnabled(self.viewModel.canUndo)
-                self.toolbarView.setRedoEnabled(self.viewModel.canRedo)
+                self.transportBar.setUndoEnabled(self.viewModel.canUndo)
+                self.transportBar.setRedoEnabled(self.viewModel.canRedo)
                 self.toolbarView.setSplitEnabled(self.viewModel.canSplitSelected)
                 self.toolbarView.setDeleteEnabled(self.viewModel.selectedClipId != nil)
             } }.store(in: &cancellables)
@@ -312,8 +308,8 @@ final class EditorViewController: UIViewController {
 
     /// 非订阅路径的静态首刷（canUndo/redo、空态、时间码、预览 sync）。
     private func refreshStaticState() {
-        toolbarView.setUndoEnabled(viewModel.canUndo)
-        toolbarView.setRedoEnabled(viewModel.canRedo)
+        transportBar.setUndoEnabled(viewModel.canUndo)
+        transportBar.setRedoEnabled(viewModel.canRedo)
         refreshSelectionState()
         transportBar.setPlaying(viewModel.isPlaying)
         reloadTimeline()
@@ -342,24 +338,29 @@ final class EditorViewController: UIViewController {
         let empty = viewModel.timeline.clips.isEmpty
         emptyStateView.isHidden = !empty
         transportBar.setEnabled(!empty)
+        // UIA-043：空态不画刻度尺与播放头（区域保留，避免导入瞬间布局跳动）。
+        timelineView.setEmpty(empty)
         syncPreview()
     }
 
     /// 预览按画布比例取景（UIA-040）：渲染目标已随画布 resize（VM 侧），
     /// 这里把 MTK 宽度钳到「高 × 画布比」—— 预览即画布，两侧留黑边。
+    /// 选中红框与 MTK 画布同几何（center + 高满容器 + 宽=aspect×高）。
+    /// multiplier 不可变 → 画布变化时整体 remake（SnapKit，ADR-0041）。
     private func applyCanvasAspect() {
-        guard let mtk = previewMTKView else { return }
-        previewAspectConstraint?.isActive = false
         let aspect = max(0.2, min(5.0, viewModel.canvasAspect))
-        let c = mtk.widthAnchor.constraint(equalTo: mtk.heightAnchor,
-                                           multiplier: aspect, constant: 0)
-        c.isActive = true
-        previewAspectConstraint = c
-        // 选中红框跟画布同比例（aspect 切换时一起重建）。
-        previewSelectionBorderConstraint?.isActive = false
-        previewSelectionBorderConstraint = previewSelectionBorder.widthAnchor
-            .constraint(equalTo: previewSelectionBorder.heightAnchor, multiplier: aspect)
-        previewSelectionBorderConstraint?.isActive = true
+        if let mtk = previewMTKView {
+            mtk.snp.remakeConstraints {
+                $0.top.bottom.equalTo(previewContainer)
+                $0.centerX.equalTo(previewContainer)
+                $0.width.equalTo(mtk.snp.height).multipliedBy(aspect)
+            }
+        }
+        previewSelectionBorder.snp.remakeConstraints {
+            $0.center.equalTo(previewContainer)
+            $0.height.equalTo(previewContainer)
+            $0.width.equalTo(previewSelectionBorder.snp.height).multipliedBy(aspect)
+        }
     }
 
     /// 播放头秒值（唯一换算点；红线 #4：其余位置只读 RationalTime 本值）。

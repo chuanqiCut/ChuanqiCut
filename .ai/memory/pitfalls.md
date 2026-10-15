@@ -2219,3 +2219,123 @@ cannot find 'TimelinePalette' in scope                       // podspec 文件�
 - **防复发规则**：改了 `apps/apple/packages/**/UIKit/**` 或任何 os(iOS) 文件后，
   ① 必跑 iOS 壳构建；② 若动过 podspec 涉及的文件集合，两端 `bundle exec pod install` 都要跑；
   ③ 改了共享的配色/几何常量，两端壳都要编一遍。
+
+## P130：Auto Layout 两类最易踩的「不可见 / 冲突」坑（2026-10-14，UIA-042 红框修复，已证实 verified）
+
+UIA-042 修预览选中红框（`previewSelectionBorder`，U1 S11）时，一次踩中 Auto Layout 的两类独立坑，
+根因清晰、复发率高，单列一条。
+
+### P130·a —— `NSAutoresizingMaskLayoutConstraint` 冲突：子视图忘了关 autoresizing mask
+
+日志特征：`Unable to simultaneously satisfy constraints`，冲突方之一是
+`NSAutoresizingMaskLayoutConstraint`（形如 `minX==0 / width==0 / height==0`）。
+**根因**：往父视图 `addSubview` 后没设 `translatesAutoresizingMaskIntoConstraints = false`，
+系统自动把 view 的 autoresizing mask 翻译成约束，与手写约束抢同一批属性 → 互不满足。
+
+- **根治**：统一用 SnapKit（`snp.makeConstraints` / `snp.remakeConstraints`），它**自动把
+  `translatesAutoresizingMaskIntoConstraints` 置 false**，从机制上消除漏关 mask 这一整类 bug
+  （见 ADR-0041，编辑器 UIKit 布局已全量迁 SnapKit）。
+- **若必须裸写 NSLayoutConstraint**：每个被加约束的子视图，`addSubview` 后立刻
+  `translatesAutoresizingMaskIntoConstraints = false`，且约束与该赋值要在同一次装配里完成。
+
+### P130·b —— 布局欠定：只给 center + 比例约束、不给定尺约束 → 视图实为 0×0
+
+`previewSelectionBorder` 原来只有 `centerX/centerY` + `width == 0.5625*height` 的比例约束，
+**没有一组定尺约束**（width/height 具体值，或 edges 拉伸）。系统即便比例算得对，也把尺寸解成
+0×0 —— 红框「存在但不可见」，U1 S11 等于假功能，且因 0 尺寸连冲突都未必报。
+
+- **铁律**：任何自定义覆盖层 / 边框 / 角标，**必须至少给一组定尺约束**：
+  - 想贴合某视图：`$0.edges.equalTo(参考视图)`（四边定死尺寸）；或
+  - 想按比例：`$0.center.equalTo(参考)` + `$0.height.equalTo(参考)` + `$0.width.equalTo($0.height).multipliedBy(比例)`
+    （高先定，宽由高派生——**定尺约束必须在场**，比例只是派生）。
+- 比例/乘数（`multiplier`）一旦创建**不可变**：画布比例变化等场景，用 `snp.remakeConstraints`
+  整体重建，不要试图改旧约束的乘数。
+
+- **影响范围**：任何手写 / SnapKit 的 Apple 端 UI 布局。两条合起来正是「约束冲突 +
+  功能不可见」这对孪生故障的标准成因。
+- **防复发规则**：给覆盖层加约束时自检——① 该视图 `translatesAutoresizingMaskIntoConstraints`
+  已被约束框架接管（或手动关）；② 约束集里**至少有一组定尺**（edges / 具体 width·height），
+  比例只能作为派生，不能作为唯一尺寸来源。
+
+### P131 —— 全清 UIView 的 backing layer：把子视图的 layer 一起拔掉 → 真机 SIGSEGV（2026-10-14 实测）
+
+**症状**：进编辑页**必现** SIGSEGV（signal 11）。栈（已用设备符号符号化）：
+
+```
+CA::Transaction::flush_as_runloop_observer → CA::Layer::perform_update_
+ → -[UIView(CALayerDelegate) _performPreLayoutUpdateOfLayer:]
+ → -[UIView _updateTraitCollectionAndProcessChangesWithBehavior:]
+ → -[UIView _wrappedProcessTraitChanges:] ×9（沿层级下钻）
+ → -[UIView _updateCachedTraitCollectionIfNeeded] → _parentTraitCollection
+ → _parentTraitEnvironment → -[UIView(UIKitManual) superview]
+ → CALayerGetSuperlayer + 72   ← SIGSEGV
+```
+
+栈只有 42 帧且收敛到 `main` → **不是栈溢出**，是 `superview` 读到坏指针。
+（⚠️ 在 Xcode 里"暂停"看会是同一条栈但表现为"卡住"，很容易误判成死锁/无限递归。）
+
+**根因**：`TimelineContentView.rebuild` 用 `layer.sublayers?.forEach { $0.removeFromSuperlayer() }`
+全清自绘层。而 `layer` 是 UIView 的 backing layer —— **子视图（主轨右端「+」按钮）的 layer
+也挂在它的 sublayers 里**，于是被一起从树上拔掉：UIKit 的 `subviews` 仍持有该 view，
+但它的 layer 已不在层级中。CA 首次提交事务走到这个「有 view / 无 layer」的畸形状态
+→ `_parentTraitEnvironment → superview → CALayerGetSuperlayer` 解引用野指针 → 崩。
+
+**二分结论（真机实测，6 组对照）**：摘时间线视图 → 不崩；摘 `addButton` → 不崩；
+`rebuild` 不执行 → 不崩；用裸 UIView 顶替按钮 → **照崩**（证明不是按钮特有，
+是「contentView 有子视图」+「rebuild 清层」两者同时成立才触发）。
+
+- **铁律**：**自绘图层不要挂在 UIView 的 backing layer 上**。在自绘 UIView 里建一层专用
+  容器层（`private let canvasLayer = CALayer()`，init 里 `layer.addSublayer(canvasLayer)`，
+  `layoutSubviews` 里 `canvasLayer.frame = bounds`），自绘层全挂它，清空只清
+  `canvasLayer.sublayers` —— 子视图层永不被触碰。
+- **同类禁写**：`layer.sublayers = nil` / `layer.sublayers?.forEach { $0.removeFromSuperlayer() }`
+  出现在 UIView 子类里即为高危信号（全仓已 grep，仅此一处）。
+- **影响范围**：任何「 UIView + 自绘 CALayer 混排」的视图（时间线、波形、标尺等）。
+
+### P132 —— devicectl 启动的进程崩溃不落 .ips，lldb `device process attach` 也取不到栈（2026-10-14 实测）
+
+排查真机崩溃时两条外部通道都失效：
+
+1. `xcrun devicectl device process launch` 启动的 App 崩溃后，**CrashReporter 不写 .ips** ——
+   `devicectl device copy from --domain-type systemCrashLogs` 反复拉都没有新日志。
+2. `lldb`：`device process attach -n <name> -w` 抢不上（崩溃在 1s 内）；按 pid attach 能挂上
+   （`process status` 报 running），但后续 `continue` / `thread list` 一律
+   `error: Process must be launched` —— 拿不到可用 Process 对象。
+   （`--start-stopped` 起挂起态 → `device process list` 取 pid → attach，仍如此。）
+
+- **可用通道**：进程内自取 —— DEBUG 装 `sigaction(SIGSEGV/SIGBUS/SIGABRT)`，
+  回调里把 `Thread.callStackSymbols` 打到 **stderr**（stdout 全缓冲会丢），
+  `devicectl ... --console` 直接可见。本次即靠它拿到栈（见 `DebugCrashDumper.swift`）。
+- **符号化**：`~/Library/Developer/Xcode/iOS DeviceSupport/<版本>/Symbols` 有系统库符号；
+  先由「地址 - 文件内偏移」算出镜像基址（UIKitCore = 0x197ca0000），再
+  `atos -o <镜像> -l <基址> <地址>` 即可把 UIKitCore/QuartzCore 全部符号化。
+- **无 `timeout` 命令**：本机 macOS 无 GNU coreutils，用 `nohup ... &` + `sleep N` 控制时长。
+
+### P131·补 —— 治理工具与实证（2026-10-15）
+
+- **门禁规则**：`tools/compliance/check_uiview_layer_hygiene.py`，已接入 `tools/ci/run_gate.sh`
+  步骤 **2c（layer-hygiene）**。
+  - R1（FAIL）：`layer.sublayers = nil/[]`、`layer.sublayers?.forEach { … removeFromSuperlayer() }`、
+    `?.removeAll()`、`map/filter { … removeFromSuperlayer() }`，含 `xxx.layer.sublayers` 形态。
+  - R2（WARN，不阻断）：同文件 `layer.addSublayer(` ≥2 次 = 自绘与 backing layer 混排。
+  - 逃逸阀：行内 `cq-allow: backing-layer-clear`（须能说出「该 UIView 确认无子视图」）。
+  - 扫描 `apps/apple` 下 `.swift/.m/.mm`，排除 `Pods/.build/build/vendor/third_party`；
+    **匹配前先剔除注释**（本仓库注释里写了反例文本，不剔除必误报）。
+- **实证（2026-10-15 实测）**：当前 `apps/apple` **116 文件 PASS（R1 违规 0）**；
+  喂修复前版本（`git show HEAD:…EditorTimelineUIView.swift`）→ **FAIL，精确命中第 321 行**
+  + R2 告警混排 ×8；喂「注释反例 / 容器层写法 / 逃逸阀标记」探测文件 → **零误报**。
+- **效力边界**：只拦「清空 backing layer sublayers」这一族写法；拦不住
+  `sublayers?.last?.removeFromSuperlayer()`、单独移除子视图 layer、跨文件间接引用、
+  ObjC 运行时动态操作。**能阻止复发，不能证明零缺陷** —— 真正兜底的是容器层约定 + 真机取证。
+
+### P133 —— 本机 BSD grep 不支持 BRE 的 `\|` 转义：`grep "a\|b"` 静默零命中（2026-10-15 实测）
+
+- **症状**：自查命令 `grep -rn "makeSpacer\|setUndoEnabled\|setRedoEnabled" <dir>` 返回空，
+  于是我据此报出「零命中（OK）」—— **假阴性**。实际文件里有 12 处命中（Grep 工具复核）。
+- **根因**：macOS 自带的是 BSD grep，BRE 模式下 `\|` **不是**或运算符（GNU grep 才是），
+  模式被当成字面量 `a|b` 匹配，自然零命中，且**不报错、不退出非 0** —— 静默失败。
+- **影响面**：任何「或条件」自查都会假绿；更危险的是它会**反向认证**一个错误结论
+  （我以为某个旧写法已经清零，其实还在）。同类：`grep -E` 才是 ERE。
+- **规避**：批量/或条件自查一律用仓库自带的 **Grep 工具**（ripgrep，语法一致）；
+  非用 shell 不可时必须 `grep -E "a|b"` 或 `grep -e a -e b`。
+- **验证状态**：已实测复现（本机 macOS 26.7.1，`grep --version` 为 BSD 系）。

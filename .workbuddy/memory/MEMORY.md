@@ -114,6 +114,28 @@
   丢掉 seek 完成回调，根因是**引擎侧没给状态订阅通道**（注释还自相矛盾："不能KVO" vs "可监听"）。
   拟立规矩：跨层签名枚举必须具名、异步必须有完成回调、**禁止用标量布尔表达状态机**。
 
+## Apple 端自绘 UIView 的图层铁律（2026-10-14 事故后确立，P131）
+- **自绘 CALayer 一律挂专用容器层**（`private let canvasLayer = CALayer()`，init 挂
+  `layer.addSublayer(canvasLayer)`，`layoutSubviews` 里 `frame = bounds`），
+  重建时清空只清 `canvasLayer.sublayers`。
+- **绝不清 UIView 的 backing layer**：`layer.sublayers = nil`、`forEach { removeFromSuperlayer() }`、
+  `removeAll()` 全禁 —— backing layer 里**混着子视图的 layer**，全清会让 UIKit 持有
+  「有 view / 无 layer」的畸形状态 → CA 首次提交事务时 `superview` 解引用野指针 SIGSEGV。
+- **机器兜底**：`tools/compliance/check_uiview_layer_hygiene.py`，已在 `run_gate.sh` 步骤 2c。
+  它能拦「同一写法复发」，**拦不住等价语义的其它形态**，也不要指望 Code Review
+  —— 这类缺陷由「后来一次合法改动」激活，CR 只看 diff 看不到跨版本组合效应。
+
+## 真机联调配方（2026-10-14 实测，iPhone 17 Pro UDID 0FA3CFBB-50FB-541F-971B-7FF65F5ED9A7）
+- 起进程：`xcrun devicectl device process launch --device <UDID> --console --terminate-existing
+  -e '{"CQ_AUTO_ROUTE":"editor"}' com.chuanqi.cut`；日志走 **stderr**（stdout 全缓冲会丢）。
+- 自动入口：`CQ_AUTO_ROUTE=editor|camera`（直挂 root，绕过转场）、
+  **`CQ_AUTO_PUSH_EDITOR=1`（进首页自动 push 编辑页，真机无法脚本点按，靠它复现 push 转场）**。
+- **崩溃取证只有一条路**：devicectl 启动的崩溃不落 .ips；lldb `device process attach` 挂得上
+  但取不到栈 → 用进程内 `DebugCrashDumper`（DEBUG，信号处理器把 `Thread.callStackSymbols`
+  打 stderr）。系统栈符号化：`iOS DeviceSupport/<版本>/Symbols` +
+  `atos -o <镜像> -l <基址> <地址>`，基址 = 崩溃地址 − 日志里的文件内偏移（P132）。
+- 本机 macOS **无 `timeout`**：用 `nohup ... &` + `sleep N` 控时长。
+
 ## 未决事项
 - FFmpeg LGPL v2.1+ 处置**已定**（2026-10-11 传哲拍板，ADR-0036）：ARCH-002 §5.1 路径 1（App 内声明 + 源码可获得 + 可重链接归档），义务载体 engine/NOTICE.md；SDK 本体 License 仍待定。
 - PERF-001 尚未建立正式性能基线；Intel Mac 无 ANE/ProRes 硬编，不得用其数字作产品阈值。

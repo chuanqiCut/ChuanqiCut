@@ -22,6 +22,7 @@
 // 播放头居中 ⟺ contentOffset.x = LEAD + t·pps − 视口宽/2。
 
 import UIKit
+import SnapKit
 import ChuanqiCutEngine
 import SharedUI  // 基座：Theme（ADR-0031）
 
@@ -71,8 +72,8 @@ final class EditorTimelineUIView: UIView {
 
     override init(frame: CGRect) {
         super.init(frame: frame)
-        backgroundColor = UIColor(Theme.timelineBackground)
-        scrollView.translatesAutoresizingMaskIntoConstraints = false
+        // UIA-043：与时间线上下两区（传输条/底栏）同底，三区连成一体。
+        backgroundColor = EditorChromePalette.chromeBackground.uiColor
         scrollView.showsHorizontalScrollIndicator = false
         scrollView.showsVerticalScrollIndicator = false
         scrollView.alwaysBounceHorizontal = false
@@ -113,12 +114,8 @@ final class EditorTimelineUIView: UIView {
         playheadKnob.isUserInteractionEnabled = false
         addSubview(playheadKnob)
 
-        NSLayoutConstraint.activate([
-            scrollView.leadingAnchor.constraint(equalTo: leadingAnchor),
-            scrollView.trailingAnchor.constraint(equalTo: trailingAnchor),
-            scrollView.topAnchor.constraint(equalTo: topAnchor),
-            scrollView.bottomAnchor.constraint(equalTo: bottomAnchor),
-        ])
+        // UIA-042 / ADR-0041：SnapKit DSL（自动 translatesAutoresizingMaskIntoConstraints = false）。
+        scrollView.snp.makeConstraints { $0.edges.equalToSuperview() }
 
         thumbnailStore.onUpdate = { [weak contentView] in
             contentView?.applyThumbnails()
@@ -220,6 +217,17 @@ final class EditorTimelineUIView: UIView {
         contentView.setSelectedClip(id)
     }
 
+    /// UIA-043：空时间线不画刻度尺与播放头（现状空态露一根孤零零的刻度尺 + 白播放头）。
+    ///
+    /// 高度**保留**（对标 App编辑器恒定有时间线区域），只把自绘内容与覆盖层隐藏 ——
+    /// 避免导入首个片段时布局跳动。⚠️ 隐藏的是 `contentView`（UIView 整体），
+    /// **不动任何 layer 层级**（backing layer 铁律，P131）。
+    func setEmpty(_ empty: Bool) {
+        contentView.isHidden = empty
+        playheadOverlay.isHidden = empty
+        playheadKnob.isHidden = empty
+    }
+
     /// UIA-041/U0：Intent 出口。本类只把 contentView 的 Intent 原样上行给宿主，
     /// **不做任何判断** —— 判断全在 reducer，命令拼装全在宿主。
     private func handleIntents(_ intents: [TrackIntent]) {
@@ -305,9 +313,27 @@ final class TimelineContentView: UIView {
     private var thumbMeta: [UInt64: ThumbMeta] = [:]
     private weak var store: TimelineThumbnailStore?
 
+    /// 自绘图层专用容器层。
+    ///
+    /// ⚠️ **绝不要把自绘层直接加到 `layer` 上**（2026-10-14 真机 SIGSEGV 根因，见 P131）：
+    /// `layer` 是 UIView 的 backing layer，**子视图（如主轨右端「+」按钮）的 layer
+    /// 也挂在它的 sublayers 里**。当初 rebuild 用 `layer.sublayers?.forEach { $0
+    /// .removeFromSuperlayer() }` 全清，等于把子视图的 layer 一起从树上拔掉 ——
+    /// UIKit 的 `subviews` 仍持有该 view，但它的 layer 已不在层级中，CA 首次提交
+    /// 事务走到这个「有 view / 无 layer」的畸形状态时，`_parentTraitEnvironment →
+    /// superview → CALayerGetSuperlayer` 读到野指针直接 SIGSEGV。
+    /// 故自绘层一律挂本层，清空只清本层的 sublayers，子视图层永不被触碰。
+    private let canvasLayer = CALayer()
+
     override init(frame: CGRect) {
         super.init(frame: frame)
         layer.masksToBounds = true
+        layer.addSublayer(canvasLayer)
+    }
+
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        canvasLayer.frame = bounds
     }
 
     required init?(coder: NSCoder) { fatalError("init(coder:) 未支持（代码装配）") }
@@ -318,7 +344,7 @@ final class TimelineContentView: UIView {
         guard let layout else { return }
         self.layout = layout
         self.store = store
-        layer.sublayers?.forEach { $0.removeFromSuperlayer() }
+        canvasLayer.sublayers?.forEach { $0.removeFromSuperlayer() }
         clipLayers.removeAll()
         thumbMeta.removeAll()
         // sublayers 已全清 —— 附件层的引用必须同步失效，否则会残留孤儿层引用。
@@ -331,7 +357,7 @@ final class TimelineContentView: UIView {
             let row = CAShapeLayer()
             row.path = UIBezierPath(rect: CGRect(x: 0, y: y, width: frame.width, height: layout.trackHeight)).cgPath
             row.fillColor = UIColor(index % 2 == 0 ? Theme.timelineTrackA : Theme.timelineTrackB).cgColor
-            layer.addSublayer(row)
+            canvasLayer.addSublayer(row)
         }
 
         // 标尺（底 + ticks + 主要刻度文字）
@@ -339,7 +365,7 @@ final class TimelineContentView: UIView {
         ruler.fillColor = UIColor(Theme.timelineRuler).cgColor
         ruler.frame = CGRect(x: 0, y: 0, width: frame.width, height: layout.rulerHeight)
         ruler.backgroundColor = UIColor(Theme.timelineRuler).cgColor
-        layer.addSublayer(ruler)
+        canvasLayer.addSublayer(ruler)
         for tick in layout.styledRulerTicks() {
             guard tick.second >= 0 else { continue }
             let x = layout.x(forSeconds: tick.second)
@@ -349,7 +375,7 @@ final class TimelineContentView: UIView {
             line.path = UIBezierPath(rect: CGRect(x: x, y: layout.rulerHeight - tickHeight,
                                                   width: 1, height: tickHeight)).cgPath
             line.fillColor = TimelinePalette.tick.cgColor
-            layer.addSublayer(line)
+            canvasLayer.addSublayer(line)
             if tick.isMajor {
                 let text = CATextLayer()
                 text.string = EditorTimelineView.formatSeconds(tick.second)
@@ -360,12 +386,12 @@ final class TimelineContentView: UIView {
                 text.contentsScale = UIScreen.main.scale
                 text.frame = CGRect(x: x + 3, y: (layout.rulerHeight - 12) / 2,
                                     width: 48, height: 12)
-                layer.addSublayer(text)
+                canvasLayer.addSublayer(text)
                 // U1：主刻度之间的圆点分隔符（`00:00 · 00:02` 的那个点）。
                 if tick.hasDot, let dot = makeTickDot(afterSeconds: tick.second,
                                                       step: tick.dotOffsetSeconds,
                                                       layout: layout) {
-                    layer.addSublayer(dot)
+                    canvasLayer.addSublayer(dot)
                 }
             }
         }
@@ -394,13 +420,13 @@ final class TimelineContentView: UIView {
                 container.addSublayer(label)
             }
             clipLayers[clip.clipId] = container
-            layer.addSublayer(container)
+            canvasLayer.addSublayer(container)
         }
         applySelectionBorder()
         applySelectionChrome()
         buildTrackHeaders()
 
-        layer.addSublayer(makeSeparator())
+        canvasLayer.addSublayer(makeSeparator())
     }
 
     /// 选中态灌入（VM $selectedClipId 驱动；rebuild 后按此补描边）。
@@ -447,7 +473,7 @@ final class TimelineContentView: UIView {
            let label = makeDurationBadge(rect: rect, clip: clip) {
             selectionChromeLayers.append(label)
         }
-        selectionChromeLayers.forEach(layer.addSublayer)
+        selectionChromeLayers.forEach(canvasLayer.addSublayer)
     }
 
     private func makeHandle(rect: CGRect, atStart: Bool) -> CALayer {
@@ -575,7 +601,7 @@ final class TimelineContentView: UIView {
                                   height: layout.trackHeight)
             header.path = UIBezierPath(rect: header.bounds).cgPath
             header.fillColor = TimelinePalette.trackHeaderBackground.cgColor
-            layer.addSublayer(header)
+            canvasLayer.addSublayer(header)
             trackHeaderLayers.append(header)
 
             // 原声状态：回读内核真值（只读，不可点）。

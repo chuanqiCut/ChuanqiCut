@@ -19,8 +19,13 @@ struct HomeView: View {
         case player
     }
 
+    /// DEBUG 真机探针：`CQ_AUTO_PUSH_EDITOR=1` 时进首页即自动 push 编辑页
+    /// （复现「首页 → 开始剪辑」的 push 转场，无需手点 —— devicectl 通道
+    ///  无法脚本点按屏幕，真机联调必须有这么一条自动入口）。
+    @State private var path: [Route] = []
+
     var body: some View {
-        NavigationStack {
+        NavigationStack(path: $path) {
             ZStack {
                 Color.black.ignoresSafeArea()
                 VStack(spacing: 28) {
@@ -54,8 +59,18 @@ struct HomeView: View {
                     PlayerLauncherScreen()
                 }
             }
+            .onAppear(perform: autoPushEditorIfNeeded)
         }
         .preferredColorScheme(.dark)
+    }
+
+    private func autoPushEditorIfNeeded() {
+        #if DEBUG
+        guard path.isEmpty,
+              ProcessInfo.processInfo.environment["CQ_AUTO_PUSH_EDITOR"] == "1" else { return }
+        // 推到下一个 run loop 周期：避免在 view update 期间改 @State 触发告警。
+        DispatchQueue.main.async { path.append(.editor) }
+        #endif
     }
 
     private var titleBlock: some View {

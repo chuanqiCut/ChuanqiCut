@@ -28,6 +28,15 @@ target 'ChuanqiCutApp' do
   pod 'ChuanqiCutCamera', :path => '../packages/ChuanqiCutCamera'
   pod 'ChuanqiCutImport', :path => '../packages/ChuanqiCutImport'
   pod 'ChuanqiCutEditor', :path => '../packages/ChuanqiCutEditor'
+  # TimelineKit 本地开发 Pod（独立 Swift/UIKit 时间线组件）
+  pod 'TimelineKit', :path => '../../../../ChatGPT/zui'
+  pod 'SnapKit', '~> 5.7.0'
+  pod 'Kingfisher'
+  pod 'Alamofire'
+  pod 'SDWebImage'
+#  pod 'ReactiveCocoa'
+  pod 'RxSwift'
+#  pod 'YYKit'
 end
 
 post_install do |installer|

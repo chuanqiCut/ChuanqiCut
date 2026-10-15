@@ -32,6 +32,11 @@ struct ChuanqiCutApp: App {
 
     init() {
         ChuanqiCut.markMainThread()
+        #if DEBUG
+        // 真机取证：崩溃信号 → stderr 回溯（devicectl 启动的进程不落 .ips，
+        // lldb device attach 又取不到栈，详见 DebugCrashDumper.swift 注释）。
+        DebugCrashDumper.install()
+        #endif
         // ADR-0031：播放器联动装配 —— MediaSheet（编辑器域）经基座注入器弹播放器，
         // 功能 Pod 横向零依赖；PlayerScreen 双 init 语义在此对齐。
         PlayerPreviewInjector.makePlayerPreview = { urls in

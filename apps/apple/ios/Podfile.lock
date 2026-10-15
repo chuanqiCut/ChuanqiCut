@@ -1,4 +1,5 @@
 PODS:
+  - Alamofire (5.12.2)
   - ChuanqiCutCamera (0.1.0):
     - SharedUI
   - ChuanqiCutCore (0.1.0):
@@ -6,16 +7,26 @@ PODS:
   - ChuanqiCutEditor (0.1.0):
     - ChuanqiCutEngine
     - SharedUI
+    - SnapKit (~> 5.7.0)
   - ChuanqiCutEngine (0.1.0):
     - ChuanqiCutCore (= 0.1.0)
   - ChuanqiCutFFmpeg (9.0.2)
   - ChuanqiCutImport (0.1.0):
     - SharedUI
   - ChuanqiCutPlayer (0.1.0)
+  - Kingfisher (8.13.0)
+  - RxSwift (6.9.0)
+  - SDWebImage (5.21.7):
+    - SDWebImage/Core (= 5.21.7)
+  - SDWebImage/Core (5.21.7)
   - SharedUI (0.1.0):
     - ChuanqiCutEngine
+  - SnapKit (5.7.1)
+  - TimelineKit (0.1.0):
+    - SnapKit (~> 5.7.0)
 
 DEPENDENCIES:
+  - Alamofire
   - ChuanqiCutCamera (from `../packages/ChuanqiCutCamera`)
   - ChuanqiCutCore (from `../../../engine`)
   - ChuanqiCutEditor (from `../packages/ChuanqiCutEditor`)
@@ -23,7 +34,20 @@ DEPENDENCIES:
   - ChuanqiCutFFmpeg (from `../../../engine`)
   - ChuanqiCutImport (from `../packages/ChuanqiCutImport`)
   - ChuanqiCutPlayer (from `../packages/ChuanqiCutPlayer`)
+  - Kingfisher
+  - RxSwift
+  - SDWebImage
   - SharedUI (from `../packages/SharedUI`)
+  - SnapKit (~> 5.7.0)
+  - TimelineKit (from `../../../../ChatGPT/zui`)
+
+SPEC REPOS:
+  trunk:
+    - Alamofire
+    - Kingfisher
+    - RxSwift
+    - SDWebImage
+    - SnapKit
 
 EXTERNAL SOURCES:
   ChuanqiCutCamera:
@@ -42,17 +66,25 @@ EXTERNAL SOURCES:
     :path: "../packages/ChuanqiCutPlayer"
   SharedUI:
     :path: "../packages/SharedUI"
+  TimelineKit:
+    :path: "../../../../ChatGPT/zui"
 
 SPEC CHECKSUMS:
+  Alamofire: c5f37d8f438dc1d7fd3ff767f2f80fd01ca381d7
   ChuanqiCutCamera: 403ac93215cff8efb9a5677526333edaa655a038
   ChuanqiCutCore: 1a1dbe775294b46d02c69225e7e48ea0dfc0e5bd
-  ChuanqiCutEditor: 19d2ab19b1f068727f4059fe41e3621dd05a3e5d
+  ChuanqiCutEditor: 4acf16fe9b2e3910341c63048799c52feb12ffdb
   ChuanqiCutEngine: 7692ae8be611b339495de80552be86d821c768b8
   ChuanqiCutFFmpeg: 240ee4baca309e91d0a1ae12acf1d75945464012
   ChuanqiCutImport: aa33c8eb24b733c0cdf8cf8b64df7a2e38cab8e3
   ChuanqiCutPlayer: f0dd0794e4b67626604e5764e35a7456f3593001
+  Kingfisher: 260f690679115e70aac534e18cf1f3cd70814d5c
+  RxSwift: 31649ace6aceeb422e16ff71c60804f9c3281ed9
+  SDWebImage: e9fc87c1aab89a8ab1bbd74eba378c6f53be8abf
   SharedUI: 7e3bf5c24640690f7ac2459fd6c7c6f3d043fa62
+  SnapKit: d612e99e678a2d3b95bf60b0705ed0a35c03484a
+  TimelineKit: fb59dcc2cabbf10387aeda5b65c0d5c7961a5d1b
 
-PODFILE CHECKSUM: bf5092f582b1924b9dec9287cd4c2056dad1d2b6
+PODFILE CHECKSUM: 178c10bf3e46eed3494ac6a2c7a8335956b7fc97
 
 COCOAPODS: 1.17.0

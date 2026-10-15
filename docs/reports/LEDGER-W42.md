@@ -970,3 +970,175 @@ macOS 壳 destination 的可用写法是**不带 destination** 的 `-arch x86_64
 - 池：`docs/tasks/TODO-POOL-门禁真机待办池.md` **[19]**（内核缺 set track muted ABI）
 - 坑册：**P128**（模型不支持读图）、**P126 更正+第三/四次复发**（本机 grep 是 toybox 0.8.13，不支持 `\|`）、
   **P129**（os(iOS) 文件在 macOS SPM 中不编译 + 两端 Pods 各跑一次 pod install）
+
+---
+
+## 补记七：UIA-042 预览红框修复 + 编辑器 UIKit 布局迁移 SnapKit —— 2026-10-14，WorkBuddy（集成机）
+
+### 1. 根因（用户原始 `Unable to simultaneously satisfy constraints` 日志）
+
+编辑页预览区选中红框 `previewSelectionBorder`（U1 S11）两条独立病因：
+- **① `NSAutoresizingMaskLayoutConstraint` 冲突**：该子视图漏设
+  `translatesAutoresizingMaskIntoConstraints=false`，系统自动生成 `minX==0/width==0/height==0`
+  的 mask 约束，与手写 `centerX/centerY + width==0.5625*height` 互不满足。
+- **② 布局欠定**：原代码只有 center+比例约束、**没有定尺约束**，系统把尺寸解成 0×0，
+  红框「存在但不可见」——U1 S11 等于假功能。
+
+两条 = 「约束冲突 + 功能不可见」孪生故障（坑册 **P130**）。
+
+### 2. 决策与落地（ADR-0041，已批准）
+
+编辑器 UIKit 布局**统一迁移 SnapKit**，从机制根除「忘关 mask」整类 bug：
+- `ChuanqiCutEditor.podspec`：`s.ios.dependency 'SnapKit', '~> 5.7.0'`（iOS 专属，钉 5.7.1，MIT）。
+- `EditorViewController.swift`：`import SnapKit`；四区栈 + 预览子视图改 DSL；
+  `applyCanvasAspect()` 用 `snp.remakeConstraints`（MTK：`top/bottom+centerX+width=height×aspect`；
+  红框：`center+height=容器+width=height×aspect`，修正 0×0）。
+- `EditorTransportBarView` / `EditorToolbarUIView` / `EditorTimelineUIView`：原生
+  `NSLayoutConstraint.activate` + 手动关 mask 全替换为 SnapKit DSL。
+- iOS 端 `bundle exec pod install` 落地 SnapKit 5.7.1；mac 端 mac 专属依赖不拉入、`pod install` 通过。
+
+### 3. 数字（本机 macOS 26.7.1 / Xcode 26.6 / Swift 6.3.3 / Intel x86_64；2026-10-14 实测，**真实命令输出**）
+
+| 验证项 | 命令 | 结果 |
+|---|---|---|
+| iOS 壳构建 | `cd apps/apple/ios && xcodebuild -workspace ChuanqiCut.xcworkspace -scheme ChuanqiCutApp -destination generic/platform=iOS build` | **BUILD SUCCEEDED** |
+| macOS 壳构建 | `cd apps/apple/mac && xcodebuild -workspace ChuanqiCut.xcworkspace -scheme ChuanqiCutMacApp -arch x86_64 ONLY_ACTIVE_ARCH=YES build` | **BUILD SUCCEEDED** |
+| 残留原生布局 | `grep -rnE 'NSLayoutConstraint|translatesAutoresizingMaskIntoConstraints' …/UIKit/` | **0 处代码**（仅注释命中） |
+| mac pod install | `cd apps/apple/mac && bundle exec pod install` | 成功（exit 0） |
+| `swift test`（Editor 包） | — | **未跑**：macOS SPM 跳过 `#if os(iOS)`（P129），不以之替代壳构建 |
+| 全量门禁 | `run_gate.sh` | **未跑**（按约定需先询问） |
+
+### 4. 状态与剩余
+
+- UIA-042 代码与双壳构建**已通过**；卡面状态：**📋 未标记完成**，原因 = **真机问卷未回收**（ADR-0034）。
+- 问卷：`docs/reviews/QUESTIONNAIRE-UIA-042-预览选中红框与布局保真.md`（已生成，待传哲实测）。
+- 未做/待办（已挂号不丢）：SwiftUI 侧 `EditorTimelineView` 同类布局未动（本批 Scope 仅 UIKit）；
+  红框视觉尺寸/线宽 [E]，以真机走查校准为准。
+
+### 5. 本批工程教训 → **P130**（已入坑册）
+
+- **P130·a**：`NSAutoresizingMaskLayoutConstraint` 冲突 = 子视图漏关 autoresizing mask，
+  统一 SnapKit（自动置 false）根除。
+- **P130·b**：布局欠定（只 center+比例、无定尺）→ 0×0 不可见；覆盖层必须至少有一组定尺约束
+  （edges / 具体 width·height），比例只能作派生。
+
+### 6. 本批交付物
+
+- 代码（写集 `apps/apple/packages/ChuanqiCutEditor/**` + `ChuanqiCutEditor.podspec`）：
+  `EditorViewController.swift`、`EditorTransportBarView.swift`、`EditorToolbarUIView.swift`、
+  `EditorTimelineUIView.swift`、`ChuanqiCutEditor.podspec`
+- 文档：`ADR-0041`、`TASK-UIA-042`、`docs/reviews/QUESTIONNAIRE-UIA-042-预览选中红框与布局保真.md`、
+  `docs/handoff/HANDOFF-023-UIA042-SnapKit迁移与红框修复会话交接.md`、
+  `docs/COCOAPODS.md` §7（功能 Pod 第三方依赖）、`.ai/modules/ui-apple.md`（UIA-042 段）
+- 坑册：**P130**（忘关 mask 冲突 / 布局欠定 0×0）
+
+---
+
+## 补记八 · 进编辑页必现 SIGSEGV 的定位与修复（2026-10-14 22:15，WorkBuddy 集成机）
+
+### 1. 现象与决策链
+
+| 时间 | 谁 | 事项 |
+|---|---|---|
+| 16:21 | 传哲 | 报「进入编辑直接卡住」并附 Xcode 暂停栈（trait 传播 → `[UIView superview]` → `CALayerGetSuperlayer`）。**未改代码**，先给读栈结论 + 三条真机诊断路径。 |
+| 21:28 | 传哲 | 「已连上手机，你直接跑起来看」+ 让参考 ZCode 的联调套路。→ 采用 `devicectl --console` + 环境变量探针（`HANDOFF-020` §4 既有配方）。 |
+| 21:34 | 本机（集成机） | 真机一进编辑页 **signal 11 必现**（不是"卡住"）。取栈两条外部通道均失效（P132），遂加进程内取证通道 `DebugCrashDumper`。 |
+| 21:45 | 本机 | 拿到完整栈并用设备符号符号化：根因指向「trait 下钻时 superview 读到坏指针」。 |
+| 21:48 | 本机 | 退回 HEAD（UIA-042 前）**同样崩** → 排除今天的 SnapKit 迁移，确认为存量缺陷（决策：不再怀疑 UIA-042，继续向组件内二分）。 |
+| 22:00–22:05 | 本机 | 6 组组件对照，锁定 `TimelineContentView` 的 backing layer 全清。 |
+| 22:09 | 本机 | 修复（专用自绘容器层 `canvasLayer`）+ 复验通过；临时诊断开关全部撤除。 |
+
+### 2. 根因
+
+`EditorTimelineUIView.swift` 的 `TimelineContentView.rebuild`：
+
+```swift
+layer.sublayers?.forEach { $0.removeFromSuperlayer() }   // ← 元凶
+```
+
+`layer` 是 UIView 的 backing layer，子视图（主轨右端「+」按钮）的 layer **也在它的
+sublayers 里**，被一并拔掉。UIKit `subviews` 仍持有该 view，layer 却已离树 →
+CA 首次提交事务走到「有 view / 无 layer」的畸形状态 →
+`_parentTraitEnvironment → superview → CALayerGetSuperlayer` 解引用野指针 → SIGSEGV。
+
+二分证据（真机实测）：摘时间线视图不崩 / 摘 addButton 不崩 / 不 rebuild 不崩 /
+裸 UIView 顶替按钮照崩（证明与按钮类型无关，条件是「有子视图」+「清层」同时成立）。
+
+### 3. 修复（治本，不留临时方案）
+
+`TimelineContentView` 新增专用自绘容器层 `canvasLayer`：init 挂 `layer.addSublayer(canvasLayer)`、
+`layoutSubviews` 内 `canvasLayer.frame = bounds`；rebuild 内 9 处自绘层改挂 `canvasLayer`，
+清空只清 `canvasLayer.sublayers`。**子视图层永不被触碰**。
+
+### 4. 写集
+
+- `apps/apple/packages/ChuanqiCutEditor/Sources/ChuanqiCutEditor/UIKit/EditorTimelineUIView.swift`（修复）
+- `apps/apple/ios/iOSApp/DebugCrashDumper.swift`（**新增** DEBUG 取证通道）
+- `apps/apple/ios/iOSApp/HomeView.swift`（**新增** `CQ_AUTO_PUSH_EDITOR=1` 自动 push 探针）
+- `apps/apple/ios/iOSApp/ChuanqiCutApp.swift`（挂 DebugCrashDumper）
+- 与内核批次（B0/B5.5）写集不相交。
+
+### 5. 验证（机器环境：iPhone 17 Pro / iOS 26.6.1 (23G83) DEBUG 包；本机 macOS 26.7.1 / Xcode 26.6）
+
+| 验证项 | 结果 |
+|---|---|
+| push 路径 `CQ_AUTO_PUSH_EDITOR=1`，25s | **零 crash、零约束冲突** |
+| 编辑页直挂 `CQ_AUTO_ROUTE=editor`，25s | **零 crash、零约束冲突** |
+| 首页默认路径 15s | 零 crash |
+| iOS 壳 `-scheme ChuanqiCutApp -destination generic/platform=iphoneos` | **BUILD SUCCEEDED** |
+| macOS 壳 `-scheme ChuanqiCutMacApp -arch x86_64 ONLY_ACTIVE_ARCH=YES` | **BUILD SUCCEEDED** |
+| 全量 `run_gate.sh` | **未跑**（按约定需先询问传哲） |
+
+### 6. 拍板与待办
+
+- 修复方案（专用容器层而非「清层时跳过子视图」的补丁）由本机按 ADR-0034「严禁临时方案」选定，
+  **待传哲确认**。
+- **待传哲目检**：canvasLayer 改动后时间线图层位置/层级是否视觉一致（已追加进
+  `QUESTIONNAIRE-UIA-042`）。目检回收前本修复不标记完成（ADR-0034）。
+- 坑册：**P131**（backing layer 全清 → SIGSEGV）、**P132**（真机崩溃取证通道与 atos 配方）。
+
+---
+
+## 补记九 · 治理落地：图层卫生门禁化（2026-10-15，WorkBuddy 集成机）
+
+- **起因**：传哲要求对 2026-10-14 的 SIGSEGV 出复盘，并回答「静态检查 / CR 能否避免」。
+- **新增**：`tools/compliance/check_uiview_layer_hygiene.py`（R1 失败 / R2 告警，
+  排除 Pods，匹配前剔注释，保留 `cq-allow:` 逃逸阀）；接入 `tools/ci/run_gate.sh` **步骤 2c**。
+- **实测数字（本机 macOS 26.7.1 / Xcode 26.6）**：
+  | 输入 | 结果 |
+  |---|---|
+  | 当前 `apps/apple`（116 文件） | PASS，R1 违规 0 |
+  | 修复前版本（`git show HEAD:…EditorTimelineUIView.swift`） | FAIL，命中第 321 行 + R2 混排 ×8 |
+  | 反例探测（注释反例 / 容器层 / 逃逸阀） | 零误报 |
+- **结论**：静态检查能拦「同一写法复发」，拦不住等价语义的其它形态 →
+  兜底靠 L1 容器层约定 + L3 真机取证（DebugCrashDumper / CQ_AUTO_PUSH_EDITOR）。
+  **CR 基本拦不住**：危险来自「UIView 有没有子视图」这个隐式前提，
+  且它由后来一次合法提交（加「+」按钮）激活 —— CR 只看 diff，看不到跨版本组合效应。
+- **未跑**：全量 `run_gate.sh`（按约定需先询问传哲）。
+
+---
+
+## 补记十 · UIA-043 编辑页视觉改版（对标 App单色系）（2026-10-15，WorkBuddy 集成机）
+
+- **起因**：传哲真机截图 `IMG_2645.PNG` 反馈编辑页「丑到爆」，要求按对标 App（行业标杆）
+  的 UI/操作范式整改 —— 「不是抄袭，UI 和操作照抄，代码自己实现」。
+- **前置冲突与裁定**：UIA-042（SnapKit 迁移+红框）代码完成但**未提交**、**问卷未回收**，
+  与本批写集完全重叠 → 提交 A/B/C 三案请传哲裁。
+  **传哲 2026-10-15 13:18 拍板 C**：与 UIA-042 **同批同 commit** 交付，
+  `QUESTIONNAIRE-UIA-042-*.md` **作废**（保留文件、标作废），改发合并问卷。
+- **传哲拍板三事项**：① 撤销/重做 → 与播放、时间码同栏；② 顶栏「导出」本期显示（置灰）；
+  ③ 编辑页转对标 App单色系，蓝色 accent 退场，主操作白底黑字。
+- **实现（写集仅 `apps/apple/packages/ChuanqiCutEditor/**`）**：
+  新增 `EditorChromePalette.swift`（分域单色色表 + 尺寸阶梯：底栏 84/图标 22/传输条 44/时间线 140）；
+  `EditorTransportBarView` 撤销重做迁入 + 播放水平居中（去灰圆底）+ 时间码右；
+  `EditorToolbarUIView` 撤销重做与 spacer 移除 → 6 位等宽、84pt、单色；
+  `EditorViewController` 空态去悬浮卡片改白底黑字胶囊、撤销重做出口改挂传输条；
+  `EditorTimelineUIView` 新增 `setEmpty(_:)`（空态不画刻度尺/播放头，高度保留）；
+  `EditorScreen` iOS 顶栏「导出」置灰（`.navigationBarTrailing` —— iOS 16 最低版本，不能用 17+ 的 `.topBarTrailing`）。
+- **机器验证（本机 macOS 26.7.1 / Xcode 26.6 / Swift 6.3.3 / Intel x86_64）**：
+  iOS 壳 **BUILD SUCCEEDED**；macOS 壳 **BUILD SUCCEEDED**；
+  `check_uiview_layer_hygiene.py` **PASS（117 文件 / R1 0）**；两端 `pod install` 已跑（新增文件，P34）。
+- **未跑**：全量 `run_gate.sh`（按约定需先询问传哲）；`swift test` 不作证据（P129）。
+- **已知偏差**：iOS 横屏（regular 分支）/ macOS 编辑页仍是旧样式 + 蓝色 accent
+  （本批只覆盖 compact UIKit 路径，横屏与 macOS 惯例化另行立项）；尺寸为估算 [E]。
+- **工具坑入册**：P133 —— BSD grep 不支持 `\|`，或条件自查必须走 Grep 工具（本次出现假阴性）。

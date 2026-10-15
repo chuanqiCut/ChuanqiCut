@@ -126,3 +126,17 @@ open ChuanqiCut.xcworkspace  # 注意开 workspace，不是 xcodeproj
 5. mac 通用双架构构建当前被 CP 1.17 Swift Compatibility Header 共享路径坑
    （`unsupported Swift architecture`，池 [14]）；本地验证口径 = 单原生架构
    （`-destination 'platform=macOS,arch=x86_64' ARCHS=x86_64 ONLY_ACTIVE_ARCH=YES`）。
+
+## 7. 功能 Pod 的第三方 UI 依赖（ADR-0041，2026-10-14）
+
+`ChuanqiCutEditor`（UI 功能 Pod）是首个引入**第三方 UI 布局库**的功能 Pod：
+
+- **依赖**：`s.ios.dependency 'SnapKit', '~> 5.7.0'`（**iOS 专属**；版本钉 `5.7.1`，MIT）。
+- **作用域**：SnapKit 只被 `#if os(iOS)` 的 UIKit 布局代码 `import`；`ChuanqiCutEditor.podspec`
+  用 `s.ios.dependency` 声明，**macOS 端不拉入**（mac 构建/测试完全不感知 SnapKit）。
+- **为何不引 SPM**：`bindings/swift/Package.swift` 只是 macOS `swift test` 宿主，而本机 macOS SPM
+  **整文件跳过 `#if os(iOS)`**（P129），引了也编不到；且 UIKit 改动的最小自证是两端壳构建，不是 SPM。
+- **落地现状（2026-10-14）**：iOS 端 `bundle exec pod install` 已落地 SnapKit 5.7.1（两端 Podfile.lock
+  钉死）；mac 端 mac 专属依赖不拉入、`pod install` 通过、壳构建 `BUILD SUCCEEDED`。
+- **纪律**：今后给功能 Pod 加第三方依赖，必须先确认作用域（iOS / macOS / 双端），并在 Podfile.lock
+  钉版本；podspec 变动后两端各跑一次 `bundle exec pod install`（P129 教训）。

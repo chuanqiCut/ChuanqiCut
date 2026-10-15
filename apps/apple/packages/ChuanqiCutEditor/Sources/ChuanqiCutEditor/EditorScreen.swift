@@ -23,6 +23,20 @@ public struct EditorScreen: View {
     }
 
     public var body: some View {
+        // UIA-043：iOS 顶栏挂「导出」主按钮位（形状先立住）。
+        // Placement 用 `.navigationBarTrailing` —— 本包最低支持 iOS 16，
+        // `.topBarTrailing` 是 iOS 17+ API，用了会在 iOS 16 上崩（不是编译期能抓到的）。
+        #if os(iOS)
+        editorContent
+            .toolbar {
+                ToolbarItem(placement: .navigationBarTrailing) { exportButton }
+            }
+        #else
+        editorContent
+        #endif
+    }
+
+    private var editorContent: some View {
         Group {
             if let model {
                 EditorView().environmentObject(model)
@@ -44,6 +58,27 @@ public struct EditorScreen: View {
                     .onAppear(perform: createModel)
             }
         }
+    }
+
+    /// 「导出」主按钮位（UIA-043；传哲 2026-10-15 拍板：本期显示 + 置灰）。
+    ///
+    /// ⚠️ **置灰不是装饰**：EXPORT-001 未落地，做成能点就是「点了没反应」的假功能
+    /// （ADR-0034）。此处只立入口形状，真能力到位后去掉 `.disabled(true)` 即可。
+    private var exportButton: some View {
+        Button {} label: {
+            Text("导出")
+                .font(.system(size: 13, weight: .medium))
+                .foregroundStyle(EditorChromePalette.chromeDisabledText.color)
+                .padding(.horizontal, 14)
+                .padding(.vertical, 5)
+                .background(
+                    RoundedRectangle(cornerRadius: EditorChrome.topBarButtonCornerRadius,
+                                     style: .continuous)
+                        .fill(EditorChromePalette.chromeDisabledFill.color)
+                )
+        }
+        .disabled(true)
+        .accessibilityLabel("导出（能力未就绪：EXPORT-001）")
     }
 
     private func createModel() {

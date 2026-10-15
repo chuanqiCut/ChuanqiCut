@@ -1,5 +1,11 @@
 #if os(iOS)
-// EditorToolbarUIView — 底部操作面板 UIKit 版（UIA-036/040，ADR-0024）
+// EditorToolbarUIView — 底部操作面板 UIKit 版（UIA-036/040 立，UIA-043 视觉改版，ADR-0024）
+//
+// UIA-043（传哲 2026-10-15 拍板）：
+//   * **撤销/重做迁出本栏** → 传输条（与播放、时间码同栏）；本栏只留工具位，与对标 App一致；
+//   * 高度 58 → 84、图标 16 → 22、图标/标签间距 2 → 6（现状压扁是「丑」的第 3 条）；
+//   * 去掉 `makeSpacer()` 硬顶开造成的空洞，一级条 6 位**等宽铺满**；
+//   * 配色转对标 App单色系（可用纯白 / 禁用低透白），蓝色 accent 在本页停用。
 //
 // UIA-040 分级（RESEARCH-008 范式①⑤：单焦点 + 抽屉，无常驻属性栏）：
 //   * primary     —— 一级工具位：撤销/重做（左）+ 媒体/画中画/音频/文字/特效。
@@ -11,12 +17,13 @@
 // 模式由 EditorViewModel.toolbarMode 驱动（UI 状态单一真源），本视图只渲染。
 
 import UIKit
+import SnapKit
 import SharedUI  // 基座：Theme（ADR-0031）
 
 @MainActor
 final class EditorToolbarUIView: UIView {
-    var onUndo: (() -> Void)?
-    var onRedo: (() -> Void)?
+    // ⚠️ UIA-043：撤销/重做的出口已迁到 `EditorTransportBarView`（与播放、时间码同栏）。
+    // 本栏不再持有 onUndo/onRedo —— 出口唯一，避免两处都能触发同一命令。
     var onOpenMedia: (() -> Void)?
     /// 分割选中片段于播放头处（UIA-039；靶子与可用性由 EditorViewModel 决定）。
     var onSplitSelected: (() -> Void)?
@@ -32,24 +39,33 @@ final class EditorToolbarUIView: UIView {
     var onAddOverlayTrack: (() -> Void)?
 
     private var stack: UIStackView!
+    /// UIA-043：底栏顶部发丝线（唯一分隔手段，不用底色差 —— 三区同底连成一体）。
+    private let hairline = UIView()
     private var mode: EditorToolbarMode = .primary
 
     override init(frame: CGRect) {
         super.init(frame: frame)
-        backgroundColor = UIColor(Theme.toolbarBackground)
+        backgroundColor = EditorChromePalette.chromeBackground.uiColor
+        hairline.backgroundColor = EditorChromePalette.chromeHairline.uiColor
+        addSubview(hairline)
 
         stack = UIStackView(arrangedSubviews: [])
         stack.axis = .horizontal
         stack.distribution = .fillEqually
-        stack.translatesAutoresizingMaskIntoConstraints = false
+        stack.alignment = .fill
         addSubview(stack)
 
-        NSLayoutConstraint.activate([
-            stack.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 8),
-            stack.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -8),
-            stack.topAnchor.constraint(equalTo: topAnchor, constant: 2),
-            stack.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -2),
-        ])
+        // UIA-042 / ADR-0041：SnapKit DSL（自动 translatesAutoresizingMaskIntoConstraints = false）。
+        hairline.snp.makeConstraints {
+            $0.leading.trailing.top.equalToSuperview()
+            $0.height.equalTo(0.5)
+        }
+        stack.snp.makeConstraints {
+            $0.leading.equalToSuperview().offset(EditorChrome.toolbarHorizontalInset)
+            $0.trailing.equalToSuperview().offset(-EditorChrome.toolbarHorizontalInset)
+            $0.top.equalToSuperview().offset(2)
+            $0.bottom.equalToSuperview().offset(-2)
+        }
         rebuildStack()
     }
 
@@ -69,8 +85,7 @@ final class EditorToolbarUIView: UIView {
 
         switch mode {
         case .primary:
-            let undo = toolButton(icon: "arrow.uturn.backward", label: "撤销", enabled: false) { [weak self] in self?.onUndo?() }
-            let redo = toolButton(icon: "arrow.uturn.forward", label: "重做", enabled: false) { [weak self] in self?.onRedo?() }
+            // UIA-043：撤销/重做已迁到传输条，本栏 6 个工具位等宽铺满（无 spacer）。
             let media = toolButton(icon: "film.stack", label: "媒体", enabled: true) { [weak self] in self?.onOpenMedia?() }
             // 画中画（UIA-040）：新增一条视频轨 —— 多轨操作的入口。
             let pip = toolButton(icon: "square.on.square", label: "画中画", enabled: true) { [weak self] in self?.onAddOverlayTrack?() }
@@ -79,7 +94,7 @@ final class EditorToolbarUIView: UIView {
             let fx = toolButton(icon: "sparkles", label: "特效", enabled: true) { [weak self] in self?.onOpenDrawer?(.effects) }
             // 比例（UIA-040）：画布抽屉入口（真实能力 setCanvas）。
             let ratio = toolButton(icon: "aspect.ratio", label: "比例", enabled: true) { [weak self] in self?.onOpenDrawer?(.ratio) }
-            stack.addArrangedSubviews([undo, redo, makeSpacer(), media, pip, audio, text, fx, ratio])
+            stack.addArrangedSubviews([media, pip, audio, text, fx, ratio])
 
         case .clipSelected:
             let back = toolButton(icon: "chevron.down", label: "返回", enabled: true) { [weak self] in self?.onClosePanel?() }
@@ -131,19 +146,23 @@ final class EditorToolbarUIView: UIView {
     }
 
     /// 图标+文字竖排工具位（单手拇指目标，对照 SwiftUI 版 toolbarButton）。
+    /// UIA-043 尺寸阶梯：图标 22 / 标签 10 / 间距 6（底栏 84pt 内不再压扁）。
     private func toolButton(icon: String, label: String, enabled: Bool,
                             action: @escaping () -> Void) -> UIButton {
         var config = UIButton.Configuration.plain()
         config.image = UIImage(systemName: icon)
         config.imagePlacement = .top
-        config.imagePadding = 2
+        config.imagePadding = EditorChrome.toolbarIconLabelSpacing
         config.title = label
-        let colors: UIColor = enabled ? UIColor(Theme.primaryText) : UIColor(Theme.tertiaryText)
-        config.baseForegroundColor = colors
-        config.preferredSymbolConfigurationForImage = UIImage.SymbolConfiguration(pointSize: 16)
+        // 单色系：可用纯白，禁用低透白（不再有彩色主色）。
+        config.baseForegroundColor = enabled ? EditorChromePalette.chromeGlyph.uiColor
+                                             : EditorChromePalette.chromeGlyphDisabled.uiColor
+        config.preferredSymbolConfigurationForImage =
+            UIImage.SymbolConfiguration(pointSize: EditorChrome.toolbarIconPointSize,
+                                        weight: .medium)
         config.titleTextAttributesTransformer = UIConfigurationTextAttributesTransformer { attr in
             var container = attr
-            container.font = .systemFont(ofSize: 10)
+            container.font = .systemFont(ofSize: EditorChrome.toolbarLabelFontSize)
             return container
         }
         let button = UIButton(configuration: config, primaryAction: UIAction(handler: { _ in action() }))
@@ -152,8 +171,6 @@ final class EditorToolbarUIView: UIView {
     }
 
     // 以下可用性只在 clipSelected 条上有意义（其余模式下按钮随整条重建）。
-    func setUndoEnabled(_ enabled: Bool) { setButton("撤销", enabled: enabled) }
-    func setRedoEnabled(_ enabled: Bool) { setButton("重做", enabled: enabled) }
     func setSplitEnabled(_ enabled: Bool) { setButton("分割", enabled: enabled) }
     func setDeleteEnabled(_ enabled: Bool) { setButton("删除", enabled: enabled) }
 
@@ -163,6 +180,11 @@ final class EditorToolbarUIView: UIView {
         for case let button as UIButton in stack.arrangedSubviews
         where button.configuration?.title == label {
             button.isEnabled = enabled
+            // Configuration 风格不会因 isEnabled 自动换色 —— 必须显式改前景色，
+            // 否则「置灰」只有命中区失效、看起来仍是可点的白（假状态）。
+            button.configuration?.baseForegroundColor =
+                enabled ? EditorChromePalette.chromeGlyph.uiColor
+                        : EditorChromePalette.chromeGlyphDisabled.uiColor
         }
     }
 }

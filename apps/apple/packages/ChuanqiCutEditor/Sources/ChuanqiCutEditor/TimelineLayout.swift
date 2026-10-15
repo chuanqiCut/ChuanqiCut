@@ -168,7 +168,7 @@ struct TimelineLayout {
         return nil
     }
 
-    /// 时刻 t 是否严格落在片段内部（开区间）：分割可用性判定（对标 App语义：
+    /// 时刻 t 是否严格落在片段内部（开区间）：分割可用性判定（对标 App 语义：
     /// 在播放头处剪开；切在边界上无意义，内核同样拒绝 —— UI 先置灰）。
     /// 纯函数、可单测（ViewModel 与两侧工具栏共用）。
     static func isStrictlyInside(_ clip: ClipInfo, atSeconds t: Double) -> Bool {

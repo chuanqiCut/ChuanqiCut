@@ -14,7 +14,7 @@
 | CAM-022 MetalFX | `MetalFXScaler`（MTLFXSpatialScaler，SDR）+ draw 集成（输出=帧宽比×屏幕级别尺寸，保取景一致；cover≤1.15 跳过）+ 设置开关；默认关=逐位等价 | ⚠️ SDK 命名（descriptor 属性/`newSpatialScaler`/`encode(to:)`）本机无 MetalFX 头无法对表，构建机首编译按头文件修（一行级） |
 | CAM-024/025 | 宠物锚定（`StickerEyeAnchor` 人/宠同构 + AnimalObservation 提取，iOS 16 无姿态跳过）全链；美体 `BodyReshape` 纯函数层 + 接线（四关节齐全才生效） | 代码落地 |
 | CAM-030 反馈批 | 录制报错根因修复（**appendAudio 无会话起点守卫**——音频先于 startSession/PTS 早于起点令 writer `.failed`；补守卫 + append 返回值检查 + 失败帧不入计数）；采集档位 720p/1080p/4K + 帧率 30/60（canSetSessionPreset/activeFormat 校验）；高清拍照（maxPhotoDimensions + .quality）；变焦捏合（videoMaxZoomFactor 夹取，切摄重置）；曝光补偿/手动对焦滑杆；录制计时 TimelineView；**检测提频 15→30Hz** | 代码落地 |
-| C 期立项 | CAM-026 美妆 / 027 人像分割底座 / 028 ARKit 网格跟踪 / 029 磨皮算法升级；RESEARCH-009 对标对标平台/对标 App/INS（五根因+三阶段路线+三决策点待传哲拍板） | 卡就绪 |
+| C 期立项 | CAM-026 美妆 / 027 人像分割底座 / 028 ARKit 网格跟踪 / 029 磨皮算法升级；RESEARCH-009 对标对标产品/INS（五根因+三阶段路线+三决策点待传哲拍板） | 卡就绪 |
 
 **算法定则（传哲 2026-10-07，建议集成机落 ADR-0032）**：美颜/美型/美体/美妆/道具/跟踪/AR
 一切人像能力必须**算法驱动，无算法即无效果**，不得退化为滤镜式全画面修改。已落实：nil→直通。

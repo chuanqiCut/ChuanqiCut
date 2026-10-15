@@ -10,10 +10,10 @@
 
 ## 背景
 
-用户真机走查：播放卡顿 + 界面丑，要求复刻对标 App移动端范式；询问 SwiftUI 难实现是否改 UIKit。
+用户真机走查：播放卡顿 + 界面丑，要求复刻对标 App 移动端范式；询问 SwiftUI 难实现是否改 UIKit。
 RESEARCH-008 诊断：播放卡顿的 UI 侧根因 = ① 30Hz `playhead` @Published 触发整树 body
 重算（EnvironmentObject 粒度过粗）；② 时间线单 Canvas 全量重绘（含逐次文字 resolve）；
-③ 60Hz Timer+Task 驱动链。三者要在 SwiftUI 内修到对标 App级流畅 = TimelineView 行为约束 +
+③ 60Hz Timer+Task 驱动链。三者要在 SwiftUI 内修到对标 App 级流畅 = TimelineView 行为约束 +
 状态大拆分 + 手势细节对抗，成本高于直接使用 UIKit 的原生设施。
 
 ## 决定
@@ -34,7 +34,7 @@ RESEARCH-008 诊断：播放卡顿的 UI 侧根因 = ① 30Hz `playhead` @Publis
 ## 后果
 
 - 正向：播放/scrub 流畅度由 display-link 保证；缩略图/波形异步层获得细粒度失效控制；
-  与对标 App同构的手势体系。
+  与对标 App 同构的手势体系。
 - 代价：编辑页出现两套 UI 栈并存（SwiftUI 壳 + UIKit 内容），团队需同时掌握；
   SharedUI 的「纯 SwiftUI」事实被打破（pitfalls/模块文档同步修订）。
 - 反转条件：若 CADisplayLink + 图层方案在真机仍不达预算（<16ms），问题在渲染管线

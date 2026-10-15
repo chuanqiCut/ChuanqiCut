@@ -209,7 +209,7 @@ include 用相对路径 `../chq_session_impl.h`，pod 构建无私有 search pat
 ### 调研 · 决策 · 池指针
 
 - CORE-008/009（线程模型与 ChqEditorSession）· ADR-0016（共享命令队列）
-- **RESEARCH-016（2026-10-13，对标平台/对标 App SDK 逆向）**：§2.1 提出 **commit/done 双层提交** ——
+- **RESEARCH-016（2026-10-13，对标产品 SDK 架构调研）**：§2.1 提出 **commit/done 双层提交** ——
   对标平台把「渲染同步点」(commit，高频、触发 diff) 与「撤销事务边界」(done，两次之间合成一条 undo)
   分成两层；我们 `ChqCommandHistory::Execute` 目前三件事合一（改模型+入栈+刷新），
   「拖拽结束只提一条命令」靠纪律而非机制。建议：**保留 Command，在其上加共用同一 diff 出口的

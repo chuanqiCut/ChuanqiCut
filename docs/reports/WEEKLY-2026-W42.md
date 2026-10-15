@@ -253,7 +253,7 @@ B3 工程持久化 ── 独立支线，不与任何批次争写集，随时可
 
 1. **RENDER-001 范围修订**（RESEARCH-014）：从"节点 DAG + 拓扑排序"扩为「拓扑/环检测 **+ 装配器（预览/导出/纯音频三图同源）+ 时钟源接口 + Push/Pull 分区」；验收加"预览图与导出图同一装配器产出"。**立卡前必答 Push vs Pull**。
 2. **音画同步 MEDIA-030**（audio master clock，验收 A/V 偏差 ≤1 帧）。
-3. **面板配置化**（RESEARCH-013）：`PanelDescriptor` + `PanelRegistry`（对齐字节 其创作 SDK 的 `Panel_configs/*.json`），需与既有 `SPEC-UIA-019` 分层合并避免撞设计（P80/P81）。**待拍板**。
+3. **面板配置化**（RESEARCH-013）：`PanelDescriptor` + `PanelRegistry`（对齐该厂商 其创作 SDK 的 `Panel_configs/*.json`），需与既有 `SPEC-UIA-019` 分层合并避免撞设计（P80/P81）。**待拍板**。
 4. **轨道交互收敛为单一纯逻辑**（RESEARCH-013 P0）：抽 `TrackInteraction` reducer，消除 SwiftUI `commit` 与 UIKit `commitDrag` **两份手势逻辑**——现正踩 ADR-0034「严禁两套逻辑」红线边缘。
 5. **slot 概念预留**（建议 B0/B1 引入）：不预留则 B6 贴纸文字、B8 关键帧必返工。
 6. **相机重构**（RESEARCH-015，部分已落地）：检测分两级、磨皮换引导滤波、蒙版升级语义分割、整链半分辨率。

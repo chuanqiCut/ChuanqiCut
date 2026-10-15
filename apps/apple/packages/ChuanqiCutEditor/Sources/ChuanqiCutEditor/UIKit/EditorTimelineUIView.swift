@@ -4,7 +4,7 @@
 // 结构：UIScrollView（水平滚动）+ TimelineContentView（分层 CALayer 内容）+
 // **播放头固定覆盖层**（视口中央竖线，不随内容滚动）。
 //
-// UIA-038 交互范式（对标 App式，用户 2026-10-07 拍板）：
+// UIA-038 交互范式（对标 App 式，用户 2026-10-07 拍板）：
 //   * 红条恒在视口中央 —— 播放/程序化 seek 由 updatePlayhead 设 contentOffset
 //     把「播放头时刻」送到中央；用户拖动时间线 = scrub（scrollViewDidScroll →
 //     onScrub → VM.setPlayhead，帧栅格取整），播放中不抢播放头。
@@ -128,7 +128,7 @@ final class EditorTimelineUIView: UIView {
 
 
     /// 「+」摆在**内容尾部**（已含 trailingMargin），随内容一起滚动 —— 也就是
-    /// 用户把时间线滑到尽头时它才出现。这与对标 App的行为一致（图3/4/5 里它总在片尾右端）。
+    /// 用户把时间线滑到尽头时它才出现。这与对标 App 的行为一致（图3/4/5 里它总在片尾右端）。
     private func setupAddButton() {
         addButton.setImage(UIImage(systemName: "plus"), for: .normal)
         addButton.tintColor = UIColor(cgColor: TimelinePalette.addButtonGlyph.cgColor)
@@ -219,7 +219,7 @@ final class EditorTimelineUIView: UIView {
 
     /// UIA-043：空时间线不画刻度尺与播放头（现状空态露一根孤零零的刻度尺 + 白播放头）。
     ///
-    /// 高度**保留**（对标 App编辑器恒定有时间线区域），只把自绘内容与覆盖层隐藏 ——
+    /// 高度**保留**（对标 App 编辑器恒定有时间线区域），只把自绘内容与覆盖层隐藏 ——
     /// 避免导入首个片段时布局跳动。⚠️ 隐藏的是 `contentView`（UIView 整体），
     /// **不动任何 layer 层级**（backing layer 铁律，P131）。
     func setEmpty(_ empty: Bool) {
@@ -436,7 +436,7 @@ final class TimelineContentView: UIView {
         applySelectionChrome()
     }
 
-    /// 选中白描边（对标 App范式 ⑤；对照 SwiftUI 版 draw 的 isSelected 分支）。
+    /// 选中白描边（对标 App 范式 ⑤；对照 SwiftUI 版 draw 的 isSelected 分支）。
     private func applySelectionBorder() {
         for (clipId, layer) in clipLayers {
             if clipId == selectedClipId {
@@ -512,7 +512,7 @@ final class TimelineContentView: UIView {
         return text
     }
 
-    /// 时长文案：对标 App形如 `3.3s`（一位小数，去尾 0）。
+    /// 时长文案：对标 App 形如 `3.3s`（一位小数，去尾 0）。
     static func durationText(_ seconds: Double) -> String {
         String(format: "%.1fs", seconds)
     }

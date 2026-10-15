@@ -282,7 +282,7 @@ final class AlbumPickerTests: XCTestCase {
         XCTAssertTrue(model.selectedInOrder.isEmpty, "清空必须连托盘快照一起复位")
     }
 
-    // MARK: 对标 App式交互（v1.1：单击即插入 / 多选显式模式）
+    // MARK: 对标 App 式交互（v1.1：单击即插入 / 多选显式模式）
 
     func testInsertSingleDeliversAndCoversFullPipeline() async {
         let fetcher = FixtureFetcher(

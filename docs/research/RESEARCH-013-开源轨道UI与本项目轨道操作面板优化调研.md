@@ -2,7 +2,7 @@
 
 > 命题（传哲 2026-10-11）：调研开源的视频编辑轨道（timeline/track）UI 实现，重点看阿里云开源的那套"轨道区"，并给出本项目（iOS + macOS）轨道操作与面板管理的优化方案。
 > 归属：A 线（编辑器/UI）；登记指针见 `.ai/modules/ui-apple.md`「调研·决策·池指针」。
-> 关联：RESEARCH-004（UI 方案）/ RESEARCH-005（面板信息架构）/ RESEARCH-007（操作逻辑）/ RESEARCH-008（对标 App范式）/ RESEARCH-010（编辑功能对齐）/ **RESEARCH-012（商用 SDK 竞品：该厂商 其创作 SDK × 阿里云 UGSV，已核验源码）**。
+> 关联：RESEARCH-004（UI 方案）/ RESEARCH-005（面板信息架构）/ RESEARCH-007（操作逻辑）/ RESEARCH-008（对标 App 范式）/ RESEARCH-010（编辑功能对齐）/ **RESEARCH-012（商用 SDK 竞品：该厂商 其创作 SDK × 阿里云 UGSV，已核验源码）**。
 > 数字纪律：未实测项标 [E]/[hypothesis]，引用基线带环境。
 
 ---
@@ -27,7 +27,7 @@
 | 项目 | 平台/语言 | 多轨能力 | 轨道操作 | 面板机制 | 可借鉴点 |
 |---|---|---|---|---|---|
 | **阿里云 UGSV Demo** | iOS / ObjC | ❌ 单层 | 裁剪/移动 | 代码写死 | 单层裁剪手感；但**别反向对齐**（缺 undo/多轨） |
-| **字节 该厂商 其创作 SDK** | iOS / 配置驱动 | 多轨 | 全 | **`Panel_configs/<panel_key>.json` 全配置驱动**（tabs→subItems，多语言标题/图标/资源/业务参数 + 色卡 Key + 文案 Key 换皮三件套） | **面板配置驱动**是我们最大 gap，优先抄 |
+| **该厂商创作 SDK** | iOS / 配置驱动 | 多轨 | 全 | **`Panel_configs/<panel_key>.json` 全配置驱动**（tabs→subItems，多语言标题/图标/资源/业务参数 + 色卡 Key + 文案 Key 换皮三件套） | **面板配置驱动**是我们最大 gap，优先抄 |
 | Aamirali86/VideoTimeline | iOS / UIKit MVVM | ✅ 多轨 | 缩放/交换轨/trim 把手 | 无 | 纯 UIKit 多轨手势实现参考（程序化布局、无 storyboard） |
 | codewithhera/VideoEditTimeline-and-TrimView | iOS / UIKit+AVF | 多 clip | 波纹 trim / 吸附 / 多 clip | 无 | 对标 App 式 trim + **ripple + snapping** 实现 |
 | ymsying/VideoTimelineView | iOS / UIKit | 单 clip | 捏合缩放/scrub/trim | 无 | 最简 trimmer 原型 |
@@ -42,7 +42,7 @@
 
 ### 2.5 其轨道 UI 组件库 轨道区交互机制 — 头文件级深挖（2026-10-11 第二轮）
 
-> 应传哲指示补挖：其轨道 UI 组件库（该厂商 VE SDK 的编辑器轨道区模块，Flutter 架构图原文标注 "Track area in the editor"）正是本章主题。RESEARCH-012 §1.5.4 已核验过文件名分类与色卡 JSON，本轮**往下钻一层：读交互核心头文件的内容**。来源：CDN 直链重新下载 `其轨道 UI 组件库@0.3.3`（6,041,770 B，HTTP 200，与 0.1 同链），解包后**只读头文件与资源，未链接未运行未反汇编**（合规边界同 RESEARCH-012 §1.5.6）。0.3.3 共 120 个头文件；缩略图组件 7 个头文件在 0.3.3 已公开（0.1 里是二进制隐藏类）。
+> 应传哲指示补挖：其轨道 UI 组件库（该厂商 VE SDK 的编辑器轨道区模块，Flutter 架构图原文标注 "Track area in the editor"）正是本章主题。RESEARCH-012 §1.5.4 已核验过文件名分类与色卡 JSON，本轮**往下钻一层：读交互核心头文件的内容**。来源：CDN 直链重新下载 `其轨道 UI 组件库@0.3.3`（6,041,770 B，HTTP 200，与 0.1 同链），解包后**只读头文件与资源，未链接未运行未二进制分析**（合规边界同 RESEARCH-012 §1.5.6）。0.3.3 共 120 个头文件；缩略图组件 7 个头文件在 0.3.3 已公开（0.1 里是二进制隐藏类）。
 
 **轨道区装配形状（实证）**：
 
@@ -61,7 +61,7 @@
 | 双击片段 | doubleTapInterval / lastTapCellTime / lastClickIndexPath | 片段级二级操作入口（进属性/精修） |
 | 触觉反馈 | `triggerFeedback` | 手感细节，UIA 侧排期时带上 |
 | 尾部插入提示 | `tailInsertTipView` | 拖素材到时间线尾部的落点提示 |
-| **分割不在轨道区** | 全部头文件无 split 手势语义（`splitSpace` 只是 cell 间距常量） | 分割走底部编辑条（对标 App同款），印证 §5.4「播放头处一键分割（底部编辑条）」 |
+| **分割不在轨道区** | 全部头文件无 split 手势语义（`splitSpace` 只是 cell 间距常量） | 分割走底部编辑条（对标 App 同款），印证 §5.4「播放头处一键分割（底部编辑条）」 |
 
 **关键帧 UI（4 头文件实证）**：`其关键帧视图` 挂在片段 slot 上，item = UIButton + offsetTime；随片段 trim 用 `updateKeyFrameWithLeftLimit:/RightLimit:` **收缩帧点范围**；选帧回调 `keyFrameItemDidSelect:offsetTime:`。本期不做关键帧，但「帧点画在片段内、随边缘 trim 联动收缩」的形态记入 UIA-030 之后的设计池。
 
@@ -69,13 +69,13 @@
 
 **一个实战坑（头文件注释原文）**：`其轨道组件`——「这里需要使用 UI 上的时间，实际的 context.currentTime 与 UI 时间可能存在 1 帧的时间差」。吸附/选中判定用 UI 时间而非引擎当前时间。我们 timescale=60000 做手势 ↔ RationalTime 换算时同理：**取整方向与帧对齐纪律要写进 `TimelineLayout` 换算约定**（pitfalls 候选）。
 
-**自研路线确认（传哲 2026-10-11）**：借鉴思路 + 自研实现，不走反汇编。边界维持 RESEARCH-012 §1.5.7 分级：**公开头文件 / 资源 JSON / 符号表元数据层可继续挖（已饱和），反汇编还原实现逻辑不做**。依据：① 思路层证据已够——该厂商把手势状态字段全写进了公开头文件（panSelectedCell / longPressSnapCell / 3 个 DisplayLink / edgeRange / attachThreshold…），机制设计无需求助反汇编；② 反汇编多拿到的只有算法常数与实现细节，而手感参数本就要按自家产品调、且双方架构不同（其 RAC+OC+静态库 vs 我们 C++ core+Command 栈+SwiftUI）逐行还原的逻辑搬不过来——性价比趋零；③ 法律上交互机制/架构思路属思想层不受版权保护，代码表达受保护，独立自研是安全侧，反汇编产出再"照着写"会把独立开发变成衍生风险。本文 §2.5 的机制清单即自研的需求规格输入，实现归 `TrackInteraction` reducer 与 `TimelineLayout`（§5.1）。
+**自研路线确认（传哲 2026-10-11）**：借鉴思路 + 自研实现，不走二进制分析。边界维持 RESEARCH-012 §1.5.7 分级：**公开头文件 / 资源 JSON / 符号表元数据层可继续挖（已饱和），二进制分析还原实现逻辑不做**。依据：① 思路层证据已够——该厂商把手势状态字段全写进了公开头文件（panSelectedCell / longPressSnapCell / 3 个 DisplayLink / edgeRange / attachThreshold…），机制设计无需求助二进制分析；② 二进制分析多拿到的只有算法常数与实现细节，而手感参数本就要按自家产品调、且双方架构不同（其 RAC+OC+静态库 vs 我们 C++ core+Command 栈+SwiftUI）逐行还原的逻辑搬不过来——性价比趋零；③ 法律上交互机制/架构思路属思想层不受版权保护，代码表达受保护，独立自研是安全侧，二进制分析产出再"照着写"会把独立开发变成衍生风险。本文 §2.5 的机制清单即自研的需求规格输入，实现归 `TrackInteraction` reducer 与 `TimelineLayout`（§5.1）。
 
 ---
 
 ## 3. 提炼：对本项目最有价值的几条经验（不照抄）
 
-1. **面板配置驱动（字节 其创作 SDK）** —— RESEARCH-012 已判定这是"我们当前面板是代码写死"的**最大 gap**。建议落 LIB/Editor 域 SPEC：面板 = 值类型 `PanelDescriptor`（id + 标题 i18n Key + 图标 Key + 子项列表 + 宿主形态偏好），由注册表装配，换肤/增删面板不改业务视图。
+1. **面板配置驱动（该厂商 其创作 SDK）** —— RESEARCH-012 已判定这是"我们当前面板是代码写死"的**最大 gap**。建议落 LIB/Editor 域 SPEC：面板 = 值类型 `PanelDescriptor`（id + 标题 i18n Key + 图标 Key + 子项列表 + 宿主形态偏好），由注册表装配，换肤/增删面板不改业务视图。
 2. **命令栈撤销重做（我们有，阿里云开源版没有）** —— 守住 ADR-0012，别为"对齐开源"砍掉它。
 3. **轨道操作语义（Flowblade）** —— 插入(Insert)/覆盖(Overwrite) 双模式 + 磁吸防空隙；clip↔clip 吸附/对齐是专业编辑器标配，当前项目完全缺失。
 4. **必备轨道操作清单** —— 删片段、删轨、分割(split)、左边缘 trim（改 source_in）、锁定/静音/可见、多选、clip↔clip 吸附。当前项目这 7 项里**删/分割/锁定静音/多选/吸附全缺**，删片段与删轨的 core `ICommand` 已写好却**未暴露 C ABI**（能力下沉未接线）。
@@ -127,7 +127,7 @@
 
 ### 5.2 补齐轨道操作 + ABI 接线 — P0/P1
 - **接线（P0，不动 core）**：在 `cq_sdk.h` 增加 `cq_session_remove_clip` / `cq_session_remove_track`（绑定层 `Timeline.swift` 加 `removeClip/removeTrack` → `EditorViewModel`），解锁删片段/删轨。属热点文件改动，**走集成机统一落 `cq_sdk.h`**（PLAN-三线并行 §3）。
-- **新命令（P1）**：`SplitClipCommand`（播放头处分割，应为**单条原子命令**以对齐 ADR-0012 命令栈一致性）、`TrimClipLeftCommand`（改 source_in；Spec 时需辨析"改 source_in = 内容窗滑动（slip）"vs"改 start = 边缘推移"两种语义，对标 App/对标 App的左 trim 属前者）、`SetTrackStateCommand`（locked/muted/visible）。**模型字段现状已核（2026-10-11）**：`Track.enabled/muted` 已在 core（timeline.h:65-66）且 `CQTrackInfo` 已回读（cq_sdk.h:202-203），真正要新增的只有 `locked` 字段（core + ABI）+ set 命令；`hidden` 建议与 `enabled` 合并（enabled=false 即不参与合成/不可见），避免同义双字段。
+- **新命令（P1）**：`SplitClipCommand`（播放头处分割，应为**单条原子命令**以对齐 ADR-0012 命令栈一致性）、`TrimClipLeftCommand`（改 source_in；Spec 时需辨析"改 source_in = 内容窗滑动（slip）"vs"改 start = 边缘推移"两种语义，对标 App/对标 App 的左 trim 属前者）、`SetTrackStateCommand`（locked/muted/visible）。**模型字段现状已核（2026-10-11）**：`Track.enabled/muted` 已在 core（timeline.h:65-66）且 `CQTrackInfo` 已回读（cq_sdk.h:202-203），真正要新增的只有 `locked` 字段（core + ABI）+ set 命令；`hidden` 建议与 `enabled` 合并（enabled=false 即不参与合成/不可见），避免同义双字段。
 - **纯 UI 状态（P1，不碰 core）**：多选（`Set<ClipID>` 本地态）、clip↔clip 吸附（`TimelineLayout` 加 `snapCandidates`，拖拽结束前高亮吸附点）。
 
 ### 5.3 面板框架（配置驱动 + 三宿主形态 + 持久化）— P1
@@ -139,7 +139,7 @@
   - **iOS 竖屏**：对标 App 定式——**一级工具栏 ↔ 片段编辑条同槽替换**（选中片段→底部编辑条：分割/删除/静音/复制/音量/速度）；素材/更多走底部 sheet（detents）。
   - **iOS 横屏**：同构右栏（与 Mac 共用 PanelDescriptor，视图分写）。
 - **持久化（P1）**：工作区布局（右栏宽度、面板开关、缩放级别 `pixelsPerSecond`、选中面板）写入 `UserDefaults`（独立 suite 便于测试，参照 Player 域 `cq.player.*` 做法）；多窗口下以主窗口为准。
-- 配置驱动换肤/增删面板不改业务视图 —— 直接对齐字节 其创作 SDK 的最大 gap。
+- 配置驱动换肤/增删面板不改业务视图 —— 直接对齐该厂商 其创作 SDK 的最大 gap。
 
 ### 5.4 平台差异化轨道操作 UX
 - **iOS（单焦点抽屉范式，ADR-0034 §6）**：长按"拿起"片段（其轨道 UI 组件库 同款 Pan/LongPress 双动作）、双指缩放时间线、边缘 trim、空白平移 scrub；多选=长按进入多选模式批量拖拽/删除；分割=播放头处一键分割（底部编辑条，其轨道 UI 组件库 头文件证实分割不在轨道区手势里）。**补三条该厂商实证的必备手感（§2.5）**：拖片段至时间线边缘自动滚动（速度随偏移渐进）、双击片段进属性、吸附命中与模式切换给触觉反馈。不堆常驻侧栏。
@@ -173,7 +173,7 @@
 - 精确控件排布/手势手感待真机走查截图核对（RESEARCH-007 §6.2 遗留）。
 
 ## 8. 引用调研清单
-- RESEARCH-004 拍摄与编辑 UI 主流方案 / RESEARCH-005 功能面板信息架构 / RESEARCH-007 顶级 App 操作逻辑 / RESEARCH-008 对标 App移动端范式 / RESEARCH-010 编辑功能对齐 / **RESEARCH-012 商用 SDK 竞品（该厂商 其创作 SDK × 阿里云 UGSV，源码核验，含 Panel_configs 字段级结构）** / **RESEARCH-012 §1.5.4 + 本文 §2.5（其轨道 UI 组件库@0.3.3 头文件级：轨道区交互机制 / 吸附三要素 / 缩略图管线 / 关键帧 UI）**
+- RESEARCH-004 拍摄与编辑 UI 主流方案 / RESEARCH-005 功能面板信息架构 / RESEARCH-007 顶级 App 操作逻辑 / RESEARCH-008 对标 App 移动端范式 / RESEARCH-010 编辑功能对齐 / **RESEARCH-012 商用 SDK 竞品（该厂商 其创作 SDK × 阿里云 UGSV，源码核验，含 Panel_configs 字段级结构）** / **RESEARCH-012 §1.5.4 + 本文 §2.5（其轨道 UI 组件库@0.3.3 头文件级：轨道区交互机制 / 吸附三要素 / 缩略图管线 / 关键帧 UI）**
 - **SPEC-UIA-019 统一面板框架与四端布局**（§5.3 PanelDescriptor 的运行时层前置：PanelRoute/PanelHost/PanelKit）
 - ADR-0012（拖拽不提交/松手一条命令）/ ADR-0022（AVFoundation 域边界）/ ADR-0024（iOS 竖屏 UIKit）/ ADR-0034（严禁两套渲染路径、Mac/iOS 分端形态）
 - 模块册 `ui-apple.md`（UIA-004/005/009/011/012/013/032/033/034~038 落地记录）

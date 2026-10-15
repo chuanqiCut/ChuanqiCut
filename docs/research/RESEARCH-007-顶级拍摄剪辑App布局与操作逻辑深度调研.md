@@ -83,7 +83,7 @@ RESEARCH-004/005 回答了「长什么形状」（页面范式、容器原型）
 
 ## 3. 编辑页逐家深拆
 
-### 3.1 对标 App / 对标 App手机版 —— 「一个槽位、两套内容」的行业共识
+### 3.1 对标 App / 对标 App 手机版 —— 「一个槽位、两套内容」的行业共识
 
 - **三段式**：预览（约 45% [E]）/ 时间线 / 底部工具栏，比例不可调。
 - **一级工具栏**（项目级）：前几项固定 + 横向滚动，主序列 Edit→Audio→Text→Overlay→Effects→Elements→Filters→Adjust→Format→Canvas（顺序随版本/地区变 [E]）。
@@ -200,7 +200,7 @@ RESEARCH-004/005 回答了「长什么形状」（页面范式、容器原型）
 
 ## 6. 风险与开放问题
 
-1. **未核实项汇总** [hypothesis/E]：Kino ADA 2025 获奖与否；Blackmagic 右竖条/底栏逐项内容；Kino 双行布局细节；Edits 工具栏逐项顺序；某短视频平台 右列顺序与时长档位的版本差异；Reels 左列顺序（A/B 变动）；小红书/对标 App拍摄页分区（二手综合）。**不得作为验收阈值**；如需硬结论需真机截图走查。
+1. **未核实项汇总** [hypothesis/E]：Kino ADA 2025 获奖与否；Blackmagic 右竖条/底栏逐项内容；Kino 双行布局细节；Edits 工具栏逐项顺序；某短视频平台 右列顺序与时长档位的版本差异；Reels 左列顺序（A/B 变动）；小红书/对标 App 拍摄页分区（二手综合）。**不得作为验收阈值**；如需硬结论需真机截图走查。
 2. **竞品 UI 精确排布的验证方式**：公开资料粒度有限（官方不给布局图），建议后续开一个小任务用真机走查 2~3 个标杆 App（对标 App/iOS 26 相机/Kino）截图核对控件顺序，作为 UIA-015/016 Spec 附图。
 3. **本文 delta 与 UIA-014~019 Spec 的合流**：RESEARCH-004/005 的任务批次尚未全部立 Spec；本文结论在 Spec 撰写时合入，避免三份调研漂移（建议 Spec 引用本文 §5 delta 表，不复制全文）。
 4. 手势词汇表趋同为 [E]（三家以上一致），未见官方交互规范文档背书——置信度高但非官方。
@@ -221,12 +221,12 @@ RESEARCH-004/005 回答了「长什么形状」（页面范式、容器原型）
 - [Macworld：iOS 26 相机全面变动图](https://www.macworld.com/article/2857154/ios-26-has-a-new-camera-app-heres-whats-new-and-how-to-find-everything-thats-moved.html)
 - [ZDNET：iOS 26 相机肌肉记忆争议与 Apple 回调](https://www.zdnet.com/article/this-ios-26-update-ruined-the-iphone-camera-app-for-me-then-apple-saved-the-day/)
 - [MacRumors：iOS 26 相机指南](https://www.macrumors.com/guide/ios-26-camera-app/)；[NN/g：Liquid Glass Is Cracked](https://www.nngroup.com)
-- [某短视频平台 官方帮助：Camera tools / Editing](https://support.tiktok.com/en/using-tiktok/creating-videos/camera-tools)
+- 某短视频平台 官方帮助：Camera tools / Editing（来源链接已移除）
 - Reels/Snapchat：flowshorts.app、slidycreator.com、iMore（Snapchat 单指变焦）
 
 **移动剪辑赛道**
-- [TutsPlus：对标 App 教程](（来源链接已移除）)；[Sheetly：对标 App 手势清单](（来源链接已移除）)；[对标 App 官方帮助](（来源链接已移除）)
-- [TechCrunch：Meta 官宣 Edits](（来源链接已移除）)
+- TutsPlus：对标 App 教程（来源链接已移除）；Sheetly：对标 App 手势清单（来源链接已移除）；对标 App 官方帮助（来源链接已移除）
+- TechCrunch：Meta 官宣 Edits（来源链接已移除）
 - [VN Help Center](https://www.vlognow.me/help/)（Main Track Mode）；editflicks.wordpress.com（VN 界面走查）
 - [Lightricks Help Center：Videoleap 教程](https://lightricks.zendesk.com/hc/en-us/articles/6114552482962-Videoleap-Tutorials)
 

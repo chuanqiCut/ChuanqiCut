@@ -4,7 +4,7 @@
 id:          AIEDIT-010
 layer:       SDK + UI
 goal:        单列入口「AI 脚本成片」：文案/主题 → LLM 生成脚本与分镜表 → 分镜与用户素材库匹配 → 按分镜成片（缺口素材用占位卡，生成式填充仅预留接口）
-input:       [SPEC AIEDIT-001 §10(P1), RESEARCH-003 §2.1/§2.4（对标 App图文成片、必剪口播成片对标）, ADR-0020 决策 7（无状态多轮）]
+input:       [SPEC AIEDIT-001 §10(P1), RESEARCH-003 §2.1/§2.4（对标 App 图文成片、必剪口播成片对标）, ADR-0020 决策 7（无状态多轮）]
 output:      [StoryBoard schema（cq.storyboard/1）, 分镜匹配器, 脚本成片向导 UI, 单测]
 write_set:   启动时冻结（预计 core/include/cq/ai/storyboard.h(新)、core/src/ai/story/*(新)、
              SharedUI/Sources/SharedUI/SmartCut/Script/*(新)、HomeView.swift(高冲突)）
@@ -22,7 +22,7 @@ parallel:    false（P1 单独批次）
 
 ## 背景
 
-用户命题的扩展线："可以制作成脚本，然后分镜头制作，可以单列入口"。对标对标 App图文成片（脚本→配音→素材匹配→成片）与必剪口播成片，但不绑素材库生态——匹配范围是用户本机素材库。
+用户命题的扩展线："可以制作成脚本，然后分镜头制作，可以单列入口"。对标对标 App 图文成片（脚本→配音→素材匹配→成片）与必剪口播成片，但不绑素材库生态——匹配范围是用户本机素材库。
 
 ## 实现要点（启动拆解时细化）
 

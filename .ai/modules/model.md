@@ -114,7 +114,7 @@ UIA-005 把它接到 `ChqEditorModelState::Undo/Redo` 与 `cq_session_undo/redo`
 ### 调研 · 决策 · 池指针
 
 - ADR-0012（命令提交时机）· 红线 #5（UI 不直改模型）
-- **RESEARCH-016（2026-10-13，对标平台/对标 App SDK 逆向）**：§1.2 给出 NLE 模型层级（Node→TimeSpaceNode→
+- **RESEARCH-016（2026-10-13，对标产品 SDK 架构调研）**：§1.2 给出 NLE 模型层级（Node→TimeSpaceNode→
   Model/Track/Slot/Segment）与 **ChqClip vs 其轨道槽位模型 缺口表**（transform / layer / speed /
   keyframes / mask / audioFilter / relative 布局均缺）；§2.3 建议做 B0 前补齐并连带设计 relative
   布局（否则改画布比例时子元素漂移）。**状态：建议待拍板，未排期。**

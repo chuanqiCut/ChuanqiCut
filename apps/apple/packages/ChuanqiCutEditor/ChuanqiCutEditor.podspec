@@ -3,7 +3,7 @@
 # 定位：编辑器三件套（EditorView/EditorScreen/Timeline）+ EditorViewModel（内核
 #   Session 门面，AppEntry.swift）+ 素材面板 MediaSheet（UIA-026 播放器联动经
 #   PlayerPreviewInjector、相册浏览器经 MediaLibraryInjector 注入，横向零依赖）。
-#   **UIA-032 编辑页对标 App式重构在新 Pod 内进行。**
+#   **UIA-032 编辑页对标 App 式重构在新 Pod 内进行。**
 #   注：素材表/导入逻辑（importMedia）当前与 EditorViewModel 不可分，随本 Pod；
 #   LIB-001~005 落地后素材库真域另立 ChuanqiCutAssets（INFRA-017 改挂 LIB 依赖）。
 #

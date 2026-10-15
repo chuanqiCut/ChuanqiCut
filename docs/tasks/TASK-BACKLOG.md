@@ -453,14 +453,14 @@ RENDER-001/红线 #6 路线，勿把相机滤镜直接当 SDK 能力引用。
 
 ## 11. 编辑页重构（UIA-032/033/020，2026-10-05 新增；SPEC-UIA-032）
 
-> 用户命题：编辑页丑（与对标 App范式错位）+ 导入后预览无画面 + 播放入口不可用。调研：RESEARCH-004（§3.4/§6.2）。
+> 用户命题：编辑页丑（与对标 App 范式错位）+ 导入后预览无画面 + 播放入口不可用。调研：RESEARCH-004（§3.4/§6.2）。
 > 号段：原取 UIA-015/016，与播放器线撞号，2026-10-07 裁定编辑器线让位改 **UIA-032/033**（登记即占号）；UIA-020 为新领号（相邻线 A 域）。
 
 | ID | 层 | 任务 | 依赖 | 写集要点 | 验收 |
 |---|---|---|---|---|---|
 | UIA-020 | UI | 预览活性修复（模型推进 → 同 pts 重渲染，seq 追帧） | — | `AppEntry.swift`、`MetalPreviewView.swift`、SharedUITests | 泵 requested 单测；全量零回归 |
 | UIA-033 | UI | Theme 令牌扩展（增量，全量清扫待批；原 UIA-016 让位改号） | — | `Common/Theme.swift` | Editor 新文件无裸 RGB；编译绿 |
-| UIA-032 | UI | iOS 编辑页对标 App式重构（预览最大化/播放条/底部工具栏/媒体抽屉；原 UIA-015 让位改号） | 020、033 | `Editor/*`（七文件）+ `ChuanqiCutApp.swift` DEBUG 钩子 | 走查截图 + 全量测试 + 双平台编译 |
+| UIA-032 | UI | iOS 编辑页对标 App 式重构（预览最大化/播放条/底部工具栏/媒体抽屉；原 UIA-015 让位改号） | 020、033 | `Editor/*`（七文件）+ `ChuanqiCutApp.swift` DEBUG 钩子 | 走查截图 + 全量测试 + 双平台编译 |
 | MEDIA-022 | SDK | HEVC 解码支持 + 探测失败诚实透传 ✅ 2026-10-05 | — | `platform/apple/media_decode.mm`、绑定 probe 透传、AppEntry 文案 | HEVC golden probe=0 + 像素断言；门禁全绿（诊断见任务卡 §背景） |
 
 **批次**：020 ∥ 033 → 032。**关键路径**：020 → 032。
@@ -470,7 +470,7 @@ RENDER-001/红线 #6 路线，勿把相机滤镜直接当 SDK 能力引用。
 
 ## 12. 编辑页 UIKit 重建（UIA-034~037，2026-10-05 新增；RESEARCH-008 + ADR-0024）
 
-> 用户命题：播放卡顿 + 界面丑 → 复刻对标 App移动端范式；SwiftUI 难实现就改 UIKit。
+> 用户命题：播放卡顿 + 界面丑 → 复刻对标 App 移动端范式；SwiftUI 难实现就改 UIKit。
 > 决策：ADR-0024（编辑页核心三件套 UIKit，外层 SwiftUI 壳，Command 链路零改动）。
 > **让位说明**：本节任务原取 UIA-021~024，与播放器线进阶卡撞号，2026-10-07 裁定编辑器线让位改 **UIA-034~037**。
 
@@ -478,7 +478,7 @@ RENDER-001/红线 #6 路线，勿把相机滤镜直接当 SDK 能力引用。
 |---|---|---|---|---|---|
 | UIA-034 | UI | EditorViewController 骨架（三区 UIKit 容器 + SwiftUI 装配）✅ 2026-10-07 | — | SharedUI `Editor/UIKit/**`(新)、EditorScreen 装配 | 双平台编译；既有测试零回归 |
 | UIA-035 | UI | 时间线 UIKit 自绘 + 手势 + CADisplayLink 播放头（卡顿修复主体）✅ 2026-10-07（播放头独立层每帧只动 path；真机 <16ms 走查 = 池 [3]） | 034 | SharedUI `Editor/UIKit/Timeline*` | 播放头移动仅重绘播放头层；主线程单帧 <16ms（真机走查） |
-| UIA-036 | UI | 预览浮层/传输条 + 底部工具栏/二级条 ✅ 2026-10-07（一级条落地；二级条随各能力实装引入） | 034 | SharedUI `Editor/UIKit/{Preview,Toolbar}*` | 对标 App形状走查清单（RESEARCH-008 §2） |
+| UIA-036 | UI | 预览浮层/传输条 + 底部工具栏/二级条 ✅ 2026-10-07（一级条落地；二级条随各能力实装引入） | 034 | SharedUI `Editor/UIKit/{Preview,Toolbar}*` | 对标 App 形状走查清单（RESEARCH-008 §2） |
 | UIA-037 | UI | 时间线缩略图（异步抽帧，吸收时间线视觉建议位） | 035 | 同上 + 抽帧缓存 | 主线程不解码；缩略图随片段可见 |
 
 **批次**：阶段 0（真机性能剖面，回填 baselines，UIA-034 前半天）→ 034 → 035 ∥ 036 → 037。

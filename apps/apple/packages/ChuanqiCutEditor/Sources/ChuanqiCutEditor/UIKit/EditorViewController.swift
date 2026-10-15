@@ -4,7 +4,7 @@
 // 竖排三区（对照 SwiftUI 版 verticalLayout）：预览（弹性，直嵌 PreviewMTKView
 // + 空态引导/点按播放）→ 传输条 44 → 时间线 140 → 工具栏 84（UIA-043：58 → 84）。
 //
-// UIA-043（对标 App单色系视觉改版，纯视觉 + 出口迁移，**零交互变更**）：
+// UIA-043（对标 App 单色系视觉改版，纯视觉 + 出口迁移，**零交互变更**）：
 //   * 底栏 84 / 图标 22；撤销·重做**迁到传输条**（与播放、时间码同栏）；
 //   * 空态去掉悬浮卡片，元素直接落在预览区，主操作白底黑字；
 //   * 空时间线不画刻度尺与播放头（EditorTimelineUIView.setEmpty）。
@@ -188,7 +188,7 @@ final class EditorViewController: UIViewController {
 
         // 空态引导（对照 PreviewZone.emptyStateOverlay）
         //
-        // UIA-043：**不再套半透明卡片** —— 对标 App的空态元素直接落在预览区上。
+        // UIA-043：**不再套半透明卡片** —— 对标 App 的空态元素直接落在预览区上。
         // 卡片套层在纯黑底上会多出一块更亮的矩形（视觉噪音），主色也从蓝改单色系
         // 的白底黑字胶囊。
         let icon = UIImageView(image: UIImage(systemName: "film.stack")?

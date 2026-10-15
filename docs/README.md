@@ -44,14 +44,14 @@ cat docs/handoff/HANDOFF-004-*.md      # 3. 最近交接（状态以最新一份
 |---|---|
 | [`RESEARCH-001-现有调研文档批判性评审与事实核验.md`](research/RESEARCH-001-现有调研文档批判性评审与事实核验.md) | 对第一代 7 份调研的批判性评审：10 条事实错误、7 项矛盾裁决、14 项缺失主题、§5 保留/修正/废弃处置表。**引用第一代文档前先读它** |
 | [`RESEARCH-002-相机采集与实时特效链路调研.md`](research/RESEARCH-002-相机采集与实时特效链路调研.md) | 相机域调研（2026-10-04），上游为 ADR-0014 / SPEC-CAM-001 |
-| [`RESEARCH-003-智能成片竞品调研.md`](research/RESEARCH-003-智能成片竞品调研.md) | 智能成片竞品调研（对标 App图文成片 / iMovie / 必剪等），下游 ADR-0020 / AIEDIT-001 |
+| [`RESEARCH-003-智能成片竞品调研.md`](research/RESEARCH-003-智能成片竞品调研.md) | 智能成片竞品调研（对标 App 图文成片 / iMovie / 必剪等），下游 ADR-0020 / AIEDIT-001 |
 | [`RESEARCH-004-拍摄与编辑UI主流方案调研.md`](research/RESEARCH-004-拍摄与编辑UI主流方案调研.md) | 拍摄与编辑 UI 主流方案调研 |
 | [`RESEARCH-005-功能面板信息架构与四端布局调研.md`](research/RESEARCH-005-功能面板信息架构与四端布局调研.md) | 功能面板信息架构与四端布局调研，下游 UIA-019 |
 | [`RESEARCH-006-独立播放器内核与交互调研.md`](research/RESEARCH-006-独立播放器内核与交互调研.md) | 独立播放器内核选型（AVPlayer 过渡 vs 自研 C++ session vs FFmpeg/mpv 等 8 方案对比）与交互范式（一线产品手势/控制层/键盘/无障碍），支撑 SPEC-UIA-020 与 ADR-0022 |
 | [`RESEARCH-007-顶级拍摄剪辑App布局与操作逻辑深度调研.md`](research/RESEARCH-007-顶级拍摄剪辑App布局与操作逻辑深度调研.md) | 全球顶级拍摄/剪辑 App 的控件分区、手势与面板切换规则深拆（18 家），§5 delta 表为编辑域 Spec 的操作层输入（建议位编号备注见文内） |
-| [`RESEARCH-008-对标 App移动端编辑页范式与框架选型.md`](research/RESEARCH-008-对标 App移动端编辑页范式与框架选型.md) | 对标 App移动端编辑页范式拆解 + SwiftUI/UIKit 框架选型，下游 ADR-0024 / BACKLOG §12（**原 006，2026-10-07 撞号让位改号**） |
-| [`RESEARCH-009-人像效果对标对标平台对标 AppINS与追平路线.md`](research/RESEARCH-009-人像效果对标对标平台对标 AppINS与追平路线.md) | 人像效果对标（对标平台/对标 App/Instagram）与追平路线；数字一律 [E]，验收以 baselines 实测为准 |
-| [`RESEARCH-010-编辑功能现状核验与对标 App对齐路线.md`](research/RESEARCH-010-编辑功能现状核验与对标 App对齐路线.md) | **只读代码核验**编辑功能真实现状（不采信完成标记）+ 对标 App对齐路线；关联 ADR-0034 / ADR-0024 |
+| [`RESEARCH-008-移动端编辑页范式与框架选型.md`](research/RESEARCH-008-移动端编辑页范式与框架选型.md) | 对标 App 移动端编辑页范式拆解 + SwiftUI/UIKit 框架选型，下游 ADR-0024 / BACKLOG §12（**原 006，2026-10-07 撞号让位改号**） |
+| [`RESEARCH-009-人像效果对标与追平路线.md`](research/RESEARCH-009-人像效果对标与追平路线.md) | 人像效果对标（对标产品/Instagram）与追平路线；数字一律 [E]，验收以 baselines 实测为准 |
+| [`RESEARCH-010-编辑功能现状核验与对齐路线.md`](research/RESEARCH-010-编辑功能现状核验与对齐路线.md) | **只读代码核验**编辑功能真实现状（不采信完成标记）+ 对标 App 对齐路线；关联 ADR-0034 / ADR-0024 |
 | [`RESEARCH-011-仓库布局与分层整改方案.md`](research/RESEARCH-011-仓库布局与分层整改方案.md) | 仓库布局与分层整改（磁盘实勘 + 业界布局惯例对照；**只出方案不动代码**），2026-10-10 22:10；**P0/P1/P2 已于 2026-10-11 执行完毕并提交**（见 ADR-0035 / HANDOFF-018），P3 未开工 |
 | [`RESEARCH-012-商用拍摄剪辑SDK对外Demo与UI调研.md`](research/RESEARCH-012-商用拍摄剪辑SDK对外Demo与UI调研.md) | 商用 SDK 竞品（该厂商 其创作 SDK × 阿里云 UGSV **iOS 端**）demo 获取门槛与 UI 功能清单；**UI 配置化（面板/色卡/尺寸 JSON）** 与 **公开 podspec 仓库 + CDN 直链可得性** 为主要增量 |
 | `legacy/`（7 份） | 第一代调研素材（2026-09-23 前）：6 份 `技术调研_*.md` + `技术方案决策书`。**只读**，每份头部有状态横幅；性能数字一律 [E]、结论已被评审修正 |

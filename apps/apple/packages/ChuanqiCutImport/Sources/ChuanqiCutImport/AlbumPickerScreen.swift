@@ -1,6 +1,6 @@
 // SharedUI — 自研相册浏览器主屏（UIA-013，Spec docs/specs/UIA-013-自研相册浏览器.md）
 //
-// 交互（v1.1，对齐对标 App素材面板的连续导入流）：
+// 交互（v1.1，对齐对标 App 素材面板的连续导入流）：
 //   * **默认单击即插入**：点 cell → loading 覆盖 → 素材进时间线 → toast
 //     反馈，面板保持打开（半屏抽屉可拖拽收起），可连续点选 —— 选择与插入
 //     同步完成，无需"完成"确认。
@@ -28,7 +28,7 @@ public struct AlbumPickerScreen: View {
 
     /// 交付成功的文件 URL（顺序 = 选取序号顺序）。async：父层在此完成导入
     /// （runBatch），VM await 到返回才解除 loading。**面板不在此关闭** ——
-    /// 对标 App式连续导入流，收起靠拖拽指示器 / 取消按钮。
+    /// 对标 App 式连续导入流，收起靠拖拽指示器 / 取消按钮。
     private let onDeliver: ([URL]) async -> Void
 
     public init(onDeliver: @escaping ([URL]) async -> Void) {
@@ -88,7 +88,7 @@ public struct AlbumPickerScreen: View {
 
             Spacer()
 
-            // 右侧：多选切换 + 计数（对标 App范式：默认单击即插入，多选显式开启）
+            // 右侧：多选切换 + 计数（对标 App 范式：默认单击即插入，多选显式开启）
             if model.isMultiSelectMode {
                 Text("\(model.selection.count)/\(model.selection.maxCount)")
                     .font(.callout.monospacedDigit())
@@ -296,7 +296,7 @@ public struct AlbumPickerScreen: View {
                 showToast(reason)
             }
         } else {
-            // 单击即插入（对标 App式）：loading 覆盖在 cell 上，await 导入完成后 toast
+            // 单击即插入（对标 App 式）：loading 覆盖在 cell 上，await 导入完成后 toast
             Task {
                 let outcome = await model.insertSingle(descriptor)
                 switch outcome {
@@ -482,7 +482,7 @@ enum PickerFeedback {
     }
 }
 
-// MARK: - sheet 尺寸与呈现形态（macOS 固定窗口；iOS 半屏抽屉可拉满 —— 对标 App式素材面板）
+// MARK: - sheet 尺寸与呈现形态（macOS 固定窗口；iOS 半屏抽屉可拉满 —— 对标 App 式素材面板）
 
 private extension View {
     @ViewBuilder

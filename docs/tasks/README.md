@@ -78,7 +78,7 @@
 | [UIA-025](TASK-UIA-025.md) | 播放器外挂字幕 v2（ASS/SSA 样式子集；进阶版 P2，拍板项） |
 | [UIA-026](TASK-UIA-026.md) | 编辑器素材库 → 播放器联动（进阶版 P2，拍板项，跨域卡） |
 | [UIA-027](TASK-UIA-027.md) | macOS mini player（MenuBarExtra + 生命周期上移；进阶版 P2，拍板项） |
-| [UIA-032](TASK-UIA-032.md) | iOS 编辑页对标 App式重构（**原 UIA-015，2026-10-07 撞号裁定让位改号**；SPEC-UIA-032） |
+| [UIA-032](TASK-UIA-032.md) | iOS 编辑页对标 App 式重构（**原 UIA-015，2026-10-07 撞号裁定让位改号**；SPEC-UIA-032） |
 | [UIA-033](TASK-UIA-033.md) | Theme 令牌扩展增量（**原 UIA-016，同批让位改号**） |
 
 ### 相机 CAM（iOS 原生域，ADR-0014）

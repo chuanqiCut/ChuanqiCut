@@ -1,4 +1,4 @@
-# TASK-UIA-040：面板分级 + 画布 + 多轨操作（对标 App对齐第二批，RESEARCH-008/010 落地）
+# TASK-UIA-040：面板分级 + 画布 + 多轨操作（对标 App 对齐第二批，RESEARCH-008/010 落地）
 
 - **状态**：✅ 编码 + 本机验证完成（2026-10-12）；已提交
 - **批次**：RESEARCH-008 范式①⑤（单焦点+抽屉 / 底部整体替换）+ RESEARCH-010 缺口清单
@@ -7,7 +7,7 @@
   `engine/bindings/swift/Sources/ChuanqiCut/Timeline.swift`、
   `apps/apple/packages/ChuanqiCutEditor/**`（8 源文件 + 测试）
 
-## 交付面（对照对标 App的三块）
+## 交付面（对照对标 App 的三块）
 
 ### 1. 操作面板分级（RESEARCH-008 ①⑤，双端同语义）
 - `EditorToolbarMode = primary / clipSelected / drawer(kind)`，单一真源 =

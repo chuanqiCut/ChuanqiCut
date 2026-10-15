@@ -2,7 +2,7 @@
 
 # MediaPipe 加速方案 & 系统 API 对比
 
-> 核心问题：MediaPipe 468 点能跑到对标 App的速度吗？
+> 核心问题：MediaPipe 468 点能跑到对标 App 的速度吗？
 > Apple 系统 Vision API 更快吗？够用吗？
 
 ---
@@ -34,7 +34,7 @@ MediaPipe 默认方案（纯 CPU TFLite）:
 ```
 
 ```
-对标 App自研方案（传闻数据，基于行业共识估算）:
+对标 App 自研方案（传闻数据，基于行业共识估算）:
                          耗时 (iPhone 15 Pro)
 ┌────────────────────────────┐
 │ Face Detection (ANE)      │  ~0.5ms ← CoreML 小模型 ANE 推理
@@ -273,7 +273,7 @@ Vision API 在美颜管线里的合理角色：
 第二步: + 裁剪输入区域            ~2-3ms        16.6-3 = 13.6ms ✅
 第三步: + UV Offset 替代剖分      ~2ms          16.6-2 = 14.6ms ✅
 
-对标 App参考水平                     ~2ms           14.6ms ✅
+对标 App 参考水平                     ~2ms           14.6ms ✅
 ```
 
 ```
@@ -282,9 +282,9 @@ Vision API 在美颜管线里的合理角色：
   但"接近"不是"追上"。
 
   剩下的差距来自：
-    1. 模型大小（MediaPipe 通用模型 vs 对标 App定制模型）
-    2. 模型内容（MediaPipe 468 点 vs 对标 App精简点 + 分割一起输出）
-    3. 管线一体化（MediaPipe 需要你拼接各组件 vs 对标 App全定制）
+    1. 模型大小（MediaPipe 通用模型 vs 对标 App 定制模型）
+    2. 模型内容（MediaPipe 468 点 vs 对标 App 精简点 + 分割一起输出）
+    3. 管线一体化（MediaPipe 需要你拼接各组件 vs 对标 App 全定制）
 ```
 
 ```
@@ -310,7 +310,7 @@ Vision API 在美颜管线里的合理角色：
 
 这就是 Metal + UMA 给的底气——管线里真正的重活是逐帧解码和 AI 推理，
 而这两样都在专用硬件上跑（Media Engine + ANE），不占 CPU/GPU 渲染时间。
-所以"和对标 App差几毫秒"对用户体验基本没有可感知的影响。
+所以"和对标 App 差几毫秒"对用户体验基本没有可感知的影响。
 ```
 
 ---
@@ -364,22 +364,22 @@ Phase 3（自训模型替代 MediaPipe — 可选）:
   │     ↓                                      │
   │ UV Offset 替代 Delaunay                    │
   │ Metal compute shader 全管线                 │
-  │ 总计: ~1.5ms（和对标 App同一水平线）             │
+  │ 总计: ~1.5ms（和对标 App 同一水平线）             │
   └────────────────────────────────────────────┘
   需要训练数据和时间
 ```
 
 ## 六、结论
 
-**1. MediaPipe 加速到对标 App水平？可以接近，但不是同一个方案。**
+**1. MediaPipe 加速到对标 App 水平？可以接近，但不是同一个方案。**
 
-把 MediaPipe 模型转换到 CoreML + ANE + 裁剪输入区域，你能跑到 **~2ms**。对标 App大概 **~1.5-2ms**。差距缩小到 0.5ms 以内——用户体感无差别。
+把 MediaPipe 模型转换到 CoreML + ANE + 裁剪输入区域，你能跑到 **~2ms**。对标 App 大概 **~1.5-2ms**。差距缩小到 0.5ms 以内——用户体感无差别。
 
 **2. 系统 API（Vision）更快，但点数不够。**
 
 Vision 65 点跑 ANE 只要 1ms，但做不了瘦脸/大眼/鼻翼调整。Vision 的最佳角色是**前置加速器**——用它快速定位人脸 bounding box，让后面更重的 468 点推理只在人脸小区域跑。
 
-**3. 真正让你接近对标 App的是这个组合：**
+**3. 真正让你接近对标 App 的是这个组合：**
 
 - Vision Face Detection（框，ANE）→ 裁剪
 - CoreML 转换 MediaPipe 468（裁剪后小图，ANE）

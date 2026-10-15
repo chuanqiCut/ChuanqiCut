@@ -301,7 +301,7 @@ PropertyPanelZone 的系统 PhotosPicker 已移除,换 `AlbumPickerScreen` sheet
 - ⚠️ 门禁:同 UIA-012(P45 拒跑);parse 零新增错误类别;构建机验收 +
   真机项(权限弹窗/.limited/iCloud/滚动帧率)待执行。
 
-**v1.1 交互升级(同日,对齐对标 App素材面板)**:默认**单击即插入**(点 cell →
+**v1.1 交互升级(同日,对齐对标 App 素材面板)**:默认**单击即插入**(点 cell →
 loading 覆盖 → 落 tmp → async 交付 → importMedia → loading 解除 + toast,
 面板保持打开,连续导入流);「多选」为显式模式(顶栏切换/长按 cell 直达,
 退出清空已选,批量按钮「添加（N）」,成功后托盘清空)。`MediaPickerViewModel`
@@ -433,7 +433,7 @@ Spec AIEDIT-001 / ADR-0020 / TASK-AIEDIT-000。首页 `HomeView.swift` 新增第
   不是框架问题——主流剪辑 App 无一靠第三方 UI 库变好看，拍摄 UI 不引库
   （NextLevel/SwiftyCam/Mijick Camera 均只管采集；与 ADR-0015 同构逻辑）。
 - **主流形状**：iOS 拍摄页 = 全屏取景 + 玻璃悬浮控件 + 滤镜缩略图卡 + 全屏
-  结果页；iOS 剪辑页 = 对标 App式"单焦点+抽屉"（预览最大化/时间线中部/底部图标
+  结果页；iOS 剪辑页 = 对标 App 式"单焦点+抽屉"（预览最大化/时间线中部/底部图标
   工具栏/属性 bottom sheet，无常驻侧栏）；macOS = 标准 NLE 五区 + Mac 惯例
   （工具栏/可折叠 Inspector/可拖分隔条/菜单栏），现有 HSplitView 布局同构，
   缺惯例化与打磨。
@@ -450,7 +450,7 @@ Spec AIEDIT-001 / ADR-0020 / TASK-AIEDIT-000。首页 `HomeView.swift` 新增第
 
 ---
 
-# UIA-032/033/020 落地（2026-10-05）：编辑页对标 App式重构 + 预览活性
+# UIA-032/033/020 落地（2026-10-05）：编辑页对标 App 式重构 + 预览活性
 
 Spec UIA-032（`docs/specs/UIA-032-编辑页重构.md`，RESEARCH-004 §3.4/§6.2 落地；
 原编号 UIA-015/016，2026-10-07 撞号裁定编辑器线让位改号）。
@@ -470,7 +470,7 @@ Spec UIA-032（`docs/specs/UIA-032-编辑页重构.md`，RESEARCH-004 §3.4/§6.
 - 守卫：SharedUITests `PreviewLivenessTests`（3 用例：导入推进 epoch+泵 requested、
   refreshFromKernel 推进、SettleRule 纯函数）。
 
-## 编辑页结构（UIA-032，iOS 竖屏对标 App式）
+## 编辑页结构（UIA-032，iOS 竖屏对标 App 式）
 
 ```
 EditorView（sheet 状态在编辑器层）
@@ -672,12 +672,12 @@ RESEARCH-004/005 结论全部维持，本文补**操作层**，关键增量：
 |---|---|---|
 | INFRA-013/015 | 壳工程改造 + ChuanqiCutPlayer Pod 迁移（ADR-0031 阶段 0/1） | ✅ 2026-10-07：Player 14 源文件+4 测试文件迁独立 Pod；MediaSheet 经 PlayerPreviewInjector 解耦（基座注入，横向零依赖）；双壳 BUILD SUCCEEDED |
 | UIA-015~027 | 播放器全域（MVP+进阶 12 卡） | ✅ 落地；真机 5 检查点 = 池 [1] |
-| UIA-032/033 | 编辑页对标 App式重构 / Theme 令牌（曾号 015/016 让位） | ✅ 已落地（2026-10-05，见 REVIEW-2026-10-05 走查） |
+| UIA-032/033 | 编辑页对标 App 式重构 / Theme 令牌（曾号 015/016 让位） | ✅ 已落地（2026-10-05，见 REVIEW-2026-10-05 走查） |
 | UIA-034~036 | 编辑页 UIKit 批（曾 §12 021~024；ADR-0024） | ✅ 已落地（2026-10-07）；真机走查 = 池 [3] |
 | UIA-037 | 时间线缩略图（异步抽帧 + 缓存） | 编码完（2026-10-07）；**验证未跑（用户指示跳过）= 池 [6] 第一优先** |
 | UIA-038 | 时间线居中播放头 + 捏合缩放 + 帧精度标尺（用户命题） | 编码完（2026-10-07，与 037 同批）；验证同挂池 [6] |
 | UIA-039 | 分割/删除/左缘裁剪接轨道区（EDIT-007/008 收口） | ✅ 2026-10-12（swift test **61/61** + Editor Pod 模拟器 BUILD SUCCEEDED；全壳被池 [16] MetalFX 挡） |
-| UIA-040 | 面板分级 + 画布 + 多轨操作（对标 App对齐第二批） | ✅ 2026-10-12（swift test **65/65** + Editor Pod 壳绿 + 内核全量 48/48；音频/文字/特效抽屉为占位入口） |
+| UIA-040 | 面板分级 + 画布 + 多轨操作（对标 App 对齐第二批） | ✅ 2026-10-12（swift test **65/65** + Editor Pod 壳绿 + 内核全量 48/48；音频/文字/特效抽屉为占位入口） |
 | UIA-028~031 | 素材库/草稿箱/多轨/导出面板 UI | 预占（落 Assets/Draft/Editor Pod，ADR-0031；方向性需求见 PLAN §13 LIB 域） |
 
 ### 编辑页 UIKit 重建（UIA-034~036，2026-10-07 落地；ADR-0024）
@@ -766,7 +766,7 @@ RESEARCH-004/005 结论全部维持，本文补**操作层**，关键增量：
 
 ### 调研 · 决策 · 池指针
 
-- RESEARCH-006（播放器）/ RESEARCH-008（对标 App范式）/ ADR-0022 / ADR-0024 / SPEC-UIA-032
+- RESEARCH-006（播放器）/ RESEARCH-008（对标 App 范式）/ ADR-0022 / ADR-0024 / SPEC-UIA-032
 - **RESEARCH-012（2026-10-10，商用 SDK 竞品：该厂商 其创作 SDK × 阿里云 UGSV iOS 端）** —— 主要增量：
   ① 该厂商「面板 = `Panel_configs/<panel_key>.json`」**UI 完全配置驱动**（tabs→subItems，含多语言
   标题/图标/资源路径/业务参数）+ 色卡 Key + 文案 Key 换皮三件套 → **我们当前面板是代码写死，
@@ -775,11 +775,11 @@ RESEARCH-004/005 结论全部维持，本文补**操作层**，关键增量：
   无复制片段**，其开源 UI 是「录制+单层编辑+裁剪+上传」，**不是多轨重编辑器** —— 我们有 ADR-0012
   命令栈，**撤销重做是现成优势，别反过来对齐它**；③ 云剪辑 Web SDK 是另一条产品线（云端渲染，
   编辑器本体为 CDN 闭源 JS），只看布局。
-- **RESEARCH-013（2026-10-11，开源轨道 UI 盘点 + 本项目轨道操作/面板优化路线）** —— 主要增量：① 纠正前提——阿里云 UGSV 开源 UI 是**单层编辑（无多轨/无 split/无 undo/无草稿）**，传哲印象的"还行"是单层裁剪手感，不能当多轨范式，且**别反向对齐**（我们有 ADR-0012 命令栈优势）；② 横向盘点（阿里云/该厂商/UIKit 原型/Shotcut/Flowblade…），**最大 gap = 面板代码写死，应抄字节 其创作 SDK 的 `Panel_configs/*.json` 配置驱动**；③ 现状核对——两套时间轴实现的真问题是**手势/commit 逻辑两份**（踩 ADR-0034 双渲染路径红线），须收敛为"一个 `TrackInteraction` 纯逻辑 + 两薄展示层"；④ 轨道操作缺口表（删/分割/锁静音/多选/吸附缺，remove clip/track 的 core 命令已写但**未接 ABI**）；⑤ 优化方案 P0→P2 分批，与 UIA-030/028/029/031、RENDER-011、PROJ-001 对齐。全文见 `docs/research/RESEARCH-013-开源轨道UI与本项目轨道操作面板优化调研.md`。
+- **RESEARCH-013（2026-10-11，开源轨道 UI 盘点 + 本项目轨道操作/面板优化路线）** —— 主要增量：① 纠正前提——阿里云 UGSV 开源 UI 是**单层编辑（无多轨/无 split/无 undo/无草稿）**，传哲印象的"还行"是单层裁剪手感，不能当多轨范式，且**别反向对齐**（我们有 ADR-0012 命令栈优势）；② 横向盘点（阿里云/该厂商/UIKit 原型/Shotcut/Flowblade…），**最大 gap = 面板代码写死，应抄该厂商 其创作 SDK 的 `Panel_configs/*.json` 配置驱动**；③ 现状核对——两套时间轴实现的真问题是**手势/commit 逻辑两份**（踩 ADR-0034 双渲染路径红线），须收敛为"一个 `TrackInteraction` 纯逻辑 + 两薄展示层"；④ 轨道操作缺口表（删/分割/锁静音/多选/吸附缺，remove clip/track 的 core 命令已写但**未接 ABI**）；⑤ 优化方案 P0→P2 分批，与 UIA-030/028/029/031、RENDER-011、PROJ-001 对齐。全文见 `docs/research/RESEARCH-013-开源轨道UI与本项目轨道操作面板优化调研.md`。
   - **修订（2026-10-11 本机复核）**：① §2 仓库名勘误——`codewithhera/VideoEditTimeline` 实为 `codewithhera/VideoEditTimeline-and-TrimView`（404 核出后经 GitHub API 确认，功能描述 ripple/snapping 属实），三仓库存在性已逐一验证；② §5.2 事实修正——`Track.enabled/muted` **已在** core（timeline.h:65-66）且 `CQTrackInfo` 已回读（cq_sdk.h:202-203），新命令仅需 `locked` 字段 + set 命令，`hidden` 建议并入 `enabled`；③ §5.3 补对齐 **SPEC-UIA-019**（已定 PanelRoute/PanelHost/PanelKit），`PanelDescriptor`/`PanelRegistry` 定位为其数据声明层扩展，UIA-019 立项时合并设计防撞车。
-  - **增量（2026-10-11 第二轮，应传哲指示深挖 其轨道 UI 组件库）**：重新下载 `其轨道 UI 组件库@0.3.3`（CDN 直链 200），**读交互核心头文件内容**（RESEARCH-012 只做了文件名分类），新增 RESEARCH-013 **§2.5**：① 装配形状——TimelineView 是 UIScrollView、8 个按片段类型划分的 ViewModel + 10 枚举、编辑态集中在 EditingContext 协议且 `notifyEditorChangedWithCommit:` 显式带 commit（与 ADR-0012 同构）；② **轨道区交互机制 8 条实证**——长按拿起/四向拖拽（跨轨）/边缘自动滚动（3 个 CADisplayLink+速度曲线，**§5 原方案遗漏**）/吸附三要素（点集+方向+阈值）/双击/触觉/尾部插入提示/**分割不在轨道区**（头文件无 split 手势语义，印证底部编辑条方案）；③ 关键帧 UI 形态（帧点画在片段内、随 trim 联动收缩，记 UIA-030 后设计池）；④ 缩略图管线对照——TimelineThumbnailStore 缺「变速按 speed/scale 重取」「最近邻缓存命中」两条能力；⑤ 实战坑——该厂商注释自证「UI 时间与引擎时间存在 1 帧差」，timescale=60000 的取整纪律要进 TimelineLayout（pitfalls 候选）。§5.1/§5.4/§7/§8 已联动更新。合规：只读头文件，未链接未运行未反汇编（边界同 RESEARCH-012 §1.5.6）。
+  - **增量（2026-10-11 第二轮，应传哲指示深挖 其轨道 UI 组件库）**：重新下载 `其轨道 UI 组件库@0.3.3`（CDN 直链 200），**读交互核心头文件内容**（RESEARCH-012 只做了文件名分类），新增 RESEARCH-013 **§2.5**：① 装配形状——TimelineView 是 UIScrollView、8 个按片段类型划分的 ViewModel + 10 枚举、编辑态集中在 EditingContext 协议且 `notifyEditorChangedWithCommit:` 显式带 commit（与 ADR-0012 同构）；② **轨道区交互机制 8 条实证**——长按拿起/四向拖拽（跨轨）/边缘自动滚动（3 个 CADisplayLink+速度曲线，**§5 原方案遗漏**）/吸附三要素（点集+方向+阈值）/双击/触觉/尾部插入提示/**分割不在轨道区**（头文件无 split 手势语义，印证底部编辑条方案）；③ 关键帧 UI 形态（帧点画在片段内、随 trim 联动收缩，记 UIA-030 后设计池）；④ 缩略图管线对照——TimelineThumbnailStore 缺「变速按 speed/scale 重取」「最近邻缓存命中」两条能力；⑤ 实战坑——该厂商注释自证「UI 时间与引擎时间存在 1 帧差」，timescale=60000 的取整纪律要进 TimelineLayout（pitfalls 候选）。§5.1/§5.4/§7/§8 已联动更新。合规：只读头文件，未链接未运行未二进制分析（边界同 RESEARCH-012 §1.5.6）。
 - pitfalls P78/P79（Player 编译与行为修复案底）/ **P101**（商用 SDK 文档抓取技巧坑）/ **P102**（公开 podspec 仓库 + CDN 直链这条取数路径）
-- **RESEARCH-017（2026-10-13，对标 App轨道区截图对照与 UI 重构计划）**：6 张对标 App截图 → S1~S12 规格表；
+- **RESEARCH-017（2026-10-13，对标 App 轨道区截图对照与 UI 重构计划）**：6 张对标 App 截图 → S1~S12 规格表；
   逐项对照判定 **9/12 项为纯 UI**。U 线分批：U0 交互收敛（TrackInteraction reducer，解双实现红线边缘）
   → U1 视觉保真（选中态/轨道头/播放头/刻度/右端+） → U2 轨道信息架构（占位条/空音频行）
   → U3 手感三件套（吸附/边缘滚动/触觉） → U4 波形 → U5 真能力点亮（等 B5/B7）。
@@ -852,9 +852,9 @@ ADR-0041（已批准）/ TASK-UIA-042。用户原始日志：`Unable to simultan
 - 复盘文档：`docs/reviews/REVIEW-2026-10-14-进编辑页SIGSEGV复盘.md`（含「CR 为何拦不住
   跨版本组合效应型缺陷」的评估）。
 
-### 2026-10-15 追加：UIA-043 编辑页视觉改版（对标 App单色系）
+### 2026-10-15 追加：UIA-043 编辑页视觉改版（对标 App 单色系）
 
-- **起因**：传哲真机截图反馈编辑页丑，要求按对标 App范式整改（UI/操作照抄，代码自己实现）。
+- **起因**：传哲真机截图反馈编辑页丑，要求按对标 App 范式整改（UI/操作照抄，代码自己实现）。
   诊断结论：UIA-032 已立对**结构**，丑在**视觉执行**（空态悬浮卡片+蓝按钮 / 底栏 58pt 压扁 /
   撤销重做靠 spacer 硬顶开 / 播放钮灰圆底 / 空时间线露孤立刻度尺 / 顶栏右上空白）。
 - **拍板三事项**：撤销重做迁到「播放+时间码」同栏（底栏只留工具位）；顶栏导出本期置灰显示；

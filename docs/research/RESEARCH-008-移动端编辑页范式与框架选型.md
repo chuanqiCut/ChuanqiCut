@@ -1,12 +1,12 @@
-# RESEARCH-008：对标 App移动端编辑页范式复刻 + SwiftUI/UIKit 框架选型
+# RESEARCH-008：对标 App 移动端编辑页范式复刻 + SwiftUI/UIKit 框架选型
 
 > **编号让位说明**：本文原取号 **RESEARCH-006**，与播放器线「独立播放器内核与交互调研」撞号
 > （RESEARCH-006 于 2026-10-05 同日被双线各自占用）。2026-10-07 传哲裁定**编辑器线让位**，
 > 本文改号 **RESEARCH-008**；播放器调研保留 RESEARCH-006。
 
 > 日期：2026-10-05 深夜
-> 上游命题：用户真机走查反馈「播放很卡顿；界面依然丑；调研对标 App移动端界面看能不能复刻；SwiftUI 难实现就改 UIKit」
-> 上游调研：RESEARCH-004（§3.4 对标 App范式骨架）、RESEARCH-005（面板 IA）
+> 上游命题：用户真机走查反馈「播放很卡顿；界面依然丑；调研对标 App 移动端界面看能不能复刻；SwiftUI 难实现就改 UIKit」
+> 上游调研：RESEARCH-004（§3.4 对标 App 范式骨架）、RESEARCH-005（面板 IA）
 > 下游：ADR-0024（编辑页 UIKit 混合，已按用户授权立）、TASK-UIA-034（下一步）、播放流畅度验收
 > **数字纪律**：第三方事实为公开资料转述 [E]；性能根因标注代码证据；真机占比未实测的标 hypothesis
 
@@ -24,7 +24,7 @@
 
 **结论**：#1/#2/#3 是 UI 层结构问题，随本次 UIKit 重建一并消除（display-link 驱动 + 分层重绘 + 传输状态隔离）；#4 必须真机剖面后再定（可能需要预览分辨率缩放管线，独立任务）。
 
-## 2. 对标 App移动端编辑页范式（复刻目标形状）
+## 2. 对标 App 移动端编辑页范式（复刻目标形状）
 
 > 来源：RESEARCH-004 §3.4 + 本轮检索（华为云社区拆解、Influencer Marketing Hub、对标 App 官方教程、2025 改版讨论），详见 §8 来源。
 
@@ -108,7 +108,7 @@ EditorScreen（SwiftUI 壳保留：初始化/错误页/DEBUG 钩子）
 
 ## 5. 非目标
 
-- 不复刻对标 App的内容能力（转场库/特效库/素材市场/关键帧曲线）——只复刻**骨架与交互范式**；
+- 不复刻对标 App 的内容能力（转场库/特效库/素材市场/关键帧曲线）——只复刻**骨架与交互范式**；
 - 不动 Command/Undo/Session 架构与内核；
 - macOS 编辑页本轮不动（UIA-017 另行）；
 - 不引第三方 UI 库（RESEARCH-004 §3.3 论证沿用）。
@@ -121,14 +121,14 @@ EditorScreen（SwiftUI 壳保留：初始化/错误页/DEBUG 钩子）
 
 ## 7. 数字纪律声明
 
-- 对标 App行为细节来自公开教程/评测转述 [E]，验收以「复刻形状走查清单」为准，不承诺逐像素一致；
+- 对标 App 行为细节来自公开教程/评测转述 [E]，验收以「复刻形状走查清单」为准，不承诺逐像素一致；
 - 播放卡顿的真机占比未实测 [hypothesis]，阶段 0 剖面前不得把 #4 当结论。
 
 ## 8. 来源
 
-- [Influencer Marketing Hub：What is 对标 App（四组件结构）](（来源链接已移除）)
+- Influencer Marketing Hub：What is 对标 App（四组件结构）（来源链接已移除）
 - [WikiHow：Edit Videos with 对标 App（主工具栏移动端在底部）](https://www.wikihow.com/Edit-Videos-with-对标 App)
 - [华为云社区：对标 AppApp的界面与功能（轨道/播放头/缩放滑块拆解）](https://bbs.huaweicloud.com)
-- [对标 App 官方新手教程（时间线选中→编辑选项交互）](（来源链接已移除）)
+- 对标 App 官方新手教程（时间线选中→编辑选项交互）（来源链接已移除）
 - 2025 移动端改版（新增 bottom menu）社区讨论 [E]（Facebook 用户帖，未逐一核verify）
 - 本仓：RESEARCH-004 §3.4/§6.2、RESEARCH-005、baselines.md（sim 播放 stats）、AppEntry/EditorTimelineView 代码证据

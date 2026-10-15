@@ -41,7 +41,7 @@
 |---|---|---|---|---|---|
 | **F1** | 技术方案决策书 §1、§2.4；管线选型决策表 §[15] | 「SoundTouch (MIT)」 | **错误。SoundTouch 是 LGPL v2.1-or-later**，官方明示「Commercial Non-LGPL license alternative available upon request」 | [V] 上游 README/LICENSE（surina.net、codeberg 仓库） | 协议合规结论完全反了。iOS 静态链接 LGPL 存在可替换义务，不能按 MIT 处理 |
 | **F2** | 管线选型决策表 §[1]、系统API文档 §五 | 「FFmpeg LGPL（需合规处理）」表述含糊，暗示引入即高风险 | **FFmpeg 默认即为 LGPL v2.1+**；仅当 `--enable-gpl` 或链接 `libx264/libx265/libpostproc/librubberband/libvidstab` 等 GPL 外部库时整体才升为 GPL v2+ | [V] ffmpeg.org LICENSE.md | 风险被夸大。通过构建裁剪可让 FFmpeg 完全停留在 LGPL 面内 |
-| **F3** | 技术方案决策书 §2.2；MediaPipe 对比文档全文 | 「Vision 检测 ~0.5ms ANE」「MediaPipe CoreML ~1ms」「对标 App ~2ms」「M4 ANE 人脸检测 ~3ms」等约 20 处性能数字 | 均**无一手公开来源**，属 [E]/[H]。其中「对标 App自研方案 2.1ms」原文自述为「传闻数据，基于行业共识估算」 | [E] | 不可作为验收阈值；必须建立自有基准 |
+| **F3** | 技术方案决策书 §2.2；MediaPipe 对比文档全文 | 「Vision 检测 ~0.5ms ANE」「MediaPipe CoreML ~1ms」「对标 App ~2ms」「M4 ANE 人脸检测 ~3ms」等约 20 处性能数字 | 均**无一手公开来源**，属 [E]/[H]。其中「对标 App 自研方案 2.1ms」原文自述为「传闻数据，基于行业共识估算」 | [E] | 不可作为验收阈值；必须建立自有基准 |
 | **F4** | 技术调研_剪辑软件方案分析 §4.1 | 「AVAsset 在 M 芯片上的解封装是硬件加速的——moov box 解析、sample table 查找都在 Media Engine 里完成」 | **无 Apple 官方文档支持**。Media Engine 负责编解码，容器解析（moov/stbl）由 CPU 完成 | [H] | 误导性能预期，会导致 seek 成本估算错误 |
 | **F5** | 技术方案决策书 §1 框架表 | 「SwiftUI：一个 target 跑 iOS + Mac，80%+ 代码共享」 | iOS 与 macOS 是**两个独立 target**。同工程多 target 共享 SwiftUI 代码可行，但「一个 target」不成立 | [V] Xcode 工程模型 | 工程结构规划错误 |
 | **F6** | 技术方案决策书 §7.1、§八 | 「Intel Mac 可开发……代码自动兼容 M 芯片」「Intel Mac: ❌ 不支持 ProRes 硬解硬编」被当作可接受的基线 | 2026 年以 Intel Mac 为基线不可接受：无 ANE、无 ProRes 硬编、无 AV1 硬解、UMA 优势完全消失，且 Xcode 对 Intel 的支持已进入末期 | [V] Apple 芯片能力矩阵 | 开发与性能基线错误，直接影响 ANE/ProRes 相关功能的可验证性 |

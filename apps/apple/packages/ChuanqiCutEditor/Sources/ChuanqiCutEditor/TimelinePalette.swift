@@ -2,7 +2,7 @@
 //
 // ## 为什么单独有这个文件，而不是直接改 SharedUI 的 `Theme`
 //
-// `Theme.playhead` 现在是**红色**（`Color.red`），而对标 App的时间线播放头是**白色**。
+// `Theme.playhead` 现在是**红色**（`Color.red`），而对标 App 的时间线播放头是**白色**。
 // 改它是**跨包改动**（Theme 在 SharedUI，被 iOS/Mac 多个消费者共用），超出 UIA-041
 // 声明的写集 `apps/apple/packages/ChuanqiCutEditor/**`。按 ADR-0034「写集不相交是硬约束」，
 // 本批**不越界**：在编辑器域内建立**分域色表**，先由轨道区消费。
@@ -29,7 +29,7 @@ enum TimelinePalette {
 
     // MARK: - 选中态（S3）
 
-    /// 选中描边：白（对标 App图2/4）。与既有 `Theme.primaryText` 同色，此处显式命名便于走查。
+    /// 选中描边：白（对标 App 图2/4）。与既有 `Theme.primaryText` 同色，此处显式命名便于走查。
     static let selectionBorder = RGBA(1.0, 1.0, 1.0, 1.0)
     static let selectionBorderWidth: CGFloat = 2
     /// 未选中时的描边（沿用既有 Theme.timelineClipBorder，此处只为了让操纵国同一摄入单位）。
@@ -56,7 +56,7 @@ enum TimelinePalette {
     /// 轨道区自本批起只用这一个白。
     static let playhead = RGBA(1.0, 1.0, 1.0, 1.0)
     static let playheadWidth: CGFloat = 2
-    /// 顶部小把手（对标 App有，作为 scrub 的视觉抓手）。
+    /// 顶部小把手（对标 App 有，作为 scrub 的视觉抓手）。
     static let playheadKnobSize = CGSize(width: 10, height: 5)
     static let playheadKnobCornerRadius: CGFloat = 2
 
@@ -66,7 +66,7 @@ enum TimelinePalette {
     static let tickLabel = RGBA(0.72, 0.74, 0.78, 1.0)
     static let majorTickHeight: CGFloat = 10
     static let minorTickHeight: CGFloat = 5
-    /// 主刻度之间的分隔符：一个小圆点（对标 App在图3/4/5 上表现为 `00:00 · 00:02` 的圆点串）。
+    /// 主刻度之间的分隔符：一个小圆点（对标 App 在图3/4/5 上表现为 `00:00 · 00:02` 的圆点串）。
     /// 画在主刻度的文字右侧，随刻度密度自动稀取碘
     static let tickDotRadius: CGFloat = 1.2
 
@@ -79,7 +79,7 @@ enum TimelinePalette {
 
     // MARK: - 预览区选中描边（S11）
 
-    /// 对标 App选中时预览四周是红框（图2/4）—— 与己方 `Theme.playhead` 红同色。
+    /// 对标 App 选中时预览四周是红框（图2/4）—— 与己方 `Theme.playhead` 红同色。
     static let previewSelectionBorder = RGBA(1.0, 0.25, 0.25, 1.0)
     static let previewSelectionBorderWidth: CGFloat = 2
 

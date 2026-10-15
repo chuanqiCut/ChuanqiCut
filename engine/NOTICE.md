@@ -12,7 +12,7 @@
   GPL 符号扫描 0 命中记录于 `.ai/memory/baselines.md`）
 - 用途：媒体容器 demux（libavformat + libavutil + libavcodec 的 parser/
   bitstream-filter 部分），以静态库 `libffmpeg.a` vendored（xcframework 三 slice）
-- 义务履行（负责人 2026-10-11 确认，该厂商式合规路径）：
+- 义务履行（负责人 2026-10-11 确认，业界通行式合规路径）：
   1. 本文件即为 App 内许可声明载体，发布时须在 App「关于/设置」页可达；
   2. 对应版本源码可通过上述 GitHub 地址 + commit 获取；
   3. 保留「接收者可重链接」义务通道：发布流程须提供本产物 .a（目标文件归档）

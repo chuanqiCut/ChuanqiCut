@@ -74,7 +74,7 @@
 - 配色走本包 `TimelinePalette`（不直接改 `SharedUI/Theme`）；**把手宽度复用
   `TimelineLayout.trimHandleWidth`**（所见 = 可按中）。
 - 内核**无写 `CQTrackInfo.muted` 的 ABI** → 轨道头做 disabled 只读态，欠账池 [19]，禁止假开关。
-- 对标 App视觉规格源自截图，但**模型不支持读图（P128），我并没实际看到** → 尺寸/配色一律标 [E]。
+- 对标 App 视觉规格源自截图，但**模型不支持读图（P128），我并没实际看到** → 尺寸/配色一律标 [E]。
 
 ## 关键实现契约
 - Timeline 变更只走 CommandHistory；提交后 `refreshFromKernel()`；拖拽结束只提交一条命令。
@@ -94,12 +94,12 @@
   agent **禁止裸编 project.pbxproj**，结构化改动走 `tools/build/edit_project.rb`。
 
 ## 竞品：对标 App iOS 编辑 SDK
-- 结论全在 `docs/research/RESEARCH-016-对标平台编辑SDK架构逆向与借鉴评估.md`（材料
+- 结论全在 `docs/research/RESEARCH-016（对标产品编辑 SDK 架构调研；原件存于仓库外材料目录，不入库）`（材料
   `/Users/zhuning/Documents/test/` 只有头文件）→ **动手前先看它，勿重复调研**。
 - 关键可借鉴：`commit`（渲染同步点，高频、不入 undo 栈）与 `done`（事务边界）**是两层**，
   我们 `ChqCommandHistory::Execute` 三件事合一，「拖拽结束只提一条」目前靠纪律而非机制。
 - **他们不如我们的地方**（勿被「大厂也这么干」说服）：预览与导出两条管线（我们红线 #9 更先进）、
-  双数据模型、Meepo 与 其轨道 UI 组件库 100 个同名头文件并存（ADR-0014 同款坑）。
+  双数据模型、其早期一代组件 与 其轨道 UI 组件库 100 个同名头文件并存（ADR-0014 同款坑）。
 
 ## 未决事项
 - FFmpeg LGPL v2.1+ 处置**已定**（ADR-0036）：声明 + 源码可获得 + 可重链接归档，

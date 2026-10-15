@@ -146,7 +146,7 @@ struct MediaLibraryPanel: View {
                 importError = "选择失败：\(error.localizedDescription)"
             }
         }
-        // 自研相册浏览器（UIA-013，对标 App式连续导入流）：面板保持打开，单击插入 /
+        // 自研相册浏览器（UIA-013，对标 App 式连续导入流）：面板保持打开，单击插入 /
         // 批量添加交付的 URL 列表（顺序 = 选取序号）直接汇入 runBatch。
         // ADR-0031：相册浏览器属导入域（ChuanqiCutImport），编辑器经基座注入点
         // 弹出（壳层装配）；未注入（单测环境）空占位。onDeliver 的 async 语义原样透传。

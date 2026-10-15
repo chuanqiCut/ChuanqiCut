@@ -53,7 +53,7 @@
 - 官方采用指导（*Adopting Liquid Glass*）：**标准组件优先**（自动获得新材质）、**减少自定义背景**（会压住系统玻璃/scroll edge 效果）、**自定义控件少量使用** `glassEffect(_:in:)`，配 `GlassEffectContainer` / `glassEffectID` 做形变联动；按钮用 `.buttonStyle(.glass)`。
 - 对我们的直接含义：**验证真机 iPhone 17 Pro 就是 iOS 26**（ADR-0010 §6）——玻璃质感在很大程度上是「白送」的，前提是**用 SDK 26（Xcode 26）构建**。构建机当前 SDK 为 iphoneos18.4（`.ai/modules/ui-apple.md` 验证段、pitfalls P39），这是先决条件（§5、§8）。
 
-### 3.2 拍摄页范式（Apple 相机 / 对标平台 / 对标 App拍摄页的共同形状）
+### 3.2 拍摄页范式（Apple 相机 / 对标平台 / 对标 App 拍摄页的共同形状）
 
 | 元素 | 主流做法 | 我们现状 |
 |---|---|---|
@@ -66,7 +66,7 @@
 
 > **佐证**：iOS 26 系统相机 App 自身就完成了这次改版——全屏取景 + 悬浮 Liquid
 > Glass 圆钮 + 精简模式切换，布局明显靠拢社交拍摄 App 的形状（MacRumors 评测；
-> Apple 官方 iOS 26 新功能文档）。系统相机与对标平台/对标 App拍摄页趋同，等于该范式
+> Apple 官方 iOS 26 新功能文档）。系统相机与对标产品拍摄页趋同，等于该范式
 > 已成为 iOS 用户的事实标准——跟它对齐没有教育成本。改版过程也有反面教训
 > （控件收拢过狠引发争议、后续 beta 回调），印证走查清单制（§7）的必要性。
 
@@ -83,7 +83,7 @@
 ### 3.4 iOS 剪辑页范式（对标 App / 对标 App 移动端 = 行业默认形状）
 
 - **单焦点 + 抽屉**模式：预览最大化（占屏幕上部 60–70% [E]）→ 时间线中部横条（双指缩放、可调高）→ **底部图标工具栏**（一级工具：剪辑/音频/文字/贴纸/特效/滤镜，图标 + 文字，单手拇指可达）→ 点工具后底部栏被**二级抽屉**替换（参数、素材选择在此完成）→ 属性调参一律底部弹出面板，**无常驻侧栏**。
-- 对照我们现状：iOS 竖屏硬塞「桌面三区」（0.15 高度属性面板常驻），是典型的范式错位。**iOS 编辑页需要按对标 App形状重构**，而非给现有三区刷漆。
+- 对照我们现状：iOS 竖屏硬塞「桌面三区」（0.15 高度属性面板常驻），是典型的范式错位。**iOS 编辑页需要按对标 App 形状重构**，而非给现有三区刷漆。
 
 ---
 
@@ -213,6 +213,6 @@ Liquid Glass 需要 **SDK 26 构建 + iOS/macOS 26 运行**，而 ADR-0010 基�
 - WWDC25：Build a SwiftUI app with the new design（toolbarSpacer、tab bar 行为等新 API）；Build an AppKit app with the new design（NSToolbar 玻璃规则）
 - Apple Developer Forums AppKit 版：Tahoe 上 `NSSplitViewController` 侧边栏不建议偏离（WWDC25 UI Frameworks 实验组结论转述）
 - [mjtsai：macOS Tahoe Liquid Glass 批评汇总（可读性反例视角）](https://mjtsai.com/blog/)
-- [capcutguide.com：对标 App vs Filmora 桌面版界面对比（五区布局）](（来源链接已移除）)；Studocu：对标 App Basics 教学材料（面板功能划分）
+- capcutguide.com：对标 App vs Filmora 桌面版界面对比（五区布局）（来源链接已移除）；Studocu：对标 App Basics 教学材料（面板功能划分）
 - [NextLevel](https://github.com/NextLevel/NextLevel)、[Mijick/Camera](https://github.com/Mijick/Camera)、SwiftyCam（原 repo 停滞，社区 fork 续命）
 - 本仓现状代码：`Common/Theme.swift`、`iOSApp/HomeView.swift`、`iOSApp/Camera/CameraView.swift`、`Editor/EditorLayout.swift`、`Editor/TimelineZone.swift`、`MacApp/ChuanqiCutMacApp.swift`

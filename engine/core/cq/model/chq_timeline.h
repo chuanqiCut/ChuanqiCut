@@ -165,7 +165,7 @@ private:
 
     std::vector<ChqTrack> tracks_;
     uint64_t next_id_ = 1;
-    int32_t canvas_width_ = 1080;   // 9:16 竖屏基准（对标 App默认）
+    int32_t canvas_width_ = 1080;   // 9:16 竖屏基准（对标 App 默认）
     int32_t canvas_height_ = 1920;
 };
 

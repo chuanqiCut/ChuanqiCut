@@ -4,7 +4,7 @@
 // （AlbumPickerTests）。选取状态机在 SelectionState（纯值类型），本类只做
 // 装配与副作用编排：切相簿、选取反馈、确认导出（逐条落 tmp、进度上抛）。
 //
-// 交互模式（v1.1，对齐对标 App素材面板的连续导入流）：
+// 交互模式（v1.1，对齐对标 App 素材面板的连续导入流）：
 //   * **默认单击即插入**：点击 cell → 落 tmp → 交付 → 导入完成才结束 loading
 //     （onConfirm 为 async 回调，VM 会 await 到父层导入链路返回），面板保持
 //     打开，用户可连续点选 —— 选择与插入是同一步。
@@ -48,7 +48,7 @@ final class MediaPickerViewModel: ObservableObject {
 
     @Published private(set) var selection: SelectionState
 
-    /// 「多选」显式模式（对标 App范式）：默认关闭 = 单击即插入；开启 = 序号
+    /// 「多选」显式模式（对标 App 范式）：默认关闭 = 单击即插入；开启 = 序号
     /// 徽标 + 托盘 + 批量添加。退出时清空已选（可预期语义）。
     @Published private(set) var isMultiSelectMode = false
 
@@ -100,7 +100,7 @@ final class MediaPickerViewModel: ObservableObject {
 
     var isLibraryEmpty: Bool { currentAlbum != nil && assets.isEmpty }
 
-    // MARK: 交互模式（v1.1 对标 App式）
+    // MARK: 交互模式（v1.1 对标 App 式）
 
     /// 切换多选模式。退出多选 = 清空已选（避免"托盘消失但状态残留"的歧义）。
     func setMultiSelectMode(_ enabled: Bool) {
@@ -166,7 +166,7 @@ final class MediaPickerViewModel: ObservableObject {
 
     /// 批量添加：逐条把选中素材落成我方 tmp 文件 URL（iCloud 素材联网下载，
     /// 进度上抛），全部完成后一次性交付。**顺序 = 选取序号顺序**（时间线追加
-    /// 顺序的来源）。交付成功后清空选取/托盘 —— 与对标 App一致，可紧接着选下一批。
+    /// 顺序的来源）。交付成功后清空选取/托盘 —— 与对标 App 一致，可紧接着选下一批。
     func confirm() async {
         guard !selection.isEmpty, !isPreparingFiles else { return }
         isPreparingFiles = true

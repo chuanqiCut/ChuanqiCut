@@ -13,18 +13,18 @@
 | 绑定 | `Session.splitClip(clipId:at:)` / `trimClipIn(clipId:start:)` / `removeClip(clipId:)` / `removeTrack(trackId:)` |
 | 纯逻辑 | `ClipHitRegion.trimStart`（左右缘各 8pt 手柄，窄片段 <2×手柄回退 move）+ `TimelineLayout.isStrictlyInside`（分割可用性，开区间，与内核同语义）+ `ClipDrag` trimStart 预览（右缘恒定不变式） |
 | ViewModel | 选中态 `selectedClipId`（UI 本地态；applySnapshot / refreshFromKernel 双路径清失效）+ `canSplitSelected` + `splitSelectedAtPlayhead` / `deleteSelectedClip`（动作内含 refreshFromKernel）+ 四命令直通包装 |
-| SwiftUI | Canvas 选中白描边（对标 App范式⑤）+ onTapGesture 点选 + commit 分支 trimStart→trimClipIn + 底栏分割/删除按钮（按可用性置灰） |
+| SwiftUI | Canvas 选中白描边（对标 App 范式⑤）+ onTapGesture 点选 + commit 分支 trimStart→trimClipIn + 底栏分割/删除按钮（按可用性置灰） |
 | UIKit | 工具栏同两按钮 + 时间线 UITapGestureRecognizer 点选 + 层描边 `setSelectedClip` + commitDrag trimStart 分支 + **零位移提交跳过**（点选不再给撤销栈塞同值垃圾命令；此前注释声称「内核拒绝」，实测同值变更返回 Ok，已在 UI 侧挡） |
 | 测试 | +5：trimStart 命中区 / 窄片段回退 move / 右缘恒定夹取 / isStrictlyInside 开区间 / VM 端到端 split+delete 穿内核 |
 
 ## 关键语义决策
 
-1. **分割靶子 = 播放头**（对标 App语义）：按钮可用性 = 选中片段严格包含播放头；分割后左半
+1. **分割靶子 = 播放头**（对标 App 语义）：按钮可用性 = 选中片段严格包含播放头；分割后左半
    保留原 id，选中态自然延续。
 2. **选中态不入内核**：纯 UI 状态，快照回流时片段消失即清除（删除/撤销两条路径都兜）。
 3. **零位移不提交**：修掉「点按=同值 move 入撤销栈」的隐性污染（与文件头「无撤销污染」
    的既有意图对齐，实现从未兑现）。
-4. **对标 App范式⑤的完整形态（选中态二级替换条）不在本卡**：本批以常驻位+置灰收口，
+4. **对标 App 范式⑤的完整形态（选中态二级替换条）不在本卡**：本批以常驻位+置灰收口，
    交互语义（点选→动作）完整；替换条另立卡。
 
 ## 验证

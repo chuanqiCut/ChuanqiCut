@@ -8,7 +8,7 @@
 // （Session.queryTracks/queryClips，读内核已发布快照，无锁）→ @Published 状态
 // → Canvas 重绘。**视图不持有模型、不造假数据**。
 //
-// 交互（UIA-005 / UIA-038 对标 App式改版，与 UIKit 版同语义）：
+// 交互（UIA-005 / UIA-038 对标 App 式改版，与 UIKit 版同语义）：
 //   * 按下时先做命中测试（TimelineLayout.hitTest，纯函数）：
 //     命中片段主体 → 拖拽移动；命中右边缘 → 裁剪 duration；未命中 → **scrub**
 //     （拖动 = 拖播放头，红条恒在视口中央；播放中不抢播放头）。
@@ -186,7 +186,7 @@ public struct EditorTimelineView: View {
             }
             .clipped()
             .background(Theme.timelineBackground)
-            // 点按选中（对标 App范式：选中态是工具栏动作的靶子）；点空白 = 取消选中。
+            // 点按选中（对标 App 范式：选中态是工具栏动作的靶子）；点空白 = 取消选中。
             // UIA-041：不再在这里判 hitTest —— 统一走 reducer 的 .tap 事件。
             .onTapGesture { location in
                 apply(TrackInteraction.reduce(&trackState, event: .tap(location: location),
@@ -363,7 +363,7 @@ public struct EditorTimelineView: View {
             context.fill(path, with: .color(
                 isDragging ? Theme.timelineClipDragging : Theme.timelineClip))
             drawThumbnails(for: clip, rect: rect, context: context)
-            // 边框压在缩略图上，遮住边缘溢出；选中态白描边（对标 App范式 ⑤）
+            // 边框压在缩略图上，遮住边缘溢出；选中态白描边（对标 App 范式 ⑤）
             if isSelected {
                 context.stroke(path, with: .color(TimelinePalette.selectionBorder.color),
                                lineWidth: TimelinePalette.selectionBorderWidth)

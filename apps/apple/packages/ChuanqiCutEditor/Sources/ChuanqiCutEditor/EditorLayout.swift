@@ -1,4 +1,4 @@
-// SharedUI — 编辑器布局容器（UIA-002 立骨架；UIA-032 iOS 分支改对标 App式）
+// SharedUI — 编辑器布局容器（UIA-002 立骨架；UIA-032 iOS 分支改对标 App 式）
 //
 // 收敛 `#if os(iOS)` / `#if os(macOS)` 差异到本文件，业务视图不直接写条件编译
 // （ui-apple.md 硬约束 #6）。
@@ -80,7 +80,7 @@ struct EditorLayoutContainer<Compact: View, Preview: View, Transport: View, Time
     @ViewBuilder
     private var iosLayout: some View {
         if hSizeClass == .compact {
-            // 竖屏（UIA-032 对标 App式）：单焦点 + 抽屉
+            // 竖屏（UIA-032 对标 App 式）：单焦点 + 抽屉
             verticalLayout
         } else {
             // 横屏：与 macOS 同构

@@ -39,6 +39,6 @@ xcodebuild -workspace apps/apple/ios/ChuanqiCut.xcworkspace -scheme ChuanqiCutEd
 
 ## 剩余风险与后续卡
 
-- removeTrack 有绑定无 UI 入口（随多轨卡）；选中态二级替换条（对标 App范式⑤完整形态）另立卡。
+- removeTrack 有绑定无 UI 入口（随多轨卡）；选中态二级替换条（对标 App 范式⑤完整形态）另立卡。
 - 左缘向左扩展的手感（内核 source_in<0 拒绝 → 回真值）待真机走查。
 - RENDER-001 仍待传哲按 RESEARCH-014 拍板（B0），与多轨轨道区同批。

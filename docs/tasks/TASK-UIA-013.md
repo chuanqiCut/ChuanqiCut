@@ -61,7 +61,7 @@ parallel:    true(新目录为主,唯一高冲突点 project.yml 开工时协调
 
 ## 状态补充（2026-10-04,v1.1 交互升级:对齐对标 App）
 
-用户要求"对比主流如对标 App的交互",Spec 升 v1.1,当轮完成:
+用户要求"对比主流如对标 App 的交互",Spec 升 v1.1,当轮完成:
 - **单击即插入**(默认模式):点 cell → loading 覆盖 → 落 tmp → async 交付
   → importMedia → loading 解除 + toast,面板保持打开(连续导入流);
   `onConfirm` 改 **async 回调**,VM await 到导入链路返回才复位 —— 反馈闭环

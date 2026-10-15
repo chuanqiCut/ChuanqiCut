@@ -76,7 +76,7 @@ struct MediaGridCell: View {
     let dimmedByFull: Bool
     /// 时长过滤的不可选原因；非 nil = 灰化 + 文案 + 不可点。
     let rejectionReason: String?
-    /// 单击插入进行中（对标 App式：loading 覆盖"落 tmp + 进时间线"全程）。
+    /// 单击插入进行中（对标 App 式：loading 覆盖"落 tmp + 进时间线"全程）。
     let isLoading: Bool
     let onTap: () -> Void
     /// 长按进多选并选中本条（仅单击模式提供；nil = 无长按行为）。

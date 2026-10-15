@@ -470,7 +470,7 @@ FFmpeg + VT 混合方案（类似 对标 App）:
 实际业界做法：
   ├── 对标 App → FFmpeg（自有 C++ 核心层，合规团队处理过）
   ├── VN → FFmpeg
-  ├── 对标 App专业版 → FFmpeg
+  ├── 对标 App 专业版 → FFmpeg
   ├── 美图 → FFmpeg（部分自研）
   └── FCP → 不用 FFmpeg（它自研 ProRes 代理绕过了需求）
 ```
@@ -525,7 +525,7 @@ func renderFrame(at time: CMTime) async throws -> MTLTexture {
 MVP 上线时哪怕只有纯系统 API： 
   - 对标 App 能做的东西你基本都能做（速度曲线除外）
   - 很多用户根本不会用速度曲线
-  - 第一批用户更关心基础剪辑流畅度和对标 App没有的功能
+  - 第一批用户更关心基础剪辑流畅度和对标 App 没有的功能
 ```
 
 ---

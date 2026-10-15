@@ -52,14 +52,14 @@
 
 ### 3.4 该厂商系（对标 App/该厂商云服务/Vidi）
 
-- **对标 App内核无官方公开架构文章** [hypothesis：GBU 综述是当前最详尽的公开转述]。第三方逆向：草稿 = `draft_content.json`（画布配置 + materials + tracks/segments/关键帧分离；新版加密封存的逆向说法**未验证** [hypothesis]）（https://zhuanlan.zhihu.com、https://bbs.kanxue.com）。
-- **对标 App Web 官方案例**（web.dev）：WASM 迁移超 100 万模板 + WebCodecs 硬编解码（（来源链接已移除））——"内核跨端 + 声明式草稿"形态的官方佐证。
-- **该厂商云服务 Creation Kit**：自研音视频 SDK 服务对标平台/对标 App/西瓜，多轨道编辑、剪同款、模板、**端上合成**（https://www.该厂商云服务.com/product/creation-kit）；文档仅到"多轨道编辑"粒度，无内核白皮书。
-- **Vidi-Edit**（官方论文）：LMM 生成**结构化 editing plan**（叙事结构/音频属性/视觉意图），交下游工具执行（https://arxiv.org/abs/2511.19529、（来源链接已移除））——"AI 生成 → 声明式草稿 → 渲染图执行"的上游接口形态。
+- **对标 App 内核无官方公开架构文章** [hypothesis：GBU 综述是当前最详尽的公开转述]。第三方结构分析：草稿 = `draft_content.json`（画布配置 + materials + tracks/segments/关键帧分离；新版加密封存的结构分析说法**未验证** [hypothesis]）（https://zhuanlan.zhihu.com、https://bbs.kanxue.com）。
+- **对标 App Web 官方案例**（web.dev）：WASM 迁移超 100 万模板 + WebCodecs 硬编解码（（来源链接已移除） + 声明式草稿"形态的官方佐证。
+- **该厂商云服务 Creation Kit**：自研音视频 SDK 服务对标产品/西瓜，多轨道编辑、剪同款、模板、**端上合成**（https://www.该厂商云服务.com/product/creation-kit）；文档仅到"多轨道编辑"粒度，无内核白皮书。
+- **Vidi-Edit**（官方论文）：LMM 生成**结构化 editing plan**（叙事结构/音频属性/视觉意图），交下游工具执行（https://arxiv.org/abs/2511.19529、https://github.com/其开源仓库）——"AI 生成 → 声明式草稿 → 渲染图执行"的上游接口形态。
 
 ## 4. 横向对比
 
-| 维度 | 对标 App系（综述） | FCP | Premiere | Resolve | ChuanqiCut 现状 |
+| 维度 | 对标 App 系（综述） | FCP | Premiere | Resolve | ChuanqiCut 现状 |
 |---|---|---|---|---|---|
 | 编辑模型 | Track/Clip 树 | spine+lane+role（无轨） | Track/Clip | Track/Clip + per-clip 节点图 | Track/Clip（MODEL-001）✅ |
 | 持久化 | draft JSON（声明式） | FCPXML | 私有 + OTIO/AAF 导出 | 私有 DB | ChqTimeline 序列化 |
@@ -109,4 +109,4 @@
 - Adobe：MPE 渲染器选择 / smart rendering / Media Cache / proxy 工作流（helpx.adobe.com，见 §3.2）；PPRO SDK GPU 效果（ppro-plugins.docsforadobe.dev）
 - OTIO：https://github.com/AcademySoftwareFoundation/OpenTimelineIO · https://opentimelineio.readthedocs.io
 - Resolve：官方 18 参考手册 PDF · timeinpixels.com · mixinglight.com（见 §3.3）
-- 该厂商系：（来源链接已移除） · https://www.该厂商云服务.com/product/creation-kit · https://arxiv.org/abs/2511.19529 · （来源链接已移除） · 草稿逆向（zhihu/kanxue，[hypothesis]）
+- 该厂商系：（来源链接已移除） · https://www.该厂商云服务.com/product/creation-kit · https://arxiv.org/abs/2511.19529 · https://github.com/其开源仓库 · 草稿结构分析（zhihu/kanxue，[hypothesis]）

@@ -22,7 +22,7 @@ struct PreviewZone: View {
     let renderEpoch: UInt64
     /// 时间线无片段（显示引导态；点按不触发播放）。
     let showsEmptyState: Bool
-    /// U1（S11）：预览区选中描边判定 —— 有选中片段时预览四周画红框（对标 App图2/4）。
+    /// U1（S11）：预览区选中描边判定 —— 有选中片段时预览四周画红框（对标 App 图2/4）。
     /// 描边只覆盖**预览画布本身**，不延伸到两侧黑边。
     let isClipSelected: Bool
     /// 点按预览 = 播放/暂停（走既有 togglePlayback）。

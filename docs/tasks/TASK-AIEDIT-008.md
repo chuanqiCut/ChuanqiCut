@@ -28,7 +28,7 @@ parallel:    false（批次 5）
 
 ## 背景
 
-SPEC §9。差异化卖点的承载面：结构时间条 + reason 抽屉 = "决策透明"（RESEARCH-003 §4.4，学 Opus）；双出口 = 学对标 App闭环。
+SPEC §9。差异化卖点的承载面：结构时间条 + reason 抽屉 = "决策透明"（RESEARCH-003 §4.4，学 Opus）；双出口 = 学对标 App 闭环。
 
 ## 实现要点
 

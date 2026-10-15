@@ -1,4 +1,4 @@
-// EditorChromePalette — 编辑页「外壳」视觉常量（UIA-043：对标 App单色系）
+// EditorChromePalette — 编辑页「外壳」视觉常量（UIA-043：对标 App 单色系）
 //
 // ## 为什么单独有这个文件（与 `TimelinePalette` 同一手法，见其头部说明）
 //
@@ -10,7 +10,7 @@
 //
 // ## 单色系的含义
 //
-// 对标 App编辑页只有黑 / 白 / 灰：主操作 = **白底黑字**；可用态图标纯白，禁用态是
+// 对标 App 编辑页只有黑 / 白 / 灰：主操作 = **白底黑字**；可用态图标纯白，禁用态是
 // 低透明度白（不是另一种灰，避免和背景灰打架）。红色只保留一处语义色：
 // **选中态**（时间线白描边、预览红框沿用 TimelinePalette，不动）。
 //
@@ -31,7 +31,7 @@ enum EditorChromePalette {
 
     // MARK: - 底色（传输条 / 时间线 / 底栏 三区同色，连成一体）
 
-    /// #0A0A0B。三区统一底色 —— 现状是三档不同底色拼出两条硬边，对标 App是一条到底。
+    /// #0A0A0B。三区统一底色 —— 现状是三档不同底色拼出两条硬边，对标 App 是一条到底。
     static let chromeBackground = RGBA(0.039, 0.039, 0.043, 1.0)
     /// 底栏顶部唯一的分隔手段（0.5pt 发丝线），不用底色差分层。
     static let chromeHairline = RGBA(0.118, 0.118, 0.133, 1.0)
@@ -60,7 +60,7 @@ enum EditorChromePalette {
     static let chromeEmptyText = RGBA(0.541, 0.541, 0.565, 1.0)
 }
 
-/// 编辑页外壳尺寸阶梯（对标 App对齐；[E] 具体数值以真机走查校准为准）。
+/// 编辑页外壳尺寸阶梯（对标 App 对齐；[E] 具体数值以真机走查校准为准）。
 enum EditorChrome {
     /// 底栏：58 → 84（现状把图标 16pt 压在 58pt 里，是「丑」的主因之一）。
     static let toolbarHeight: CGFloat = 84

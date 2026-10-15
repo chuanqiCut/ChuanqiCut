@@ -2,7 +2,7 @@
 > swift test（含 TimelineLayoutAnchorTests/TimelineZoomMathTests）+ iOS 模拟器构建 +
 > 真机走查 = TODO-POOL 条目 [6]（与 UIA-037 同批）。未经编译与测试，勿引用任何"通过"结论。
 
-# TASK-UIA-038：时间线居中播放头 + 捏合缩放 + 帧精度标尺（对标 App式交互定版）
+# TASK-UIA-038：时间线居中播放头 + 捏合缩放 + 帧精度标尺（对标 App 式交互定版）
 
 ```yaml
 id:          TASK-UIA-038

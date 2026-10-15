@@ -107,7 +107,7 @@
 
 ## 5. 差异化定位（一句话）
 
-> **"素材不出设备的一键成片 + 对话式精修"**：对标 App的闭环 × Quik 的本地特征 × Opus 的决策理由 × Descript 的对话隐喻 − 上传素材的黑盒，且离线可用、三端同内核。
+> **"素材不出设备的一键成片 + 对话式精修"**：对标 App 的闭环 × Quik 的本地特征 × Opus 的决策理由 × Descript 的对话隐喻 − 上传素材的黑盒，且离线可用、三端同内核。
 
 ## 6. 风险与反直觉判断（hypothesis 标注）
 
@@ -118,11 +118,11 @@
 
 ## 7. 来源
 
-- [对标 App AI auto video editor](（来源链接已移除）)、[对标 App AI video editor](（来源链接已移除）)、[对标 App AI resource](（来源链接已移除）)
+- 对标 App AI auto video editor（来源链接已移除）、对标 App AI video editor（来源链接已移除）、对标 App AI resource（来源链接已移除）
 - [NemoVideo：对标 App AI 2026 评测（"strong assistant, weak finisher"）](https://www.nemovideo.com)
-- [知乎：对标 App最强 AI 功能解析与用户操作手册](https://zhuanlan.zhihu.com/p/15954327071)
+- [知乎：对标 App 最强 AI 功能解析与用户操作手册](https://zhuanlan.zhihu.com/p/15954327071)
 - [知乎：DeepSeek+对标 App 5 步工作流](https://zhuanlan.zhihu.com)（2025-02）
-- [WayToAGI：对标 App脚本识别讨论](https://www.waytoagi.com/zh/question/81528)
+- [WayToAGI：对标 App 脚本识别讨论](https://www.waytoagi.com/zh/question/81528)
 - [Washington Post：iMovie Magic Movie](https://www.washingtonpost.com)（2022-04，iOS 15 首发）
 - [必剪官网](https://bcut.bilibili.cn)
 - [Opus Clip pricing](https://www.opus.pro/pricing)、[Vizard vs Opus（ngram）](https://www.ngram.com/blog/opus-clip-vs-vizard)、[Vizard 官网](https://vizard.ai/alternatives/opus)

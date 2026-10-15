@@ -51,7 +51,7 @@ public enum Theme {
         public static let timelineHeight: CGFloat = 220
         public static let panelWidth: CGFloat = 280
         public static let panelMinWidth: CGFloat = 200
-        /// iOS 竖屏时间线固定条高（UIA-032 对标 App式；调高/缩放留后续任务）。
+        /// iOS 竖屏时间线固定条高（UIA-032 对标 App 式；调高/缩放留后续任务）。
         public static let timelineHeightCompact: CGFloat = 140
         public static let transportBarHeight: CGFloat = 44
         public static let bottomToolbarHeight: CGFloat = 58

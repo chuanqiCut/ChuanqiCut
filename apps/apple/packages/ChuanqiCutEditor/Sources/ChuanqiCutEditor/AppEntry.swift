@@ -502,7 +502,7 @@ public final class EditorViewModel: ObservableObject {
     /// 点按片段 → 选中；再点同一片段或空白（clipId 传 nil）→ 取消。
     public func selectClip(_ clipId: UInt64?) {
         selectedClipId = (clipId != nil && clipId == selectedClipId) ? nil : clipId
-        // 选中态迁移即替换条迁移（对标 App范式⑤；抽屉随选中开启而关闭 —— 单焦点）。
+        // 选中态迁移即替换条迁移（对标 App 范式⑤；抽屉随选中开启而关闭 —— 单焦点）。
         toolbarMode = (selectedClipId != nil) ? .clipSelected : .primary
     }
 

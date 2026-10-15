@@ -1,11 +1,11 @@
-# TASK-UIA-043：编辑页视觉改版（对标 App单色系 · 外壳 chrome 重做）
+# TASK-UIA-043：编辑页视觉改版（对标 App 单色系 · 外壳 chrome 重做）
 
 > 模板。缺任一项不得进入编码。
 
 ```yaml
 id:          TASK-UIA-043
 layer:       UI
-goal:        编辑页外壳视觉改版为对标 App单色系（顶栏/空态/传输条/底栏/空时间线），不动交互链路与命令层
+goal:        编辑页外壳视觉改版为对标 App 单色系（顶栏/空态/传输条/底栏/空时间线），不动交互链路与命令层
 input:       [SPEC-UIA-043, 用户 2026-10-15 真机截图 IMG_2645.PNG, RESEARCH-017, ADR-0024, ADR-0034, ADR-0041]
 output:      [新增 EditorChromePalette.swift, 改 4 个 UIKit 视图 + EditorScreen, 双壳 BUILD SUCCEEDED]
 write_set:   apps/apple/packages/ChuanqiCutEditor/**（含 SwiftUI 侧 EditorScreen.swift）

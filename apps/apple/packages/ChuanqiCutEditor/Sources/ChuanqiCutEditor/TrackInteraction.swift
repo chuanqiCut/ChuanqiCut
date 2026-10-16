@@ -82,6 +82,15 @@ enum TrackIntent: Equatable {
     case commitEdit(TrackClipEdit)
 }
 
+extension TrackIntent {
+    /// 是否**改模型**的意图（选中只是 UI 本地态，不算 —— 播放中点片段不必打断播放）。
+    /// 宿主据此决定「要不要先暂停播放」。
+    var isEditing: Bool {
+        if case .commitEdit = self { return true }
+        return false
+    }
+}
+
 // MARK: - 状态与渲染态
 
 /// reducer 的内部状态。**只装交互期临时量** —— 选中 id 是 ViewModel 的（@Published），

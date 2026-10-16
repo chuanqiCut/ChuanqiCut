@@ -163,7 +163,8 @@ final class PreviewMTKView: MTKView {
     ///   * pts 变化 —— 播放头动了（拖拽 / 播放推进 / 停止归零）；
     ///   * renderEpoch 变化 —— 模型推进（导入 / 命令落地 / 撤销），同 pts 也要重取。
     func sync(preview: Previewer?, pump: PreviewPump?, pts: RationalTime,
-              continuous: Bool, renderEpoch: UInt64) {
+              continuous: Bool, renderEpoch: UInt64,
+              policy: PreviewPump.SeekPolicy = .exact) {
         if self.preview !== preview {
             self.preview = preview
             ensureRenderer()
@@ -173,9 +174,9 @@ final class PreviewMTKView: MTKView {
         }
         if self.pts != pts {
             self.pts = pts
-            armRerender(pts: pts, epoch: renderEpoch)
+            armRerender(pts: pts, epoch: renderEpoch, policy: policy)
         } else if lastArmEpoch != renderEpoch {
-            armRerender(pts: pts, epoch: renderEpoch)
+            armRerender(pts: pts, epoch: renderEpoch, policy: policy)
         }
         if self.continuous != continuous {
             self.continuous = continuous
@@ -186,9 +187,12 @@ final class PreviewMTKView: MTKView {
     /// 装载一次追帧：记录装载时刻的最新帧 seq → 发请求 → 武装自驱。
     /// ⚠️ seq 必须在 request **之前**读：请求发布后 seq 会前进，先请求再读
     ///    会把「新帧已就绪」误判成「未就绪」（反而多追一轮，语义照样对，但白画）。
-    private func armRerender(pts: RationalTime, epoch: UInt64) {
+    /// - Parameter policy: seek 策略（P142）。scrub 拖动传 .keyframeBefore（廉价关键帧），
+    ///   其余 .exact。注意「自驱重绘」的轮次也用同一策略 —— 拖动中追帧同样不该精确解码。
+    private func armRerender(pts: RationalTime, epoch: UInt64,
+                             policy: PreviewPump.SeekPolicy = .exact) {
         seqAtArm = pump?.withLatestFrame { $0.seq } ?? 0
-        pump?.request(pts: pts)
+        pump?.request(pts: pts, policy: policy)
         selfDriveLeft = Self.selfDriveLimit
         lastArmEpoch = epoch
     }

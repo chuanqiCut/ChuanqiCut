@@ -62,12 +62,14 @@ enum EditorChromePalette {
 
 /// 编辑页外壳尺寸阶梯（对标 App 对齐；[E] 具体数值以真机走查校准为准）。
 enum EditorChrome {
-    /// 底栏：58 → 84（现状把图标 16pt 压在 58pt 里，是「丑」的主因之一）。
-    static let toolbarHeight: CGFloat = 84
-    static let toolbarIconPointSize: CGFloat = 22
+    /// 底栏：58 → 84（UIA-043，58 太挤）→ **64**（2026-10-15 传哲：「固定大小就行，
+    /// 不要太大」）。64 是定值，不随内容/机型自适应；图标 20 / 标签 10 / 间距 4
+    /// —— 元素总高 34，上下各留 15，既不挤也不占屏。
+    static let toolbarHeight: CGFloat = 64
+    static let toolbarIconPointSize: CGFloat = 20
     static let toolbarLabelFontSize: CGFloat = 10
-    /// 图标与标签之间（现状 2pt 太挤）。
-    static let toolbarIconLabelSpacing: CGFloat = 6
+    /// 图标与标签之间（58pt 时代的 2pt 太挤，84pt 时代的 6pt 在 64 里偏散）。
+    static let toolbarIconLabelSpacing: CGFloat = 4
     static let toolbarHorizontalInset: CGFloat = 4
 
     /// 传输条：撤销/重做（左）· 播放（水平居中）· 时间码（右）。
@@ -78,7 +80,12 @@ enum EditorChrome {
     static let transportHistorySpacing: CGFloat = 10
 
     /// 时间线（空态保留高度，避免导入瞬间布局跳动）。
-    static let timelineHeight: CGFloat = 140
+    ///
+    /// 140 → 220（2026-10-15 传哲：「轨道区变大，至少跟剪映对齐」）。
+    /// 220 的账：标尺 24 + 主轨 68 + 副轨 52 ≈ 一屏三条轨（再多由组件纵向滚动），
+    /// 与对标 App 竖屏「轨道区约占屏高三分之一」同量级。**[E]**：具体数值来自
+    /// 对标 App 截图判读（P128：模型不读图，我没实际看到），以真机走查校准为准。
+    static let timelineHeight: CGFloat = 220
 
     /// 主操作胶囊（空态「打开素材库」）/ 顶栏按钮圆角。
     static let primaryCornerRadius: CGFloat = 6

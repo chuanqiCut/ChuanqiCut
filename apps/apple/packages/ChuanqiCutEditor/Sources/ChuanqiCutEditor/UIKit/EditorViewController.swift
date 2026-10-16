@@ -7,7 +7,12 @@
 // UIA-043（对标 App 单色系视觉改版，纯视觉 + 出口迁移，**零交互变更**）：
 //   * 底栏 84 / 图标 22；撤销·重做**迁到传输条**（与播放、时间码同栏）；
 //   * 空态去掉悬浮卡片，元素直接落在预览区，主操作白底黑字；
-//   * 空时间线不画刻度尺与播放头（EditorTimelineUIView.setEmpty）。
+//   * 空时间线不画刻度尺与播放头（轨道视图 setEmpty）。
+//
+// 轨道区（2026-10-15）：早期自绘版 `EditorTimelineUIView` 已由本地 CocoaPods
+// TimelineKit 的 `TimelineView` 取代（适配层见 TimelineKitAdapter.swift）。
+// **换的只有轨道视图**：预览区 / 传输条 / 底栏 / 素材导入流程与它们的联动
+// 一字未动 —— 三区的联动出口仍是 `TrackIntent` + VM 命令（红线 #5）。
 //
 // 每帧驱动（ADR-0024 决定 4）：CADisplayLink 仅播放中运行，直读
 // viewModel.playhead → 时间线播放头层 + 传输条时间码，**不经 SwiftUI**；
@@ -36,15 +41,56 @@ final class EditorViewController: UIViewController {
     private let previewFallback = UILabel()
     private let emptyStateView = UIView()
     private let transportBar = EditorTransportBarView()
-    private let timelineView = EditorTimelineUIView()
+    /// 轨道区 = TimelineKit 版（本地 Pod）。出口与旧自绘版**同名同语义**
+    /// （onIntents / onScrub / onRequestAppend），故下面整段装配不动。
+    private let timelineView = EditorTimelineKitView()
     private let toolbarView = EditorToolbarUIView()
     /// U1（S11）：预览区选中红框。贴在预览画布外沿，默认隐藏。
     private let previewSelectionBorder = UIView()
+    #if DEBUG
+    /// DEBUG 实时诊断浮层（2Hz 采样）。⚠️ 必须挂**在 UIKit 容器里** ——
+    /// iOS 走 `compact()` 槽位，SwiftUI `EditorView` 的 `preview:` 槽位（浮层原本
+    /// 挂在那里）**根本不渲染**，等于 iPhone 上从来没有浮层（2026-10-15 修）。
+    private var debugOverlayHost: UIHostingController<DebugOverlayView>?
+    #if DEBUG
+    /// 浮层位置约束（拖动时增量更新）。
+    private var debugOverlayTop: NSLayoutConstraint?
+    private var debugOverlayLeading: NSLayoutConstraint?
+    /// 跨 2Hz 快照更新的持久状态（隐藏/展开不随每次刷新重置）。
+    private var debugOverlayState: DebugOverlayState?
+    #endif
+    #endif
 
     /// 时间码去抖（60fps 直更只在文本变化时写 label）。
     private var lastTimecode = ""
+    /// 播放中把「播放头推进到轨道区」的最小间隔（秒）。
+    ///
+    /// **有实测依据**（iPhone 17 Pro / iOS 26.6.1 / Debug，2026-10-15，[tk:perf] 通道）：
+    /// 组件一次 `setCurrentTime` 会连带跑 `layoutTrackHeaders + layoutVisibleContent +
+    /// positionPlayhead` 三套布局，实测 **avg 2.3ms / max 3.5ms**；播放中
+    /// CADisplayLink + `$playhead` 两条路径叠加 ≈ **84 次/秒** → **≈19% 主线程**，
+    /// 只为挪一条红线。降到 30Hz ≈ 7%，视觉上仍是连续跟随（人眼对 30Hz 的位置
+    /// 跟随基本无感，时间码与预览画面仍是满帧）。
+    // 播放中跟随节流上限：40Hz（传哲 2026-10-15 要求跟随不低于 24fps，留余量）。
+    // 跟随由 CADisplayLink（60Hz，播放中常开）驱动 updatePlayheadUI，本值只封顶重布局频率；
+    // 实测 30Hz 上限下约 26/s（主线程被 SwiftUI body 重算抢占），提到 40Hz 给余量。
+    private static let trackPlayheadInterval: CFTimeInterval = 1.0 / 40
+    private var lastTrackPlayheadPush: CFTimeInterval = 0
+    // P142：scrub 取帧限频。拖动中每次 delta 都发一次 seek 即便用廉价关键帧，也是白烧
+    // CPU 与泵吞吐（泵会合并，但已渲染的那帧仍是一次解码）。故滑动中把 **seek 频率**
+    // 压到 ~24Hz（视觉上足够跟手）；松手再补一次精确帧。播放头本身仍按上面的 40Hz 推。
+    private static let scrubSeekInterval: CFTimeInterval = 1.0 / 24
+    private var lastScrubSeekAt: CFTimeInterval = 0
+    /// 当前是否处于 scrub 拖动中。决定 `syncPreview` 触发的那次补帧用哪种 seek 策略：
+    /// 拖动中必须也是廉价关键帧，否则 renderEpoch 触发的补帧会盖掉限频成果、又做一次
+    /// 精确解码。松手（onScrubEnded）后复位 .exact。
+    private var isScrubbingTrack = false
     /// 上次布局宽度（viewDidLayoutSubviews 重算时间线内容宽度的变化检测）。
     private var lastBoundsWidth: CGFloat = 0
+    // ⚠️ 不要在这里再加 `CQ_AUTO_PLAY` 自动起播钩子：EditorScreen（SwiftUI 壳）已有
+    // 同功能钩子（`[hook] auto_play=`），两处都 toggle 会互相抵消 —— 第二次
+    // `togglePlayback()` 把第一次刚开起的播放**关掉**（P137，2026-10-15 实踩）。
+    // 播放态剖面靠既有那一个钩子就够。
 
     init(viewModel: EditorViewModel, onOpenMedia: @escaping () -> Void) {
         self.viewModel = viewModel
@@ -114,14 +160,50 @@ final class EditorViewController: UIViewController {
         timelineView.onIntents = { [weak self] intents in
             self?.apply(intents)
         }
+        // 组件发生了内核不支持的自我变更（轨道排序 / 静音 / 锁定等）→ 立即按内核
+        // 快照重灌。内核是唯一真源，不留「UI 变了内核没变」的中间态。
+        timelineView.onNeedsResync = { [weak self] in
+            self?.reloadTimeline(force: true)
+        }
         // U1（S7）：主轨右端「+」→ 打开素材选择（复用既有导入路径，不新增分支）。
         timelineView.onRequestAppend = { [weak self] in self?.onOpenMedia() }
-        // 拖时间线 = 拖播放头（UIA-038，红条恒中央）；播放中不抢播放头。
+        // 拖时间线 = 拖播放头（UIA-038，红条恒中央）→ 同步 seek。
+        //
+        // ⚠️ 播放中**先暂停再定位**（2026-10-15 修）：此前这里是
+        // `guard !isPlaying else { return }`（「播放中不抢播放头」），结果是播放中拖
+        // 轨道完全没反应 —— 用户要的恰恰是「轨道区的位置能控制播放位置」。
+        // 不停就定位不了的真正原因：播放循环会持续把 playhead 推走，这一次 seek
+        // 刚落下就被覆盖。故先 `pausePlayback()`（幂等），再 setPlayhead。
+        //
+        // P142（2026-10-16，scrub 卡顿修复，用户口径「滑动时快速 seek + 控制频率 +
+        // 结束走一次精准 seek」）：拖动中用 **kKeyframeBefore 廉价关键帧定位** 且
+        // **限频 ~24Hz** —— 此前每个 delta 都精确 seek 重解整个 GOP，长 GOP 解码占满
+        // 泵线程单核、与滚动主线程抢核 → 拖动卡顿（逆向 seek 更贵）。松手由 onScrubEnded
+        // 补一次 kExact 精确帧，保证终值画面精确。
         timelineView.onScrub = { [weak self] seconds in
-            guard let self, !self.viewModel.isPlaying else { return }
+            guard let self else { return }
+            self.isScrubbingTrack = true
+            self.viewModel.pausePlayback()
+            // 限频：高频 delta 只推进播放头（红条跟手），不每次都触发一次解码。
+            let now = CACurrentMediaTime()
+            guard now - self.lastScrubSeekAt >= Self.scrubSeekInterval else { return }
+            self.lastScrubSeekAt = now
             let ts = RationalTime.projectTimescale
             let ticks = Int64((seconds * Double(ts)).rounded())
-            self.viewModel.setPlayhead(RationalTime(value: ticks, timescale: ts))
+            self.viewModel.setPlayhead(RationalTime(value: ticks, timescale: ts),
+                                       policy: .keyframeBefore)
+        }
+        // scrub 结束（手指离屏 / 减速结束 / 兜底超时）：补一次**精确**帧。拖动全程是
+        // 关键帧近似，松手这一刻必须回到精确帧，否则用户停在近似画面上。
+        timelineView.onScrubEnded = { [weak self] seconds in
+            guard let self else { return }
+            // 先复位策略，再补精确帧：这次 setPlayhead 触发的 renderEpoch 补帧
+            // 也会走 .exact，与终值帧一致。
+            self.isScrubbingTrack = false
+            let ts = RationalTime.projectTimescale
+            let ticks = Int64((seconds * Double(ts)).rounded())
+            self.viewModel.setPlayhead(RationalTime(value: ticks, timescale: ts),
+                                       policy: .exact)
         }
         transportBar.onTogglePlayback = { [weak self] in
             self?.viewModel.togglePlayback()
@@ -237,6 +319,58 @@ final class EditorViewController: UIViewController {
         previewContainer.addGestureRecognizer(tap)
     }
 
+    // MARK: - DEBUG 诊断浮层（真机可开：CQ_DEBUG_OVERLAY=1）
+
+    #if DEBUG
+    private func updateDebugOverlay(visible: Bool, snapshot: EditorDebugSnapshot?) {
+        guard visible else {
+            debugOverlayHost?.view.isHidden = true
+            return
+        }
+        // 跨快照更新保持同一状态对象：隐藏/展开不随 2Hz 刷新重置（P138 同款）。
+        if debugOverlayState == nil { debugOverlayState = DebugOverlayState() }
+        debugOverlayState?.snapshot = snapshot
+        guard let state = debugOverlayState else { return }
+        if let host = debugOverlayHost {
+            host.view.isHidden = false
+        } else {
+            let root = DebugOverlayView(state: state,
+                                        onDrag: { [weak self] dx, dy in
+                                            self?.nudgeDebugOverlay(dx: dx, dy: dy)
+                                        })
+            let host = UIHostingController(rootView: root)
+            host.view.backgroundColor = .clear
+            host.view.isUserInteractionEnabled = true   // 浮层可点按 / 拖动
+            host.view.translatesAutoresizingMaskIntoConstraints = false
+            addChild(host)
+            previewContainer.addSubview(host.view)
+            // 只钉 top/leading 与宽度上限：高度由 SwiftUI 的 intrinsic 尺寸决定
+            // （钉死四边会把内容压成 0 —— P130·b 的同款「布局欠定/过定」坑）。
+            // 宽度上限提到 400：面板已放宽到 min(屏宽-16, 380)，原 320 会裁掉内容。
+            let top = host.view.topAnchor.constraint(equalTo: previewContainer.topAnchor, constant: 8)
+            let leading = host.view.leadingAnchor.constraint(
+                equalTo: previewContainer.leadingAnchor, constant: 8)
+            NSLayoutConstraint.activate([top, leading])
+            host.view.widthAnchor.constraint(lessThanOrEqualToConstant: 400).isActive = true
+            debugOverlayTop = top
+            debugOverlayLeading = leading
+            host.didMove(toParent: self)
+            debugOverlayHost = host
+            fputs("[dbg] overlay mounted draggable\n", stderr)
+            fflush(stderr)
+        }
+    }
+
+    /// 拖动浮层：按增量更新位置约束，钳制在 previewContainer 边界内。
+    private func nudgeDebugOverlay(dx: CGFloat, dy: CGFloat) {
+        guard let top = debugOverlayTop, let leading = debugOverlayLeading else { return }
+        let maxX = max(8, previewContainer.bounds.width - 40)
+        let maxY = max(8, previewContainer.bounds.height - 40)
+        leading.constant = min(max(8, leading.constant + dx), maxX)
+        top.constant = min(max(8, top.constant + dy), maxY)
+    }
+    #endif
+
     @objc private func previewTapped() {
         guard viewModel.timeline.clips.isEmpty == false else { return }
         viewModel.togglePlayback()
@@ -304,6 +438,18 @@ final class EditorViewController: UIViewController {
             .receive(on: DispatchQueue.main)
             .sink { [weak self] _ in Task { @MainActor in self?.syncPreview() } }
             .store(in: &cancellables)
+
+        #if DEBUG
+        // 诊断浮层（可见性 + 2Hz 快照）。闭包不套 `Task { @MainActor }`：
+        // `EditorDebugSnapshot` 未声明 Sendable，塞进 Task 会撞 Swift 6 捕获检查
+        // （同 EditorTimelineKitView 的 store/view 事件绑定）。
+        Publishers.CombineLatest(viewModel.$debugOverlayVisible, viewModel.$debugSnapshot)
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] visible, snapshot in
+                self?.updateDebugOverlay(visible: visible, snapshot: snapshot)
+            }
+            .store(in: &cancellables)
+        #endif
     }
 
     /// 非订阅路径的静态首刷（canUndo/redo、空态、时间码、预览 sync）。
@@ -326,13 +472,14 @@ final class EditorViewController: UIViewController {
         previewSelectionBorder.isHidden = !selected
     }
 
-    private func reloadTimeline() {
+    private func reloadTimeline(force: Bool = false) {
         let assets = Dictionary(uniqueKeysWithValues: viewModel.mediaLibrary.map { ($0.id, $0.path) })
         timelineView.reload(tracks: viewModel.timeline.tracks,
                             clips: viewModel.timeline.clips,
                             assets: assets,
-                            playheadSeconds: playheadSeconds)
-        // rebuild 清空全部层 → 选中描边重刷（VM 侧已保证失效 id 不会灌进来）
+                            playheadSeconds: playheadSeconds,
+                            force: force)
+        // 重建后选中态重推（VM 侧已保证失效 id 不会灌进来）
         timelineView.setSelectedClip(viewModel.selectedClipId)
         applyCanvasAspect()
         let empty = viewModel.timeline.clips.isEmpty
@@ -394,10 +541,18 @@ final class EditorViewController: UIViewController {
 
     private func updatePlayheadUI() {
         let seconds = Double(viewModel.playhead.value) / Double(viewModel.playhead.timescale)
-        timelineView.updatePlayhead(seconds: seconds)
+        // 轨道播放头播放中跟随节流上限 40Hz（见 trackPlayheadInterval）；暂停 / seek / 播放结束一律立即推终值。
+        let now = CACurrentMediaTime()
+        if !viewModel.isPlaying || now - lastTrackPlayheadPush >= Self.trackPlayheadInterval {
+            lastTrackPlayheadPush = now
+            timelineView.updatePlayhead(seconds: seconds)
+        }
         // 播放头移动会改变「能否在播放头处分割」—— 只刷按钮可用性（布尔写，
         // 不触碰层），描边归 refreshSelectionState（选中变化/reload 路径）。
-        toolbarView.setSplitEnabled(viewModel.canSplitSelected)
+        // 没选中片段时 canSplitSelected 恒 false（它要先按 id 找片段），不必每帧算。
+        if viewModel.selectedClipId != nil {
+            toolbarView.setSplitEnabled(viewModel.canSplitSelected)
+        }
         let text = "\(viewModel.timecodeCurrent) / \(viewModel.timecodeDuration)"
         if text != lastTimecode {
             lastTimecode = text
@@ -407,11 +562,15 @@ final class EditorViewController: UIViewController {
     }
 
     private func syncPreview() {
+        // P142：拖动中 renderEpoch 触发的这次补帧也必须走廉价关键帧，否则它会盖掉
+        // onScrub 限频省下来的那一帧、白做一次精确解码（等于限频白设）。
+        let policy: PreviewPump.SeekPolicy = isScrubbingTrack ? .keyframeBefore : .exact
         previewMTKView?.sync(preview: viewModel.preview,
                              pump: viewModel.previewPump,
                              pts: viewModel.playhead,
                              continuous: viewModel.isPlaying,
-                             renderEpoch: viewModel.renderEpoch)
+                             renderEpoch: viewModel.renderEpoch,
+                             policy: policy)
     }
 
     // MARK: - Intent → ViewModel 命令（UIA-041/U0）
@@ -420,7 +579,16 @@ final class EditorViewController: UIViewController {
     /// `TrackIntentApplier`，这里只剩一行转发 —— 与 SwiftUI 侧完全对称。
     private func apply(_ intents: [TrackIntent]) {
         guard !intents.isEmpty else { return }
+        // 播放中编辑轨道（移动 / 裁剪 / 跨轨）先暂停：播放头继续跑会让刚提交的
+        // 位置立刻失效，且「提交后重灌」与「播放推进」会互相打断。
+        // 选中不算（UI 本地态，不改模型）—— 播放中点片段不打断播放。
+        if intents.contains(where: \.isEditing) {
+            viewModel.pausePlayback()
+        }
         TrackIntentApplier.apply(intents, to: viewModel)
+        // 内核是唯一真源：提交（可能被内核拒绝，拒绝不触发 observer）之后
+        // 一律按内核快照重灌轨道区，杜绝「幽灵位置」。
+        reloadTimeline(force: true)
     }
 
     // ⚠️ deinit 不碰 displayLink（Swift 6：deinit 非隔离，不能访问 MainActor 存储）。

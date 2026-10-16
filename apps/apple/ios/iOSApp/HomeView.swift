@@ -17,6 +17,9 @@ struct HomeView: View {
         case editor
         case camera
         case player
+        #if DEBUG
+        case timelineKit
+        #endif
     }
 
     /// DEBUG 真机探针：`CQ_AUTO_PUSH_EDITOR=1` 时进首页即自动 push 编辑页
@@ -44,6 +47,12 @@ struct HomeView: View {
                               title: "播放器",
                               subtitle: "预览成片 · 播放本地视频",
                               icon: "play.rectangle")
+                    #if DEBUG
+                    entryCard(route: .timelineKit,
+                              title: "TimelineKit 调试",
+                              subtitle: "轨道、片段排序与手势预览",
+                              icon: "slider.horizontal.3")
+                    #endif
                     Spacer()
                     footerText
                 }
@@ -57,6 +66,10 @@ struct HomeView: View {
                     CameraView()
                 case .player:
                     PlayerLauncherScreen()
+                #if DEBUG
+                case .timelineKit:
+                    TimelineKitIntegrationScreen()
+                #endif
                 }
             }
             .onAppear(perform: autoPushEditorIfNeeded)

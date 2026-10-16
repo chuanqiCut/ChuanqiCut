@@ -678,6 +678,7 @@ RESEARCH-004/005 结论全部维持，本文补**操作层**，关键增量：
 | UIA-038 | 时间线居中播放头 + 捏合缩放 + 帧精度标尺（用户命题） | 编码完（2026-10-07，与 037 同批）；验证同挂池 [6] |
 | UIA-039 | 分割/删除/左缘裁剪接轨道区（EDIT-007/008 收口） | ✅ 2026-10-12（swift test **61/61** + Editor Pod 模拟器 BUILD SUCCEEDED；全壳被池 [16] MetalFX 挡） |
 | UIA-040 | 面板分级 + 画布 + 多轨操作（对标 App 对齐第二批） | ✅ 2026-10-12（swift test **65/65** + Editor Pod 壳绿 + 内核全量 48/48；音频/文字/特效抽屉为占位入口） |
+| UIA-044 | 轨道区接入 TimelineKit + 内核⇄组件适配层（ADR-0042） | 编码完（2026-10-15）：双壳 BUILD SUCCEEDED；**真机问卷未发**（门禁绿 ≠ 功能可用） |
 | UIA-028~031 | 素材库/草稿箱/多轨/导出面板 UI | 预占（落 Assets/Draft/Editor Pod，ADR-0031；方向性需求见 PLAN §13 LIB 域） |
 
 ### 编辑页 UIKit 重建（UIA-034~036，2026-10-07 落地；ADR-0024）
@@ -870,3 +871,25 @@ ADR-0041（已批准）/ TASK-UIA-042。用户原始日志：`Unable to simultan
   与 macOS 编辑页仍是旧样式 —— 归「横屏 / macOS 惯例化」后续立项。
 - **问卷**：`QUESTIONNAIRE-UIA-043-编辑页视觉改版与042回归.md`（传哲裁定 C，与 UIA-042 同 commit，
   旧 042 问卷作废）。
+
+### 2026-10-15 追加：UIA-044 轨道区接入 TimelineKit（ADR-0042）
+
+- **命题**：早期自绘轨道区作废，以本地 CocoaPods `TimelineKit` 这版为主，现有项目按它适配；
+  轨道区 / 预览区 / 操作面板联动统一。硬约束：内核唯一真源、Kit 快照不另行持久化、
+  不改调试预览页冒充接入。
+- **入口确认**：iPhone 竖屏真实路径 = `EditorScreen → EditorView → EditorLayoutContainer(compact)
+  → EditorCompactEditorView → EditorViewController`，轨道视图是其中的 `EditorTimelineUIView`
+  （已被 `EditorTimelineKitView` 取代并删除旧文件）。SwiftUI `EditorTimelineView` 只服务
+  **macOS + iPad 横屏**，本轮未动（TimelineKit 是 UIKit-only，物理上不可用）。
+- **新增**：`UIKit/TimelineKitAdapter.swift`（ID/时间/模型映射）、`UIKit/EditorTimelineKitView.swift`
+  （容器：store 重建 + 事件出口）。改 `EditorViewController.swift`（换型 + 提交后强制重灌）。
+- **真源方向**：灌入 = 内核快照 → 重建 store+view（zoom 自带走）；回写 = store 的
+  `.projectChanged` 唯一入口 → `TrackIntent` → 既有 `TrackIntentApplier`（VM 命令 +
+  refreshFromKernel）。**翻译不了的命令（轨道排序/静音/锁定/轨内重排/转场/关键帧）一律回滚**。
+- **依赖隔离**：podspec 拆 `Core`（默认，两端）/ `TimelineKitTrack`（iOS 专属）子 spec ——
+  详见 **P134**（`s.ios.dependency` 在 macOS 端仍被解析，曾让 mac pod install 整体失败）。
+- **验证**：两端 `bundle exec pod install` 成功；iOS 壳 `generic/platform=iOS`
+  BUILD SUCCEEDED；mac 壳 `-arch x86_64 ONLY_ACTIVE_ARCH=YES` BUILD SUCCEEDED。
+  **未跑全量门禁、未发真机问卷**（功能可用性待传哲实测）。
+- **未覆盖**：转场/关键帧/画布 item/蒙版映射；轨道静音/锁定/排序（内核缺写 ABI，池 [19] 同源）；
+  播放期每帧 `setCurrentTime` 的开销未实测；iPad 横屏与 macOS 轨道区仍是旧 SwiftUI 实现。

@@ -26,6 +26,8 @@ struct ChuanqiCutApp: App {
     #if DEBUG
     private let autoEnterEditor =
         ProcessInfo.processInfo.environment["CQ_AUTO_ROUTE"] == "editor"
+    private let autoEnterTimelineKit =
+        ProcessInfo.processInfo.environment["CQ_AUTO_ROUTE"] == "timelinekit"
     private let autoEnterCamera =
         ProcessInfo.processInfo.environment["CQ_AUTO_ROUTE"] == "camera"
     #endif
@@ -58,6 +60,8 @@ struct ChuanqiCutApp: App {
             #if DEBUG
             if autoEnterCamera {
                 CameraView().ignoresSafeArea()
+            } else if autoEnterTimelineKit {
+                TimelineKitIntegrationScreen()
             } else if autoEnterEditor {
                 EditorScreen()
             } else {

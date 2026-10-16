@@ -34,8 +34,8 @@
   + `--scratch-path "$ROOT/build/spm/<包>"`；构建产物不得入库，临时编译放根 `/build/`。
 - 最近全量门禁（2026-10-12）：`run_gate.sh` **PASS 14 / FAIL 0**（22m14s），core 各 48/48。
   ⚠️ **门禁不含 App 壳构建**（池 [18]）。
-- 编号取号前必须 `git fetch` 核远端（并发时现取现核）。2026-10-15：ADR 到 0041，
-  pitfalls 下一号 **P134**，池下一号 **[19]**。
+- 编号取号前必须 `git fetch` 核远端（并发时现取现核）。2026-10-15 晚：ADR 到 0042，
+  pitfalls 下一号 **P135**，池下一号 **[19]**。
 - 收工同步顺序：模块册 → ADR → TASK → HANDOFF → pitfalls → baselines → 当日日志 → 本文件。
 
 ## Apple 端验证口径（P129，UI 改动必守）
@@ -67,6 +67,14 @@
   进程内 `DebugCrashDumper`（DEBUG，信号处理器打 `Thread.callStackSymbols` 到 stderr）；符号化
   `iOS DeviceSupport/<版本>/Symbols` + `atos -o <镜像> -l <基址> <地址>`（P132）。
 - 本机 macOS **无 `timeout`**：用 `nohup ... &` + `sleep N` 控时长。
+- **带 `--console` 的 launch 由我的 shell 持有**：shell 结束时 App 收到 **signal 1 (SIGHUP)**
+  （`App terminated due to signal 1`）= **不是崩溃**（CrashDumper 不打栈）。要让 App 留在设备
+  前台给传哲看，必须 launch **不带 `--console`**。
+- devicectl **无截图子命令**（只有 copy/info/install/notification/orientation/process/reboot/
+  sysdiagnose/uninstall）→ UI 外观只能由传哲在设备上看，务必发问卷。
+- 推素材到真机：`devicectl device copy to --device <UDID> --source <本地文件>
+  --domain-type appDataContainer --domain-identifier com.chuanqi.cut --destination /Documents/<名>`，
+  再 `CQ_DEMO_VIDEO=<名>` + `CQ_DEMO_SECONDS=<秒>` + `CQ_AUTO_ROUTE=editor` 启动（DEBUG 冒烟装载）。
 
 ## 功能路线与轨道区（详见 ADR-0040 / RESEARCH-010）
 - B0 已提交 `2e8b55d`（ctest 52/52）但**问卷未回收 → 未标记完成，回收前不得叠加批次**；
@@ -77,6 +85,35 @@
   `TimelineLayout.trimHandleWidth`**（所见 = 可按中）。
 - 内核**无写 `CQTrackInfo.muted` 的 ABI** → 轨道头做 disabled 只读态，欠账池 [19]，禁止假开关。
 - 对标 App 视觉规格源自截图，但**模型不支持读图（P128），我并没实际看到** → 尺寸/配色一律标 [E]。
+
+## scrub 快速 seek（P142 / ADR-0043，2026-10-16，提交 c5d4bf5 未 push）
+- 拖轨道 scrub 每 delta 曾走 `kExact` → **每次从最近关键帧重解整个 GOP**，占满泵线程单核与滚动主线程抢核
+  → 卡顿（逆向更贵）。core `ChqSystemFrameProvider` 早已实现 `kKeyframeBefore/kNearest`，被「Platform 接缝不携带
+  policy」挡死。
+- 修法（传哲定口径）：滑动中 `kKeyframeBefore` + **限频 24Hz**；seek 在泵子线程；有新帧按 seq 收敛再刷；
+  **松手补一次 `kExact` 精确帧**。`onScrubEnded` 是 `EditorTimelineKitView` 新增出口。
+- **跨层契约**：`ChqSeekPolicy` 用中立 `int32_t`(0/1/2) 穿 Platform 接缝（`chq_frame_provider.h` 已 include
+  `chq_media.h`，反向 include **成环** = P142），只在 core 层转回；`RenderFrame` 新参放**末位**保既有 3 参调用。
+  C ABI 新增 `cq_preview_pump_request_ex`（原函数保留=传 0）；Swift `PreviewPump.SeekPolicy`。
+  导出/播放/单帧/golden 一律仍走 kExact。新接平台不支持非精确策略须**显式拒绝**，不得静默当精确。
+- 验证：iOS 壳 BUILD SUCCEEDED；`ctest -R "preview_pump|preview_renderer|system_frame_provider|c_abi_preview|sequential"`
+  **6/6 PASS**（含真素材 `media_sequential_real` 69s）；新增预览泵第 9 组「策略透传」断言。**真机问卷未回收**。
+- **写集隔离**：内核+绑定+测试+ADR+HANDOFF 已提交 `c5d4bf5`（复核零 WIP 混杂）；**UI 层改动与 TimelineKit WIP
+  同文件交织，留在工作树未提交**，且 `onScrubEnded` 依赖未跟踪的 `EditorTimelineKitView.swift` →
+  完整 P142 功能要等 TimelineKit WIP 落地才生效（HANDOFF-024 有详述）。
+
+## 轨道区 = TimelineKit（ADR-0042，2026-10-15 起；早期自绘轨道区已删除）
+- 本地 Pod 源：`/Users/zhuning/Documents/ChatGPT/zui`（**只读，不改动组件**；UIKit-only）。
+  真入口 = iPhone 竖屏 `EditorViewController`；macOS/iPad 横屏仍是 SwiftUI 旧实现（组件物理不可用）。
+- **内核唯一真源**：`TimelineStore` 只是渲染外衣 —— 灌入 = 内核快照重建 store+view；
+  回写 = store `.projectChanged` 唯一入口 → `TrackIntent` → `TrackIntentApplier`。
+  **不存在 Kit→内核 持久化**；翻译不了的命令（轨道排序/静音/锁定/轨内重排/转场/关键帧）一律回滚重灌。
+- `TimelineStore` **没有**整体替换 project 的入口、也没有新增媒体资产的命令 → 只能按快照重建；
+  zoom 必须自己带走（`.zoomChanged` 记录，重建时回填）。提交后一律 `force` 重灌（内核可能拒绝）。
+- ID 编码 `cq-t-<id>` / `cq-c-<id>` / `cq-m-<id>`：**唯一**编码方式，反解前缀不符即 nil。
+  `RationalTime ⇄ TimelineTime` 直搬 (value, timescale)，**不经过浮点秒**。
+- podspec 已拆 `Core`（默认，两端）/ `TimelineKitTrack`（iOS 专属）子 spec：
+  **新增 iOS-only 文件必须同时改 `Core.exclude_files` 与 `TimelineKitTrack.source_files`**（P134）。
 
 ## 关键实现契约
 - Timeline 变更只走 CommandHistory；提交后 `refreshFromKernel()`；拖拽结束只提交一条命令。

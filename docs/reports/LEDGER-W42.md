@@ -1142,3 +1142,92 @@ CA 首次提交事务走到「有 view / 无 layer」的畸形状态 →
 - **已知偏差**：iOS 横屏（regular 分支）/ macOS 编辑页仍是旧样式 + 蓝色 accent
   （本批只覆盖 compact UIKit 路径，横屏与 macOS 惯例化另行立项）；尺寸为估算 [E]。
 - **工具坑入册**：P133 —— BSD grep 不支持 `\|`，或条件自查必须走 Grep 工具（本次出现假阴性）。
+
+---
+
+## 补记十一 · UIA-045：轨道区接入后四项回归修复（2026-10-15，WorkBuddy 集成机，模型签名）
+
+- **起因**：传哲在 UIA-044 真机跑通后追加 5 项：① iPad 应与 iOS 一致；② 之前加的 DEBUG
+  调试页没带上，查原因；③ 选中片段后底栏「返回」无反应；④ 播放中操作轨道区应暂停；
+  ⑤ 轨道区位置应能控制播放位置（同步 seek）。
+- **① 排查结论（有实证，非推测）**：调试页**在包里**。
+  `Debug-iphoneos/ChuanqiCutApp.app/ChuanqiCutApp` 二进制 `grep -a` 命中
+  「TimelineKit 调试」与「TimelineKit 集成预览」各 1 次；工程级 Debug 有
+  `SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG`；Pods 工程含
+  `TimelineKitIntegrationPreview.swift` 4 处引用。**真因**：上一轮真机用
+  `CQ_AUTO_ROUTE=editor` 启动 → 直进 EditorScreen，**不经过 HomeView**，卡片不可能出现。
+  本轮改为不带 `CQ_AUTO_ROUTE` 启动（另有 `CQ_AUTO_ROUTE=timelinekit` 直达入口已存在）。
+- **③ 根因（入册 P135）**：`closePanel()` 目标态由**业务状态**推导
+  （`selectedClipId != nil ? .clipSelected : .primary`）→ 在 `clipSelected` 条上点返回，
+  推导结果 = 当前值 → `setMode` 同值守卫 return → 静默无反应。
+  **改法**：`switch toolbarMode` 按**当前层**逐层退出（drawer→选中条/一级，clipSelected→
+  `selectClip(nil)` 退选中→一级，primary→no-op）。
+- **④⑤ 根因（入册 P136）**：两层。① `onScrub` 有 `guard !isPlaying` 吞回调；
+  ② 只去守卫不够 —— 播放循环持续推进 playhead，seek 落下即被覆盖。
+  **改法**：新增 `EditorViewModel.pausePlayback()`（幂等，`togglePlayback` 暂停分支复用同一实现），
+  `onScrub` 先暂停再 setPlayhead；`apply(intents:)` 含 `.commitEdit` 时先暂停；
+  `.selectClip` **不暂停**（UI 本地态，播放中点片段不打断）—— 此边界已写入问卷 C4 请传哲裁。
+- **② iPad 统一（行为变更，需传哲确认）**：`EditorLayoutContainer.iosLayout` 取消
+  `horizontalSizeClass` 分支，iOS 一律 `compact()`（UIKit 三件套容器）。
+  原 regular 分支 = macOS 同构布局 + **SwiftUI 自绘轨道区** → iOS 侧两套轨道区实现
+  （TimelineKit / 自绘），两套交互语义两套 bug（ADR-0014 同款坑）。
+  **代价（如实记账）**：iPad 不再有常驻右栏 `MediaLibraryPanel`，素材库改走底栏「媒体」→
+  MediaSheet 抽屉（与 iPhone 同路径）。保留右栏需先把 `EditorViewController` 的轨道接线
+  抽成共享宿主对象，否则又是两套 —— 已写入问卷 E3 请传哲裁。
+  macOS **未动**（`macLayout` 一字未改，仍是 SwiftUI 轨道区；传哲说「macOS 可以按这个去优化」，另开）。
+- **机器验证（本机 macOS 26.7.1 / Xcode 26.6 / Swift 6.3.3 / Intel x86_64）**：
+  iOS 壳 `-destination generic/platform=iOS` **BUILD SUCCEEDED**；
+  macOS 壳 `-arch x86_64 ONLY_ACTIVE_ARCH=YES` **BUILD SUCCEEDED**；
+  编辑器 Pod 单独重编译仅 1 条既有警告（`contentEdgeInsets` 弃用，UIA-043 遗留，非本批引入）。
+  真机已装 + 前台启动（首页），**问卷未回收 → 未标记完成**。
+- **未跑**：全量 `run_gate.sh`（按约定需先询问传哲）。
+- **留痕**：`docs/tasks/TASK-UIA-045.md`、`docs/reviews/QUESTIONNAIRE-UIA-045-*.md`、
+  pitfalls +P135 +P136。
+
+## 补记十二 · UIA-045 追加：尺寸 / 性能 / 轨道头（2026-10-15，WorkBuddy 集成机，模型签名）
+
+- **传哲追加三项**：① 对比 TimelineKit 调试入口的页面；② 集成后有点卡；
+  ③ 轨道区变大对齐剪映、底栏固定不要太大、保障正常展示；④ 轨道区左边显示的是啥，没用就去掉。
+- **① 对比结论**：调试页 = 组件自带**样例工程**（6 条轨 · 转场 · 关键帧 · 波形 · 缩略图 ·
+  `initialPixelsPerSecond 70` · 默认显示轨道头）；正式接入 = **内核真值**（当前 1 条主视频轨、
+  pps 80、关轨道头、无转场/关键帧）。**观感差异来自数据量，不是接入有问题** ——
+  内核给几条轨就画几条轨。
+- **② 性能（有实测，非估算）**：新增 `[tk:perf]` DEBUG stderr 通道（每 2s 一行）。
+  真机 iPhone 17 Pro / iOS 26.6.1 / Debug / `CQ_AUTO_PLAY=1`：
+  优化前 **84 次/s · avg 2.31ms · max 3.47ms → ≈19% 主线程**；
+  仅播放中节流到 30Hz 后 **26 次/s · avg 3.81ms · max 5.27ms → ≈10%**。
+  根因：组件 `setCurrentTime` → `scrollViewDidScroll` → 三套布局全跑（旧自绘版只画一条线）。
+  改法：`EditorViewController.updatePlayheadUI` 仅播放中 30Hz（`trackPlayheadInterval`），
+  暂停/seek/停止一律立即推终值。**样本极小（1 轨 1 素材），不得作产品阈值**。
+- **③ 尺寸**：`timelineHeight 140 → 220`、`primaryRowHeight 56 → 68`、`secondaryRowHeight 48 → 52`；
+  `toolbarHeight 84 → 64`（图标 22→20、间距 6→4）。**[E]** 220 来自对标 App 截图判读
+  （P128：模型不读图，我没实际看到），以真机走查校准为准。
+- **④ 轨道头**：左边那一段 = 组件 `TimelineTrackHeaderView`（类型图标 + 轨道名 + L 锁定 + M 静音 +
+  长按排序），**不是调试用的**。但在本接入里是**一排假开关** —— 锁定/静音/排序内核全无写 ABI
+  （池 [19]），点了只会触发「组件自我变更 → default 分支 → 整条时间线按内核重灌」。
+  **已去掉**：给组件加 `TimelineStyle.showsTrackHeader`（默认 true），正式接入传 false。
+  ⚠️ **本批动了组件源码** `/Users/zhuning/Documents/ChatGPT/zui`（3 处），此前约定是只读 ——
+  由传哲「没用的话可以去掉」授权；默认行为不变，调试页仍显示轨道头便于对照。
+- **实踩（P137）**：`CQ_AUTO_PLAY` 自动起播钩子 `EditorScreen` 早就有，我在
+  `EditorViewController` 又加一个 → 第二次 `togglePlayback()` 把播放**关掉**，
+  `[hook] auto_play=true` 却拿不到剖面数据。已删重复的那个并留注释。
+- **机器验证**：iOS 壳 BUILD SUCCEEDED；真机已装并前台启动（编辑页）。
+  **未跑** macOS 壳（本批改的 `EditorChrome`/`TimelineKitAdapter` 前者两端都编，需补跑）、
+  **未跑**全量 `run_gate.sh`。**问卷未回收 → 未标记完成**。
+
+## 补记十三 · UIA-045 再追加：DEBUG 浮层 + 轨道区惯性（2026-10-15，WorkBuddy 集成机，模型签名）
+
+- **传哲追加两项**：① `DebugOverlayView` 为啥不在编辑界面展示；② 轨道区还是没跟调试页对齐
+  —— 「滑动之后的惯性就没有」。
+- **①（P138，已修）**：浮层挂在 `EditorView` 的 `preview:` 槽位，iOS 走 `compact()` 槽位
+  → 那四个槽位在 iOS 上永不渲染。**iPhone 从来没有过浮层**；上一批把 iPad 统一到 compact
+  后 iPad 也没了。改为挂进 `EditorViewController`（UIHostingController，只钉 top/leading +
+  宽度 ≤320，高度交给 SwiftUI intrinsic）。开关仍是 `CQ_DEBUG_OVERLAY=1`；
+  **iOS UIKit 传输条没有天线按钮**（macOS 侧那个开关入口在 iOS 上无对应）—— 本批未加，登记待办。
+- **②（P139，已修，待真机手感确认）**：反馈环回推播放头 → 组件 `scrollToTime` →
+  `setContentOffset` → **UIScrollView 惯性被逐帧取消**。调试页不回推所以正常 —— 差异点即根因。
+  改法：scrub 期间不回推（`.timeChanged(final:)` / `.timeScrollEnded` 解除 + 0.5s 超时上界）。
+- **机器验证**：iOS 壳 BUILD SUCCEEDED。**真机未复验** —— 启动被拒：
+  `Unable to launch com.chuanqi.cut because the device was not, or could not be, unlocked`（设备锁屏）。
+  需传哲解锁后复跑，或直接在设备上打开 App 看（App 已装最新版）。
+- **未跑**：macOS 壳（本批改文件两端都编，需补跑）、全量 `run_gate.sh`。

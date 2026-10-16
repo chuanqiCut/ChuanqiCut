@@ -885,3 +885,25 @@ UI 重建（ADR-0024）解决不了它 → 立即立 MEDIA-023（VT 输出降采
 `platform_apple_decode` 6.92s / `media_sequential_real` 65.97s（最慢）
 
 ⚠️ 本节是「改名不回归」的计数，**不是性能基线**；性能基线（PERF-001）仍未建立。
+
+## 2026-10-15 · 编辑页播放（UIA-044 轨道区换 TimelineKit 后）
+
+> 机器（**真机**）：iPhone 17 Pro / iPhone18,1 / **iOS 26.6.1**；**Debug** 构建
+> （Intel Mac / Xcode 26.6 编译 arm64）；素材 = 单轨单片段 8s 1080p H.264（含音频），
+> 循环播放，采样窗口 6s（`[wf:perf]` 2s 一行）。
+
+| 项 | 实测 | 说明 |
+|---|---:|---|
+| 主线程 tick 耗时 p95 | **0ms**（日志 1ms 分辨率，三行全 0） | 播放中每帧 `setCurrentTime` 推 TimelineKit 未拖垮主线程 |
+| 取帧泵 req/s | 120–122 | 与既有播放基线同量级（未因轨道区换实现而变化） |
+| 取帧泵 rendered/s | 65–120（有丢帧） | 8s 短素材循环 seek 频繁；`nonok/s = 0`（无解码失败） |
+| MTK draw/s | 119–120 | 与未换轨道区前的呈现频率同档 |
+| 音频 drop / underrun / resync | **0 / 0 / 0** | 无音频异常 |
+| 物理内存足迹 | 97.2–98.3MB（6s 内无增长趋势） | 无泄漏迹象（短窗口，非长时结论） |
+| 崩溃 | **无**（DebugCrashDumper 未打栈） | 装载/播放/重建三路径均无 crash |
+
+**轨道区灌入证据**（新增 DEBUG stderr 通道 `[tk:track]`，`devicectl --console` 可见）：
+空态→装载后 `rebuild tracks=1 clips=0 assets=1` → `rebuild tracks=1 clips=1 assets=1`，
+全程**零 `resync`**（未发生「组件自我变更但内核不支持」的回滚）。
+
+⚠️ 样本极小（1 轨 1 片段 8s），**不得**作为产品阈值；长片段/多轨/长时间播放待补。

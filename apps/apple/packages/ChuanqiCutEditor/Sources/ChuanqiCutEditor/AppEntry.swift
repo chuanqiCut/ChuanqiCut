@@ -338,11 +338,7 @@ public final class EditorViewModel: ObservableObject {
         // 且边界为 0 会让时钟立刻判定"播完"。
         guard !timeline.clips.isEmpty else { return }
         if isPlaying {
-            player.pause()
-            // AUDIO-002：暂停 = 立即静音（内核丢弃在途音频缓冲）。
-            previewAudio?.sync(playhead: player.currentTime, playing: false)
-            stopPlaybackLoop()
-            isPlaying = false
+            pausePlayback()
             return
         }
         // 边界由内核时间线算（UI 不自己累加片段）。
@@ -352,6 +348,21 @@ public final class EditorViewModel: ObservableObject {
         guard player.play().isOK else { return }
         isPlaying = true
         startPlaybackLoop()
+    }
+
+    /// 暂停（**幂等**：未在播放则什么都不做）。
+    ///
+    /// 单独成口的理由：轨道区在播放中被操作时（拖播放头定位 / 移动·裁剪片段）
+    /// 必须先停 —— 播放循环会持续推进播放头，不停的话这一次 seek 或这一次提交
+    /// 刚落下的位置立刻被覆盖，用户看到的就是「拖了 / 裁了但没反应」。
+    /// `togglePlayback()` 的暂停分支即本方法（两处同一条路径，不复制实现）。
+    public func pausePlayback() {
+        guard isPlaying, let player else { return }
+        player.pause()
+        // AUDIO-002：暂停 = 立即静音（内核丢弃在途音频缓冲）。
+        previewAudio?.sync(playhead: player.currentTime, playing: false)
+        stopPlaybackLoop()
+        isPlaying = false
     }
 
     /// 停止播放并回到 0。
@@ -442,9 +453,23 @@ public final class EditorViewModel: ObservableObject {
     }
 
     private static func formatTimecode(_ t: RationalTime) -> String {
-        let seconds = Double(t.value) / Double(t.timescale)
-        let total = Int(seconds.rounded())
-        return String(format: "%d:%02d", total / 60, total % 60)
+        // 传哲 2026-10-15 澄清：传输条时间码（播放钮右边）用「时:分:秒.十分位」，
+        // 不足一小时省略时（"00:03.2" / "1:02:03.4"）。帧精度由轨道区刻度尺
+        // （已是 MM:SS:FF 含帧）承担，这里只给到秒的一位小数（ms 量级）。
+        let secondsTotal = Double(t.value) / Double(t.timescale)
+        guard secondsTotal.isFinite, secondsTotal >= 0 else { return "00:00.0" }
+        var rest = secondsTotal
+        let h = Int(rest) / 3600
+        rest -= Double(h * 3600)
+        let m = Int(rest) / 60
+        rest -= Double(m * 60)
+        let s = Int(rest)
+        rest -= Double(s)
+        let tenths = min(Int((rest * 10).rounded()), 9)
+        let hms = h > 0
+            ? String(format: "%d:%02d:%02d", h, m, s)
+            : String(format: "%02d:%02d", m, s)
+        return String(format: "%@.%d", hms, tenths)
     }
 
     // MARK: 片段编辑与撤销（UIA-005）
@@ -490,9 +515,25 @@ public final class EditorViewModel: ObservableObject {
         toolbarMode = .drawer(kind)
     }
 
-    /// 收起替换条：回到一级；仍有选中片段则回选中动作条（单焦点语义）。
+    /// 收起**当前**替换条 → 退一层（UIA-040 单焦点，逐层退出）：
+    ///   * `drawer`       → 选中条（有选中）/ 一级（无选中）
+    ///   * `clipSelected` → **退出选中** → 一级
+    ///   * `primary`      → 已在最上层，无动作
+    ///
+    /// ⚠️ 2026-10-15 修：此前本方法是「有选中就回 `.clipSelected`」—— 而选中条上
+    /// 的「返回」正是在 `.clipSelected` 模式里点的，算出来的还是 `.clipSelected`，
+    /// `EditorToolbarUIView.setMode` 的同值守卫直接 return，底栏一动不动，看着
+    /// 就是「点了没反应」。返回必须是**退一层**，不是把当前模式重设成自己。
     public func closePanel() {
-        toolbarMode = (selectedClipId != nil) ? .clipSelected : .primary
+        switch toolbarMode {
+        case .drawer:
+            toolbarMode = (selectedClipId != nil) ? .clipSelected : .primary
+        case .clipSelected:
+            // 走既有单入口：`$selectedClipId` 一并发出 → 预览红框、轨道描边跟着收。
+            selectClip(nil)
+        case .primary:
+            break
+        }
     }
 
     /// 当前选中片段（**UI 本地状态**，不入内核）。选中态是工具栏动作
@@ -699,12 +740,24 @@ public final class EditorViewModel: ObservableObject {
     }
     #endif
 
-    public func setPlayhead(_ t: RationalTime) {
+    /// 推进播放头（暂停 / 拖拽场景）。时间值由调用方以整数给出。
+    ///
+    /// 同时向取帧泵请求该时刻的帧 —— 泵是异步的，视图会自驱重绘直到追上
+    /// （见 MetalPreviewView 的 selfDrive 说明）。
+    ///
+    /// - Parameter policy: seek 策略（P142）。默认 `.exact`（编辑正确性优先）——
+    ///   播放 / 导出 / 松手确认都用它。**轨道 scrub 拖动中**传 `.keyframeBefore`：
+    ///   每次拖动 delta 只解最近关键帧而非精确重解整个 GOP，这是拖动跟手的关键。
+    public func setPlayhead(_ t: RationalTime, policy: PreviewPump.SeekPolicy = .exact) {
         playhead = t
-        previewPump?.request(pts: t)
+        previewPump?.request(pts: t, policy: policy)
         // AUDIO-002：拖拽/定位也同步音频 —— 播放中跳变由内核漂移护栏收敛
         //（≤ 一个混音周期），暂停态传 playing=false 保持静音。
         previewAudio?.sync(playhead: t, playing: isPlaying)
+        // 拖拽/定位时驱动预览真正重渲染：暂停态播放泵不自转，若不 bump renderEpoch，
+        // MetalPreviewView 不会以新 pts 重新武装 → 预览停在旧帧（传哲 2026-10-15：
+        // 拖时间轴时间变了但预览没真正 seek）。renderEpoch 变化经 $renderEpoch 订阅触发 syncPreview。
+        renderEpoch += 1
     }
 
 #if DEBUG

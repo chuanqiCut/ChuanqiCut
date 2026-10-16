@@ -2491,3 +2491,19 @@ CA::Transaction::flush_as_runloop_observer → CA::Layer::perform_update_
 - 坑中坑：改纯虚函数签名时，**override 必须匹配 arity** —— 测试 fake 即使参数不用也要
   补上，否则 `-Werror,-Wunused-parameter` 直接失败编译；顺手把该参数记进 fake 字段，
   正好当「策略确实透传」的断言点（本轮就是这么加的第 9 组测试）。
+
+## P143：跨文件契约改动被切进两笔提交 —— 提交的单棵树编译不过，本地构建却一路绿（2026-10-16，#21 收尾，已证实 verified）
+- 现象：`c5d4bf5`（P142 内核批）提交了 `chq_preview_renderer.{h,cpp}` 里 `Acquire(..., uint32_t* out_rotation, ...)`
+  的**实现**，但声明所在接口 `engine/core/cq/render/chq_frame_source.h` 的同一改动**留在工作树未提**。
+  结果 `origin/main` 单棵树编译不过：`error: non-virtual member function marked 'override' hides virtual
+  member function`（基类 8 参 vs 派生 9 参）。本地 `build_core.sh`/双壳一路 BUILD SUCCEEDED 全是**假证**
+  —— 它们编的是「已提交部分 + 未提交部分」混合的工作树，永远看不到这个洞。
+- 为什么会漏：写集切分按**文件归属批次**做（"这两个文件算 TimelineKit WIP，不提"），没按**编译依赖闭包**做。
+  `chq_frame_source.h` 名义上属 #21，实际与 c5d4bf5 的 renderer 改动是**同一处接缝的两半**。
+- **纪律**：提交任何改了虚函数/接口签名的笔之前，跑一次**纯 HEAD 树**的语法检查（不需要全量构建，秒级）：
+  `git archive HEAD engine tests | tar -x -C /tmp/x` 后
+  `clang++ -std=c++20 -fsyntax-only -I/tmp/x/engine/core -I/tmp/x/engine/platform <被改 TU>.cpp`。
+  工作树越脏（多批混提）越必跑 —— 只有它能区分「我提的树」与「我机器上的树」。
+- 同类预防：接缝签名改动尽量**接口 + 实现 + 调用点 + 假实现（tests/unit/fake）同笔**，
+  跨批次拆分时把接口文件归到**最早**那笔，而不是留给后续批。
+- 修复：`b471b8c` 补齐接口与剩余链路。

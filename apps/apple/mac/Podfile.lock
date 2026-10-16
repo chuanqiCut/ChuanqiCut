@@ -2,6 +2,8 @@ PODS:
   - ChuanqiCutCore (0.1.0):
     - ChuanqiCutFFmpeg (= 9.0.2)
   - ChuanqiCutEditor (0.1.0):
+    - ChuanqiCutEditor/Core (= 0.1.0)
+  - ChuanqiCutEditor/Core (0.1.0):
     - ChuanqiCutEngine
     - SharedUI
     - SnapKit (~> 5.7.0)
@@ -40,8 +42,8 @@ EXTERNAL SOURCES:
     :path: "../packages/SharedUI"
 
 SPEC CHECKSUMS:
-  ChuanqiCutCore: 1a1dbe775294b46d02c69225e7e48ea0dfc0e5bd
-  ChuanqiCutEditor: 4acf16fe9b2e3910341c63048799c52feb12ffdb
+  ChuanqiCutCore: 30753bb8f243f0490b84dde15ecd2a66f4e841f1
+  ChuanqiCutEditor: 4b1b805a3cbe6ea773b00be2529b67ed511c12c9
   ChuanqiCutEngine: 7692ae8be611b339495de80552be86d821c768b8
   ChuanqiCutFFmpeg: 240ee4baca309e91d0a1ae12acf1d75945464012
   ChuanqiCutImport: aa33c8eb24b733c0cdf8cf8b64df7a2e38cab8e3

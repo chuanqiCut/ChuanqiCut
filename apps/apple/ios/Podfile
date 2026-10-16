@@ -27,7 +27,9 @@ target 'ChuanqiCutApp' do
   # Camera 阶段 4 提前（2026-10-07，传哲指定）：iOS 专属，mac Podfile 不引
   pod 'ChuanqiCutCamera', :path => '../packages/ChuanqiCutCamera'
   pod 'ChuanqiCutImport', :path => '../packages/ChuanqiCutImport'
-  pod 'ChuanqiCutEditor', :path => '../packages/ChuanqiCutEditor'
+  # 轨道区接 TimelineKit（UIKit-only 本地 Pod）→ 必须引 iOS 专属子 spec；
+  # macOS 端 Podfile 引的是默认子 spec `Core`（见 ChuanqiCutEditor.podspec 头注释）。
+  pod 'ChuanqiCutEditor/TimelineKitTrack', :path => '../packages/ChuanqiCutEditor'
   # TimelineKit 本地开发 Pod（独立 Swift/UIKit 时间线组件）
   pod 'TimelineKit', :path => '../../../../ChatGPT/zui'
   pod 'SnapKit', '~> 5.7.0'

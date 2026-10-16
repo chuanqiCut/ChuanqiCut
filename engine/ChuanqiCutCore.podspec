@@ -89,8 +89,16 @@ SH
           "先构建并同步：tools/build/build_ffmpeg_demux.sh（5 个 slice，见 docs/BUILD.md）" \
           " && tools/build/make_ffmpeg_xcframework.sh"
   end
-  # ⚠️ vendored_libraries 必须相对 podspec（绝对路径被 CocoaPods 拒绝）。
-  s.vendored_libraries = 'vendor/libffmpeg.xcframework'
+  # ⚠️ 必须是 vendored_frameworks，不能是 vendored_libraries。
+  #    CocoaPods 只按 `File.extname == '.xcframework'` 识别 xcframework
+  #    （sandbox/file_accessor.rb 的 vendored_xcframeworks）；vendored_libraries
+  #    期待的是 *.a 文件/通配，给它一个 .xcframework 目录会 glob 到目录本身、
+  #    静默不产生任何接线 —— 2026-10-15 实测：App 聚合 xcconfig 的 OTHER_LDFLAGS
+  #    里没有 -l"ffmpeg"，LIBRARY_SEARCH_PATHS 无 vendor 路径，Pods.xcodeproj
+  #    里 grep vendor 0 命中。链接闭合却没人发现，因为当时无人调用 FFmpeg 符号，
+  #    archive 成员不拉取 → 构建照样 SUCCEEDED（ADR-0038 §验证记载有误，见勘误）。
+  # ⚠️ 路径必须相对 podspec（绝对路径被 CocoaPods 拒绝）。
+  s.vendored_frameworks = 'vendor/libffmpeg.xcframework'
 
   s.pod_target_xcconfig = {
     'CLANG_CXX_LANGUAGE_STANDARD' => 'c++20',

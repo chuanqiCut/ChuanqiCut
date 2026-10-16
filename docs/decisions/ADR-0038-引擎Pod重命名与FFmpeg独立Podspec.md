@@ -100,3 +100,37 @@
   `-l"ffmpeg"` 链接闭合由 ctest media_ffmpeg_probe 证明）。
 - SPM 路线 sanity：SharedUI swift build 通过（绑定模块改名后链路完好）。
 - 遗留：SPM 绑定 xcframework 重构建（池 [12]，bindings swift test 需要它链接）。
+
+## 勘误（2026-10-15，集成机）：vendored 属性写错，链接行从未带上 FFmpeg
+
+**原记载有误的两处**（上文 §2 与 §验证）：
+
+1. §2 写 `vendored_libraries = …/libffmpeg.xcframework` —— **这个写法 CocoaPods 完全不认**。
+   xcframework 只能走 `vendored_frameworks`（CocoaPods 按 `File.extname == '.xcframework'`
+   识别，见 `sandbox/file_accessor.rb` 的 `vendored_xcframeworks`）。
+2. §验证 写「App 聚合 xcconfig 含 `-l"ffmpeg"`」—— 2026-10-15 实测**没有**（见下），
+   该记载无法复现，判定为当时核对不严。
+
+**实测（修前）**：`Pods-ChuanqiCutApp.debug.xcconfig` 的 `OTHER_LDFLAGS` 无 `-l"ffmpeg"`、
+`LIBRARY_SEARCH_PATHS` 无 XCFrameworkIntermediates 路径、`Pods.xcodeproj` 中 `vendor` 0 命中。
+掩盖原因：静态库按需拉成员，当时无人调用 FFmpeg 符号 → 缺 `-l` 也 BUILD SUCCEEDED。
+
+**为何结论早已有却没落地**：`TASK-DEPS-012.md`（2026-10-12）已写「vendored_libraries 不认
+xcframework 目录 → 终版 = `vendored_frameworks`」，但 podspec 里始终是 `vendored_libraries`。
+**文档定案 ≠ 代码落地**，本次按 ADR-0034「不急于求成/做全做透」补上落地与实证。
+
+**修后（2026-10-15）**：`engine/ChuanqiCutCore.podspec` 改 `s.vendored_frameworks`。
+证据链（全部实测，非推断）：
+
+| 项 | 结果 |
+|---|---|
+| 双端 `bundle exec pod install` | 0 错误（iOS 14 pods / macOS 7 pods） |
+| App 聚合 xcconfig `OTHER_LDFLAGS` | 双端均含 `-l"ffmpeg"` |
+| `LIBRARY_SEARCH_PATHS` | 双端均含 `${PODS_XCFRAMEWORKS_BUILD_DIR}/ChuanqiCutCore` |
+| `[CP] Copy XCFrameworks` 阶段 | 生成并执行，脚本 `ChuanqiCutCore-xcframeworks.sh` |
+| 拷贝产物 slice | iOS=arm64 2.8MB；macOS=x86_64+arm64 fat 5.4MB（`lipo -info` 核对） |
+| 双壳构建 | iOS generic device **BUILD SUCCEEDED**；macOS x86_64 **BUILD SUCCEEDED** |
+| 链接实证 | `xcrun -sdk iphoneos clang` 最小 TU（调 `avformat_open_input`）+ `-l"ffmpeg"` + App 现有 framework 集合 → 链出可执行文件，`nm` 得 775 个 `_av*` 符号；**无需补 -lz/-lbz2/-liconv**（MEDIA-021 开工时的链接依赖结论） |
+
+**仍然成立的事实**：App 运行时**依旧不使用 FFmpeg**（无调用点，MEDIA-021 未开工），
+本次只是把「接线」修成可用状态，不产生任何运行时行为变化。

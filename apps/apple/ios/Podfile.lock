@@ -4,10 +4,14 @@ PODS:
     - SharedUI
   - ChuanqiCutCore (0.1.0):
     - ChuanqiCutFFmpeg (= 9.0.2)
-  - ChuanqiCutEditor (0.1.0):
+  - ChuanqiCutEditor/Core (0.1.0):
     - ChuanqiCutEngine
     - SharedUI
     - SnapKit (~> 5.7.0)
+  - ChuanqiCutEditor/TimelineKitTrack (0.1.0):
+    - ChuanqiCutEditor/Core
+    - SnapKit (~> 5.7.0)
+    - TimelineKit
   - ChuanqiCutEngine (0.1.0):
     - ChuanqiCutCore (= 0.1.0)
   - ChuanqiCutFFmpeg (9.0.2)
@@ -29,7 +33,7 @@ DEPENDENCIES:
   - Alamofire
   - ChuanqiCutCamera (from `../packages/ChuanqiCutCamera`)
   - ChuanqiCutCore (from `../../../engine`)
-  - ChuanqiCutEditor (from `../packages/ChuanqiCutEditor`)
+  - ChuanqiCutEditor/TimelineKitTrack (from `../packages/ChuanqiCutEditor`)
   - ChuanqiCutEngine (from `../../../engine`)
   - ChuanqiCutFFmpeg (from `../../../engine`)
   - ChuanqiCutImport (from `../packages/ChuanqiCutImport`)
@@ -72,8 +76,8 @@ EXTERNAL SOURCES:
 SPEC CHECKSUMS:
   Alamofire: c5f37d8f438dc1d7fd3ff767f2f80fd01ca381d7
   ChuanqiCutCamera: 403ac93215cff8efb9a5677526333edaa655a038
-  ChuanqiCutCore: 1a1dbe775294b46d02c69225e7e48ea0dfc0e5bd
-  ChuanqiCutEditor: 4acf16fe9b2e3910341c63048799c52feb12ffdb
+  ChuanqiCutCore: 30753bb8f243f0490b84dde15ecd2a66f4e841f1
+  ChuanqiCutEditor: 4b1b805a3cbe6ea773b00be2529b67ed511c12c9
   ChuanqiCutEngine: 7692ae8be611b339495de80552be86d821c768b8
   ChuanqiCutFFmpeg: 240ee4baca309e91d0a1ae12acf1d75945464012
   ChuanqiCutImport: aa33c8eb24b733c0cdf8cf8b64df7a2e38cab8e3
@@ -85,6 +89,6 @@ SPEC CHECKSUMS:
   SnapKit: d612e99e678a2d3b95bf60b0705ed0a35c03484a
   TimelineKit: fb59dcc2cabbf10387aeda5b65c0d5c7961a5d1b
 
-PODFILE CHECKSUM: 178c10bf3e46eed3494ac6a2c7a8335956b7fc97
+PODFILE CHECKSUM: 51bc497906bca21a25b94c26f106300109bdf22d
 
 COCOAPODS: 1.17.0

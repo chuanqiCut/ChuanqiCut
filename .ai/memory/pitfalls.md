@@ -2339,3 +2339,131 @@ CA::Transaction::flush_as_runloop_observer → CA::Layer::perform_update_
 - **规避**：批量/或条件自查一律用仓库自带的 **Grep 工具**（ripgrep，语法一致）；
   非用 shell 不可时必须 `grep -E "a|b"` 或 `grep -e a -e b`。
 - **验证状态**：已实测复现（本机 macOS 26.7.1，`grep --version` 为 BSD 系）。
+
+### P134 —— CocoaPods 会解析 `s.ios.dependency`：UIKit-only 依赖必须靠**子 spec** 隔离（2026-10-15 实测）
+
+- **症状**：`ChuanqiCutEditor.podspec` 加了 `s.ios.dependency 'TimelineKit'`（本地 UIKit-only
+  Pod）后，**macOS 端** `bundle exec pod install` 直接失败：
+  `Unable to find a specification for TimelineKit depended upon by ChuanqiCutEditor`；
+  把 `pod 'TimelineKit', :path => ...` 补进 mac Podfile 则报
+  `The platform of the target ChuanqiCutMacApp (macOS 15.4) is not compatible with TimelineKit … does not support macOS`。
+  → mac 端连 Pods 工程都生成不出来，随后「删除旧文件」会让 stale 的 mac Pods 工程指向不存在的文件，
+  mac 壳构建随之失败。
+- **根因**：`s.ios.dependency` **不会**在解析期按平台过滤。实证：同一个 spec 的
+  `s.ios.dependency 'SnapKit'` 就出现在 **mac Podfile.lock** 的 ChuanqiCutEditor 依赖里
+  （mac Podfile 从不声明 SnapKit，SharedUI/Player/Import/Camera 也都没声明）。
+- **规避（已落地）**：拆子 spec —— 默认子 spec `Core`（两端共用，无 TimelineKit 依赖）+ iOS 专属
+  子 spec `TimelineKitTrack`（含适配层/容器/调试预览 + `ss.ios.dependency 'TimelineKit'`）。
+  iOS Podfile 引 `ChuanqiCutEditor/TimelineKitTrack`，mac Podfile 引默认 `Core`。
+  ⚠️ 拆子 spec 后：`Core` 必须 `exclude_files` 掉那几个文件，否则两端都编；
+  新加 iOS-only 文件必须**同时**改 `Core.exclude_files` 和 `TimelineKitTrack.source_files`
+  （漏一处 = macOS 编译到 UIKit 代码）。
+- **验证状态**：已实测 —— 两端 `bundle exec pod install` 均成功，
+  iOS 壳（`generic/platform=iOS`）与 mac 壳（`-arch x86_64 ONLY_ACTIVE_ARCH=YES`）均 BUILD SUCCEEDED。
+
+### P135 —— 「返回」类按钮：目标态必须由**当前层**推导，不能由**业务状态**推导（2026-10-15 实测）
+
+- **症状**：选中片段 → 底栏切到 `clipSelected` 条 → 点「返回」**完全无反应**（无报错、无日志）。
+- **根因**：`EditorViewModel.closePanel()` 原写
+  `toolbarMode = (selectedClipId != nil) ? .clipSelected : .primary` —— 目标态由「有没有选中片段」
+  推导而来。而 `clipSelected` 条上的「返回」恰恰是在**有选中**时点的 → 推导结果 = `.clipSelected`
+  = 当前值 → `EditorToolbarUIView.setMode` 的 `guard newMode != mode else { return }` 直接 return，
+  整条底栏一动不动。
+- **一般形态**：**同值守卫 + 目标态由状态推导** 这一组合，会让「退出当前层」的按钮**静默失效**。
+  比 P130（布局欠定导致不可见）更隐蔽 —— 按钮看得见、能点、有回调，只是算出来的新值等于旧值。
+- **规避**：分层 UI 的「返回」= 按**当前层**逐层退出（`switch toolbarMode { case .drawer: …; case .clipSelected: … }`），
+  目标态永远比当前层浅一层；同值守卫保留（防无谓重建），但**不能靠它表达「不变」**。
+- **验证状态**：已修（本仓 `closePanel()` 改为 `switch` 分层）；iOS 壳 BUILD SUCCEEDED，真机待传哲复验。
+
+### P136 —— 「播放中不抢播放头」的守卫：把用户手势变成静默失效，且去掉守卫也不生效（2026-10-15 实测）
+
+- **症状**：播放中拖轨道区没有任何反应；用户要的是「拖轨道 = 定位播放位置」。
+- **根因（两层）**：
+  ① `EditorViewController` 的 `onScrub` 有 `guard let self, !self.viewModel.isPlaying else { return }`
+     —— 播放中直接吞掉回调；
+  ② 仅去掉守卫**不够**：播放循环持续推进 `playhead`，这一次 `setPlayhead` 落下即被下一 tick 覆盖。
+- **规避**：播放中操作轨道区 = **先暂停再执行**（`pausePlayback()` 幂等，未在播则 no-op），
+  然后才 seek / 提交编辑。编辑类 Intent 同理（`TrackIntent.isEditing` 判定；选中不算，播放中点片段不打断）。
+- **验证状态**：已修（`onScrub` 先 `pausePlayback()` 再 `setPlayhead`；`apply(intents:)` 对
+  `.commitEdit` 先暂停）；iOS 壳 BUILD SUCCEEDED，真机待传哲复验。
+
+### P137 —— 同功能 DEBUG 钩子加两处会**互相抵消**（2026-10-15 实测，`CQ_AUTO_PLAY`）
+
+- **症状**：加了 `CQ_AUTO_PLAY=1` 自动起播钩子后，真机日志 `[hook] … auto_play=true`
+  （说明起播成功），但 `[tk:perf]` 一行都不出 —— 播放态剖面取不到数。
+- **根因**：`EditorScreen`（SwiftUI 壳）**早已**有同功能钩子（`installDemoClipFromEnvironment`
+  之后 `togglePlayback()`）；我在 `EditorViewController` 的 `reloadTimeline` 里又加了一个
+  「片段一装载就 `togglePlayback()`」—— 第二次 toggle 把第一次刚开起的播放**关掉**。
+  `togglePlayback` 是**取反**，不是「置为播放」；两个「开播」钩子 = 开→关。
+- **一般形态**：任何 **toggle 语义**的自动化钩子，重复挂载不会「更保险」，只会抵消。
+  且现象极具误导性：状态日志显示 true（钩子各自都成功），实际状态是关。
+- **规避**：① 加自动钩子前先 `grep` 同名环境变量（本仓已收口在 `EditorScreen`，
+  `[hook]` 那行就是它的状态输出）；② 幂等动作优先做成「置位」而非「取反」
+  （如 `pausePlayback()` 幂等 vs `togglePlayback()`），见 P136 的同款取向。
+- **验证状态**：已修（删掉 EditorViewController 里重复的那个，原地留注释警告）；
+  实测删掉后 `[tk:perf]` 正常出数：`playhead n=168 avg=1.17ms`（2s 窗口）。
+
+### P138 —— 挂在「当前平台不渲染的槽位」里的 UI = 静默死代码（2026-10-15 实测，`DebugOverlayView`）
+
+- **症状**：DEBUG 诊断浮层在 iPhone 编辑页**从来不显示**（`CQ_DEBUG_OVERLAY=1` 也不显示）；
+  macOS / 原 iPad 横屏能看到。
+- **根因**：浮层挂在 `EditorView` 的 **`preview:` 槽位**（`.overlay(alignment: .topLeading) { DebugOverlayView }`）。
+  而 iOS 走的是 `EditorLayoutContainer` 的 **`compact()` 槽位**（UIKit 三件套容器）——
+  `preview/transport/timeline/toolbar` 四个槽位在 iOS 上**一个都不渲染**。ADR-0024 之后
+  iPhone 如此，2026-10-15 我把 iPad 也统一到 compact 之后，iPad 也一起没了。
+- **危害形态**：这不是编译错误、不是运行时告警、不是布局问题 —— 视图**存在且合法**，
+  只是它的宿主分支永不执行。CR 只看 diff 完全看不出来，只有真机能发现。
+- **规避**：① 往布局容器的槽位里挂东西前，先确认**该槽位在当前平台真的被渲染**
+  （本仓：iOS 只有 `compact()`，macOS 才有 `preview/...`）；② UIKit 容器里要挂就
+  **挂进 UIKit 容器**（本例改为 `EditorViewController` 里 `UIHostingController` 承载）。
+- **验证状态**：已修（浮层改挂 UIKit 容器，只钉 top/leading + 宽度上限，高度交给
+  SwiftUI intrinsic —— 钉四边会把内容压成 0，P130·b 同款）；iOS 壳 BUILD SUCCEEDED，
+  **真机未复验**（设备锁屏，启动被拒 `Unable to launch … because the device was … Locked`）。
+
+### P139 —— 把播放头**回推**给组件会打断 UIScrollView 惯性（2026-10-15 传哲反馈「滑动后没有惯性」）
+
+- **症状**：轨道区手指一离屏滚动**立刻停死**，没有减速滑行；同一个组件在
+  **TimelineKit 调试页**里惯性正常。
+- **根因（差异点就是线索）**：调试页只 `sink { describe(event) }`，**从不回推**；正式接入
+  有一条反馈环 —— 用户滑 → 组件 `scrollViewDidScroll` → `store.setCurrentTime(userScrub)`
+  → 宿主 `onScrub` → `VM.setPlayhead` → `$playhead` → `updatePlayhead` → `kitView.setCurrentTime`
+  → 组件 `scrollToTime` → **`timelineScrollView.setContentOffset(...)`** → 惯性动画被取消。
+  每滑动一帧就拽一次，减速根本跑不起来。
+- **一般形态**：「播放头恒在视口中央」的轨道范式里，播放头位置本来就由 contentOffset 决定，
+  **不需要宿主反过来告诉组件它在哪**；凡是把「组件告诉我的状态」原样灌回组件，都要先问
+  「会不会引起一次强制布局/滚动」。
+- **规避**：scrub 期间（含减速）一律不回推；抑制由 `.timeChanged(final: true)` /
+  `.timeScrollEnded` 解除，并配**独立超时上界**（0.5s）兜底 —— 结束事件没来也不能把
+  播放跟随永久吞掉（ADR-0034：异步等待必须同时有超时和上界）。
+- **验证状态**：已修（`EditorTimelineKitView.isUserScrubbing`）；iOS 壳 BUILD SUCCEEDED，
+  **惯性需传哲真机手感确认**（无法脚本化）。
+
+### P140 —— `vendored_libraries` 给 `.xcframework` 目录：CocoaPods 静默无痕，链接行少一个库却照样 BUILD SUCCEEDED（2026-10-15 修）
+
+- **症状**：`engine/ChuanqiCutCore.podspec` 写了 `s.vendored_libraries = 'vendor/libffmpeg.xcframework'`，
+  pod install 0 错误，双壳 BUILD SUCCEEDED，真机也能跑 —— 但 App 聚合 xcconfig 的
+  `OTHER_LDFLAGS` 里**没有 `-l"ffmpeg"`**，`LIBRARY_SEARCH_PATHS` 无 vendor/XCFrameworkIntermediates
+  路径，`Pods.xcodeproj` 里 grep `vendor` **0 命中**。FFmpeg 从 2026-10-11 起一直是「编了头文件、
+  没链库」的空转。ADR-0038 §验证却记着「App 聚合 xcconfig 含 `-l"ffmpeg"`」，与实测不符（已勘误）。
+- **根因**：CocoaPods 只按 `File.extname(framework) == '.xcframework'` 识别 xcframework，且只认
+  **`vendored_frameworks`**（`sandbox/file_accessor.rb` 的 `vendored_xcframeworks`；
+  `target/build_settings.rb` 对 `build_type.static_library?` 生成 `-l"ffmpeg"` +
+  `xcframework_intermediate_dir` 搜索路径）。`vendored_libraries` 期待的是 `*.a` 文件/通配，
+  喂它一个目录 glob 到目录本身，后续筛选全部落空且**不报任何 warning**。
+- **为什么没人发现**：静态库是**按需拉成员**的，当时全仓唯一调用 `FFmpegProbeFile` 的是单测，
+  App 没人调用 → archive 成员不拉取 → 链接器根本不找 `libffmpeg.a`，缺 `-l` 也绿。
+  **「无人消费」把「接线失效」完全掩盖了**（与 P135「宿主分支永不执行」同构）。
+- **一般形态**：凡是「接线写了但没证据证明它生效」的依赖，都要在**有人消费之前**单独验证，
+  否则构建绿只是「还没人碰它」。
+- **规避/验证手法**：
+  ① 判据落到**产物**上，不看 podspec 字面：`python3` 逐项解析 App 聚合 xcconfig 的
+  `OTHER_LDFLAGS` / `LIBRARY_SEARCH_PATHS`（本机 toybox grep 在管道里对含引号项**会假阴性**，
+  本次 `-l"ffmpeg"` 就是 grep 漏、python 复核才看到）；
+  ② 构建后查 `XCFrameworkIntermediates/<Pod>/libffmpeg.a` 是否出现并用 `lipo -info` 验架构
+  （本次 iOS=arm64 2.8M、macOS=x86_64+arm64 fat 5.4M，slice 选择正确）；
+  ③ 真链接实证：`xcrun -sdk iphoneos clang` 编一个只调 `avformat_open_input` 的 TU +
+  `-l"ffmpeg"` + App 现有 framework 集合 → 链出可执行文件，`nm` 数到 775 个 `_av*` 符号，
+  且**不需要额外补 -lz/-lbz2/-liconv**（MEDIA-021 开工时的链接依赖结论）。
+- **验证状态**：已修（`s.vendored_frameworks = 'vendor/libffmpeg.xcframework'`）；双端
+  `bundle exec pod install` 0 错误；iOS generic device 与 macOS x86_64 双壳 **BUILD SUCCEEDED**；
+  **真机未跑**（本批只动链接行，App 仍无人调用 FFmpeg 符号，运行时行为无变化）。

@@ -95,6 +95,14 @@ cat docs/handoff/HANDOFF-004-*.md      # 3. 最近交接（状态以最新一份
 | [0033](decisions/ADR-0033-Engine源码共置与C-Swift双Pod边界.md) | Engine 源码共置与 C-Swift 双 Pod 边界（内核头与实现共置 `engine/core/cq/<功能>/`；拆 `CChuanqiCut` + `ChuanqiCutEngine` 双 Pod，唯一 public 头 `cq_sdk.h`） |
 | [0034](decisions/ADR-0034-分批推进与禁临时方案及署名台账.md) | 分批推进与禁临时方案及署名台账（七条硬规则：一批一闭环 / 质量下限 / **禁临时方案** / 台账六字段 / 问卷驱动真机验收 / Mac 与 iOS 分端形态 / 撤销 RESEARCH-008 非目标） |
 | [0035](decisions/ADR-0035-PAL统一改名为Platform.md) | **`PAL` 统一改名为 `Platform`**（目录 + 标识符 + 概念名 + 文档全量改名；含映射表、`PALA`/`PALD` 卡号保留裁定、三条红线） |
+| [0036](decisions/ADR-0036-FFmpeg本地Pod二进制接入与LGPL处置.md) | FFmpeg 本地 Pod 二进制接入与 LGPL 处置（App 内声明 + 源码可获得 + 可重链接归档） |
+| [0037](decisions/ADR-0037-壳工程冻结入库退役XcodeGen.md) | 壳工程冻结入库，**XcodeGen 退役** |
+| [0038](decisions/ADR-0038-引擎Pod重命名与FFmpeg独立Podspec.md) | `ChuanqiCutCore` 改名 + FFmpeg 独立 Podspec（**2026-10-15 追加勘误**：`vendored_frameworks` 而非 `vendored_libraries`，见 P140） |
+| [0039](decisions/ADR-0039-CPP内核Chq命名前缀强制.md) | C++ 内核 `Chq` 命名前缀强制（189 类型 / 83 文件） |
+| [0040](decisions/ADR-0040-空间与交互地基批次引入.md) | **B5.5 空间与交互地基**引入（`MODEL-004` transform/layer/speed/keyframe + `EDIT-012` commit/done 双层；B3 后移） |
+| [0041](decisions/ADR-0041-编辑器UIKit布局统一用SnapKit.md) | 编辑器 UIKit 布局统一用 **SnapKit**（5.7.1，iOS 专属依赖） |
+| [0042](decisions/ADR-0042-轨道区接入TimelineKit与内核真源方向.md) | iOS 轨道区接入本地 **TimelineKit**，**内核保持唯一数据真源**（自绘轨道区作废；回写入口唯一、翻译不了即回滚） |
+| [0043](decisions/ADR-0043-scrub廉价关键帧seek与限频.md) | scrub 拖动走**廉价关键帧 seek + 限频**，松手补精确帧；`ChqSeekPolicy` 以中立 `int32_t` 跨 Platform 接缝 |
 
 **规则**：改变既有惯例/架构约束必须新增 ADR；取号前先 `git fetch`（双机并行撞号纪律见 ADR-0019 §4）。
 
@@ -128,7 +136,9 @@ cat docs/handoff/HANDOFF-004-*.md      # 3. 最近交接（状态以最新一份
 | 文档 | 角色 |
 |---|---|
 | [`WEEKLY-*.md`](reports/WEEKLY-2026-W41.md) | **周报**（2026-10-07 立，传哲拍板）：项目介绍/当前架构/本周进度/关键数字/下周目标/风险，集成机每周出刊（规则见 [reports/README](reports/README.md)） |
-| [`WEEKLY-2026-W42.md`](reports/WEEKLY-2026-W42.md) | 最新一期（截至 2026-10-12）：在固定六节外扩充**技术细节 / Pipeline / 优点与缺陷 / 优化路径 / 分工进展** |
+| [`WEEKLY-2026-W42-03.md`](reports/WEEKLY-2026-W42-03.md) | **最新一期**（第三刊，截至 2026-10-16）：B0 渲染地基落地 + 轨道区接入 TimelineKit + scrub 廉价 seek + 图层卫生门禁化；含 Pipeline 图（Mermaid）与批次拓扑 |
+| [`../README.md`](../README.md) | 仓库根 README = **最新一期周报全文镜像** + 仓库导航（下期只改 reports/ 再同步复制） |
+| [`WEEKLY-2026-W42.md`](reports/WEEKLY-2026-W42.md) | 第二刊（截至 2026-10-12）：在固定六节外扩充**技术细节 / Pipeline / 优点与缺陷 / 优化路径 / 分工进展** |
 
 ---
 

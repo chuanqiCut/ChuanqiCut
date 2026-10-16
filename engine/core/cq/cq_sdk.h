@@ -506,6 +506,13 @@ int32_t cq_preview_pump_start(CQPreviewPump* pump);
 /* 请求渲染 pts 处一帧。任意线程可调；不阻塞（只入队 + 通知）。 */
 int32_t cq_preview_pump_request(CQPreviewPump* pump, int64_t pts_value, int32_t pts_timescale);
 
+/* 同上，但指定 seek 策略（P142）。seek_policy：0=kExact（默认，编辑正确性优先）、
+ * 1=kKeyframeBefore（<= t 最近关键帧，最快）、2=kNearest（最近可解码帧），
+ * 取值为内核 ChqSeekPolicy 底层值。scrub 拖动用 kKeyframeBefore 取廉价定位，
+ * 松手确认/播放/导出用 kExact。上面的 cq_preview_pump_request 等价于本函数传 0。 */
+int32_t cq_preview_pump_request_ex(CQPreviewPump* pump, int64_t pts_value, int32_t pts_timescale,
+                                  int32_t seek_policy);
+
 /* 请求改变离屏目标尺寸（在泵线程执行 —— RT 只能由持有它的线程销毁）。 */
 int32_t cq_preview_pump_request_resize(CQPreviewPump* pump, uint32_t width, uint32_t height);
 

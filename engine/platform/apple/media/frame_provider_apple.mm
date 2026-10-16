@@ -49,21 +49,24 @@ public:
         return provider_->Open(src);
     }
 
-    ChqStatus Seek(const ChqRationalTime& target, const ChqCancelToken& token) override {
+    // 策略经 Platform 接缝的 int32_t 进来，转回 core 的 ChqSeekPolicy 后交给
+    // ChqSystemFrameProvider（它完整实现 kExact/kKeyframeBefore/kNearest）。
+    // 默认 0(kExact) 与旧行为一致；预览 scrub 会传 kKeyframeBefore 取廉价关键帧。
+    ChqStatus Seek(const ChqRationalTime& target, const ChqCancelToken& token,
+                   int32_t seek_policy = 0) override {
         if (!provider_) return ChqStatus(ChqStatusCode::kInvalidArgument);
-        return provider_->Seek(target, ChqSeekPolicy::kExact, token);
+        return provider_->Seek(target, static_cast<ChqSeekPolicy>(seek_policy), token);
     }
 
-    // Platform 契约承诺「精确 seek」：调用方拿到的一定是目标时间处的帧。
-    // 故这里固定按 kExact 走 core 编排，不接受非精确策略——若将来需要
-    // kKeyframeBefore / kNearest（缩略图 / 快速 scrub），应扩展 Platform 接口携带策略，
-    // 而不是在这里静默降级。
+    // P142：seek_policy 透传给 core 编排（ChqFrameRequest.policy），由 ChqSystemFrameProvider
+    // 按策略真正实现 —— kKeyframeBefore/kNearest 用于 scrub 廉价定位，kExact 用于
+    // 播放/导出/松手后确认。此前这里硬编码 kExact 会把策略吞掉。
     ChqStatus AcquireFrame(const ChqRationalTime& at, ChqMediaFrame& out_frame,
-                        const ChqCancelToken& token) override {
+                        const ChqCancelToken& token, int32_t seek_policy = 0) override {
         if (!provider_) return ChqStatus(ChqStatusCode::kInvalidArgument);
         ChqFrameRequest req;
         req.at = at;
-        req.policy = ChqSeekPolicy::kExact;
+        req.policy = static_cast<ChqSeekPolicy>(seek_policy);
         return provider_->AcquireFrame(req, out_frame, token);
     }
 

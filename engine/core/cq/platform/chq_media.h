@@ -65,6 +65,10 @@ struct ChqVideoFrame {
     ChqColorSpace color_space = ChqColorSpace::kUnknown;
     uint32_t width = 0;
     uint32_t height = 0;
+    // #21：源帧**显示朝向**旋转角（度，取 0/90/180/270）。由 preferredTransform 推导。
+    // 仅元数据：解码阶段不旋转像素（Core Image 路径会破坏色彩空间，已废弃），旋转
+    // 统一在 GPU blit 层以 UV 旋转实现（color-safe 直通，预览/导出共用 → 红线 #9）。
+    uint16_t rotation = 0;
     ChqRationalTime pts;
     ChqRationalTime duration;
 };
@@ -119,11 +123,18 @@ public:
     virtual ChqStatus Open(const ChqMediaSource& src) = 0;
 
     // 精确 seek 到目标时间。Accept ChqCancelToken。
-    virtual ChqStatus Seek(const ChqRationalTime& target, const ChqCancelToken& token) = 0;
+    // seek_policy：中立 int32_t 携带 core 的 ChqSeekPolicy 底层值（0=kExact / 1=kKeyframeBefore
+    //   / 2=kNearest，定义见 core chq_frame_provider.h）。Platform 接缝刻意不依赖 core 头
+    //   （chq_frame_provider.h 已 include 本文件，反向 include 会成环），故用 int32_t 透传，
+    //   core 层（ChqSystemFrameProvider / 渲染器）收到后再 static_cast 回 ChqSeekPolicy。
+    //   默认 0(kExact) 保证既有 2-arg 调用方与 override 不变。
+    virtual ChqStatus Seek(const ChqRationalTime& target, const ChqCancelToken& token,
+                       int32_t seek_policy = 0) = 0;
 
     // 取目标时间处的帧（经 provider 内部解码）。结果以 lease 形式返回（见类注释）。
+    // seek_policy 语义同上（默认 kExact）。
     virtual ChqStatus AcquireFrame(const ChqRationalTime& at, ChqMediaFrame& out_frame,
-                                const ChqCancelToken& token) = 0;
+                                const ChqCancelToken& token, int32_t seek_policy = 0) = 0;
 
     // 归还帧（image / pcm 内存回到 provider 池）。
     virtual void ReleaseFrame(ChqMediaFrame& frame) = 0;

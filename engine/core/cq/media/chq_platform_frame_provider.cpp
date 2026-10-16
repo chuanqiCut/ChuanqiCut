@@ -19,20 +19,20 @@ ChqStatus ChqPlatformFrameProvider::Open(const ChqMediaSource& src) {
 
 ChqStatus ChqPlatformFrameProvider::Seek(const ChqRationalTime& target, ChqSeekPolicy policy,
                               const ChqCancelToken& token) {
-    // Platform 契约只承诺精确 seek，无 policy 概念。非 kExact 若静默按精确处理，
-    // 调用方会误以为拿到了「最近关键帧」——与其假绿，不如明确拒绝。
-    if (policy != ChqSeekPolicy::kExact) return ChqStatus(ChqStatusCode::kInvalidArgument);
     if (!platform_) return ChqStatus(ChqStatusCode::kInvalidArgument);
-    return platform_->Seek(target, token);
+    // P142：不再拒绝非 kExact 策略。此前「Platform 只承诺精确 seek，非 kExact 一律拒绝」，
+    // 把 core 已实现的 kKeyframeBefore/kNearest 挡在门外 —— 但 scrub 拖动要的正是「廉价
+    // 关键帧定位」（用户：滑动时快速 seek，结束再精准 seek）。core 层（ChqSystemFrameProvider）
+    // 本就完整实现三种策略，此处只做忠实透传（int32_t 跨接缝，见 chq_media.h 注释）。
+    return platform_->Seek(target, token, static_cast<int32_t>(policy));
 }
 
 ChqStatus ChqPlatformFrameProvider::AcquireFrame(const ChqFrameRequest& req, ChqMediaFrame& out_frame,
                                       const ChqCancelToken& token) {
-    if (req.policy != ChqSeekPolicy::kExact) return ChqStatus(ChqStatusCode::kInvalidArgument);
     if (!platform_) return ChqStatus(ChqStatusCode::kInvalidArgument);
-    // Platform 的 AcquireFrame 语义即「目标时间处真正的展示帧」（契约原文），
-    // 与 core 的 kExact 一致，故直接转发。
-    return platform_->AcquireFrame(req.at, out_frame, token);
+    // 同上：req.policy（由调用方决定，如预览 scrub 传 kKeyframeBefore）透传给平台后端，
+    // 由底层 ChqSystemFrameProvider 按策略真正实现。丢弃 policy 会静默退化成精确解码。
+    return platform_->AcquireFrame(req.at, out_frame, token, static_cast<int32_t>(req.policy));
 }
 
 void ChqPlatformFrameProvider::ReleaseFrame(ChqMediaFrame& frame) {

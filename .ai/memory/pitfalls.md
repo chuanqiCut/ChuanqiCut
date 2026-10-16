@@ -2467,3 +2467,27 @@ CA::Transaction::flush_as_runloop_observer → CA::Layer::perform_update_
 - **验证状态**：已修（`s.vendored_frameworks = 'vendor/libffmpeg.xcframework'`）；双端
   `bundle exec pod install` 0 错误；iOS generic device 与 macOS x86_64 双壳 **BUILD SUCCEEDED**；
   **真机未跑**（本批只动链接行，App 仍无人调用 FFmpeg 符号，运行时行为无变化）。
+
+## P141：孤立 doc 注释伪装成函数头 —— Edit 匹配到它会吞掉 `#if DEBUG` 并造出重复函数（2026-10-16，P142 scrub 修复，已证实 verified）
+- 现象：`AppEntry.setPlayhead` 的 doc 注释（653-656）**孤立存在**——真正的函数在 749 行，
+  中间隔着整个 `#if DEBUG ... #endif` 块（`toggleDebugOverlay` 等）。两者长得像「注释紧跟函数」，
+  按「注释 + `func`」做锚点 Edit 会：① 把紧随其后的 `#if DEBUG` 当成函数体的一部分吞掉；
+  ② 在注释处造出一个**重复的半截函数**；③ 原函数残留 → 一个文件里两个 `setPlayhead`。
+- 代价：`#if DEBUG`/`#endif` 失衡 + 重复定义，编译期报错点还**指向错误的行**（我第一次
+  报的 3 个 error 里有两个是它的连带），排查极易被带偏。
+- **纪律**：改一个函数前，先 `Read` 一次**函数的真实签名行号**（grep `func 名`），
+  确认「注释—函数」是否相邻；文件里有 `#if` 块把两者隔开时，锚点必须含真实签名。
+- 修复手法：按原样还原被吞的 `#if DEBUG` 与重复函数，再只改真函数；改完 Read 回读确认配平。
+
+## P142：Platform 接缝反向 include core 头会成环 —— 跨层枚举用中立 int32_t 透传（2026-10-16，scrub 快速 seek，已证实 verified）
+- 背景：`chq_frame_provider.h`（core）已经 `#include "cq/platform/chq_media.h"`。所以
+  **不能**在 `chq_media.h` 里 include `chq_frame_provider.h` 来把 `ChqSeekPolicy` 带进
+  Platform 接口 —— 直接成环，编译炸。
+- 做法：Platform 接缝（`ChqIFrameProvider::Seek/AcquireFrame`）用**中立 `int32_t seek_policy=0`**
+  携带 core `ChqSeekPolicy` 的底层值（0/1/2），只在 core 层（已 include core 头的
+  `ChqSystemFrameProvider` / 预览渲染器）`static_cast<ChqSeekPolicy>` 转回。
+- 配套：`RenderFrame` 的新参数放**末位**并给默认值，保住既有 3 参调用（渲染器直接调用、
+  C ABI 同步路径、几十处测试）。放中间会让 `RenderFrame(pts, out, token)` 类型不匹配。
+- 坑中坑：改纯虚函数签名时，**override 必须匹配 arity** —— 测试 fake 即使参数不用也要
+  补上，否则 `-Werror,-Wunused-parameter` 直接失败编译；顺手把该参数记进 fake 字段，
+  正好当「策略确实透传」的断言点（本轮就是这么加的第 9 组测试）。

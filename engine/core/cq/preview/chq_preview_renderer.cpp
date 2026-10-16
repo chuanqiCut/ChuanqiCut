@@ -128,7 +128,9 @@ ChqStatus ChqPreviewRenderer::GetProvider(uint64_t asset_id, const ChqAssetRegis
 }
 
 ChqStatus ChqPreviewRenderer::RenderFrame(const ChqRationalTime& pts, TextureHandle& out_texture,
-                                    const ChqCancelToken& token) {
+                                    const ChqCancelToken& token, int32_t seek_policy) {
+    // P142：本帧 seek 策略存成员，供同帧的 Acquire 读取（两者同在泵线程）。
+    seek_policy_ = seek_policy;
     out_texture = nullptr;
     last_hit_clip_ = false;
     timings_ = Timings{};
@@ -218,11 +220,12 @@ ChqStatus ChqPreviewRenderer::RenderFrame(const ChqRationalTime& pts, TextureHan
 ChqStatus ChqPreviewRenderer::Acquire(uint64_t asset_id, const ChqRationalTime& src_time,
                                       const ChqAssetRegistry& assets, TextureHandle& out_tex,
                                       uint32_t& out_w, uint32_t& out_h, bool* out_reused,
-                                      const ChqCancelToken& token) {
+                                      uint32_t* out_rotation, const ChqCancelToken& token) {
     out_tex = nullptr;
     out_w = 0;
     out_h = 0;
     if (out_reused != nullptr) *out_reused = false;
+    if (out_rotation != nullptr) *out_rotation = 0;
     staged_acquire_ns_ = 0;
     staged_import_ns_ = 0;
     if (providers_ == nullptr) return ChqStatus(ChqStatusCode::kInvalidArgument);
@@ -245,6 +248,7 @@ ChqStatus ChqPreviewRenderer::Acquire(uint64_t asset_id, const ChqRationalTime& 
             out_w = last_import_w_;
             out_h = last_import_h_;
             if (out_reused != nullptr) *out_reused = true;
+            if (out_rotation != nullptr) *out_rotation = last_import_rotation_;
             last_frame_pts_ = last_import_pts_;  // 展示的仍是上一导入帧
             if (debug_reuse_logs_ < 3) {
                 ++debug_reuse_logs_;
@@ -263,7 +267,10 @@ ChqStatus ChqPreviewRenderer::Acquire(uint64_t asset_id, const ChqRationalTime& 
 
     ChqFrameRequest req;
     req.at = src_time;
-    req.policy = ChqSeekPolicy::kExact;  // 预览也要精确：编辑正确性优先于速度
+    // P142：seek 策略由调用方（预览泵 → RenderFrame）存入成员，scrub 拖动传
+    // kKeyframeBefore 取廉价关键帧定位（跟手优先），播放 / 松手确认传 kExact。
+    // 此前无条件硬编码 kExact，让每次拖动 delta 都精确 seek 重解整个 GOP → 拖动卡顿。
+    req.policy = static_cast<ChqSeekPolicy>(seek_policy_);
     ChqMediaFrame frame;
     const Clock::time_point t_acquire = Clock::now();
     s = provider->AcquireFrame(req, frame, token);
@@ -283,6 +290,8 @@ ChqStatus ChqPreviewRenderer::Acquire(uint64_t asset_id, const ChqRationalTime& 
     //    （MEDIA-024 首版即在 pts/duration 上踩此坑，复用永不命中）。
     out_w = frame.video.width;
     out_h = frame.video.height;
+    const uint16_t frame_rotation = frame.video.rotation;  // #21：ReleaseFrame 前捕获
+    if (out_rotation != nullptr) *out_rotation = frame_rotation;
     const ChqRationalTime frame_pts = frame.video.pts;
     const ChqRationalTime frame_dur = frame.video.duration;
 
@@ -316,6 +325,7 @@ ChqStatus ChqPreviewRenderer::Acquire(uint64_t asset_id, const ChqRationalTime& 
     last_import_dur_ = frame_dur;
     last_import_w_ = out_w;
     last_import_h_ = out_h;
+    last_import_rotation_ = frame_rotation;  // #21：复用判据一并携带旋转角
     last_import_valid_ = frame_dur.value > 0;
     if (debug_import_logs_ < 3) {
         ++debug_import_logs_;

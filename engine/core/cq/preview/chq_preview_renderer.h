@@ -116,14 +116,15 @@ public:
     //      **只允许**在泵线程被调用 —— 主线程再调一次就是数据竞争（不是"可能出错"，
     //      是必然出错）。未挂泵时沿用旧约定：单一线程使用。
     ChqStatus RenderFrame(const ChqRationalTime& pts, TextureHandle& out_texture,
-                       const ChqCancelToken& token) override;
+                       const ChqCancelToken& token, int32_t seek_policy = 0) override;
 
     // ---- ChqIFrameSource（取帧接缝，供 RenderGraph 执行器消费）----
     // 内部持有 provider 表与 MEDIA-024 的展示区间复用状态；**不是**每帧新建的纯函数。
     // 线程约定与 RenderFrame 相同（挂泵后只由泵线程调用）。
     ChqStatus Acquire(uint64_t asset_id, const ChqRationalTime& src_time,
                       const ChqAssetRegistry& assets, TextureHandle& out_tex, uint32_t& out_w,
-                      uint32_t& out_h, bool* out_reused, const ChqCancelToken& token) override;
+                      uint32_t& out_h, bool* out_reused, uint32_t* out_rotation,
+                      const ChqCancelToken& token) override;
 
     // 重建离屏渲染目标（预览分辨率变化时）。会丢弃当前 RT 与其纹理句柄。
     // 线程约定同上（挂泵后只由泵线程调用，走 `ChqPreviewPump::RequestResize`）。
@@ -139,6 +140,14 @@ public:
     }
 
     ChqIRenderTarget* Target() override { return target_.get(); }
+
+    // ---- P142：当前帧的 seek 策略（RenderFrame 入口写入，Acquire 读取）----
+    //
+    // 为什么存成员而不是沿 RenderGraph 逐层传参：一次 RenderFrame 内 policy 恒定，
+    // 且 RenderFrame 与 Acquire **同在泵线程**（见上方线程约定），不存在并发写。
+    // 存成员让 ChqIFrameSource 接口签名不变（少动一处跨模块契约）。
+    // 0=kExact（默认）/ 1=kKeyframeBefore / 2=kNearest，取值为 ChqSeekPolicy 底层值。
+    int32_t seek_policy_ = 0;
 
     // MEDIA-023 排障仪器：把内部分段计时暴露给泵（经缓存避免跨线程读 LiveTimings
     // —— timings_ 本身只有泵线程写，此处消费也在泵线程，无竞争）。
@@ -229,6 +238,7 @@ private:
     ChqRationalTime last_import_dur_{0, 1};
     uint32_t last_import_w_ = 0;
     uint32_t last_import_h_ = 0;
+    uint16_t last_import_rotation_ = 0;  // #21：复用判据一并携带旋转角，避免复用帧丢失朝向
 
     bool last_hit_clip_ = false;
     bool last_cpu_fallback_ = false;

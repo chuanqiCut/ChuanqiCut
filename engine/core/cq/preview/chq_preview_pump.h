@@ -89,7 +89,9 @@ public:
     bool IsRunning() const;
 
     // 请求渲染 pts 处一帧。未取走的请求会被后续请求覆盖（合并，见类注释）。
-    void Request(const ChqRationalTime& pts);
+    // seek_policy（默认 0=kExact）：随请求一路传到 ChqPreviewRenderer::RenderFrame →
+    // ChqFrameRequest.policy。scrub 拖动传 1(kKeyframeBefore) 取廉价关键帧定位。
+    void Request(const ChqRationalTime& pts, int32_t seek_policy = 0);
 
     // 请求改变离屏目标尺寸。**在泵线程执行**（RT 只能由持有它的线程销毁）。
     ChqStatus RequestResize(uint32_t width, uint32_t height);
@@ -114,6 +116,8 @@ private:
 
     bool has_request_ = false;
     ChqRationalTime requested_pts_{0, 1};
+    // 随请求携带的 seek 策略（0=kExact / 1=kKeyframeBefore / 2=kNearest）。
+    int32_t requested_seek_policy_ = 0;
 
     bool resize_pending_ = false;
     uint32_t resize_w_ = 0;

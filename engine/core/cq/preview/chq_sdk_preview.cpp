@@ -267,6 +267,17 @@ int32_t cq_preview_pump_request(CQPreviewPump* pump, int64_t pts_value, int32_t 
     return CodeOfEnum(cq::ChqStatusCode::kOk);
 }
 
+// P142：带 seek 策略的取帧请求。seek_policy 透传 0=kExact / 1=kKeyframeBefore / 2=kNearest
+//   （core ChqSeekPolicy 底层值）。scrub 拖动传 kKeyframeBefore（廉价关键帧定位），
+//   播放/松手确认传 kExact。上面的 cq_preview_pump_request 等价于本函数传 0，保持既有 ABI。
+int32_t cq_preview_pump_request_ex(CQPreviewPump* pump, int64_t pts_value, int32_t pts_timescale,
+                                   int32_t seek_policy) {
+    if (pump == nullptr) return CodeOfEnum(cq::ChqStatusCode::kInvalidArgument);
+    if (pts_timescale <= 0) return CodeOfEnum(cq::ChqStatusCode::kInvalidArgument);
+    pump->impl.Request(cq::ChqRationalTime{pts_value, pts_timescale}, seek_policy);
+    return CodeOfEnum(cq::ChqStatusCode::kOk);
+}
+
 int32_t cq_preview_pump_request_resize(CQPreviewPump* pump, uint32_t width, uint32_t height) {
     if (pump == nullptr) return CodeOfEnum(cq::ChqStatusCode::kInvalidArgument);
     return CodeOf(pump->impl.RequestResize(width, height));

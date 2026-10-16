@@ -71,12 +71,16 @@ public:
     std::thread::id resize_thread{};
     uint32_t last_w = 0;
     uint32_t last_h = 0;
+    // P142：最后一次 RenderFrame 收到的 seek 策略（0=kExact/1=kKeyframeBefore/2=kNearest）。
+    // 泵必须把 Request 的策略原样透传到渲染器 —— 这是 scrub 廉价取帧的契约。
+    int32_t last_seek_policy = -1;
 
     cq::ChqStatus RenderFrame(const cq::ChqRationalTime& pts, cq::TextureHandle& out_texture,
-                           const cq::ChqCancelToken&) override {
+                           const cq::ChqCancelToken&, int32_t seek_policy = 0) override {
         std::this_thread::sleep_for(frame_cost);
         {
             std::lock_guard<std::mutex> lk(m);
+            last_seek_policy = seek_policy;
             rendered_pts.push_back(pts.value);
             worker_thread = std::this_thread::get_id();
         }
@@ -362,6 +366,39 @@ int main() {
         Check(!pump.RequestResize(100, 0).IsOk(), "RequestResize(100,0) 被拒");
         // 未启动时 resize 也该被拒（没有线程执行它，静默入队会造成"明明改了没生效"）
         Check(!pump.RequestResize(100, 100).IsOk(), "未启动时 RequestResize 被拒");
+    }
+
+    // =========================================================================
+    // 9. P142：seek 策略从 Request 原样透传到 RenderFrame
+    // =========================================================================
+    std::printf("\n[9] seek 策略透传（P142）\n");
+    {
+        FakeSource src;
+        src.frame_cost = std::chrono::milliseconds(1);
+        cq::ChqPreviewPump pump(&src);
+        Check(pump.Start().IsOk(), "Start()");
+        // 默认策略 = kExact(0)：既有调用方不传也必须是精确。
+        pump.Request(Ticks(1));
+        Check(WaitUntil([&] { return src.RenderedCount() >= 1; }), "默认请求已渲染");
+        {
+            std::lock_guard<std::mutex> lk(src.m);
+            Check(src.last_seek_policy == 0, "默认策略透传为 kExact(0)");
+        }
+        // scrub 拖动：kKeyframeBefore(1) 必须原样到达渲染器。
+        pump.Request(Ticks(2), 1);
+        Check(WaitUntil([&] { return src.RenderedCount() >= 2; }), "keyframe 请求已渲染");
+        {
+            std::lock_guard<std::mutex> lk(src.m);
+            Check(src.last_seek_policy == 1, "kKeyframeBefore(1) 原样透传");
+        }
+        // 松手确认：kNearest(2) 同样透传（证明不是硬编码只认 0/1）。
+        pump.Request(Ticks(3), 2);
+        Check(WaitUntil([&] { return src.RenderedCount() >= 3; }), "nearest 请求已渲染");
+        {
+            std::lock_guard<std::mutex> lk(src.m);
+            Check(src.last_seek_policy == 2, "kNearest(2) 原样透传");
+        }
+        pump.Stop();
     }
 
     std::printf("\n== 结果：%d 项检查，%d 项失败 ==\n", g_checks, g_failures);

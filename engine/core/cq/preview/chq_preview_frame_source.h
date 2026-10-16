@@ -29,8 +29,12 @@ public:
 
     // 渲染 pts 处一帧到离屏目标；out_texture = 目标背后的纹理句柄（中性句柄）。
     // 语义与 ChqPreviewRenderer::RenderFrame 完全一致（含 kIoNotFound 表示空隙）。
+    // seek_policy（末位、默认 0=kExact）：中立 int32_t 携带 core ChqSeekPolicy 底层值
+    //   （0=kExact / 1=kKeyframeBefore / 2=kNearest）。预览 scrub 传 kKeyframeBefore 取廉价
+    //   关键帧定位，松手后传 kExact 精准确认。放末位并默认，既有 3 参调用（渲染器直接调用、
+    //   C ABI 同步路径）无需改动。
     virtual ChqStatus RenderFrame(const ChqRationalTime& pts, TextureHandle& out_texture,
-                              const ChqCancelToken& token) = 0;
+                              const ChqCancelToken& token, int32_t seek_policy = 0) = 0;
 
     // 改变离屏目标尺寸（会丢弃旧目标与其纹理句柄）。
     virtual ChqStatus Resize(uint32_t width, uint32_t height) = 0;

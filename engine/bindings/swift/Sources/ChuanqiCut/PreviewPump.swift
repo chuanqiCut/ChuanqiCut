@@ -22,6 +22,20 @@ import Foundation
 
 public final class PreviewPump {
 
+    /// 取帧的 seek 策略（内核 `ChqSeekPolicy` 的 Swift 投影，P142）。
+    ///
+    /// 视频编辑对「按时间戳取帧」有强正确性要求（给定 t 必须拿到 t 处那一帧），
+    /// 但 B 帧/GOP 让「精确取到 t」不平凡——常常要从最近关键帧重解整个 GOP。
+    /// 拖动时间线时每 delta 都付精确解码的代价 = 拖动卡顿（用户实测）。故：
+    public enum SeekPolicy: Int32, Sendable {
+        /// 精确：返回 t 处真正的展示帧。编辑默认（播放 / 松手确认 / 导出必备）。
+        case exact = 0
+        /// 回退到 <= t 最近关键帧：最快，但**不是** t 的展示帧。scrub 拖动专用。
+        case keyframeBefore = 1
+        /// 实现自选前/后最近可解码帧（速度优先、精确性次之）。
+        case nearest = 2
+    }
+
     /// 已完成的渲染结果。
     public struct Frame {
         /// 中性纹理句柄（Apple 上 reinterpret 为 MTLTexture）。nil = 该帧渲染失败
@@ -61,10 +75,22 @@ public final class PreviewPump {
 
     /// 请求渲染 pts 处一帧。不阻塞（只入队 + 通知泵线程）。
     /// 未取走的请求会被后续请求覆盖 —— 时刻由墙钟算，丢帧只让画面少几张。
+    /// 等价于 `request(pts:policy:.exact)`。
     @discardableResult
     public func request(pts: RationalTime) -> Status {
+        request(pts: pts, policy: .exact)
+    }
+
+    /// 请求渲染 pts 处一帧，并指定 seek 策略（P142）。
+    ///
+    /// scrub 拖动用 `.keyframeBefore`（<= t 最近关键帧，最快，拖动跟手优先），
+    /// 播放 / 松手确认 / 导出用 `.exact`（编辑正确性优先）。seek 在**泵子线程**完成，
+    /// 有新帧后主线程才 blit 呈现。
+    @discardableResult
+    public func request(pts: RationalTime, policy: SeekPolicy) -> Status {
         guard let h = handle else { return .invalidArgument }
-        return Status(rawValue: cq_preview_pump_request(h, pts.value, pts.timescale))
+        return Status(rawValue: cq_preview_pump_request_ex(h, pts.value, pts.timescale,
+                                                           policy.rawValue))
     }
 
     /// 请求改变离屏目标尺寸。**在泵线程执行**（RT 只能由持有它的线程销毁）。

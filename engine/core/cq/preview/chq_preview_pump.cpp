@@ -65,12 +65,13 @@ bool ChqPreviewPump::IsRunning() const {
     return running_;
 }
 
-void ChqPreviewPump::Request(const ChqRationalTime& pts) {
+void ChqPreviewPump::Request(const ChqRationalTime& pts, int32_t seek_policy) {
     {
         std::lock_guard<std::mutex> lk(mtx_);
         // 上一个请求还没被泵取走就被覆盖 = 那一帧永不渲染（丢帧）。
         if (has_request_) coalesced_.fetch_add(1, std::memory_order_relaxed);
         requested_pts_ = pts;
+        requested_seek_policy_ = seek_policy;
         has_request_ = true;
     }
     requested_.fetch_add(1, std::memory_order_relaxed);
@@ -111,6 +112,7 @@ void ChqPreviewPump::Loop() {
         bool do_render = false;
         bool do_resize = false;
         ChqRationalTime pts{0, 1};
+        int32_t seek_policy = 0;
         uint32_t w = 0;
         uint32_t h = 0;
         {
@@ -126,6 +128,7 @@ void ChqPreviewPump::Loop() {
             if (has_request_) {
                 do_render = true;
                 pts = requested_pts_;
+                seek_policy = requested_seek_policy_;
                 has_request_ = false;
             }
         }
@@ -149,7 +152,7 @@ void ChqPreviewPump::Loop() {
         // （draw 的 GPU 等待 / gap 清屏 / 快照加载等）。阈值统一为 500ms，
         // 与旧版本文件自抄的 1000ms 不同——同一个工程两套阈值本身就是排障噪音。
         CQ_SLOW_CALL_WF(ChqWorkflow::kPreview, "pump RenderFrame(total)");
-        const ChqStatus s = source_->RenderFrame(pts, tex, token);
+        const ChqStatus s = source_->RenderFrame(pts, tex, token, seek_policy);
         if (!s.IsOk()) non_ok_.fetch_add(1, std::memory_order_relaxed);
 #ifndef NDEBUG
         // MEDIA-023 排障仪器（Debug only）：每完成 60 帧打印一次分段耗时直方图

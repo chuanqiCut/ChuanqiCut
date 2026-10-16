@@ -2,7 +2,7 @@
 
 > **归属**：C 线（内核/媒体/渲染） —— 归属表见 docs/tasks/PLAN-三线并行.md §1a / ADR-0029（双机分工与门禁跑批，2026-10-07）
 
-> **落地状态（2026-10-12，RENDER-001 / B0）**：目标架构的**第一步**已落地 ——
+> **落地状态（编码 2026-10-12 / 提交 `6ccf29b` 2026-10-13，RENDER-001 / B0）**：目标架构的**第一步**已落地 ——
 > 节点 DAG + 拓扑排序（Kahn，含环检测）+ 结构指纹（FNV-1a）+ 三用途装配器
 > （kPreview/kExport/kAudioOnly）+ 两阶段执行器（CPU Prepare / GPU Encode）+ 时钟源
 > （步进/实时）。实现在 `engine/core/cq/render/`（ADR-0033 共置布局；本册路径
@@ -66,15 +66,20 @@ ARCH-003 §5/§6/§8/§9、ADR-0005（美型实现切换）
 | Task ID | 标题 | 状态 |
 |---|---|---|
 | GFX-001 | GFX 抽象 | ✅ |
-| RENDER-001/004/005 | RenderGraph | 未开工（001=多轨/导出共同瓶颈，关键路径） |
+| **RENDER-001** | RenderGraph **第一步（B0）** | ✅ **已落地**（编码 2026-10-12，提交 `6ccf29b` 2026-10-13，62 文件 / +5727 −346）：节点 DAG + Kahn 拓扑与环检测 + FNV-1a 结构指纹 + 三用途装配器（kPreview/kExport/kAudioOnly）+ 两阶段求值 + 时钟源；预览已改吃该图且 `preview_renderer` 51/51 与原 blit 路径**像素一致**。⚠️ 按 ADR-0034 **真机问卷未回收前不标记验收完成** |
+| RENDER-004/005 | Pass 合并 / 纹理别名 / LOD | ❌ 未开工（性能优化项，随 RENDER-011 一起评估） |
+| RENDER-011 | 效果节点 + **多轨合成** | ❌ 未开工。**当前渲染仍只画第一条命中视频轨**（`chq_graph_assembler.cpp:77` 与 `chq_preview_renderer.h:24` 双自陈）；001 落地后本项成为多轨/导出（EXPORT-002）的新瓶颈 |
 
 ### 测试与门禁记录（阶段批）
 
 | 日期 | 阶段/范围 | 结论（数字） |
 |---|---|---|
-| — | 未实测（本模块无独立阶段批记录） | — |
+| 2026-10-13 | B0 合并快检（本机 Intel x86_64 / macOS 26.7.1 / Xcode 26.6） | `build_core.sh` Debug **3m49s、0 错 0 警**（-Werror）；`ctest` **52/52**（78.66s）；`render_graph` / `model_property` 179 检查 / `c_abi_property` 76 检查均 0 失败；`preview_renderer` **51/51** 像素一致 |
+| 2026-10-13 | AUDIO-004 同批窄检 | 平台头门禁 **43 头 0 违规**；`ctest -R audio` 5/5 |
+| ⚠️ 未做 | 全量 `run_gate.sh`（最后一次 = 2026-10-12 PASS=14）、golden `verify.py`、真机 | 均**未跑**；池 [18]（门禁不含 App 壳构建）仍未决 |
 
 ### 调研 · 决策 · 池指针
 
 - ADR-0002（GPU 抽象）· PLAN-素材库草稿混排多轨（RENDER-011/012 依赖）
-- **[RESEARCH-014](../../docs/research/RESEARCH-014-主流NLE引擎架构综合调研与RENDER-001规划建议.md)**（2026-10-11）：GBU 综述 + FCP/Premiere/Resolve/该厂商系横向对比；RENDER-001 范围修订建议（+装配器三图同源/时钟源接口/Push-Pull 拍板）——**待拍板，不开工**
+- **[RESEARCH-014](../../docs/research/RESEARCH-014-主流NLE引擎架构综合调研与RENDER-001规划建议.md)**（2026-10-11）：GBU 综述 + FCP/Premiere/Resolve/该厂商系横向对比；RENDER-001 范围修订建议（+装配器三图同源/时钟源接口/Push-Pull 拍板）——**已采纳并随 B0 落地**（装配器 + 时钟源 + Pull 模型，见本册头部落地状态；2026-10-13 传哲拍板）
+- **[ADR-0040](../../docs/decisions/ADR-0040-空间与交互地基批次引入.md)**（2026-10-13）：B5.5 空间与交互地基（`MODEL-004` transform/layer/speed/keyframe）排在 B4 之后、B6/B7 之前 —— RENDER-011 效果节点的数据结构前置

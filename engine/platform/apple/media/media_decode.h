@@ -15,6 +15,7 @@
 #define CQ_PLATFORM_APPLE_MEDIA_DECODE_H_
 
 #include <CoreFoundation/CoreFoundation.h>
+#include <CoreGraphics/CoreGraphics.h>
 #include <CoreMedia/CoreMedia.h>
 #include <CoreVideo/CoreVideo.h>
 #include <VideoToolbox/VideoToolbox.h>
@@ -172,6 +173,18 @@ private:
     void ReleaseOutputQueue();
     void TeardownSession();
     ChqRationalTime ToRational(CMTime t) const;
+
+    // #21 竖屏/旋转：AVFoundation 轨道的 preferredTransform 推导出的**显示旋转角**
+    // （度，取 0/90/180/270）。portrait 源解码后仍是 landscape 尺寸（1920×1080），
+    // engine 此前从不施加 → 预览/导出都把竖屏当成横屏 letterbox。
+    //
+    // ⚠️ 旋转**只作为元数据**下发：解码阶段不再旋转像素（早先的 Core Image 路径
+    // 因 CIContext 渲染到无标签 BGRA 缓冲触发色彩空间转换，把画面色偏搞坏，已废弃）。
+    // 真正的几何旋转统一在 GPU blit 层以 UV 旋转实现（color-safe 直通，预览/导出
+    // 共用同一 RenderGraph → 红线 #9 天然守住，ADR-0034 不引入第二条旋转逻辑）。
+    // 解码输出的像素尺寸（output_width_/height_）保持**未旋转**的编码尺寸，纹理即
+    // 按此尺寸导入；blit 拿到旋转角后旋转 UV 还原显示朝向。
+    uint16_t rotation_deg_ = 0;
 
     std::string source_path_;
     ChqCodecId bound_codec_ = ChqCodecId::kUnknown;

@@ -20,6 +20,24 @@
 namespace cq {
 namespace {
 
+// #21：把 90° 倍数旋转施加到全屏三角形的 uv 分量（pos 不变）。
+// 约定 uv(0,0)=图像左上（见 kBlitVerts 注释）。旋转角 = 显示旋转角，满足
+// display = t·encoded（t 即 preferredTransform），故采样 uv_s = Rot^{-1}(uv_d)
+// 即还原显示朝向。与 AVFoundation appliesPreferredTrackTransform 的几何语义一致，
+// 且全程不旋转像素 → 不动色彩空间。仅改 uv，fragment shader 仍是 color-safe 直通。
+//
+// base uv 范围 [0,2]（覆盖可见 [0,1]² 外的 overscan），线性变换对整片三角成立，
+// 故直接对三个顶点的 uv 套同一公式即可。
+inline void RotateUv(uint16_t rot, float& u, float& v) {
+    switch (rot) {
+        case 90:  { const float nu = 1.0f - v; const float nv = u; u = nu; v = nv; } break;
+        case 180: { u = 1.0f - u; v = 1.0f - v; } break;
+        case 270: { const float nu = v; const float nv = 1.0f - u; u = nu; v = nv; } break;
+        default: break;  // 0°，不变
+    }
+}
+
+
 // 全屏三角形（比两个三角形的 quad 少一次光栅化接缝）。
 //   clip(-1,-1)=屏幕左下 → uv(0,1)；clip(-1,3)=屏幕左上之外 → uv(0,-1)
 //   插值后：屏幕上边 → v=0（图像顶行），屏幕下边 → v=1（图像底行）。
@@ -39,10 +57,24 @@ public:
     AppleBlitPass(ChqIGraphicsDevice* device, ChqTextureFormat target_format)
         : device_(device), target_format_(target_format) {}
 
-    ChqStatus Encode(ChqICommandEncoder& encoder, TextureHandle src) override {
+    ChqStatus Encode(ChqICommandEncoder& encoder, TextureHandle src,
+                    uint32_t rotation_deg) override {
         if (src == nullptr) return ChqStatus(ChqStatusCode::kInvalidArgument);
         ChqStatus s = EnsureResources();
         if (!s.IsOk()) return s;
+        // #21：旋转角变化才重烤顶点 UV（同一片段角度恒定，几乎不每帧触发）。
+        // 90° 倍数旋转在 UV 层做（color-safe 直通），与解码阶段旋转像素相比不动色彩空间。
+        // ⚠️ 当前 B0 单 blit 节点/帧，单个共享顶点缓冲重烤安全；B7 多轨多 blit 同帧时
+        //    需改为每 draw 独立 uniform（见 blit 头注释），届时再扩。
+        const uint16_t rot = static_cast<uint16_t>(rotation_deg % 360);
+        // #21：blit 需在 UV 层施加**显示旋转的逆**（采样 uv_s = Rot^{-1}(uv_d) 才还原显示朝向，
+        // 即 display = Rot · encoded）。rotation_deg 是显示旋转角 R，故传给 RotateUv 的是 (360-R)。
+        // 之前直接传 R，导致 90° 源被多转 180° → 画面倒立；这里取逆修正。
+        const uint16_t uv_rot = static_cast<uint16_t>((360 - rot) % 360);
+        if (uv_rot != cached_rotation_) {
+            BakeRotation(uv_rot);
+            cached_rotation_ = uv_rot;
+        }
         encoder.SetPipeline(pipeline_handle_);
         encoder.SetVertexBuffer(vbuf_handle_, 0);
         encoder.SetTexture(src, 0);
@@ -52,6 +84,20 @@ public:
     }
 
     void Destroy() override { delete this; }
+
+    // #21：把旋转后的 uv 烤进顶点缓冲（pos 不变）。仅旋转角变化时调用。
+    void BakeRotation(uint16_t rot) {
+        float verts[3 * 4];
+        std::memcpy(verts, kBlitVerts, sizeof(verts));
+        for (int i = 0; i < 3; ++i) {
+            float u = verts[i * 4 + 2];
+            float v = verts[i * 4 + 3];
+            RotateUv(rot, u, v);
+            verts[i * 4 + 2] = u;
+            verts[i * 4 + 3] = v;
+        }
+        std::memcpy(vbuf_mapped_, verts, sizeof(verts));
+    }
 
 private:
     // 资源懒建：shader / 管线 / 顶点缓冲 / 采样器只需建一次，之后每帧复用。
@@ -86,12 +132,12 @@ private:
         s = device_->CreateBuffer(bd, vbuf_);
         if (!s.IsOk()) return s;
         if (!vbuf_) return ChqStatus(ChqStatusCode::kInternal);
-        void* mapped = nullptr;
-        s = vbuf_->Map(mapped);
+        // 保留映射指针：MTLResourceStorageModeShared 的 contents 是 CPU 可见且自动与 GPU
+        // 一致，旋转角变化时直接重写 UV 分量即可（无需重建缓冲）。
+        s = vbuf_->Map(vbuf_mapped_);
         if (!s.IsOk()) return s;
-        if (mapped == nullptr) return ChqStatus(ChqStatusCode::kInternal);
-        std::memcpy(mapped, kBlitVerts, sizeof(kBlitVerts));
-        vbuf_->Unmap();
+        if (vbuf_mapped_ == nullptr) return ChqStatus(ChqStatusCode::kInternal);
+        std::memcpy(vbuf_mapped_, kBlitVerts, sizeof(kBlitVerts));
 
         ChqSamplerDesc sd;
         sd.linear_filter = true;
@@ -133,6 +179,10 @@ private:
     PipelineHandle pipeline_handle_ = nullptr;
     BufferHandle vbuf_handle_ = nullptr;
     SamplerHandle sampler_handle_ = nullptr;
+    // #21：顶点缓冲的 CPU 映射指针（共享内存，旋转角变化时直接重写 UV）。
+    void* vbuf_mapped_ = nullptr;
+    // #21：已烤进顶点缓冲的旋转角；变化才重烤（同片段恒定，几乎不每帧触发）。
+    uint16_t cached_rotation_ = 0xFF;
     bool ready_ = false;
 };
 

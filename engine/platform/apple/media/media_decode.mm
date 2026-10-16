@@ -12,12 +12,14 @@
 // 红线：零 FFmpeg 类型；平台类型只在本 .mm / media_decode.h；错误一律 ChqStatus；内核禁用异常。
 
 #import <AVFoundation/AVFoundation.h>
+#import <CoreGraphics/CoreGraphics.h>
 #import <Foundation/Foundation.h>
 #import <dispatch/dispatch.h>
 
 #include <algorithm>
 #include <atomic>
 #include <chrono>
+#include <cmath>
 #include <cstdint>
 #include <deque>
 #include <mutex>
@@ -37,6 +39,12 @@ namespace cq {
 // 旧版是本文件自己抄的一份 `#ifndef NDEBUG` 结构体——**Release 包里什么都不留**，
 // 而 MEDIA-027 定位冻结时唯一指认到 `provider+acquire 8226ms` 的就是它。
 // 现在它属于 kPerf 链路的 Warn，**Release 也能看见**，且可用 CQ_LOG_WORKFLOW 筛。
+
+// #21：前向声明；定义在文件末尾的匿名命名空间，供 VideoToolboxDecoder::Open 调用，
+// 从 preferredTransform 推导 90° 倍数显示旋转角（仅元数据，GPU blit 层做 UV 旋转）。
+namespace {
+uint16_t DeriveRotationDeg(CGAffineTransform t);
+}  // namespace
 
 // ---------------------------------------------------------------------------
 // 构造 / 析构
@@ -280,6 +288,16 @@ ChqStatus VideoToolboxDecoder::Open(const ChqStreamInfo& info) {
         dispatch_semaphore_wait(track_sem, DISPATCH_TIME_FOREVER);
         if (tracks.count == 0) return ChqStatus{ChqStatusCode::kDecodeUnsupported};
         AVAssetTrack* track = tracks[0];
+        // #21：读取轨道的 preferredTransform，仅推导**显示旋转角**作为元数据下发
+        // （不旋转像素）。解码输出保持未旋转的编码尺寸，几何旋转交由 GPU blit 层做
+        // UV 旋转（color-safe，预览/导出共用 → 红线 #9）。早年 Core Image 路径会在
+        // 解码阶段旋转像素，触发无标签 BGRA 缓冲的色彩空间转换 → 色偏，已废弃。
+        rotation_deg_ = DeriveRotationDeg(track.preferredTransform);
+        if (rotation_deg_ != 0) {
+            CQ_LOG_INFO_WF(ChqWorkflow::kDecode,
+                           "检测到 preferredTransform 旋转 %u°：作为元数据下发，GPU blit 层做 UV 旋转（不动色彩空间）",
+                           static_cast<unsigned>(rotation_deg_));
+        }
         NSArray* fds = track.formatDescriptions;
         if (fds.count == 0) return ChqStatus{ChqStatusCode::kDecodeUnsupported};
 
@@ -609,6 +627,27 @@ ChqStatus VideoToolboxDecoder::Feed(const ChqMediaPacket& pkt) {
 }
 
 // ---------------------------------------------------------------------------
+// #21：从 preferredTransform 推导**显示旋转角**（度，量化到 0/90/180/270）。
+//
+// 视频轨道的 preferredTransform 是轴对齐的 90° 倍数旋转（手机竖屏源 = 90°），
+// 无缩放/错切（纯旋转）。用线性部分的 atan2(b, a) 量化到最近的 90° 倍数即可。
+//
+// 语义与 AVFoundation 的 appliesPreferredTrackTransform 对齐：显示朝向满足
+// display = t · encoded（t 即 preferredTransform，y-down/top-left 轨道坐标系）。
+// 该角度仅作元数据下发；解码输出保持未旋转尺寸，几何旋转由 GPU blit 层以
+// UV 旋转还原（见 blit_pass.mm）。全程不触碰像素/色彩空间，故无 Core Image 路径
+// 那种色偏问题。
+namespace {
+uint16_t DeriveRotationDeg(CGAffineTransform t) {
+    const double kPi = 3.14159265358979323846;
+    const double deg = std::atan2(t.b, t.a) * 180.0 / kPi;
+    int q = static_cast<int>(std::round(deg / 90.0)) % 4;
+    if (q < 0) q += 4;
+    return static_cast<uint16_t>(q * 90);
+}
+}  // namespace
+
+// ---------------------------------------------------------------------------
 // PopFrame：重排后按显示序弹出一个已重建的展示帧
 //
 // VT 回调按完成序（≈dts 序）入队，B 帧在其参考 P 之后完成 —— 直接弹队首会把
@@ -771,6 +810,10 @@ ChqStatus VideoToolboxDecoder::PopFrame(ChqMediaFrame& out) {
         pb = of.pb;
         pts = of.pts;
 
+        // #21：解码输出保持**未旋转**的编码尺寸（output_width_/height_ 不变）。
+        // 显示旋转角已推导为元数据 rotation_deg_，随帧下发；几何旋转由 GPU blit 层
+        // 以 UV 旋转实现（见 blit_pass.mm），全程不旋转像素 → 不动色彩空间。
+
         ChqRationalTime dur = nominal_duration_;
         if (has_prev_) {
             ChqRationalTime d{0, kProjectTimeScale};
@@ -785,10 +828,12 @@ ChqStatus VideoToolboxDecoder::PopFrame(ChqMediaFrame& out) {
         CFRelease(pb);  // 释放队列对 pb 的所有权，交由 CqNativeImage 独占
         out.video.pixel_format = ChqPixelFormat::kBGRA8;
         out.video.color_space = ChqColorSpace::kRec709;
-        // MEDIA-023：实际输出尺寸（降采样后）—— 调用方（视口计算/复用判据）
-        // 依赖它与真实 CVPixelBuffer 一致；源尺寸见 width_/height_。
+        // MEDIA-023：实际输出尺寸（降采样后，未旋转编码尺寸）—— 调用方（视口计算/
+        // 复用判据）依赖它与真实 CVPixelBuffer 一致；源尺寸见 width_/height_。
+        // #21：旋转角作为元数据随帧下发（解码输出保持未旋转），由 GPU blit 层还原朝向。
         out.video.width = output_width_;
         out.video.height = output_height_;
+        out.video.rotation = rotation_deg_;
         out.video.pts = pts;
         out.video.duration = dur;
 #ifndef NDEBUG

@@ -242,10 +242,16 @@ public:
     // 在给定编码器上编码一次全屏绘制。调用前调用方须已 BeginRenderPass。
     // src 可以是零拷贝导入的解码帧纹理，也可以是普通纹理。
     //
+    // #21：rotation_deg（默认 0）是源帧的**显示旋转角**（度，取 0/90/180/270）。
+    // 非 0 时在 UV 层旋转还原显示朝向（color-safe 直通，不动色彩空间）；解码阶段不
+    // 旋转像素，故预览与导出共用同一 RenderGraph 时朝向一致（红线 #9）。旋转角为 0
+    // 时行为与旧版逐该厂商一致（无额外开销）。
+    //
     // 收 **Platform 的** ChqICommandEncoder（不是 GFX 的 ChqIGfxEncoder）：本类在 Platform 层，
     // 不能反向依赖 GFX。GFX 侧经 `ChqIGfxEncoder::PlatformEncoder()` 取到底层编码器再传入
     // （与既有的 `ChqIGfxDevice::PlatformDevice()` 同一套路）。
-    virtual ChqStatus Encode(ChqICommandEncoder& encoder, TextureHandle src) = 0;
+    virtual ChqStatus Encode(ChqICommandEncoder& encoder, TextureHandle src,
+                             uint32_t rotation_deg = 0) = 0;
 };
 
 class ChqIGraphicsDevice : public ChqIPlatformResource {

@@ -25,6 +25,9 @@
 
 #import <AVFoundation/AVFoundation.h>
 #import <CoreAudio/CoreAudioTypes.h>
+#if defined(TARGET_OS_IPHONE) && TARGET_OS_IPHONE
+#import <UIKit/UIKit.h>
+#endif
 
 #include <atomic>
 #include <cstring>
@@ -146,7 +149,18 @@ public:
 
     ChqStatus Start() override {
         if (!opened_) return ChqStatus{ChqStatusCode::kInvalidArgument};
-        if (started_) return ChqStatus::Ok();
+#if defined(TARGET_OS_IPHONE) && TARGET_OS_IPHONE
+        RegisterSessionObservers();  // iOS：打断/回到前台观察者（幂等）
+#endif
+        if (started_) {
+            // ⚠️ 关键修复：started_ 为真 ≠ 引擎真的在跑。被系统打断（其他 App 抢会话 /
+            // 进后台）时 AVAudioEngine 会被 OS 停掉，但本对象 started_ 仍是 true。
+            // 若此处直接返回，恢复播放就是静音。故重新武装会话 + 重启引擎。
+#if defined(TARGET_OS_IPHONE) && TARGET_OS_IPHONE
+            ReactivateIfNeeded();
+#endif
+            return ChqStatus::Ok();
+        }
 #if defined(TARGET_OS_IPHONE) && TARGET_OS_IPHONE
         // iOS 必须激活 AVAudioSession（category 只设一次；重复设置无害但浪费）。
         if (!session_configured_) {
@@ -185,12 +199,76 @@ public:
 
 private:
     ChqStatus StopTearDown() {
+#if defined(TARGET_OS_IPHONE) && TARGET_OS_IPHONE
+        UnregisterSessionObservers();
+#endif
         if (engine_ != nil && started_) {
             [engine_ stop];
             started_ = false;
         }
         return ChqStatus::Ok();
     }
+
+#if defined(TARGET_OS_IPHONE) && TARGET_OS_IPHONE
+    // 打断结束 / 回到前台时重新武装：AVAudioSession 重新激活 + AVAudioEngine 重启。
+    // 仅当本对象意图在播（started_）才动；观察者队列 = main，调用方保证主线程。
+    void ReactivateIfNeeded() {
+        if (!started_) return;
+        NSError* err = nil;
+        [[AVAudioSession sharedInstance] setActive:YES error:&err];
+        if (err != nil) {
+            CQ_LOG_WARN_WF(ChqWorkflow::kPreview,
+                           "AVAudioSession 恢复激活失败 err='%s'",
+                           err.localizedDescription.UTF8String ?: "(nil)");
+        }
+        if (![engine_ isRunning]) {
+            NSError* e2 = nil;
+            if (![engine_ startAndReturnError:&e2]) {
+                CQ_LOG_WARN_WF(ChqWorkflow::kPreview,
+                               "AVAudioEngine 打断后重启失败 err='%s'",
+                               e2.localizedDescription.UTF8String ?: "(nil)");
+            }
+        }
+    }
+
+    void RegisterSessionObservers() {
+        if (observers_registered_) return;
+        NSNotificationCenter* nc = [NSNotificationCenter defaultCenter];
+        // 观察者移除前 this 有效（移除在析构内的 StopTearDown）；block 只捕获裸指针、不 retain。
+        AppleAudioEngine* self_ptr = this;
+        interruption_token_ = [nc addObserverForName:AVAudioSessionInterruptionNotification
+                                              object:nil
+                                               queue:[NSOperationQueue mainQueue]
+                                          usingBlock:^(NSNotification* note) {
+            NSNumber* type = note.userInfo[AVAudioSessionInterruptionTypeKey];
+            if (type != nil &&
+                type.integerValue == AVAudioSessionInterruptionTypeEnded) {
+                self_ptr->ReactivateIfNeeded();
+            }
+        }];
+        active_token_ = [nc addObserverForName:UIApplicationDidBecomeActiveNotification
+                                       object:nil
+                                        queue:[NSOperationQueue mainQueue]
+                                   usingBlock:^(NSNotification* note) {
+            self_ptr->ReactivateIfNeeded();
+        }];
+        observers_registered_ = true;
+    }
+
+    void UnregisterSessionObservers() {
+        if (!observers_registered_) return;
+        NSNotificationCenter* nc = [NSNotificationCenter defaultCenter];
+        if (interruption_token_ != nil) {
+            [nc removeObserver:interruption_token_];
+            interruption_token_ = nil;
+        }
+        if (active_token_ != nil) {
+            [nc removeObserver:active_token_];
+            active_token_ = nil;
+        }
+        observers_registered_ = false;
+    }
+#endif
 
     // 渲染回调（实时音频线程，消费者侧）。只允许：环读 + 原子量 + memset。
     OSStatus RenderInto(BOOL* is_silence, const AudioTimeStamp* timestamp,
@@ -252,6 +330,9 @@ private:
     bool started_ = false;
 #if defined(TARGET_OS_IPHONE) && TARGET_OS_IPHONE
     bool session_configured_ = false;  // iOS AVAudioSession category 只设一次
+    bool observers_registered_ = false;  // 打断/前台观察者是否已挂（Start 幂等注册）
+    id interruption_token_ = nil;        // AVAudioSessionInterruptionNotification 观察者
+    id active_token_ = nil;              // UIApplicationDidBecomeActiveNotification 观察者
 #endif
     uint64_t frame_bytes_ = 0;
     ChqSpscSampleRing ring_;              // 生产者=Write（混音线程），消费者=渲染回调

@@ -61,6 +61,10 @@ struct ChqRenderNodeDesc {
     uint64_t asset_id = 0;            // 素材 id（查 ChqAssetRegistry）
     uint64_t clip_id = 0;             // 命中的片段 id（属性系统与诊断用；0 = 无）
     ChqRationalTime source_time{0, 1};  // 素材内时间（= clip.source.source_in + (pts - clip.start)）
+    // #21：源帧**显示朝向**旋转角（度，0/90/180/270），由解码侧经 Acquire 回填，
+    // 装配时未知（与 source_width/height 同生命周期）。blit 据此做 UV 旋转还原朝向，
+    // 几何旋转只在 GPU 一层（预览/导出共用 → 红线 #9），解码阶段不旋转像素。
+    uint16_t source_rotation = 0;
 
     // ---- kBlit ----
     ChqFitMode fit_mode = ChqFitMode::kStretch;

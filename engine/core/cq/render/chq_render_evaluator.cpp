@@ -58,17 +58,19 @@ ChqStatus ChqRenderEvaluator::Prepare(ChqRenderGraph& graph, const Resources& re
         uint32_t w = 0;
         uint32_t h = 0;
         bool reused = false;
+        uint32_t rotation = 0;
         s = res_.frames->Acquire(node->asset_id, node->source_time, *res_.assets, tex, w, h,
-                                 &reused, token);
+                                 &reused, &rotation, token);
         if (!s.IsOk()) return s;
         if (tex == nullptr) return ChqStatus(ChqStatusCode::kInternal);
         outputs_[index] = tex;
         last_source_reused_ = reused;
-        // 回填实际源尺寸：视口计算要用（装配时还不知道帧多大）。
+        // 回填实际源尺寸与显示旋转角：视口计算与 blit UV 旋转都要用（装配时还不知道帧多大）。
         ChqRenderNodeDesc* mutable_node = graph.MutableNode(index);
         if (mutable_node != nullptr) {
             mutable_node->source_width = w;
             mutable_node->source_height = h;
+            mutable_node->source_rotation = static_cast<uint16_t>(rotation);
         }
         ++prepared_sources_;
     }
@@ -105,16 +107,25 @@ ChqStatus ChqRenderEvaluator::Encode(ChqIGfxEncoder& encoder, const ChqFrameCont
         const TextureHandle src = outputs_[node->inputs[0]];
         if (src == nullptr) return ChqStatus(ChqStatusCode::kInternal);
 
+        // #21：显示旋转角 → 视口用「旋转后」的源尺寸。90/270 旋转会交换宽高
+        // （landscape 编码帧 → portrait 显示），否则 contain/cover 会把竖屏误判成横屏。
+        const uint16_t rot = src_node->source_rotation;
+        const bool swap = (rot == 90 || rot == 270);
+        const uint32_t eff_w = swap ? src_node->source_height : src_node->source_width;
+        const uint32_t eff_h = swap ? src_node->source_width : src_node->source_height;
+
         // 适配视口：**源尺寸在上游 source 节点上**（Prepare 阶段取到帧后回填到那里，
         // 装配时帧还没取、尺寸未知）。取 blit 节点自己的 source_width 会恒为 0
         // → 视口算成整目标 → contain/cover 静默退化成 stretch（像素断言当场抓出）。
         float vp[4] = {};
-        ComputeFitViewport(node->fit_mode, src_node->source_width, src_node->source_height,
-                           node->target_width, node->target_height, vp);
+        ComputeFitViewport(node->fit_mode, eff_w, eff_h, node->target_width, node->target_height,
+                           vp);
         if (!IsFullTargetViewport(vp, node->target_width, node->target_height)) {
             encoder.SetViewport(vp[0], vp[1], vp[2], vp[3]);
         }
-        s = res_.blit->Encode(*platform_encoder, src);
+        // 旋转角交给 blit：全屏拷贝时在 UV 层旋转还原显示朝向（color-safe 直通，
+        // 不动色彩空间；预览/导出共用 → 红线 #9）。
+        s = res_.blit->Encode(*platform_encoder, src, rot);
         if (!s.IsOk()) return s;
         ++encoded_blits_;
     }

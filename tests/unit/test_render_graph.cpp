@@ -46,7 +46,8 @@ class FakeFrameSource final : public cq::ChqIFrameSource {
 public:
     cq::ChqStatus Acquire(uint64_t asset_id, const cq::ChqRationalTime& src_time,
                           const cq::ChqAssetRegistry&, cq::TextureHandle& out_tex, uint32_t& out_w,
-                          uint32_t& out_h, bool* out_reused, const cq::ChqCancelToken&) override {
+                          uint32_t& out_h, bool* out_reused, uint32_t* out_rotation,
+                          const cq::ChqCancelToken&) override {
         ++calls;
         last_asset = asset_id;
         last_src_time = src_time;
@@ -54,6 +55,7 @@ public:
         out_w = src_width;
         out_h = src_height;
         if (out_reused != nullptr) *out_reused = false;
+        if (out_rotation != nullptr) *out_rotation = src_rotation;
         return cq::ChqStatus::Ok();
     }
     int calls = 0;
@@ -61,6 +63,7 @@ public:
     cq::ChqRationalTime last_src_time{0, 1};
     uint32_t src_width = 1920;
     uint32_t src_height = 1080;
+    uint16_t src_rotation = 0;  // #21：可配置源帧旋转角（默认 0，横屏）
 };
 
 // ---- 假的 Platform 编码器（blit pass 需要它）----
@@ -117,14 +120,17 @@ private:
 // ---- 假的 blit pass：只记录调用次数 ----
 class FakeBlitPass final : public cq::ChqIBlitPass {
 public:
-    cq::ChqStatus Encode(cq::ChqICommandEncoder&, cq::TextureHandle tex) override {
+    cq::ChqStatus Encode(cq::ChqICommandEncoder&, cq::TextureHandle tex,
+                         uint32_t rotation_deg) override {
         ++calls;
         last_tex = tex;
+        last_rotation = rotation_deg;
         return fail_next ? cq::ChqStatus(cq::ChqStatusCode::kInternal) : cq::ChqStatus::Ok();
     }
     void Destroy() override {}
     int calls = 0;
     cq::TextureHandle last_tex = nullptr;
+    uint32_t last_rotation = 0;  // #21：记录传给 blit 的旋转角
     bool fail_next = false;
 };
 

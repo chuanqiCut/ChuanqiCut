@@ -32,11 +32,12 @@ public:
     //   out_tex    —— 导入出的纹理句柄（生命周期归实现方；实现方负责回收上一帧的）
     //   out_w/out_h—— 帧的像素尺寸（视口计算需要）
     //   out_reused —— 本次是否命中了展示区间复用（未走解码）；诊断用，可空
+    //   out_rotation —— #21：源帧显示旋转角（度，0/90/180/270）；视口与 blit UV 旋转用，可空
     // 返回值：kOk / kIoNotFound（素材未注册）/ 解码与导入错误原样透传。
     virtual ChqStatus Acquire(uint64_t asset_id, const ChqRationalTime& src_time,
                               const ChqAssetRegistry& assets, TextureHandle& out_tex,
                               uint32_t& out_w, uint32_t& out_h, bool* out_reused,
-                              const ChqCancelToken& token) = 0;
+                              uint32_t* out_rotation, const ChqCancelToken& token) = 0;
 };
 
 }  // namespace cq

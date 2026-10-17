@@ -2,7 +2,7 @@
 
 > **归属**：集成机（内核基础 + 热点文件） —— 归属表见 docs/tasks/PLAN-三线并行.md §1a / ADR-0029（双机分工与门禁跑批，2026-10-07）
 
-**边界**：`core/src/base/`、`core/include/cq/base/`、`core/include/cq/platform/`、`core/src/session/`
+**边界**：`engine/core/cq/base/`、`engine/core/cq/platform/`、`engine/core/cq/session/`（头与实现共置，ADR-0033/INFRA-024）
 
 ## 职责
 时间、状态、日志、内存、并发、Platform 接口定义、ChqEditorSession 门面。
@@ -60,7 +60,7 @@ ADR-0006（有理数时间与版本模型）、ARCH-001 §5/§6
 
 ## 已实现：CORE-001 ChqRationalTime（2026-09-25）
 
-> 写集：`core/include/cq/base/time.h`、`core/src/base/time.cpp`、`tests/unit/base/test_time.cpp`
+> 写集：`core/include/cq/base/time.h`、`core/src/base/time.cpp`、`tests/unit/base/test_time.cpp`（旧路径，当时如此）
 
 - 存储 `struct ChqRationalTime { int64_t value; int32_t timescale; }`，全程 **int64 整数运算，零浮点中间值**。
 - 项目 timescale 常量 `kProjectTimeScale = 60000`（沿用 ADR-0006，未就地改值）。
@@ -86,7 +86,7 @@ ADR-0006（有理数时间与版本模型）、ARCH-001 §5/§6
 
 ## 已实现：CORE-002 ChqStatus（2026-09-25）
 
-> 写集：`core/include/cq/base/chq_status.h`、`core/src/base/status.cpp`、`tests/unit/base/test_status.cpp`
+> 写集：`core/include/cq/base/chq_status.h`、`core/src/base/status.cpp`、`tests/unit/base/test_status.cpp`（旧路径，当时如此）
 
 - **稳定数值错误码**：`enum class ChqStatusCode : int32_t`，每个值**显式写死**（不依赖编译器自动编号），保证 iOS/macOS/Android/鸿蒙/桌面三端一致、ABI 稳定。
 - 分类覆盖媒体管线：I/O(1000)、解码(2000)、编码(3000)、格式不支持(4000)、资源不足(5000)、取消(6000)、参数非法(7000)、数值溢出(8000)、内部(9000)、未知(9900)。
@@ -100,17 +100,17 @@ ADR-0006（有理数时间与版本模型）、ARCH-001 §5/§6
 
 > 由 `TASK-INFRA-001` 落盘的骨架路径，供后续 CORE 任务对齐存放位置（权威树以 ARCH-001 §8 为准）。
 
-- `core/CMakeLists.txt` — 内核 CMake 入口；`cq_core` 现为**真正的 STATIC 库**（含 `src/cq_build_anchor.cpp` 构建锚点，非业务逻辑）
-- `core/include/cq/cq_sdk.h` — 对外 C ABI（**BIND-001 已冻结**，2026-09-29；红线 #7：
-仅 C 类型 + opaque 句柄）。实现在 `core/src/cq_sdk.cpp`。
+- `engine/core/CMakeLists.txt` — 内核 CMake 入口；`cq_core` 现为**真正的 STATIC 库**（含 `engine/core/cq/chq_build_anchor.cpp` 构建锚点，非业务逻辑）
+- `engine/core/cq/cq_sdk.h` — 对外 C ABI（**BIND-001 已冻结**，2026-09-29；红线 #7：
+仅 C 类型 + opaque 句柄）。实现在 `engine/core/cq/cq_sdk.cpp`。
 覆盖：版本 / 状态码 / 线程角色标记 / **能力查询** / ChqEditorSession 会话门面。
 由 `tests/unit/abi/test_c_abi.c`（**真正的 C 翻译单元**）机器校验"零 C++ 类型"——
 已反向验证：临时插入 `std::string` 后该 TU 立即 fatal error。
 ⚠️ 观察者回调在 session 线程，Swift 侧（BIND-002）须自行 dispatch 到主线程。
-- `core/src/cq_build_anchor.cpp` — 构建锚点 TU（INFRA-002 新增，可链接、零业务逻辑、证明 -Werror 下可编译）
-- `core/src/` — 内核源码根，按模块分子目录：`base/ model/ gfx/ render/ media/ audio/ ai/ project/ export/ session/`（尚未创建，由对应 CORE 任务建）
+- `engine/core/cq/chq_build_anchor.cpp` — 构建锚点 TU（INFRA-002 新增，可链接、零业务逻辑、证明 -Werror 下可编译）
+- `core/src/` — 内核源码根，按模块分子目录：`base/ model/ gfx/ render/ media/ audio/ ai/ project/ export/ session/`（尚未创建，由对应 CORE 任务建）（旧路径，当时如此）
 - `core/tests/` — 内核单测（实际落在 `tests/unit/`，见下）
-- `core/include/cq/<module>/` — 内部 C++ 头（预留，未在骨架阶段创建）
+- `core/include/cq/<module>/` — 内部 C++ 头（预留，未在骨架阶段创建）（旧路径，当时如此）
 
 ## 单测目录（INFRA-002 建立）
 
@@ -118,7 +118,7 @@ ADR-0006（有理数时间与版本模型）、ARCH-001 §5/§6
 - `tests/unit/base/cxx20_smoke.cpp` — 占位 smoke 用例：`static_assert(__cplusplus >= 202002L)`，证明 C++20 生效；链接 `cq_core`
 - 运行：`ctest --test-dir build`（或 `build_core.sh --test`）
 
-> 注：骨架阶段仅建占位，未创建 `core/src/<module>` 子目录与真实头文件，避免越界到 CORE 系列任务的写集。
+> 注：骨架阶段仅建占位，未创建 `core/src/<module>` 子目录与真实头文件，避免越界到 CORE 系列任务的写集。（旧路径，当时如此）
 
 ---
 
@@ -127,7 +127,7 @@ ADR-0006（有理数时间与版本模型）、ARCH-001 §5/§6
 按依赖顺序推进，为 CORE-006「Platform 接口冻结」打地基。BACKLOG 第 327 行要求：
 **CORE-006 之前任何 Platform 实现不得开始**，故 base 类型必须先定型。
 
-## CORE-001 `ChqRationalTime` — `core/include/cq/base/time.h` / `core/src/base/time.cpp`
+## CORE-001 `ChqRationalTime` — `engine/core/cq/base/chq_rational_time.h` / `engine/core/cq/base/chq_time.cpp`（原 `base/time.h`/`time.cpp`，已更名共置）
 
 - `struct ChqRationalTime { int64_t value; int32_t timescale; }`，项目统一 timescale = 60000
 - **禁止 `operator double`**；`ToSeconds()` 只用于日志/UI 展示，禁入计算路径（任务卡 risk 段明确警示）
@@ -154,7 +154,7 @@ int64 上限 @120000 ≈ 243 万年（原 487 万年），仍远超需求。
 现在改成本最低 —— 仅 CORE-001~004 用到，Platform 接口（CORE-006）尚未开始。
 单测 `TestProjectTimescaleCoversAllFrameRates` 固化覆盖度，并断言常量 == 120000 防止回退。
 
-## CORE-002 `ChqStatus` — `core/include/cq/base/chq_status.h` / `core/src/base/status.cpp`
+## CORE-002 `ChqStatus` — `engine/core/cq/base/chq_status.h` / `engine/core/cq/base/chq_status.cpp`
 
 稳定数值错误码，跨端一致；不用异常（红线），一律返回值传播。
 
@@ -173,7 +173,7 @@ int64 上限 @120000 ≈ 243 万年（原 487 万年），仍远超需求。
 
 与 CORE-005 `ChqCancelToken` 的分界已在注释约定（本期未实现 ChqCancelToken）。
 
-## CORE-003 `Log` — `core/include/cq/base/chq_log.h` / `core/src/base/log.cpp`
+## CORE-003 `Log` — `engine/core/cq/base/chq_logging.h` / `engine/core/cq/base/chq_log.cpp`（原 `base/chq_log.h`，已更名）
 
 - 分级：Error / Warn / Info / Debug / Trace（Trace 可编译期剔除，Release 无开销）
 - **Sink 可注入**：本模块**不**硬写 stdout/stderr，也不实现任何平台后端。
@@ -182,7 +182,7 @@ int64 上限 @120000 ≈ 243 万年（原 487 万年），仍远超需求。
   媒体管线可按「哪一帧 + 哪个环节」追溯
 - 单测 25 项，0 失败（覆盖级别过滤、Sink 注入、帧标识类型、阶段名可读）
 
-## CORE-004 `Alloc` — `core/include/cq/base/chq_alloc.h` / `core/src/base/alloc.cpp`
+## CORE-004 `Alloc` — `engine/core/cq/base/chq_alloc.h` / `engine/core/cq/base/chq_alloc.cpp`
 
 - `ChqLinearArena`：bump 分配 + Reset（帧级临时数据的典型用法）
 - `ChqFixedPool`：定长块借出/回收
@@ -191,10 +191,10 @@ int64 上限 @120000 ≈ 243 万年（原 487 万年），仍远超需求。
 - 线程安全用 `<atomic>`/`<mutex>`（未实现 CORE-005 的并发原语）
 -   单测 158 项，0 失败；含 8 线程 × 10 张 1MiB 并发登记 → UsedCount=80、UsedBytes=83,886,080 (80.00 MiB)
 
-## CORE-005 `concurrency` — `core/include/cq/base/chq_concurrency.h` / `core/src/base/concurrency.cpp`（2026-09-25）
+## CORE-005 `concurrency` — `engine/core/cq/base/chq_concurrency.h` / `engine/core/cq/base/chq_concurrency.cpp`（2026-09-25）
 
 > 写集（边界内，未碰 CORE-001~004 头文件、未碰 platform/）：
-> `core/include/cq/base/chq_concurrency.h`、`core/src/base/concurrency.cpp`、`tests/unit/base/test_concurrency.cpp`
+> `core/include/cq/base/chq_concurrency.h`、`core/src/base/concurrency.cpp`、`tests/unit/base/test_concurrency.cpp`（旧路径，当时如此）
 > `core/CMakeLists.txt`（加 `concurrency.cpp`）、`tests/CMakeLists.txt`（注册 ctest `core_concurrency`）
 
 并发原语提供「必要的最小集合」——**只** ChqCancelToken（协作取消）+ ChqBoundedQueue（背压）。
@@ -268,10 +268,10 @@ int64 上限 @120000 ≈ 243 万年（原 487 万年），仍远超需求。
 ### 装配形状（记住这三份文件的关系）
 
 ```
-core/include/cq/base/chq_log.h       ← ChqWorkflow 枚举 + 筛选/提级 API + CQ_LOG_*_WF 宏族
-core/src/base/log.cpp            ← Logger 单例：min_level_ + wf_mask_ + wf_level_[]（-1=回落全局）
-core/include/cq/base/chq_perf.h      ← ChqSlowCallAlarm（带 workflow，Release 可用）
-core/include/cq/cq_sdk.h         ← C ABI：cq_log_configure_from_env() / cq_log_set_level()
+core/include/cq/base/chq_log.h       ← ChqWorkflow 枚举 + 筛选/提级 API + CQ_LOG_*_WF 宏族（旧路径，当时如此）
+core/src/base/log.cpp            ← Logger 单例：min_level_ + wf_mask_ + wf_level_[]（-1=回落全局）（旧路径，当时如此）
+core/include/cq/base/chq_perf.h      ← ChqSlowCallAlarm（带 workflow，Release 可用）（旧路径，当时如此）
+core/include/cq/cq_sdk.h         ← C ABI：cq_log_configure_from_env() / cq_log_set_level()（旧路径，当时如此）
 api/swift/Sources/ChuanqiCut/ChuanqiCut.swift ← Swift 投影：LogWorkflow / ChqLogLevel / configureLogFromEnvironment()
 ```
 
@@ -366,6 +366,7 @@ Debug 43/43、Release 43/43（本机门禁 PASS=9 / FAIL=0）。
 | 2026-10-17 | **P160/P162：CI core 段干净复现 + shader 工具链装配脚本落地**（本机 = 集成机，`rm -rf build` 逐遍重装） | 首次复现（未装工具链）**红**：`build rc=2` → `cq_shaders_msl.dir/all Error 2`，`ctest rc=8`、`2% tests passed, 50 tests failed out of 51`（全是 `Could not find executable`）→ 根因 = **构建期第三方工具只在本机暖缓存里，仓库无脚本产出**（P160）。修复主体 = 新增 `tools/build/build_shader_toolchain.sh`（pin 读 `third_party/manifest.toml`）+ `ci.yml` 在内核构建**之前**插入装配步。**干净复现四遍**：run1/2/3/4 toolchain rc=0 / build rc=0 / **ctest 51/51 rc=0**（186.74s / 172.84s / 271.32s / 83.52s），四遍都显式打印排除名单 `Test #45: platform_apple_decode`；run2/run4 `hygiene rc=0`（4/4 PASS）。产物字节跨遍稳定：glslang **3 133 560 B**、spirv-cross **4 155 984 B**、`blit_msl.h` **1689 B**；干净单遍 **6m48s~11min**（run4 整段 09:42:02→09:48:50）。⚠️ ctest 墙钟四遍差 3 倍以上 → **本机 ctest 墙钟不可当指标**，只有 rc 与通过数可比。负向测试抓到两处脚本自身缺陷并修（**P162**）：`--check-only` 名义只读却走 `rm -rf` 分支、补丁指纹守卫拿 `:STRING=` grep 而裸 `-D` 在 cache 里是 `:UNINITIALIZED=`（恒不命中 → 每遍误删重编）；修后暖态完整跑 = 两工具均 `跳过编译`、"强制重编"零行，暖态 `--check-only` = 产物 md5 跑前后逐字节一致，藏 `glslang` 则 rc=**1** 报 `产物缺失`、恢复后 rc=**0**。⚠️ **口径更正**：10-16 的 `PASS=17` 与本模块册此前所有"绿"都**只在暖缓存上成立**，构建期依赖层从未进判据；今后引用"绿"必须同时说明缓存状态。未做：workflow **远端首跑**仍未验、CI 的 **FFmpeg 装配步**本机未复现、池 **[22]**（90 个 tracked 文件仍用上上代 `core/include/cq/**`，hygiene 判据射程外）、池 **[23]**（本机 SPIRV-Cross **不入库本地补丁**，待传哲判定） |
 
 | 2026-10-17 | **INFRA-026~035 落库（三段提交）+ P163：判据脚本提交后把自己判红**（本机 = 集成机，**未 push**） | `294d518` 搬家（294 路径，`R100` 222）/ `a7a20b8` 治理（12 路径）/ `b08f78a` 活文档（91 路径）+ P163 修复段；`origin/main` 仍在 `5cfcdcb`。**提交后复测 hygiene 由 4/4 掉到 3/4**：`[legacy-paths]` 命中 `check_repo_hygiene.sh:124-125` **自己的旧路径正则定义行** —— 双层根因 = ① 扫描集取 `git ls-files`，脚本当时是 `??` 未跟踪、**长期不在自己射程内**；② 唯一豁免通道 `MARKER` 按行内容放行，代码行不可能带迁移标记。修 = `SELF` 排除自己（显式声明"判据不参与自己的判据"）→ **4/4 PASS**，`[legacy-paths] 零残留（豁免 33 行）`，**tracked 856 → 878**（22 个新入库文件）。规则：**新判据必须在自己已被跟踪的状态下再跑一遍**，未跟踪态的绿只算半个证据；提交动作本身是判据的输入变量 → 收尾一律取提交后那一列。已知归属错位：`build_shader_toolchain.sh` 实际落在搬家段而非治理段，已在两段正文声明，**以 `git show --stat` 为准**。 |
+| 2026-10-17 | **INFRA-036/037（池 [22]/[18] 收口）：死路径判据扩三代根 + 双壳进总门禁**（本机 = 集成机） | hygiene **5/5 PASS**（新增判据 5 `scratch-dirs`；legacy 非豁免 **0**、豁免 33→**64**；tracked **878** 不变；clang-format INFO 79/115）；`check_apple_shells.sh` **冷 280s / 暖 39s** 两端 rc=0 error=0、pod install 14 pods；`build_core.sh --config=Debug --test` **52/52** real 111.55s；改动面 50 文件 +217 −158。**P164**：`-derivedDataPath ../../build/…` 在 `cd apps/apple/ios` 之后落到 `apps/build/`（**1.5G**）→ 绝对路径 + 前缀断言 + 跑完自查 + 判据 5 三层防复发。测量途中我自己把 `TASK-BACKLOG` 的 INFRA-035 行用「行首做锚点」的编辑方式撞坏（尾串跑到新行后），已按 `git show HEAD` **逐字节 cmp 复原**。**未做**：全量 16 步门禁（等传哲的阶段批触发）、iOS 模拟器壳。 |
 
 ### 调研 · 决策 · 池指针
 

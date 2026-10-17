@@ -6,7 +6,7 @@
 //   - 它必须能在 -Wall -Wextra -Wconversion -Wshadow -Wold-style-cast -Werror
 //     下零警告编译，否则本文件本身就是回归信号。
 //
-// 后续 CORE 任务会向 core/src/<module>/ 添加真实源，并可直接复用本文件的
+// 后续 CORE 任务会向 engine/core/cq/<module>/ 添加真实源，并可直接复用本文件的
 // 编译/警告配置（已在 core/CMakeLists.txt 中统一施加）。
 
 #include <cstddef>

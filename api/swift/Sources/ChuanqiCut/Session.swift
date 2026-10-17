@@ -1,6 +1,6 @@
 // ChuanqiCut — Swift 绑定：EditorSession 门面（BIND-002）
 //
-// 对应内核 CQSession（core/src/session/editor_session.h + cq_sdk.h）。
+// 对应内核 CQSession（engine/core/cq/session/chq_editor_session.h + cq_sdk.h）。
 //
 // 三条容易踩的坑，这里都显式处理了：
 //

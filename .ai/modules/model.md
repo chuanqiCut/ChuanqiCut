@@ -8,7 +8,7 @@
 > 渲染消费未实现**（EFFECT-001 / RENDER-011）；关键帧与插值引擎未动（anim 模块）。
 > 属性标量用 float（非时间量；契约头门禁禁 double），时间字段仍一律 RationalTime。
 
-**边界**：`core/src/model/`、`core/src/command/`、`core/src/anim/`
+**边界**：`engine/core/cq/model/`、`engine/core/cq/command/`、`engine/core/cq/anim/`
 
 ## 职责
 ChqTimeline / ChqTrack / ChqClip / Transition / EffectBinding 数据模型；Command 模式与 Undo/Redo；关键帧与插值引擎。
@@ -41,7 +41,7 @@ ADR-0006、`docs/tasks/TASK-BACKLOG.md` 的 `MODEL-0xx` / `ANIM-0xx`
 
 ## 位置与入口
 
-- `core/include/cq/command/chq_command.h` + `core/src/command/command.cpp`
+- `engine/core/cq/command/chq_command.h` + `engine/core/cq/command/chq_command.cpp`
 - `ChqICommand`（Do / Undo / Redo / Name）+ `ChqCommandHistory`（Execute/Undo/Redo/CanX/Depth/Clear）
 - 首批 6 个命令覆盖 ChqTimeline 全部变更面：
   `AddTrack / RemoveTrack / InsertClip / RemoveClip / MoveClip / TrimClip`

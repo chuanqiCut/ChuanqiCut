@@ -137,7 +137,8 @@ ARCH-005、TASK-UIA-002、pitfalls P7/P8
 
 # UIA-004 落地（2026-10-03）：时间线自绘
 
-- `ui/SharedUI/Sources/SharedUI/Timeline/EditorTimelineView.swift`
+- `ui/ChuanqiCutEditor/Sources/ChuanqiCutEditor/EditorTimelineView.swift`
+  （当时位于 `ui/SharedUI/Sources/SharedUI/Timeline/`，旧路径；随 INFRA-019 迁编辑器 Pod 后平铺）
   （⚠️ 不叫 TimelineView —— SwiftUI 有同名系统类型，P22 同款）
 - 几何纯函数 `TimelineLayout`（时间↔像素 / 可见裁剪 / 标尺自适应）——可单测可 measure
 - **单 Canvas 绘制**（轨道行/片段/标尺/播放头），非组件堆叠
@@ -185,6 +186,10 @@ ARCH-005、TASK-UIA-002、pitfalls P7/P8
 | `Timeline/EditorTimelineView.swift` | `ClipDrag`（夹取：起点 ≥ 0、时长 ≥ 0.05s）+ DragGesture 分支（命中片段=编辑 / 空白=平移）+ `commit()` |
 | `Editor/AppEntry.swift` | `moveClip/trimClip/undo/redo` + `canUndo/canRedo`（@Published）+ `refreshFromKernel()` |
 | `Editor/TimelineZone.swift` | 撤销/重做按钮（`disabled` 绑能力标志，macOS 吃 Cmd+Z / Cmd+Shift+Z） |
+
+> 上表左列是**当时的 SharedUI 目录结构**（旧路径）。这四个文件现在平铺在
+> `ui/ChuanqiCutEditor/Sources/ChuanqiCutEditor/`（随 INFRA-019 迁出 SharedUI），`Timeline/`、`Editor/`
+> 只是当时的逻辑分组，磁盘上已无这两级目录。
 
 ⚠️ **iOS 摇一摇撤销未实现**（需 UIViewController 代表层，SharedUI 是纯
 SwiftUI）—— 两端通用的是按钮入口，摇一摇留给后续任务。
@@ -341,7 +346,7 @@ loading 覆盖 → 落 tmp → async 交付 → importMedia → loading 解除 +
   - `FaceObservation.swift` — 中性观测结构（与 Vision 解耦，检测器可替换）：
     人脸 12 区域 + yaw/pitch/roll、`BodyJoint` 19 关节、`AnimalJoint` 5 头部关节、
     `DetectionSnapshot`（pts + face + body + animals）。
-- **SharedUI 新增** `Camera/DetectionSmoothing.swift`（纯函数，macOS 可测）：
+- **SharedUI 新增** `Camera/DetectionSmoothing.swift`（旧路径，现 `ui/ChuanqiCutCamera/Sources/ChuanqiCutCamera/DetectionSmoothing.swift`；纯函数，macOS 可测）：
   - `smoothKeypoints(previous:current:params:)` — One-Euro 简化款自适应 EMA
     （静止重平滑抗抖、快速移动 alpha→1 低延迟跟随）；缺失点保持上帧、
     形状变更重置；**平滑状态由检测器携带，onResult 交付的观测已平滑**。

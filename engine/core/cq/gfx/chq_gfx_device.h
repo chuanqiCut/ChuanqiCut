@@ -41,7 +41,7 @@
 //   * 统一 base 类型：时间用 ChqRationalTime、错误用 ChqStatus、长任务接受 ChqCancelToken。
 //   * 内核禁用异常：无 throw；错误一律 ChqStatus 传播。
 //
-// 本任务只定义接口，不实现（实现由 RENDER-001 / GFX-002 阶段在 core/src/gfx 落地）。
+// 本任务只定义接口，不实现（实现由 RENDER-001 / GFX-002 阶段在 engine/core/cq/gfx/ 落地）。
 
 #ifndef CQ_CORE_GFX_CHQ_GFX_DEVICE_H_
 #define CQ_CORE_GFX_CHQ_GFX_DEVICE_H_
@@ -116,7 +116,7 @@ public:
 // ===========================================================================
 // 池化 + 预算控制是跨平台 core 逻辑（ARCH-003 §2.3 硬约束 2）。GFX-001 声明本接口，
 // ChqIGfxDevice 取纹理时经此池；具体 LRU / 预算记账（接 CORE-004 ChqTextureBudget）由 GFX-002
-// 在 core/src/gfx/pool.* 实现。池满且超预算时 Acquire 返回 kResourceExhausted(5000)，
+// 在 engine/core/cq/gfx/ 实现。池满且超预算时 Acquire 返回 kResourceExhausted(5000)，
 // 调用方据此降级（如降预览分辨率）。
 class ChqITexturePool {
 public:
@@ -191,7 +191,7 @@ public:
     virtual void SetTexturePool(ChqITexturePool* pool) = 0;
 };
 
-// 工厂签名（实现由 RENDER-001 / GFX-002 阶段的 core/src/gfx 提供，本任务不实现）：
+// 工厂签名（实现由 RENDER-001 / GFX-002 阶段的 engine/core/cq/gfx/ 提供，本任务不实现）：
 // 用已构造的 Platform 设备构造 GFX 门面。out 为跨平台对象，由调用方以 unique_ptr 等持有。
 ChqStatus CreateGfxDevice(ChqPlatformPtr<ChqIGraphicsDevice>& platform_device, ChqIGfxDevice*& out_device);
 

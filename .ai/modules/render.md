@@ -10,7 +10,7 @@
 > LOD / 效果节点均未实现**（归 RENDER-011，B7）；Pull 模型（预览请求驱动），音频线
 > push 30Hz 由 ChqIClockSource 在同一装配器下区分。效果只如实上报 effects_dropped。
 
-**边界**：`core/src/graph/`、`core/src/effect/`、`core/src/color/`
+**边界**：`engine/core/cq/render/`（原 `core/src/graph/`）、`engine/core/cq/effect/`、`engine/core/cq/color/`
 
 ## 职责
 效果节点 DAG 调度、pass 合并、中间纹理别名分配、LOD；各类效果节点（变换/合成/转场/调色/LUT/抠像/美颜/美型/文字/贴纸）。

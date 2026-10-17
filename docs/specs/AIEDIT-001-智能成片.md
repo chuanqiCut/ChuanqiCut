@@ -32,11 +32,11 @@
 
 | 设施 | 位置 | 对智能成片的意义 |
 |---|---|---|
-| Session/Command 底座 | `core/include/cq/command/command.h`（6 种命令 + CommandHistory）、`cq_session_submit`（异步、session 线程、ADR-0012） | AI 决策的执行通道，与人手编辑同一撤销栈 |
-| 时间线模型 | `core/include/cq/model/timeline.h`（Track/Clip/MediaRef/TransitionKind；**timescale=120000**，ADR-0009） | EditPlan 的落点；转场字段已在（`in/out_transition`）但无命令 |
+| Session/Command 底座 | `engine/core/cq/command/chq_command.h`（6 种命令 + CommandHistory）、`cq_session_submit`（异步、session 线程、ADR-0012） | AI 决策的执行通道，与人手编辑同一撤销栈 |
+| 时间线模型 | `engine/core/cq/model/chq_timeline.h`（Track/Clip/MediaRef/TransitionKind；**timescale=120000**，ADR-0009） | EditPlan 的落点；转场字段已在（`in/out_transition`）但无命令 |
 | 导入链 | `EditorViewModel.importMedia(url:)`（`AppEntry.swift:327`）→ probe → `registerAsset` → `addClip`；AssetRegistry | 特征提取挂在 probe 之后；素材 URL/asset_id 已有 |
-| 取帧 | `core/include/cq/media/frame_provider.h` + Apple 实现（精确 seek） | 视觉特征抽帧的底座 |
-| 端侧推理抽象 | `core/include/cq/platform/inference.h`（IInferenceBackend，零实现）+ `CQ_CAP_NPU_INFERENCE` | 后续端侧检测模型的挂点（P0 特征提取用算法实现，不依赖模型） |
+| 取帧 | `engine/core/cq/media/chq_frame_provider.h` + Apple 实现（精确 seek） | 视觉特征抽帧的底座 |
+| 端侧推理抽象 | `engine/core/cq/platform/chq_inference.h`（IInferenceBackend，零实现）+ `CQ_CAP_NPU_INFERENCE` | 后续端侧检测模型的挂点（P0 特征提取用算法实现，不依赖模型） |
 | 相册选择 | UIA-013 `AlbumPickerScreen`（单击即插入/多选模式） | 智能成片的选素材 UI 直接复用，交付 URL 列表 |
 | C ABI + 绑定模式 | `cq_sdk.h` + `api/swift` + SharedUI（UI 不共享、共享会话） | 新 ABI 照既有模式扩展 |
 
@@ -44,10 +44,10 @@
 
 1. **网络层**：core/platform 零网络设施，manifest 无网络依赖 → ADR-0020 决策 2：`platform/<platform>/net/`（Apple 用 URLSession 原生，不引第三方）。
 2. **LLM 接入**：全仓无任何大模型代码/文档/任务 → `ILlmClient` 抽象 + Prompt 管线 + EditPlan 校验。
-3. **特征提取**：无人脸/场景切分/运动/音频分析代码（CAM-011 Vision 桥是相机实时域 UI 层，不覆盖导入素材分析；AI-010 系列在 backlog 未排期）→ `core/src/ai/analysis/`。
+3. **特征提取**：无人脸/场景切分/运动/音频分析代码（CAM-011 Vision 桥是相机实时域 UI 层，不覆盖导入素材分析；AI-010 系列在 backlog 未排期）→ `engine/core/cq/ai/analysis/`（`engine/core/cq/ai/` 已在，`analysis/` 子目录随本任务新建）。
 4. **文件音频解码**：FFmpeg 仅 demux 档（无 decode），"文件→PCM"不可用 → AIEDIT-003 内扩档（走 cq-dependency-governance）。
 5. **STT/TTS**：零存在 → 语音输入走各端系统 STT（iOS Speech Framework），UI 层能力。
-6. **导出**：`core/src/export/` 不存在（BACKLOG EXPORT-001~003 未做）→ **P0 的"导出"按钮进入编辑器既有出口；`EXPORT-001` 落地前显示"导出即将支持"**（见 §9 阶段）。
+6. **导出**：`engine/core/cq/export/` 不存在（BACKLOG EXPORT-001~003 未做）→ **P0 的"导出"按钮进入编辑器既有出口；`EXPORT-001` 落地前显示"导出即将支持"**（见 §9 阶段）。
 7. **转场/配乐命令**：TransitionKind 字段在但无 Command；无 BGM 轨概念 → AIEDIT-006 新增 `SetTransitionCommand` / `RemoveRangeCommand`；BGM P0.5。
 
 ### 2.3 硬约束（红线对照）
@@ -270,7 +270,7 @@ HomeView 新增入口卡「智能成片」(route: .smartCut)
 1. **内核单测**：`ctest --test-dir build -R ai_` 全绿，含：EditPlan 校验器 golden 样例集（≥40 例：合法/非法/边界/版本不识别）、特征提取对 golden 视频的镜头边界数与人工标注一致（±1）、执行器应用后 `cq_session_timeline_duration` 与 plan 声明总时长**有理数精确相等**、undo 一次完全还原（快照逐字段相等）。
 2. **降级**：断网 + 空 key 配置下 `cq_ai_generate_plan` 返回 `"generator": "local_rules"` 的合法 EditPlan 且应用成功。
 3. **编译门禁**：`tools/build/build_core.sh --platform=apple` 通过（-Werror）；绑定/SharedUI `swift test` 全绿；macOS App `xcodebuild build` 通过；`git diff --stat` 证明各任务 write_set 外零改动。
-4. **红线检查**：`grep -rn "float.*second\|double.*seconds" core/src/ai/` 无时间字段浮点秒；`ILlmClient`/`INetTransport` 头文件无平台类型；AI 链路无直接改 ModelSnapshot 的调用（代码审查项）。
+4. **红线检查**：`grep -rn "float.*second\|double.*seconds" engine/core/cq/ai/` 无时间字段浮点秒；`ILlmClient`/`INetTransport` 头文件无平台类型；AI 链路无直接改 ModelSnapshot 的调用（代码审查项）。
 5. **真机项**（不阻塞编译门禁，随 UIA-011 真机恢复决策一并执行）：3 素材 30s 视频端到端出片 p95 < 30s [E]，实测回填 baselines.md；语音输入转写成功率人工验证。
 6. **性能**：特征提取内存峰值 < 200MB [E]（采样上限保证）；分析不阻塞主线程（主线程零卡顿为 UI 冒烟观察项）。
 

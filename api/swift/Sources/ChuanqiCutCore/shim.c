@@ -6,7 +6,7 @@
 // 从而把 include/module.modulemap 编译成 Swift 可 import 的 Clang module。
 //
 // 这里**不**重新实现任何内核逻辑，也不复制头文件（include/cq_sdk.h 是符号链接，
-// 指向 core/include/cq/cq_sdk.h，避免两份副本漂移）。
+// 指向 engine/core/cq/cq_sdk.h，避免两份副本漂移）。
 
 #include "cq_sdk.h"
 

@@ -2,13 +2,13 @@
 //
 // 实现 Apple 端的 H.264 编码与 MP4 封装能力。平台内部头，遵循 PALA-011 的先例
 // （media_decode.h）：本头**仅被 Apple 平台 TU 包含**（tests/ 与未来 Platform 装配代码），
-// 绝不进入 core 冻结头。门禁 check_platform_headers.py 只扫 core/include/cq/{platform,gfx,media}，
+// 绝不进入 core 冻结头。门禁 check_platform_headers.py 只扫 engine/core/cq/{platform,gfx,media}，
 // 故此处出现平台类型（CVPixelBufferRef 是 C 类型，其余经 pImpl 隔离）安全。
 //
 // 为什么是平台内部头、而非 core 的 ChqIMediaMuxer：
 //   * 冻结契约（docs/specs/Platform-接口契约.md §4.2）只定义了 ChqIMediaDemuxer / ChqIFrameProvider，
 //     **没有** muxer/encoder 接口；core/** 已冻结、本任务禁止改动。
-//   * 跨平台「导出控制器」EXPORT-001（core/src/export/*）本期未实现，尚无可消费冻结
+//   * 跨平台「导出控制器」EXPORT-001（engine/core/cq/export/，目录尚未创建）本期未实现，尚无可消费冻结
 //     接口的下游；EXPORT-001 落地时再定义 ChqIMediaMuxer 冻结契约，本能力作为 Apple 实现接入。
 //   * 故本期按 PALA-011 的既定模式，先把「Apple 能导出 H.264 MP4」这一能力做出来并真实验证。
 //

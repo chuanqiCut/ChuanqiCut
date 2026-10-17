@@ -1,7 +1,7 @@
 # Platform 接口契约（CORE-006 冻结稿）
 
 - **状态**：冻结待评审（2026-09-25）
-- **产出**：`core/include/cq/platform/*.h`（接口定义，零实现）
+- **产出**：`engine/core/cq/platform/*.h`（接口定义，零实现；头与实现共置，文件名带 `chq_` 前缀）
 - **上游依赖**：CORE-001~005（base 层已全部完成并提交）
 - **下游依赖**：GFX-001、MEDIA-010、AI-001、AUDIO-001、PERF-001、CORE-007、
   INFRA-008、PALD-040，以及全部 PALA-/PALD-/OHOS 实现任务。
@@ -53,7 +53,7 @@ AGENTS.root.md 红线 #2。不得出现 `id` / `NSString` / `CGFloat` / `CVPixel
   的平台资源包装（如 `struct CqTexture { MTLTexture* ...; }`）。
 - AppleClang 下「出现平台类型反而能编译通过」，**不能只靠编译证明零平台类型**；
   也不该只靠朴素 grep（会把注释误报）。因此本契约附带**静态门禁脚本**
-  `tools/platform/check_platform_headers.py`：扫描 `core/include/cq/platform/**/*.h`，**先剔除注释与
+  `tools/platform/check_platform_headers.py`：扫描 `engine/core/cq/platform/**/*.h`，**先剔除注释与
   字符串字面量**，再匹配平台类型 / 平台头 / FFmpeg 类型 / `throw` / 裸 `double`，
   命中即退出码非 0，并接入 CTest（用例 `platform_header_gate`）。零平台类型由
   （a）本契约的 opaque 设计 +（b）该门禁脚本 +（c）评审共同兜底。
@@ -99,7 +99,7 @@ public:
 
 ## 4. 八领域接口清单（签名摘要）
 
-> 下列为**签名摘要**与设计取舍，完整定义见 `core/include/cq/platform/*.h`。
+> 下列为**签名摘要**与设计取舍，完整定义见 `engine/core/cq/platform/*.h`。
 > 每个领域一个头文件；跨领域共用类型放 `common.h`。
 
 ### 4.1 GFX（gfx.h）—— 对齐 ARCH-003 §2.2 概念映射表（12 概念）
@@ -164,7 +164,7 @@ Platform-Native shader 层（不泄漏到 core，见 ADR-0002）。
 
 ### 4.2b Media Muxer（media.h）—— 封装（mux）/ 编码输出（与 demux 对称）
 
-下游 **EXPORT-001（导出控制器，core/src/export/*，本期未实现）** 落地时，将通过本契约的
+下游 **EXPORT-001（导出控制器，core 编排段 `engine/core/cq/export/`，该目录尚未创建、本期未实现）** 落地时，将通过本契约的
 `IMediaMuxer` 消费「Apple 端已验证的 H.264 MP4 导出能力」（PALA-012 `AppleVideoEncoder`，
 已由 `platform_apple_encode` 用例 ffprobe 验证 codec=H.264 / 1920×1080 / 60 帧 / 2.0s）。
 
@@ -213,7 +213,7 @@ muxer 把帧（已解码像素 / 已编码包）封装成容器文件。两者�
 结构对称（muxer 属 Platform 能力层，不塞进 `media/` 编排层的 `frame_provider.h`）。
 
 > 边界（本次授权）：本接口是 EXPORT-001 导出控制器的下游消费契约的**提前补充**；EXPORT-001 的
-> core 编排（`core/src/export/*`）本期不实现，仅落地 Apple 平台实现（`AppleMediaMuxer`）。
+> core 编排（`engine/core/cq/export/`，该目录尚未创建）本期不实现，仅落地 Apple 平台实现（`AppleMediaMuxer`）。
 
 | 方法 | 职责 |
 |---|---|
@@ -237,7 +237,7 @@ muxer 把帧（已解码像素 / 已编码包）封装成容器文件。两者�
 - **零平台类型**：视频帧以 opaque `NativeImageHandle` 传入（与 `VideoFrame.image` 同款），
   Audio 经 `AudioTrackConfig` 描述，绝不出现 `CVPixelBufferRef` / `AVPacket` 等；零 FFmpeg 类型。
   由门禁脚本 `tools/platform/check_platform_headers.py`（ctest 用例 `platform_header_gate`）扫描
-  `core/include/cq/platform/media.h` 兜底——本接口已通过（无平台/FFmpeg 类型、无 `throw`、无裸 `double`）。
+  `engine/core/cq/platform/chq_media.h` 兜底——本接口已通过（无平台/FFmpeg 类型、无 `throw`、无裸 `double`）。
 - **编译期自洽验证**：`tests/unit/platform/platform_headers_compile.cpp` 已扩展 `static_assert`，断言
   `IMediaMuxer` 继承 `IPlatformResource`、`WriteVideoFrame` 以 `NativeImageHandle` 传帧、`Finish` 接受
   `CancelToken`、`CreateMediaMuxer` 返回 `Status + PlatformPtr<IMediaMuxer>&`、`VideoTrackConfig.bitrate`

@@ -3,8 +3,8 @@
 > **归属**：C 线（内核/媒体/渲染） —— 归属表见 docs/tasks/PLAN-三线并行.md §1a / ADR-0029（双机分工与门禁跑批，2026-10-07）
 
 **边界**：
-- 接口定义（跨平台层，GFX-001）：`core/include/cq/gfx/*.h`
-- 跨平台实现（RENDER-001 / GFX-002 阶段）：`core/src/gfx/`
+- 接口定义（跨平台层，GFX-001）：`engine/core/cq/gfx/*.h`
+- 跨平台实现（RENDER-001 / GFX-002 阶段）：`engine/core/cq/gfx/`（头与实现共置）
 - 平台实现（PALA-/PALD-）：`platform/<platform>/gfx_*`
 
 **权威契约**：`docs/specs/ARCH-003`（薄 GPU 抽象 + Shader 策略）、
@@ -17,8 +17,8 @@ GFX 抽象分两层，混淆会导致 RenderGraph 直接依赖平台类型，必
 
 | 层 | 头文件 | 是什么 | 谁实现 |
 |---|---|---|---|
-| **Platform GFX HAL** | `core/include/cq/platform/chq_gfx.h`（CORE-006 冻结） | 平台能力 HAL：逐概念 1:1 映射 Metal/Vulkan/GLES，越薄越好 | 各平台后端 PALA-001 / PALD-001 / PALD-002 |
-| **GFX 编排层** | `core/include/cq/gfx/*.h`（GFX-001） | RenderGraph 之上的编排门面：池化 / 预算 / 帧执行 / 导入编排，跨平台 | 跨平台 core 实现（RENDER-001 / GFX-002 阶段） |
+| **Platform GFX HAL** | `engine/core/cq/platform/chq_gfx.h`（CORE-006 冻结） | 平台能力 HAL：逐概念 1:1 映射 Metal/Vulkan/GLES，越薄越好 | 各平台后端 PALA-001 / PALD-001 / PALD-002 |
+| **GFX 编排层** | `engine/core/cq/gfx/*.h`（GFX-001） | RenderGraph 之上的编排门面：池化 / 预算 / 帧执行 / 导入编排，跨平台 | 跨平台 core 实现（RENDER-001 / GFX-002 阶段） |
 
 - Platform `ChqIGraphicsDevice` = **平台能力**（Metal/Vulkan/GLES 进代码库的唯一入口）。
 - GFX `ChqIGfxDevice` = **上层编排**（持有 Platform 设备，向 RenderGraph 暴露渲染 API）。
@@ -47,7 +47,7 @@ GFX 抽象分两层，混淆会导致 RenderGraph 直接依赖平台类型，必
 
 ## 为下游留的接口位置
 
-- **GFX-002（TexturePool + 预算）**：实现 `ChqITexturePool`（write_set `core/src/gfx/pool.*`），
+- **GFX-002（TexturePool + 预算）**：实现 `ChqITexturePool`（write_set `engine/core/cq/gfx/pool.*`），
   接 `ChqIGfxDevice::SetTexturePool`；预算接 CORE-004 `ChqTextureBudget`（该厂商/张数上界，超预算
   `Acquire` 返回 `kResourceExhausted`）。
 - **GFX-003（ChqINativeImageImporter）**：接口已在 Platform `platform/chq_gfx.h` 定义（含 `out_cpu_fallback`
@@ -126,7 +126,7 @@ Platform `ChqICommandEncoder` 同名方法（additive 扩展，语义见 platfor
 
 ## 预览渲染器（新增 preview 层）
 
-`core/include/cq/preview/chq_preview_renderer.h` —— 见新建的 `.ai/modules/preview.md`。
+`engine/core/cq/preview/chq_preview_renderer.h` —— 见新建的 `.ai/modules/preview.md`。
 它位于 GFX 之上、UI 之下，是「时间线在 pts 这一刻画面是什么」的收口。
 
 ---

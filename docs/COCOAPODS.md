@@ -54,7 +54,7 @@ App → SharedUI / 功能 Pod → ChuanqiCutEngine
 
 已删除的三处补丁（ADR-0033 起因）：
 
-1. 主工程 `project.yml` 的 `engine/core/include` folder reference；
+1. 主工程 `project.yml` 的 `engine/core/include` folder reference（旧布局，ADR-0033 前；现无该目录，头与实现共置于 `engine/core/cq/`）；
 2. `apps/apple/pods_post_install.rb` 往 Pods 工程补 PBX 头文件引用；
 3. 各 UI Pod 手工传播 `SWIFT_INCLUDE_PATHS`。
 

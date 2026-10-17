@@ -41,7 +41,7 @@ static_assert(std::is_base_of_v<ChqIPlatformResource, ChqIGfxEncoder>,
 
 // ---- 3. 抽象接口不可默认构造（纯虚），强制由实现层落地 ----
 static_assert(!std::is_default_constructible_v<ChqIGfxDevice>,
-              "ChqIGfxDevice is abstract, implemented in core/src/gfx later");
+              "ChqIGfxDevice is abstract, implemented in engine/core/cq/gfx");
 static_assert(!std::is_default_constructible_v<ChqIGfxEncoder>,
               "ChqIGfxEncoder is abstract");
 static_assert(!std::is_default_constructible_v<ChqIFrameEncoderClient>,

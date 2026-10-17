@@ -1,6 +1,6 @@
 // ChuanqiCut — 对外 C ABI 实现（BIND-001）
 //
-// 本文件是 core/include/cq/cq_sdk.h 的实现侧：把 C++ 内核（ChqEditorSession /
+// 本文件是 engine/core/cq/cq_sdk.h 的实现侧：把 C++ 内核（ChqEditorSession /
 // 能力查询 / 线程角色）包装成纯 C 函数。
 //
 // ⚠️ 唯一的 C++ 出现在**本 .cpp 内**；公共头 cq_sdk.h 保持零 C++ 类型，

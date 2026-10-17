@@ -47,7 +47,7 @@
 
 新增或修改日志时按下表执行。**这三条规则都是从真机排障现场赎回的，不是洁癖。**
 
-1. **必须走 `CQ_LOG_*_WF(wf, ...)` 并带上链路**（`core/include/cq/base/log.h` 的
+1. **必须走 `CQ_LOG_*_WF(wf, ...)` 并带上链路**（`engine/core/cq/base/chq_logging.h` 的
    `Workflow` 枚举）。禁止裸 `fprintf(stderr, ...)` —— 那种写法不分级、不限流、
    不可关，且会污染 Release 产物。
 2. **级别按「它报的是什么」选**：
@@ -67,7 +67,7 @@
    本机 Debug 全绿发现不了「成员/计数器留在 NDEBUG 块里但用法已解开」这一类错误
    （本次踩到 3 次，全在 core-rel 才炸）。
 
-慢调用告警统一用 `CQ_SLOW_CALL_WF(wf, name)`（`cq/base/perf.h`，阈值 500ms），
+慢调用告警统一用 `CQ_SLOW_CALL_WF(wf, name)`（`engine/core/cq/base/chq_perf.h`，阈值 500ms），
 **不要再在 .cpp/.mm 里自抄一份 RAII** —— 旧版在 4 个文件各抄一份，阈值还不一致。
 
 ## 3. Swift 层

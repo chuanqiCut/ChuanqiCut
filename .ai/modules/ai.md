@@ -2,7 +2,7 @@
 
 > **归属**：A/C 分子域（智能成片 AIEDIT→A；端侧推理效果链→C） —— 归属表见 docs/tasks/PLAN-三线并行.md §1a / ADR-0029（双机分工与门禁跑批，2026-10-07）
 
-**边界**：`core/src/ai/`、`core/include/cq/infer/`、`platform/<platform>/infer_*`
+**边界**：`engine/core/cq/ai/`、`engine/core/cq/platform/chq_inference.h`（推理后端抽象，原 `cq/infer/` 目录从未建立）、`platform/<platform>/infer_*`
 
 ## MediaPipe 引不引入？（常被问，明确回答）
 
@@ -73,13 +73,13 @@ ADR-0005、ARCH-004 §1
 ## 分层（ADR-0020 决策 2）
 
 ```
-core/include/cq/ai/     feature_report.h / edit_plan.h / llm_client.h   ← 契约（AIEDIT-001 冻结）
-core/include/cq/platform/    net.h（INetTransport 抽象）
-core/src/ai/analysis/   视觉特征（镜头/运动/质量，P0 零模型）             ← AIEDIT-002
-core/src/ai/audio_analysis/  音频特征（静音/LUFS/包络，需解码扩档）      ← AIEDIT-003
-core/src/ai/plan/       EditPlan 校验器 / Prompt 管线 / timeline 摘要    ← AIEDIT-001/005
-core/src/ai/llm/        OpenAI-compatible 客户端（纯 C++）               ← AIEDIT-004
-core/src/ai/fallback/   本地规则引擎（离线降级，同 schema 输出）          ← AIEDIT-011
+engine/core/cq/ai/     chq_feature_report.h / chq_edit_plan.h / chq_llm_client.h   ← 契约（AIEDIT-001 冻结）
+engine/core/cq/platform/    chq_net.h（INetTransport 抽象）
+engine/core/cq/ai/analysis/   视觉特征（镜头/运动/质量，P0 零模型）             ← AIEDIT-002
+engine/core/cq/ai/audio_analysis/  音频特征（静音/LUFS/包络，需解码扩档）      ← AIEDIT-003
+engine/core/cq/ai/plan/       EditPlan 校验器 / Prompt 管线 / timeline 摘要    ← AIEDIT-001/005
+engine/core/cq/ai/llm/        OpenAI-compatible 客户端（纯 C++）               ← AIEDIT-004
+engine/core/cq/ai/fallback/   本地规则引擎（离线降级，同 schema 输出）          ← AIEDIT-011
 core/src/ai/plan/plan_executor  EditPlan→Command 批次                    ← AIEDIT-006
 platform/apple/net/          URLSession + SSE（零第三方）                     ← AIEDIT-004
 ```
@@ -121,14 +121,14 @@ tools/build/build_core.sh --platform=apple
 
 ### AIEDIT-001 落地形状（2026-10-08；下游卡开工前必读）
 
-- **契约头**：`engine/core/include/cq/ai/{feature_report.h, edit_plan.h, llm_client.h}` +
-  `engine/core/include/cq/platform/net.h`（INetTransport/SSE 拆帧边界冻结：空行分事件、剥
+- **契约头**：`engine/core/cq/ai/{chq_feature_report.h, chq_edit_plan.h, chq_llm_client.h}` +
+  `engine/core/cq/platform/chq_net.h`（INetTransport/SSE 拆帧边界冻结：空行分事件、剥
   data: 前缀、跳注释行，"[DONE]" 哨兵原样送达）。
 - **动词集按 9 个冻结**（select_intro/highlight/outro + place_clip/remove_range/trim_clip/
   reorder + set_transition/set_bgm_placeholder）——SPEC §6.1 行文"八个"系笔误，两处枚举
   清单一致按 9 落（见 edit_plan.h 文件头注记）。op 名 ↔ 枚举映射实现在
   edit_plan_validator.cpp（`namespace cq` 直层，与头声明一致）。
-- **校验器**：`engine/core/src/ai/plan/edit_plan_validator.{h,cpp}`（内核私有头，不进
+- **校验器**：`engine/core/cq/ai/plan/chq_edit_plan_validator.{h,cpp}`（内核私有头，不进
   PUBLIC include）。三层：手写 RFC 8259 JSON 解析（转义/代理对/无尾逗号/无前导零/嵌套
   深度 64 上限/int64 溢出检测）→ 结构（schema/必填/类型/per-op 字段齐全）→ 语义
   （引用/值域/__int128 防溢出边界/段重叠/排列）。浮点秒两种形态（直接浮点与对象内

@@ -1,6 +1,6 @@
 // ChuanqiCut — PALA-011 Apple 硬解后端（VideoToolbox）
 //
-// 实现 core 冻结接口 `cq::ChqIFrameDecoder`（定义于 core/include/cq/media/system_frame_provider.h）。
+// 实现 core 冻结接口 `cq::ChqIFrameDecoder`（定义于 engine/core/cq/media/chq_system_frame_provider.h）。
 // 用 VideoToolbox 的 `VTDecompressionSession` 做 H.264 / HEVC 硬解，输出 CVPixelBuffer
 // （BGRA），包装为 Platform 的 `NativeImageHandle` 由上层消费。
 //
@@ -9,7 +9,7 @@
 //   * 内核禁用异常：错误一律 ChqStatus；长任务接受 ChqCancelToken（本接缝为同步/协作式）。
 //
 // 本头**仅被 Apple 平台 TU 包含**（tests/ 与未来 Platform 装配代码），绝不进入 core。
-// 门禁 check_platform_headers.py 只扫 core/include/cq/{platform,gfx,media}，故此处使用平台类型安全。
+// 门禁 check_platform_headers.py 只扫 engine/core/cq/{platform,gfx,media}，故此处使用平台类型安全。
 
 #ifndef CQ_PLATFORM_APPLE_MEDIA_DECODE_H_
 #define CQ_PLATFORM_APPLE_MEDIA_DECODE_H_

@@ -1,7 +1,7 @@
 // ChuanqiCut — 能力查询内核侧实现（CORE-007）
 //
 // 契约来源：docs/specs/Platform-接口契约.md §4 Capabilities
-// 接口在 CORE-006 冻结于 core/include/cq/platform/capabilities.h，本文件补上**实现**。
+// 接口在 CORE-006 冻结于 engine/core/cq/platform/chq_capabilities.h，本文件补上**实现**。
 //
 // 为什么需要单独一个文件：CORE-006 只冻结了头文件，`SetCapabilitiesBackend` /
 // `QueryCapability` 一直只有声明、没有定义。全仓库唯一引用是

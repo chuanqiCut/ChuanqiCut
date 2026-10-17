@@ -1,6 +1,6 @@
 // ChuanqiCut — Swift 绑定：播放时钟（UIA-010）
 //
-// 对应内核 CQPlayer（cq_sdk.h 播放段 + core/src/preview/player_clock.h）。
+// 对应内核 CQPlayer（cq_sdk.h 播放段 + engine/core/cq/preview/chq_player_clock.h）。
 //
 // ⚠️ 本类**只算时间，不取帧不渲染**。取帧与渲染走 Previewer：调用方把
 //    `currentTime` 喂给 `Previewer.renderFrame(pts:)`。刻意分开 —— 时钟是

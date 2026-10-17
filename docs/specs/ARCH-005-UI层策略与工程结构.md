@@ -69,7 +69,7 @@ EditorSession (C++)  ── 变更模型 ──▶ 状态快照
 
 ### 4.1 对外 ABI 是 C
 
-`core/include/cq/cq_sdk.h` 是唯一的跨语言边界，纯 C 接口：
+`engine/core/cq/cq_sdk.h` 是唯一的跨语言边界，纯 C 接口：
 
 ```c
 // 句柄式、无 STL 类型、无异常、无平台类型

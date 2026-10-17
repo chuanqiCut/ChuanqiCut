@@ -4,7 +4,7 @@
 // `Preview` 类型，凡同时 import SwiftUI 与本模块的文件都会类型歧义
 // （2026-10-02 SharedUI 实测）。对应 C ABI 的 CQPreview（预览器）语义。
 //
-// 对应内核 cq_preview_*（cq_sdk.h 预览段 + core/src/preview/cq_sdk_preview.cpp）。
+// 对应内核 cq_preview_*（cq_sdk.h 预览段 + engine/core/cq/preview/chq_sdk_preview.cpp）。
 // 本文件仍是**薄封装**：语义一律以 cq_sdk.h 的注释为准（那份注释是契约，
 // 本文件是它的 Swift 投影）。
 //

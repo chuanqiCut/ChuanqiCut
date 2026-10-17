@@ -226,7 +226,7 @@ public:
 // ===========================================================================
 // 全屏纹理拷贝 pass（ExternalImage 的下游消费者）
 // ===========================================================================
-// 为什么定义在 **Platform** 而不是 GFX 层（core/include/cq/gfx/）：
+// 为什么定义在 **Platform** 而不是 GFX 层（engine/core/cq/gfx/）：
 //   它必然由**平台原生 shader** 实现（MSL / GLSL ES），而平台原生 shader 按红线 #6
 //   只允许出现在 platform/<platform>/。GFX 层在 Platform 之上，若在此定义抽象、再由 Platform 实现，
 //   就会出现 Platform 反向 include GFX 头，破坏分层。故放在 Platform 层，GFX/预览层持有即可。

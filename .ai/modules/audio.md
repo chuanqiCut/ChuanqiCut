@@ -64,7 +64,7 @@ ctest -R core_audio_graph       # AUDIO-001：零分配实测（kAudio 线程 op
 
 ## 相关
 ADR-0004、ARCH-002 §7（依赖清单）、ARCH-001 §6（线程模型/铁律 2）、
-CORE-006 冻结的 `cq/platform/audio.h`（PcmBuffer/IAudioEngine 契约）
+CORE-006 冻结的 `engine/core/cq/platform/chq_audio.h`（PcmBuffer/IAudioEngine 契约；当时名为 `cq/platform/audio.h`，旧路径）
 
 ---
 

@@ -3,7 +3,7 @@
 > **归属**：A 线（编辑器/UI） —— 归属表见 docs/tasks/PLAN-三线并行.md §1a / ADR-0029（双机分工与门禁跑批，2026-10-07）
 
 > 建立：2026-10-02
-> 位置：`core/include/cq/preview/` + `core/src/preview/`
+> 位置：`engine/core/cq/preview/`（头与实现共置）
 > 上游：MODEL-001（时间线）、ChqAssetRegistry（素材表）、MEDIA-020（取帧）、Platform（GFX / 导入）
 
 ## 1. 职责
@@ -23,11 +23,11 @@ ChqIBlitPass::Encode                  → 画到离屏 RenderTarget
 
 | 文件 | 作用 |
 |---|---|
-| `core/include/cq/preview/chq_preview_renderer.h` + `src/preview/preview_renderer.cpp` | 预览渲染器本体（平台无关） |
+| `engine/core/cq/preview/chq_preview_renderer.h` + `chq_preview_renderer.cpp` | 预览渲染器本体（平台无关） |
 | `core/src/preview/cq_sdk_preview.cpp` | 预览的 C ABI 实现（**独立 TU**，原因见 ADR-0011） |
-| `core/include/cq/preview/chq_preview_frame_source.h` | `ChqIPreviewFrameSource`：渲染一帧的接缝（供泵注入假实现测试） |
-| `core/include/cq/preview/chq_preview_pump.h` + `src/preview/preview_pump.cpp` | **预览取帧泵**（UIA-010 子步骤 5，自有线程） |
-| `core/include/cq/preview/chq_player_clock.h` + `src/...cpp` | 播放时钟（UIA-010，只算时间不取帧） |
+| `engine/core/cq/preview/chq_preview_frame_source.h` | `ChqIPreviewFrameSource`：渲染一帧的接缝（供泵注入假实现测试） |
+| `engine/core/cq/preview/chq_preview_pump.h` + `chq_preview_pump.cpp` | **预览取帧泵**（UIA-010 子步骤 5，自有线程） |
+| `engine/core/cq/preview/chq_player_clock.h` + `chq_player_clock.cpp` | 播放时钟（UIA-010，只算时间不取帧） |
 
 ## 3. 依赖全部是**注入的非拥有指针**
 
@@ -202,7 +202,7 @@ ADR-0011（core 调 Platform 工厂的隔离规则）、`docs/tasks/TASK-BIND-00
 
 # UIA-010 落地（2026-10-03）：播放时钟
 
-`core/include/cq/preview/chq_player_clock.h` —— **只算时间，不取帧不渲染**。
+`engine/core/cq/preview/chq_player_clock.h` —— **只算时间，不取帧不渲染**。
 取帧渲染仍归 `ChqPreviewRenderer`，两者由调用方串起来（`currentTime` → `render_frame`）。
 
 | 主题 | 约定 |

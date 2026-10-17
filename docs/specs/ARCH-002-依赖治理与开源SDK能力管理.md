@@ -56,7 +56,7 @@ path     = "prebuilt/ffmpeg/7.1/demux/apple-arm64"
 字段规则：
 - `license` **必须是 SPDX 表达式**，不接受自由文本。
 - `integration = "auto"` 表示：本地开发优先用 `binary`（快），CI 与发布必须用 `source`（可审计）。
-- `visibility = "private"` 由 CI 静态检查强制：扫描 `core/include/cq/**` 与 `bindings/**` 的公共头，出现第三方符号即失败。
+- `visibility = "private"` 由 CI 静态检查强制：扫描 `engine/core/cq/**` 与 `bindings/**` 的公共头，出现第三方符号即失败。
 - **`scope = runtime | build`**（DEPS-001 实现时补入，原 §2.1 缺失此维度）：`build` 表示**仅构建期工具链**（glslang / SPIRV-Cross / 测试框架），代码不进入任何发布产物，因此不受 `visibility` 与 SBOM 的运行时约束；缺省为 `runtime`。没有这个字段，构建期工具会被误当运行时依赖纳入协议审计与 SBOM，产生大量噪声。
 - **`[[dep.artifact]]`**：`integration` 为 `binary` 或 `auto` 时必填。manifest 是**声明层**（验格式），`deps.lock` 是**锁定层**（验真伪）。校验和真伪不在 manifest 里保证。
 - **`vcs` / `pin` / `pin_ref` / `bump_policy`**（ADR-0008）：源码集成的 git 依赖**必须** `pin = "commit"` 且 `pin_ref` 为 40 位 hash。禁止 `pin = "tag"`（tag 是可变引用，可被上游 force-push，会摧毁可复现构建）。「定期拉最新」通过**人工 bump `pin_ref` + 完整 CI** 实现，**不允许 CI 自动跟随任何分支**。
@@ -186,7 +186,7 @@ LGPL v2.1 对静态链接的核心要求是**接收者能够用修改过的库�
 - 解析 manifest.toml，校验 license 为合法 SPDX 表达式
 - 校验 deps.lock 与 manifest 一致、checksum 匹配
 - 校验无 RESTRICTED 协议出现在默认 profile
-- 扫描 core/include/cq/** 与 bindings/** 公共头，禁止出现第三方符号
+- 扫描 engine/core/cq/** 与 bindings/** 公共头，禁止出现第三方符号
 - 生成 SBOM（CycloneDX JSON + SPDX），随构建产物归档
 - 二进制产物体积与符号数对比基线，超标告警
 ```
@@ -196,7 +196,7 @@ LGPL v2.1 对静态链接的核心要求是**接收者能够用修改过的库�
 ## 6. 符号与头文件隔离
 
 1. 所有第三方库以 `-fvisibility=hidden` 静态链接进内核，最终产物 strip 非导出符号。
-2. SDK 公共头 `include/cq/cq_sdk.h` 只允许出现：基础 C 类型、opaque 句柄、项目自有枚举与结构体。
+2. SDK 公共头 `engine/core/cq/cq_sdk.h` 只允许出现：基础 C 类型、opaque 句柄、项目自有枚举与结构体。
 3. 跨 Platform 边界传递平台原生图像对象时，统一包装为 `CQNativeImageHandle`（opaque）。平台类型转换只在 `platform/<platform>/` 内部进行。
 4. 若必须引入某个库的头文件到内部实现，只允许出现在 `.cpp`/`.mm` 中，不允许出现在任何 `.h`。
 

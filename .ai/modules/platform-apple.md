@@ -41,7 +41,7 @@ xcodebuild -workspace apps/apple/ChuanqiCut.xcworkspace -scheme MacApp build
 
 **状态**：已完成并通过 ctest（`platform_apple_native_image`，31 项检查全绿；全量 16/16 通过）。
 
-**实现位置**：`platform/apple/gfx_metal.mm`
+**实现位置**：`engine/platform/apple/gfx/gfx_metal.mm`
 - `CqNativeImageImporter : ChqINativeImageImporter`（与 `CqDevice` 同文件，`cv_keepalive_` 字段已加在 `CqTexture` 上以延长 CVMetalTextureRef/IOSurface 生命周期）。
 - 零拷贝关键：`CVMetalTextureCacheCreateTextureFromImage`（`MTLPixelFormatBGRA8Unorm`）+ `CVMetalTextureGetTexture`，**全程无 `replaceRegion`、无像素缓冲拷贝**。纹理与源 `CVPixelBuffer` 共享同一 IOSurface。
 - `CqDevice::CreateNativeImageImporter` 现已接上真实实现（PALA-001 里原为 `kInternal` 占位），按 `id<MTLDevice>` 创建并复用 `CVMetalTextureCacheRef`。
@@ -70,7 +70,7 @@ xcodebuild -workspace apps/apple/ChuanqiCut.xcworkspace -scheme MacApp build
 
 **状态**：已完成并通过 ctest（`platform_apple_encode` 14 项 + `platform_apple_muxer` 16 项 + `platform_apple_muxer_audio` 17 项全绿；全量 22/22 通过）。
 
-**跨平台接缝（已补齐）**：冻结契约 `core/include/cq/platform/chq_media.h` 已定义 `ChqIMediaMuxer`（含 `Open / AddVideoTrack / AddAudioTrack / WriteVideoFrame / WriteAudioFrame / Finish / Cancel`）。`AppleMediaMuxer`（`platform/apple/media_muxer.{h,mm}`）实现该接口，把 `NativeImageHandle` 经 `GetCvPixelBuffer` 转回 `CVPixelBufferRef` 委托给 `AppleVideoEncoder`；全程平台类型只出现在 `platform/apple/` 的 .mm，core 头零平台类型。`WriteAudioFrame` / `AddAudioTrack` 的 AAC 音频能力见下方「音频轨（AAC 封装）」小节。
+**跨平台接缝（已补齐）**：冻结契约 `engine/core/cq/platform/chq_media.h` 已定义 `ChqIMediaMuxer`（含 `Open / AddVideoTrack / AddAudioTrack / WriteVideoFrame / WriteAudioFrame / Finish / Cancel`）。`AppleMediaMuxer`（`platform/apple/media_muxer.{h,mm}`）实现该接口，把 `NativeImageHandle` 经 `GetCvPixelBuffer` 转回 `CVPixelBufferRef` 委托给 `AppleVideoEncoder`；全程平台类型只出现在 `platform/apple/` 的 .mm，core 头零平台类型。`WriteAudioFrame` / `AddAudioTrack` 的 AAC 音频能力见下方「音频轨（AAC 封装）」小节。
 
 **实现位置**：`platform/apple/media_encode.{h,mm}`
 - `AppleVideoEncoder`（平台内部头，仅 Apple TU 包含；pImpl 隔离 AVFoundation ObjC 对象，使 `media_encode.h` 保持纯 C++）。

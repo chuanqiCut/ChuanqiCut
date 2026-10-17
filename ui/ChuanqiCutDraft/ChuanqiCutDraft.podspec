@@ -1,6 +1,6 @@
 # ChuanqiCutDraft.podspec — 草稿域 Pod 骨架（ADR-0031 阶段 5，INFRA-020）
 #
-# 骨架占位：功能压在 PROJ-001（项目序列化，core/src/project/ 零实现）上，
+# 骨架占位：功能压在 PROJ-001（项目序列化，engine/core/cq/project/ 零实现）上，
 # PROJ-001 落地后填肉（PROJ-005 草稿箱 / UIA-029 草稿箱页面）。
 # **暂不进任何 Podfile**（无消费者）；首个功能落地时再接线并加依赖。
 

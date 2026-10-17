@@ -1,10 +1,10 @@
 // ChuanqiCut — Apple Platform 内部调试/测试辅助（PALA-001）
 //
-// 本头文件位于 platform/apple/，**不在** core/include/cq/{platform,gfx,media}/ 门禁扫描范围，
+// 本头文件位于 platform/apple/，**不在** engine/core/cq/{platform,gfx,media}/ 门禁扫描范围，
 // 也不出现在任何内核公共头中。它只暴露 Apple 平台专属的离屏读回 / 纹理上传辅助，
 // 供 ctest 用例验证「渲染结果正确」使用（见 AGENTS.root.md 验收硬要求）。
 //
-// 门禁脚本 tools/platform/check_platform_headers.py 只扫 core/include/cq/**；此处允许平台类型，
+// 门禁脚本 tools/platform/check_platform_headers.py 只扫 engine/core/cq/**；此处允许平台类型，
 // 但为了不污染纯 C++ 测试 TU，本头**刻意不 import 任何 Metal 头**——读回/上传函数
 // 的签名只使用 Platform 的 opaque 句柄（ChqIRenderTarget* / ChqITexture*）与 void*，
 // 平台实现藏在 gfx_metal.mm 内。这样 tests/unit/gfx/test_gfx_metal.cpp 可以是纯 .cpp。

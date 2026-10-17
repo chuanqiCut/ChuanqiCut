@@ -1,6 +1,6 @@
 // ChuanqiCut — PALA-010 Apple 解封装后端（AVFoundation / AVAssetReader）
 //
-// 职责：实现 Platform 冻结接口 `cq::ChqIMediaDemuxer`（core/include/cq/platform/media.h）。
+// 职责：实现 Platform 冻结接口 `cq::ChqIMediaDemuxer`（engine/core/cq/platform/chq_media.h）。
 // 用 AVFoundation 读取 MP4/MOV 等容器，逐包（压缩数据）吐出本项目自有的
 // `ChqMediaPacket`，全程不使用任何 FFmpeg 类型，也不把任何平台类型泄漏到 core 头。
 //
@@ -736,7 +736,7 @@ private:
 };
 
 // ---------------------------------------------------------------------------
-// Platform 工厂（声明于 core/include/cq/platform/media.h，定义于本 Platform 实现）
+// Platform 工厂（声明于 engine/core/cq/platform/chq_media.h，定义于本 Platform 实现）
 // ---------------------------------------------------------------------------
 ChqStatus CreateMediaDemuxer(const ChqMediaSource& src, ChqPlatformPtr<ChqIMediaDemuxer>& out_demuxer) {
     AppleDemuxer* d = new AppleDemuxer();

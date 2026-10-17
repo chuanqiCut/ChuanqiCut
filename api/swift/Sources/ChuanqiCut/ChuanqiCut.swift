@@ -1,6 +1,6 @@
 // ChuanqiCut — Swift 绑定：值类型与全局入口（BIND-002）
 //
-// 本文件只做**薄封装**：不发明业务逻辑，语义一律以 core/include/cq/cq_sdk.h
+// 本文件只做**薄封装**：不发明业务逻辑，语义一律以 engine/core/cq/cq_sdk.h
 // 的注释为准（那份注释是契约，本文件是它的 Swift 投影）。
 //
 // ⚠️ 命名为什么不带 CQ 前缀：C ABI 里已有 `CQSnapshot` / `CQChangeRecord` 等类型，
@@ -58,7 +58,7 @@ extension ChuanqiCut {
     /// 日志「链路」维：排查时想单独拎出来看的那一条。
     ///
     /// 这是与**级别**（多详细）正交的一维 —— 级别回答不了「只要 decode 链路」。
-    /// 取值与内核 `Workflow` 枚举同构（那份注释在 `cq/base/log.h`，是契约）。
+    /// 取值与内核 `Workflow` 枚举同构（那份注释在 `engine/core/cq/base/chq_logging.h`，是契约）。
     public enum LogWorkflow: String, CaseIterable, Sendable {
         case core, model, `import`, demux, decode, framecache
         case preview, render, export, camera, gfx, perf, mem, ai

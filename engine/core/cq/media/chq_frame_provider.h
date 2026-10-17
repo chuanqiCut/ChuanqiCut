@@ -95,7 +95,7 @@ struct ChqFrameRequest {
 // ===========================================================================
 // 3. ChqIFrameCache — 帧缓存抽象（MEDIA-011 实现；MEDIA-010 仅定义接口位置）
 // ===========================================================================
-// 帧缓存 LRU 是跨平台核心逻辑（MEDIA-011，write_set core/src/media/cache.*）。
+// 帧缓存 LRU 是跨平台核心逻辑（MEDIA-011，write_set engine/core/cq/media/chq_media_cache.h + chq_cache.cpp）。
 // 内存上界由 CORE-004 ChqTextureBudget / ChqMemoryBudget 约束（ARCH-002 §10.2：
 // 1080p 三轨预览 ≤400MB，4K ≤1.2GB）。ChqFrameProvider 实现持有 ChqIFrameCache 做 LRU 回收。
 // 缓存键为 pts（ChqRationalTime），值为解码后 ChqMediaFrame 的缓存副本/引用。
@@ -117,7 +117,7 @@ public:
 // ===========================================================================
 // 4. ChqIDecoderPool — 解码器池抽象（MEDIA-012 实现；MEDIA-010 仅定义接口位置）
 // ===========================================================================
-// 解码器池是跨平台核心逻辑（MEDIA-012，write_set core/src/media/decoder_pool.*）。
+// 解码器池是跨平台核心逻辑（MEDIA-012，write_set engine/core/cq/media/chq_decoder_pool.*）。
 // 超硬解路数时降级不崩溃：池满则排队或降级软解。ChqFrameProvider 实现用它获取解码能力。
 // 解码器本身是不透明句柄（跨平台层不暴露平台解码器类型）。
 struct ChqDecoder;

@@ -1,6 +1,6 @@
 // ChuanqiCut — Swift 绑定：预览取帧泵（UIA-010 子步骤 5）
 //
-// 对应内核 cq_preview_pump_*（cq_sdk.h 预览泵段 + core/src/preview/cq_sdk_preview.cpp）。
+// 对应内核 cq_preview_pump_*（cq_sdk.h 预览泵段 + engine/core/cq/preview/chq_sdk_preview.cpp）。
 // 契约以 cq_sdk.h 的注释为准，本文件是它的 Swift 投影。
 //
 // 一句话：把「seek + 解码 + 导入 + 离屏绘制」搬到泵自己的线程，调用方（UI 主线程）

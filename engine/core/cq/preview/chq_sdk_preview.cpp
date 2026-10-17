@@ -1,6 +1,6 @@
 // ChuanqiCut — 预览的 C ABI 实现（BIND-003 子步骤 5）
 //
-// ⚠️ 为什么单独一个 TU（而不是并进 core/src/cq_sdk.cpp）：
+// ⚠️ 为什么单独一个 TU（而不是并进 engine/core/cq/cq_sdk.cpp）：
 //   本文件是 core 中**第一个调用 Platform 工厂**的翻译单元（CreateGraphicsDevice /
 //   CreateBlitPass / CreateFrameProvider）。静态库按 archive member 粒度拉符号，
 //   只有真正引用了本 TU 符号的目标才会把它链进来 —— 因此「不使用预览能力的目标」

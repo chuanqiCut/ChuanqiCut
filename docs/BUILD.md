@@ -195,5 +195,5 @@ Apple 端的能力链路：
    `set_source_files_properties`(ARC)、`find_library`+`target_link_libraries`(系统框架)。
    漏了只会在链接期报「符号未定义」，且**报错只显示引用位置、不指明缺哪个框架**，排查成本高。
 2. 修改 golden 后必须重跑 `tests/golden/verify.py`——校验是 ffprobe 实测，不迁就产物。
-3. 改 `docs/specs/Platform-接口契约.md` 或 `core/include/cq/**` 前先确认是否被冻结。
+3. 改 `docs/specs/PLATFORM-接口契约.md` 或 `engine/core/cq/**` 前先确认是否被冻结。
    Platform 接口已冻结（CORE-006），**新增**接口可以，**修改既有签名**需先提 ADR。

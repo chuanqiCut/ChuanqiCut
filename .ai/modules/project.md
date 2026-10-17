@@ -2,7 +2,7 @@
 
 > **归属**：A 线（编辑器/UI；素材库/草稿域随 A） —— 归属表见 docs/tasks/PLAN-三线并行.md §1a / ADR-0029（双机分工与门禁跑批，2026-10-07）
 
-**边界**：`core/src/project/`
+**边界**：`engine/core/cq/project/`
 
 ## 结构
 ```
@@ -43,7 +43,7 @@ ADR-0006、`PROJ-0xx` 任务
 
 | Task ID | 标题 | 状态 |
 |---|---|---|
-| PROJ-001~004 | 项目序列化 | 未开工（`core/src/project/` 零实现，草稿地基） |
+| PROJ-001~004 | 项目序列化 | 未开工（`engine/core/cq/project/` 零实现，草稿地基） |
 | PROJ-005 | 草稿箱索引与生命周期 | 预占（§13，UI 落 ChuanqiCutDraft Pod） |
 
 ### 测试与门禁记录（阶段批）

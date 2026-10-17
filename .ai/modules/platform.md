@@ -2,7 +2,7 @@
 
 > **归属**：集成机（Platform 接口冻结归口） —— 归属表见 docs/tasks/PLAN-三线并行.md §1a / ADR-0029（双机分工与门禁跑批，2026-10-07）
 
-**边界**：`core/include/cq/platform/*.h`（仅接口定义，零实现）。
+**边界**：`engine/core/cq/platform/*.h`（仅接口定义，零实现）。
 **权威契约**：`docs/specs/Platform-接口契约.md`（本文件为模块运行记录 + 设计取舍摘要）。
 
 ## 职责
@@ -70,7 +70,7 @@ $(dirname $CMAKE_BIN)/ctest --test-dir build
 
 ## CORE-007：能力查询已实现（2026-09-29）
 
-CORE-006 只冻结了 `core/include/cq/platform/chq_capabilities.h` 的接口与枚举，
+CORE-006 只冻结了 `engine/core/cq/platform/chq_capabilities.h` 的接口与枚举，
 `SetCapabilitiesBackend` / `QueryCapability` **长期只有声明无定义**。全仓库唯一引用是
 `tests/unit/platform/platform_headers_compile.cpp` 的 `static_assert`（编译期检查、不链接），
 所以 CTest 全绿也看不出接口是断的 —— 与 CORE-006 当时的教训同型。
@@ -79,8 +79,8 @@ CORE-006 只冻结了 `core/include/cq/platform/chq_capabilities.h` 的接口与
 
 | 位置 | 内容 |
 |---|---|
-| `core/src/platform/capabilities.cpp` | 内核侧注入与分发。`std::atomic<ChqICapabilities*>`，查询路径无锁（红线 #8） |
-| `platform/apple/capabilities.mm` + `capabilities_apple.h` | Apple 后端（Metal / VideoToolbox）。安装入口 `cq::apple::InstallCapabilities()` |
+| `engine/core/cq/platform/chq_capabilities.cpp` | 内核侧注入与分发。`std::atomic<ChqICapabilities*>`，查询路径无锁（红线 #8） |
+| `engine/platform/apple/base/capabilities.mm` + `base/capabilities_apple.h` | Apple 后端（Metal / VideoToolbox）。安装入口 `cq::apple::InstallCapabilities()` |
 
 关键约定（详见 `docs/tasks/TASK-CORE-007.md`）：
 - **未注入后端一律返回 `kNo`**（安全默认：上层走降级路径；谎报 `kYes` 会崩）
@@ -119,7 +119,7 @@ CORE-006 只冻结了 `core/include/cq/platform/chq_capabilities.h` 的接口与
 
 | 位置 | 变更 | 说明 |
 |---|---|---|
-| `platform/chq_gfx.h` | 新增 `ChqIBlitPass` + 工厂 `CreateBlitPass` | 全屏纹理拷贝。从 `core/include/cq/gfx/blit_pass.h` **移入** —— 见下 |
+| `platform/chq_gfx.h` | 新增 `ChqIBlitPass` + 工厂 `CreateBlitPass` | 全屏纹理拷贝。从 `core/include/cq/gfx/blit_pass.h` **移入** —— 见下（旧路径，当时如此） |
 | `platform/chq_gfx.h` | `ChqINativeImageImporter` 新增 `ReleaseTexture` | 补生命周期闭环，`Import` 返回裸句柄而 core 侧无法释放（pitfalls P14） |
 | `platform/chq_media.h` | `CreateFrameProvider` **实现落地** | 自 CORE-006（2026-09-25）悬空 7 天从未实现（pitfalls P19） |
 | `platform/chq_media.h` | `ChqIFrameProvider` 新增 `GetDuration` | core 的 `ChqFrameProvider` 要求此项，Platform 原本没有，适配时无处可取 |
@@ -176,7 +176,7 @@ Android / HarmonyOS 均无 `CreateBlitPass` / `CreateFrameProvider` 实现。
 
 # 2026-10-04 追加（CAM-001 → 已回退，相机域转 iOS 原生）
 
-**本日先冻结后回退了相机 Platform 契约**（`platform/camera.h`、`cq_sdk.h` 相机 ABI 段、
+**本日先冻结后回退了相机 Platform 契约**（`platform/camera.h`（已回退，仓库内无此头）、`cq_sdk.h` 相机 ABI 段、
 kMultiCamCapture/kVisionDetection/kAnimalBodyPose 能力枚举与相应 Apple 实现/测试）。
 传哲指示相机模块"发挥 iOS 优势、不强套跨端逻辑"（**ADR-0014 已接受**）：相机
 采集/特效/录制改为 iOS 原生栈（AVFoundation + Vision/ARKit + Core Image/Metal，

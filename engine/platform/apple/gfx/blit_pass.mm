@@ -1,6 +1,6 @@
 // ChuanqiCut — Apple 全屏拷贝 pass（Portable shader 驱动的 MSL 路径）
 //
-// 实现 Platform 契约 `cq::CreateBlitPass`（core/include/cq/platform/gfx.h）。
+// 实现 Platform 契约 `cq::CreateBlitPass`（engine/core/cq/platform/chq_gfx.h）。
 //
 // shader 来源（红线 #6 / SHADER-001）：作者写的是 **Portable 层**
 // engine/shaders/portable/blit.{vert,frag}（Vulkan GLSL 450），构建期经 glslang → SPIR-V →

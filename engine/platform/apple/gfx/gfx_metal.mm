@@ -1,6 +1,6 @@
 // ChuanqiCut — Apple Metal 后端（PALA-001）
 //
-// 实现 core/include/cq/platform/gfx.h 中冻结的 Platform GFX HAL（ChqIGraphicsDevice 等 12 概念）。
+// 实现 engine/core/cq/platform/chq_gfx.h 中冻结的 Platform GFX HAL（ChqIGraphicsDevice 等 12 概念）。
 // 平台类型（MTLDevice / id<MTLTexture> 等）**只出现在本文件与 gfx_metal_internal.h**，
 // 内核头零平台类型红线不受影响。
 //

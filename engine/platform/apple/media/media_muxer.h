@@ -1,11 +1,11 @@
 // ChuanqiCut — PALA-012 Apple 编码与封装的 Platform 接缝（ChqIMediaMuxer 的 Apple 实现）
 //
 // 本头是平台内部头，仅被 Apple 平台 TU 包含（tests/ 与未来 Platform 装配代码），
-// 绝不进入 core 冻结头。门禁 check_platform_headers.py 只扫 core/include/cq/{platform,gfx,media}，
+// 绝不进入 core 冻结头。门禁 check_platform_headers.py 只扫 engine/core/cq/{platform,gfx,media}，
 // 故此处出现平台类型（CVPixelBufferRef 经 GetCvPixelBuffer 引入）安全。
 //
 // 为什么需要这一层：
-//   * core/include/cq/platform/media.h 的 `ChqIMediaMuxer` 是平台无关接缝，但 AppleVideoEncoder
+//   * engine/core/cq/platform/chq_media.h 的 `ChqIMediaMuxer` 是平台无关接缝，但 AppleVideoEncoder
 //     （media_encode.h）只接受 `CVPixelBufferRef`——这是 Apple 内部类型，不能进 core 头。
 //   * 本类 `AppleMediaMuxer` 实现 `ChqIMediaMuxer`：把接口层的 `NativeImageHandle` 经
 //     `GetCvPixelBuffer` 转回 CVPixelBufferRef，再委托给内部 `AppleVideoEncoder`。

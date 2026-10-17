@@ -8,7 +8,7 @@
 
 ## 为什么有这一层
 
-`core/include/cq/base/chq_concurrency.h`（CORE-005）文件头明确划了边界：
+`engine/core/cq/base/chq_concurrency.h`（CORE-005）文件头明确划了边界：
 
 > 并发原语提供「必要的最小集合」，**不**做成通用线程库（无自己的线程池…）。
 > 线程池/会话线程骨架属于 **CORE-008**，不在 base 层。
@@ -20,10 +20,10 @@
 
 | 文件 | 内容 |
 |---|---|
-| `core/include/cq/session/chq_thread_model.h` | `ChqThreadRole` 枚举（7 类 + kUnknown）、角色标记/查询 |
-| `core/src/session/thread_model.cpp` | `thread_local` 角色状态实现 |
-| `core/include/cq/session/chq_task_runner.h` | `ChqTaskRunner`：串行任务执行器 |
-| `core/src/session/task_runner.cpp` | worker 线程循环、投递与背压 |
+| `engine/core/cq/session/chq_thread_model.h` | `ChqThreadRole` 枚举（7 类 + kUnknown）、角色标记/查询 |
+| `engine/core/cq/session/chq_thread_model.cpp` | `thread_local` 角色状态实现 |
+| `engine/core/cq/session/chq_task_runner.h` | `ChqTaskRunner`：串行任务执行器 |
+| `engine/core/cq/session/chq_task_runner.cpp` | worker 线程循环、投递与背压 |
 | `tests/unit/session/test_thread_model.cpp` | 含「主线程零阻塞」实测 |
 
 ## 线程角色
@@ -113,7 +113,7 @@ session.ChangesSince(last_seen, &out);       // UI 增量刷新
 
 ## ChqEditorModelState（ChqISessionState 的模型层实现）
 
-`core/include/cq/model/chq_editor_model_state.h` —— ChqTimeline + ChqAssetRegistry +
+`engine/core/cq/model/chq_editor_model_state.h` —— ChqTimeline + ChqAssetRegistry +
 ChqCommandHistory 组装为会话状态。`ChqEditorSession` 默认构造即内建（注入自定义
 ChqISessionState 时类型化接口返回 kInternal）。
 
@@ -154,7 +154,7 @@ undo/redo 的 C ABI 归 UIA-008。
 `CurrentModelSnapshot()`（ChqTimeline+ChqAssetRegistry **配对**发布，chq_model_snapshot.h）。
 `cq_preview_register_asset / add_clip` 已删除。快照发布点从「仅时间线」扩为配对
 （RegisterAsset 也发布）。CQSession 的真实定义抽到内核私有头
-`core/src/chq_session_impl.h`（cq_sdk.cpp 与 cq_sdk_preview.cpp 共享；
+`engine/core/cq/chq_session_impl.h`（cq_sdk.cpp 与 cq_sdk_preview.cpp 共享；
 include 用相对路径 `../chq_session_impl.h`，pod 构建无私有 search path）。
 
 # UIA-005 落地（2026-10-03）：片段编辑与撤销的 C ABI

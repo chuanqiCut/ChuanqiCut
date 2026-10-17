@@ -354,6 +354,11 @@ else
     # 编辑器域测试
     run_step_dir "apple-editor" ui/ChuanqiCutEditor \
         swift test --disable-sandbox --scratch-path "${ROOT_DIR}/build/spm/ChuanqiCutEditor"
+    # 草稿域包（INFRA-045 收池 [21]：顶层六包里唯一一个从未被门禁编译过的包）。
+    # 该包**零 XCTest 用例**，所以跑 `swift build` 而不是 `swift test`（同 SharedUI 口径）——
+    # 写成 test 会"通过"在一个根本不存在的测试目标上，那正是池 [21] 原本要抓的失灵形态。
+    run_step_dir "apple-draft" ui/ChuanqiCutDraft \
+        swift build --disable-sandbox --scratch-path "${ROOT_DIR}/build/spm/ChuanqiCutDraft"
 fi
 
 # 6. 双 App 壳构建（INFRA-037，收池 [18]；2026-10-17 传哲批准进门禁）

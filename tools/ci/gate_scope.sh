@@ -66,6 +66,10 @@ fi
 
 CMDS=(); REASONS=(); TAGS=(); UNCLASSIFIED=()
 NEED_FULL=0
+# 区分两种升档原因：① 规则**自己**要求全量（如 R12 改全库风格基线）；② 兜底发现有文件
+# 没有任何规则覆盖。②才需要"把路径加进规则里"这句提醒——混在一起会让读日志的人去修一个
+# 已经正确的路由（R12 落地当天实测：未归类清单空了，脚本却照旧打印那句提醒）。
+UNCLASSIFIED_FULL=0
 
 tag()     { TAGS+=("$1"); }
 add_why() { REASONS+=("$1"); }
@@ -118,11 +122,17 @@ if hits 'engine/platform/*' || hits 'api/swift/*'; then
 fi
 
 # ---- R4 SPM 包（ui/ 六包，逐包只跑自己）----
+# **无 Tests 目标的包只能 `swift build`**：`swift test` 在这类包上是 rc=1 真失败
+# （实测 ui/ChuanqiCutDraft：`error: no tests found; create a target in the 'Tests' directory`），
+# 不是"没有用例所以通过"。判"某包该跑 build 还是 test"要对着包目录看有没有 Tests，别按包名猜。
+CQ_BUILD_ONLY_PKGS="SharedUI ChuanqiCutDraft"
 for pkg in SharedUI ChuanqiCutPlayer ChuanqiCutCamera ChuanqiCutImport ChuanqiCutEditor ChuanqiCutDraft; do
     if hits "ui/${pkg}/*"; then
         tag "R4:${pkg}"
-        # SharedUI 无 Tests 目标 → 只 build（恒 no tests found，不是失败）
-        if [ "${pkg}" = "SharedUI" ]; then act='swift build'; else act='swift test'; fi
+        case " ${CQ_BUILD_ONLY_PKGS} " in
+            *" ${pkg} "*) act='swift build' ;;
+            *)           act='swift test' ;;
+        esac
         add_cmd "(cd ui/${pkg} && ${act} --disable-sandbox --scratch-path '${ROOT_DIR}/build/spm/${pkg}')"
         add_why "R4 动了 ui/${pkg} → 只跑该包（其它包不因它变红，ADR-0031 分治）"
     fi
@@ -186,19 +196,34 @@ if [ "${#TAGS[@]}" -eq 0 ]; then
     fi
 fi
 
+# ---- R12 根目录风格配置（射程 = 全库 C/C++，不属任何模块窄检）----
+# 位置要求：必须在 R11 **之后** —— R11 的前提是"没有任何其它规则命中"，把 R12 放它前面
+# 会让「文档 + 风格配置」同批的 diff 丢掉 linkcheck（run_gate.sh 里没有这一步，只有 CI 有）。
+if hits '.clang-format' || hits '.editorconfig'; then
+    tag R12
+    add_cmd 'tools/ci/check_repo_hygiene.sh'
+    add_cmd 'tools/ci/run_gate.sh --batch=<本卡 ID>'
+    add_why 'R12 改了全库风格基线 → 判据 1（editorconfig 四条件）与判据 4（clang-format 违规数）**对全库重新生效**，存量违规要么一次重排、要么在 `.clang-format` 头部声明。升档不降级：这是唯一能改出 100+ 文件 diff 的非功能开关（INFRA-046 一趟重排 113 个文件）；P176：`clang-format -i` 会把符号链接换成普通文件，跑完必须 `git diff --summary` 查 mode change'
+    NEED_FULL=1
+fi
+
 # ---- 兜底：任何未被上面任何规则覆盖的文件 → 升一档 ----
 for f in "${CHANGED[@]}"; do
     covered=0
     for pat in 'CMakeLists.txt' 'VERSION' 'cmake/*' 'engine/*' 'tests/*' 'ui/*' 'api/*' 'apps/*' \
-               'tools/*' 'docs/*' '.ai/*' 'third_party/*' '.github/*' '*.md' '*.podspec' 'Podfile*'; do
+               'tools/*' 'docs/*' '.ai/*' 'third_party/*' '.github/*' '*.md' '*.podspec' 'Podfile*' \
+               '.clang-format' '.editorconfig'; do
         # shellcheck disable=SC2254
         case "$f" in ${pat}) covered=1; break ;; esac
     done
     [ "${covered}" -eq 0 ] && UNCLASSIFIED+=("$f")
 done
-[ "${#UNCLASSIFIED[@]}" -gt 0 ] && NEED_FULL=1
+[ "${#UNCLASSIFIED[@]}" -gt 0 ] && { NEED_FULL=1; UNCLASSIFIED_FULL=1; }
 
-echo "== gate_scope：改动 ${#CHANGED[@]} 个文件 → 档位 $( [ "${NEED_FULL}" -eq 1 ] && echo 'L3 全量（判不准升档）' || echo 'L1/L2 窄检' ) =="
+TIER='L1/L2 窄检'
+[ "${NEED_FULL}" -eq 1 ] && TIER='L3 全量（规则主动要求）'
+[ "${UNCLASSIFIED_FULL}" -eq 1 ] && TIER='L3 全量（判不准升档）'
+echo "== gate_scope：改动 ${#CHANGED[@]} 个文件 → 档位 ${TIER} =="
 [ "${#TAGS[@]}" -gt 0 ] && echo " 命中规则：$(printf '%s ' "${TAGS[@]}")"
 echo ""
 if [ "${#CMDS[@]}" -gt 0 ]; then
@@ -208,14 +233,18 @@ else
     echo "该跑：没有匹配到任何规则 → 见下方兜底"
 fi
 echo ""
-echo "为什么这趟不需要全量："
+echo "为什么是这一档（各条规则的案底）："
 [ "${#REASONS[@]}" -gt 0 ] && printf '  - %s\n' "${REASONS[@]}"
 if [ "${NEED_FULL}" -eq 1 ]; then
     echo ""
-    echo " ⚠️ 未归类的改动："
-    printf '     %s\n' "${UNCLASSIFIED[@]}"
-    echo "   → 本趟跑全量：tools/ci/run_gate.sh --batch=<本卡 ID>"
-    echo "   并把该路径加进本脚本的规则里（判不准升一档 = ADR-0046 决定 4；出现新形状不回填 = 路由开始说谎）"
+    if [ "${UNCLASSIFIED_FULL}" -eq 1 ]; then
+        printf ' ⚠️ 未归类的改动：\n'
+        printf '     %s\n' "${UNCLASSIFIED[@]}"
+        echo "   → 本趟跑全量：tools/ci/run_gate.sh --batch=<本卡 ID>"
+        echo "   并把该路径加进本脚本的规则里（判不准升一档 = ADR-0046 决定 4；出现新形状不回填 = 路由开始说谎）"
+    else
+        echo " ⚠️ 本趟跑全量：tools/ci/run_gate.sh --batch=<本卡 ID>（由上面某条规则**主动**要求，不是没归类）"
+    fi
 else
     echo ""
     echo " → 全量（L3）**不在**上面的清单里：一个版本号一趟，见 docs/reports/VERSIONS.md §一"

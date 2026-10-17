@@ -1,0 +1,23 @@
+# ChuanqiCut C / C++ / ObjC++ 风格基线（INFRA-034，2026-10-16）
+#
+# ⚠️ 本文件**只描述现状，不做全库重排**。落地时的违规基线（本机 Xcode clang-format 21.0.0）：
+#     engine/** 的 .h/.c/.cpp 105 个 → **69 个违规**；engine/**/*.mm 10 个 → **10 个违规**；
+#     tests/** 的 .h/.c/.cpp 51 个 → **34 个违规**。数字口径与逐类拆分见 `.ai/modules/core.md`。
+#     重排另开卡分批（把 166 个文件的 cosmetic diff 塞进布局整改批会淹没真实改动）。
+#   改本文件等于改全库口径 —— 属高冲突配置，只由集成机动，且改完必须重新统计违规基线。
+---
+# Google 是现有代码最接近的现成基线（成员 `xxx_` 后缀、`kCamelCase` 枚举值都是 Google 味）。
+BasedOnStyle: Google
+IndentWidth: 4
+# public/private 顶格（与 4 空格成员缩进相抵）：实测把 0/+4 都试过，-4 时违规 69，其余 79。
+AccessModifierOffset: -4
+# 不设硬性列宽：中文注释的显示宽度 clang-format 算不出来，限列只会对含中文的行制造假 diff。
+ColumnLimit: 0
+# 注释是设计说明（约束、案底、坑号），禁止自动折行重排 —— 重排会把「P142」这类编号拆到下一行。
+ReflowComments: false
+# 指针/引用对齐逐文件按多数用法推断（引擎头是 `T* p` 风格、ObjC++ 侧混用 `T *p`），不强行统一。
+DerivePointerAlignment: true
+NamespaceIndentation: None
+# include 分组是手工的且每组带解释性注释（自身头 / 标准库 / 第三方）。开启排序后违规从 69 → 73/74，
+# 即排序会打散现有分组，属重排卡的活，不在本基线里做。
+SortIncludes: false

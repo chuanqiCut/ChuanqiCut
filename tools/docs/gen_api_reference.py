@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""engine/bindings/swift/Sources/ChuanqiCutCore/include/cq_sdk.h → docs/api/engine-api.md
+"""api/swift/Sources/ChuanqiCutCore/include/cq_sdk.h → docs/api/engine-api.md
 
 接口展示生成器（传哲「展示头文件接口可以单独搞个展示逻辑」）：
 解析 C ABI 头文件的 ===大节 / ----子节 注释结构与顶层声明，生成 Markdown 接口参考。
@@ -12,11 +12,17 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
-HEADER = ROOT / "engine/bindings/swift/Sources/ChuanqiCutCore/include/cq_sdk.h"
+HEADER = ROOT / "api/swift/Sources/ChuanqiCutCore/include/cq_sdk.h"
 OUT = ROOT / "docs/api/engine-api.md"
 
 MAJOR_RE = re.compile(r"/\* =+\n \* (.+?)\n \* =+\n(?: \*.*\n)* \*/")
-SUB_RE = re.compile(r"/\* ---- (.+?) ----.*?\*/")
+# 子节锚点有两种手写形态（cq_sdk.h 里都在用），旧 SUB_RE 只认 `/* ---- X ---- */`
+# 单行同尾形式，而本仓 11 个子节锚点**全部**是"标题直接贴着结尾横线"（`）----`）或
+# 三行框式，于是整批静默丢锚点 —— 生成的文档把 103 条声明出成 10 节 103 个孤立代码块。
+# 教训同 P154：解析器"匹配不到"和规则"不存在"是两回事，判据要能自证命中数。
+SUB_INLINE_RE = re.compile(
+    r"^[ \t]*/\*[ \t]*-{4,}[ \t]*(?=[^\s\-])(.+?)[ \t]*-{4,}(?=[ \t]*(?:\*/|$))", re.M)
+SUB_FRAMED_RE = re.compile(r"/\*[ \t]*-{4,}[ \t]*\n \* (?=[^\s\-])(.+?)[ \t]*\n \* -{4,}[ \t]*\n")
 FUNC_RE = re.compile(
     r"^(?:typedef[^\n{;]*|(?:(?:const )?(?:int32_t|int64_t|uint32_t|uint64_t|void|char|double|float|bool)"
     r"|(?:const )?CQ\w+ ?\*+)[\w \*\(\),\[\]]*?)\b(cq_\w+|CQ\w+)\s*\([^;{}]*\)\s*;",
@@ -67,8 +73,9 @@ def parse_header(original: str):
     anchors = []  # (line, title, is_major)
     for m in MAJOR_RE.finditer(original):
         anchors.append((line_of(m.start(), original), m.group(1).strip(), True))
-    for m in SUB_RE.finditer(original):
-        anchors.append((line_of(m.start(), original), m.group(1).strip(), False))
+    for rx in (SUB_INLINE_RE, SUB_FRAMED_RE):
+        for m in rx.finditer(original):
+            anchors.append((line_of(m.start(), original), m.group(1).strip(), False))
     anchors.sort()
 
     def section_of(ln):
@@ -108,7 +115,7 @@ def parse_header(original: str):
 def render(sections) -> str:
     out = ["# ChuanqiCutEngine 公共接口参考（C ABI）", "",
            "> 由 `tools/docs/gen_api_reference.py` 从",
-           "> `engine/bindings/swift/Sources/ChuanqiCutCore/include/cq_sdk.h` 自动生成",
+           "> `api/swift/Sources/ChuanqiCutCore/include/cq_sdk.h` 自动生成",
            "> ——**不要手改本文件**；接口变更后重跑生成器。红线 #7：这是唯一对外接口。", ""]
     for sec in sections:
         subs = {}

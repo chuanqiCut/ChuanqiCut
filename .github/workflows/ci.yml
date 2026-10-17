@@ -1,0 +1,95 @@
+name: core-hygiene
+
+# ChuanqiCut CI（INFRA-034，2026-10-16 落地）
+#
+# 口径（AGENTS「验证」+ ADR-0030）：**远端绿不是验收口径**，本 workflow 只承担
+# "不需要真机、不需要 Xcode 壳" 的那一段（core 编译 + ctest + 仓库卫生 + 文档一致性）。
+# 双壳构建、真机、性能基线一律留在集成机阶段批；这里不放任何会造假绿的步骤。
+#
+# 四条写死的约束（都是案底，别再改回去）：
+#   1. cmake 走 runner 系统 PATH（`CMAKE_BIN=cmake`）—— 构建脚本的默认回退路径是本机
+#      托管安装位置（$HOME/.workbuddy/...），CI 里不存在。
+#   2. `platform_apple_decode` **显式排除**：P147 实测它在全量并发段里因 PopFrame 的固定
+#      1s 丢帧判据（engine/platform/apple/media/media_decode.mm:681-698）在负载高时真丢帧而红（全量 44.38s 失败 /
+#      单跑 3/3 绿）。排除项必须在日志里打印出来（判据可见），本机阶段批补跑。
+#      **禁止**改成"失败就重试三次"——那是把 P147 变成永久噪声。
+#   3. FFmpeg 产物不入库（`third_party/prebuilt/` 被忽略），binary 模式在 configure 期就
+#      FATAL_ERROR。所以 CI 必须自带装配步骤：按 ADR-0008 的 pin_ref 浅 clone 源码，
+#      再调**仓库自己的** `tools/build/build_ffmpeg_demux.sh`（configure flag 单一真源），
+#      不在 yaml 里另写一套 ffmpeg 编译命令。
+#   4. shader 工具链同属**构建期**依赖（P160 / ADR-0045）：SHADER-001 要 glslang + spirv-cross 两个
+#      二进制，都不入库，runner 上必然没有 —— 本机暖缓存把这件事藏了整整几周，
+#      直到用 `--clean` 复现 CI 才炸出来（停在 27%，随后 50/51 用例"找不到可执行文件"）。
+#      装配步必须在内核构建**之前**（`build_core.sh --clean` 会把 build/tools/ 一起清掉）。
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: core-hygiene-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  core:
+    name: 内核编译 + 单测 + 仓库卫生（macOS runner）
+    runs-on: macos-14
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 装配 FFmpeg 预置产物（demux 档，源码浅 clone + 仓库脚本）
+        run: |
+          set -euo pipefail
+          # tag n9.0.2 只是取源码的入口；ADR-0008 的"pin 必须是 commit"由构建脚本自己
+          # 校验 PIN_REF=946fcce0… 落实（tag 若被 force-push，脚本当场非零退出）。
+          # macos-14 runner = arm64，与 CMake 的 macosx-arm64 切片名同源；arm64 无需 nasm。
+          git clone --depth 1 --branch n9.0.2 \
+            https://github.com/FFmpeg/FFmpeg.git third_party/src/ffmpeg
+          tools/build/build_ffmpeg_demux.sh --sdk macosx --arch arm64 --no-xcframework
+
+      - name: 装配 shader 工具链（glslang + SPIRV-Cross，构建期依赖）
+        run: |
+          set -euo pipefail
+          # P160：SHADER-001 在**编译期**要把 engine/shaders/portable/*.glsl 经
+          # glslang → SPIR-V → spirv-cross 转成 MSL 头，两个二进制都不入库（第三方源码树
+          # 与产物都在 .gitignore）。缺了它内核构建停在 27%，50 个用例全成"找不到可执行文件"。
+          # 与 FFmpeg 步同构：由仓库脚本按 manifest 的 pin_ref 自己浅 fetch，yaml 不写死 commit。
+          tools/build/build_shader_toolchain.sh --jobs "$(sysctl -n hw.ncpu)"
+          # 横幅自检：CI 的源码树是**按 pin 做的真 git checkout**，所以未打本地补丁的上游树
+          # 在这里打印的是 SPIRV-Cross 自己的 commit（可信）。本机走的是非 git 树 + 本地补丁
+          # （池 [23]），两条路径的版本证据来源不同 —— 日志留这一行，取证时不必再猜。
+          ./build/tools/spirv-cross/spirv-cross --help 2>&1 | head -1
+
+      - name: 内核构建（-Werror，Debug）
+        run: CMAKE_BIN=cmake tools/build/build_core.sh --platform=apple --config=Debug
+
+      - name: 单测（排除 P147 flake，排除名单打印）
+        run: |
+          set -uo pipefail
+          EXCLUDE='platform_apple_decode'
+          echo "== 被排除的用例（本机阶段批补跑）："
+          ctest --test-dir build -N | grep -E "Test *#.*${EXCLUDE}" || echo "  （无命中）"
+          ctest --test-dir build -E "${EXCLUDE}" --output-on-failure
+
+      - name: 仓库卫生（忽略锚定 / 旧路径 / 产物入库 / editorconfig）
+        run: tools/ci/check_repo_hygiene.sh
+
+  docs:
+    name: 文档一致性与链接
+    runs-on: macos-14
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: 公共接口参考未过期（P151）
+        run: python3 tools/docs/gen_api_reference.py --check
+      - name: Markdown 链接与 .md 路径可达
+        run: python3 tools/ai/linkcheck_docs.py

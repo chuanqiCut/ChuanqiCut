@@ -1,15 +1,25 @@
-# ChuanqiCut — 仓库忽略规则（INFRA-001 建立）
-# 构建目录：cmake -S . -B build 的产物不入库
-# ⚠️ 必须写成 `/build/` 锚定仓库根。
-#    2026-09-29 发现此处理曾有第二条裸 `build/`（匹配**任意层级**的 build 目录），
-#    导致 `tools/build/` 被连带忽略——三个构建脚本和一个 smoke_link.cpp 从未入库，
-#    clone 出来的人拿不到构建入口，而交接文档还在教人去跑它们。
-#    裸模式造成的误忽略是静默的：`git status` 干净，但文件实际不在版本库里。
+# ChuanqiCut — 仓库忽略规则（INFRA-001 建立；INFRA-027 于 2026-10-16 收口）
+#
+# 【语法提醒】本文件里**模式行不得跟行尾注释**：gitignore 不把行内 `#` 当注释，
+#   `/vendor/   # 说明` 会被当成一个带空号和"说明"的路径，规则静默失效。
+#   注释一律单独成行。（案底：INFRA-027 首版就踩了这个，探针当场抓出 4 条失效规则。）
+#
+# 【锚定纪律】只可能出现在仓库根的目录一律写成 `/name/`；需要匹配任意层级才用裸 `name/`，
+#   且必须在该条目上方写明为什么。
+#   案底：裸 `build/` 曾把 `tools/build/` 连带忽略 —— 三个构建脚本和一个 smoke_link.cpp
+#   从未入库，clone 出来的人拿不到构建入口，而交接文档还在教人去跑它们。
+#   裸模式造成的误忽略是**静默的**：`git status` 干净，但文件实际不在版本库里。
+#   自查：`git ls-files | wc -l` 改规则前后必须相同，且
+#   `git status --porcelain | grep '^??'` 为空（漏网的源码会在这里现形）。
+
+# ---- 构建与临时产物根 ----
+# /build/ = 唯一临时产物根，内部按工具链分区 spm/ xcode/ third_party/ gate-logs/
 /build/
 cmake-build-*/
 out/
+/.build/
 
-# 编译产物
+# ---- 编译产物 ----
 *.o
 *.obj
 *.a
@@ -19,58 +29,70 @@ out/
 *.xcframework/
 *.framework/
 
-# 编辑器/OS
+# ---- 编辑器 / OS ----
 .DS_Store
 *.swp
 *~
 
-# shader 生成产物（ARCH-001 §8：shaders/generated 为构建产物，不入库）
-shaders/generated/
+# ---- shader 生成产物 ----
+# ARCH-001 §8：generated 是构建产物，真实落点一直是 build/generated/shaders/
+# （engine/platform/apple/CMakeLists.txt:59）。
+# ⚠️ 含斜杠的模式是**锚定到本文件所在目录**的，不会匹配任意层级 —— 所以搬家时
+#    新旧落点必须各写一条（P144）。INFRA-033 把 Portable GLSL 收进 engine/shaders/ 后，
+#    仓库根那对 `shaders/generated/` 指向已出树的目录 → 删除；保留下面这条纯属防御
+#    （有人把生成 --out-dir 指进源码树时仍能挡住）。
+#    取证：`git check-ignore -v engine/shaders/generated/x` 必须命中本行。
+engine/shaders/generated/
 
-# 第三方源码 checkout 与构建产物（DEPS-002 / DEPS-010）
+# ---- 第三方源码 checkout 与产物（DEPS-002 / DEPS-010 / INFRA-028）----
 # 源码不进仓库；构建产物（*.a 等）已被上面的编译产物规则忽略，这里再显式忽略目录
 third_party/src/
-prebuilt/
+# 唯一预置二进制归口（由 third_party/manifest.toml 驱动重建）
+third_party/prebuilt/
+# 历史孤儿落点（35M，INFRA-028 清理；锚定防复发）
+/prebuilt/
 
-# 临时目录：tempfile.mkdtemp() 若在仓库内被调用且进程被中断，会留下 tmpXXXXXXXX/ 形态的中间产物
+# ---- 临时目录 ----
+# tempfile.mkdtemp() 若在仓库内被调用且进程被中断，会留下 tmpXXXXXXXX/ 形态的中间产物
 # （2026-09-24 因 worker 被 429 打断，实际泄漏过 5 个、共约 8.5MB PNG）。
 # golden manifest 有 "keep total <=10MB" 的提交策略，这类垃圾一旦入库直接超标，故显式防御。
+# 裸模式**是故意的**：pytest / mkdtemp 可能出现在任意层级。
 tmp*/
 
-# Swift 绑定：xcframework 副本与 SPM 构建目录（均为构建产物，clone 后自行生成）
-# 生成方式：tools/build/build_core_apple.sh --config=Release && bindings/swift/prepare.sh
-engine/bindings/swift/Frameworks/
+# ---- Swift 门面（原 engine/bindings/swift/，INFRA-032 迁至 api/swift/）----
+# xcframework 副本与 SPM 构建目录均为构建产物，clone 后自行生成：
+#   tools/build/build_core_apple.sh --config=Release && prepare.sh
+# INFRA-034 已删除旧组两条（`engine/bindings/swift/**` 自 INFRA-032 起指向不存在目录）。
+api/swift/Frameworks/
+api/swift/.build/
 
-# Apple App 工程（UIA-002 建，INFRA-009 拆为 ios/ 与 mac/ 两个独立工程）
+# ---- Apple 壳工程与 UI 组件包 ----
 # 壳工程已冻结入库（ADR-0037，2026-10-11）：ChuanqiCut.xcodeproj / .xcworkspace 是
 # **手工源文件**（Xcode 可视化改动即真源，直接提交）；XcodeGen 退役，project.yml 已删。
 # 依赖变更只跑 `bundle exec pod install`（podspec 增删文件后必须重跑——Pods.xcodeproj
-# 是文件清单快照）。注意：两个目录的 Gemfile.lock **必须入库**（钉住工具链，P12）；
-# Pods/ 由 pod install 生成，不入库；xcuserdata/ 由全局规则排除。
-# SPM 构建目录（包内 swift test 测试宿主的 .build 一律不入库；P84 规则：
-# 新建任何包目录由通配规则覆盖，不再逐包登记；临时编译产物统一目录 = /build/，
-# SPM 用 `swift test --scratch-path "$ROOT/build/spm/<包名>"` 重定向）
-apps/apple/packages/*/.build/
-engine/bindings/swift/.build/
-/.build/
-# Xcode 用户态状态与索引
+# 是文件清单快照）。注意：两个目录的 Gemfile.lock **必须入库**（钉住工具链，P12）。
+#
+# UI 组件包（原 apps/apple/packages/，ADR-0044 / INFRA-031 已迁顶层 ui/；旧组忽略规则已由 INFRA-034 删）。
+# SPM 构建目录（P84 规则：包内 .build 一律不入库，由通配覆盖新增包，不再逐包登记；
+# 临时编译产物统一目录 = /build/，SPM 用 --scratch-path "$ROOT/build/spm/<包名>" 重定向）
+ui/*/.build/
+
+# ---- Xcode 用户态与构建产物 ----
 xcuserdata/
 DerivedData/
-# CocoaPods 本地环境：bundle 的 gems 缓存与配置（clone 后 bundle install 重建）
-# Gemfile 本身入库；vendor/ 与 .bundle/ 是本机缓存，不入库
-.bundle/
-vendor/
-# CocoaPods 产物目录（由 pod install 生成，clone 后自行重建）
-Pods/
-# Xcode 构建产物（apps/apple/{ios,mac}/build/，xcodebuild 生成，76MB+ 量级）
-# ⚠️ 用 * 通配**而非裸 build/**：裸写会匹配任意层级，历史上曾因此把
-#    tools/build/ 一并忽略，导致三个构建脚本与 smoke_link.cpp 从未入库。
+# xcodebuild 产物（76MB+ 量级）；用 * 通配而非裸 build/，见顶部锚定纪律
 apps/apple/*/build/
-# ZCode 会话本地数据
-.zcode/
 
-# Python 该厂商码缓存（deps.py 等工具运行产物）
-__pycache__/
-
+# ---- CocoaPods 产物与本机缓存 ----
+# Pods/ 由 pod install 生成，clone 后自行重建
+Pods/
+.bundle/
+# bundler gems 缓存：仓库根与壳目录两种跑法都盖
+/vendor/
+apps/apple/*/vendor/
 # FFmpeg vendored 产物同步目录（P84：产物不入库，构建脚本覆盖拷贝）
 engine/vendor/
+
+# ---- 会话与工具本地数据 ----
+.zcode/
+__pycache__/

@@ -249,7 +249,7 @@ private:
         active_token_ = [nc addObserverForName:UIApplicationDidBecomeActiveNotification
                                        object:nil
                                         queue:[NSOperationQueue mainQueue]
-                                   usingBlock:^(NSNotification* note) {
+                                   usingBlock:^(NSNotification* /* note */) {
             self_ptr->ReactivateIfNeeded();
         }];
         observers_registered_ = true;

@@ -8,6 +8,15 @@
 刻意不查（避免噪音）：目录引用（尾随 /）、ID 式引用（无 .md 后缀）、占位符
 （含 * < > ~、ADR-000x）、纯文本伪链接（目标既无 / 也无 .）。
 退出码：0 = 全部可达；1 = 存在断链（打印清单）。
+
+⚠️ **反引号路径判定按域豁免叙述域**（INFRA-034，2026-10-16，二选一里选了这条并写在此处）：
+`BACKTICK_PATH` 把反引号里"作为**讨论对象**的死路径"也当成可导航的链接。ADR/报告/交接/
+任务卡/日志里写 `docs/specs/PAL-接口契约.md` 是在说"这个文件名已经作废"，不是在指路。
+于是出现自噬：**处置清单本身每写一条死路径就多一处断链**（实测 9→10 条，多出的全部来自
+治理文档自己），"断链数 < 6"这类判据永远达不成。叙述域是 append-only（红线 5 禁止回填），
+不能一边禁止修改、一边要求它零缺陷 —— 所以 NARRATIVE 域只查 Markdown 链接，不查反引号路径。
+代价说清楚：叙述域里"真想指路"的反引号路径不再被校验；导航面（docs/README.md、specs、
+.ai/modules 正文等）仍全覆盖。2026-10-16 实测：豁免后断链 0 条（豁免前 10 条，全部来自叙述域）。
 """
 
 from __future__ import annotations
@@ -21,6 +30,9 @@ SCAN_DIRS = ["docs", ".ai"]
 MD_LINK = re.compile(r"\[[^\]]*\]\(([^)#\s]+)(?:#[^)]*)?\)")
 BACKTICK_PATH = re.compile(r"`([^`\s]+\.md)`")
 PLACEHOLDER = re.compile(r"[~*<>]|\b000x\b|\.\.\.")
+# 叙述域（append-only）：反引号路径在这里是讨论对象而非指路，见模块 docstring
+NARRATIVE = ("docs/decisions/", "docs/research/", "docs/reports/", "docs/handoff/",
+             "docs/reviews/", "docs/tasks/", "docs/archive/", ".ai/memory/")
 
 
 def is_prose(target: str) -> bool:
@@ -42,9 +54,12 @@ def check(f: Path, target: str, base: Path, kind: str) -> None:
 
 for d in SCAN_DIRS:
     for f in sorted((ROOT / d).rglob("*.md")):
+        rel = str(f.relative_to(ROOT)) + "/"
         text = f.read_text(encoding="utf-8")
         for m in MD_LINK.finditer(text):
             check(f, m.group(1), f.parent, "链接")
+        if rel.startswith(NARRATIVE):
+            continue                      # 叙述域不查反引号路径，见模块 docstring
         for m in BACKTICK_PATH.finditer(text):
             t = m.group(1)
             if t.startswith(("docs/", "../")):

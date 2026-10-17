@@ -1,0 +1,44 @@
+# ChuanqiCut 编辑器统一约定（INFRA-034，2026-10-16）
+# 与 .clang-format 同源，冲突以「代码能否被 -Werror 编译 + 是否描述现状」为准。
+# 缩进口径是 2026-10-16 对 629 个入库文本文件实测出来的，不是抄模板：
+#   .h/.c/.cpp/.mm/.swift/.py/.sh 的**最常见缩进列都是 4**（.swift 为 4 的整数倍分布），
+#   .json/.toml/.yml/.podspec 是 2，.md 的列表嵌套是 2。
+root = true
+
+[*]
+charset = utf-8
+end_of_line = lf
+indent_style = space
+indent_size = 4
+insert_final_newline = true
+trim_trailing_whitespace = true
+
+# ---- 与 .clang-format 同一口径（ColumnLimit: 0 → 这里**不设** max_line_length）----
+[*.{c,h,cc,cpp,hpp,m,mm,swift,glsl,vert,frag}]
+indent_size = 4
+
+[*.py]
+indent_size = 4
+
+[*.sh]
+indent_size = 4
+
+# ---- Ruby / 配置 / 数据：社区惯例 2 空格 ----
+[*.{json,toml,yml,yaml,podspec}]
+indent_size = 2
+
+# ---- Markdown ----
+# trim_trailing_whitespace = **false**：行尾两个空格在 Markdown 里是硬换行语义，
+# 编辑器按本规则自动 trim 会**吃掉排版**（本仓 .ai/memory/pitfalls.md 等就是这种写法）。
+[*.md]
+indent_size = 2
+trim_trailing_whitespace = false
+
+# ---- Xcode 生成物：不手改，也不参与风格判定（实测 Info.plist 与 pbxproj 都是 **tab** 缩进）----
+[*.{pbxproj,plist}]
+indent_style = tab
+insert_final_newline = false
+trim_trailing_whitespace = false
+
+[{Podfile,Gemfile}]
+indent_size = 2

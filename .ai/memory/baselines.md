@@ -1233,3 +1233,16 @@ core Debug **52/52**、Release **52/52**；6 包用例 26+52+77+16+81 = **252**�
   并行前那个数已在 `TASK-INFRA-037` 与 11:44 节里留档，不改写。
 - **下一个数量级的候选**（都在池里待判，本卡未动）：池 **[25]** Debug/Release 共用一棵 `build/`
   （每趟白做一遍全量重编）、池 **[26]** `media_sequential_real` 一个用例占 ctest 一半。
+
+### 提交后复测（P163 纪律，INFRA-038 批 `40484f2` 之后）
+
+| 判据 | 结果 | 口径 |
+|---|---|---|
+| `check_repo_hygiene.sh` | **5/5 PASS** | tracked **883**（批前 882，+1 = 本批新卡 `TASK-INFRA-038-门禁并行化.md`） |
+| `[legacy-paths]` | 非豁免 **0**，豁免 **64 行**（未变） | 本批没引入新路径写法 |
+| `gen_api_reference.py --check` | `engine-api.md` 与 `cq_sdk.h` 一致 | 本批未动公共头 |
+| `linkcheck_docs.py` / `sync_context.py --check` | 全绿 / 入口文件与真源一致 | 提交前跑 |
+
+- ⚠️ 上一节「11:2x 的 tracked **878**」与本行 **883** 之间差了 4 个文件，**不是本批造成的**：
+  `6807577`（INFRA-037 收口批）先把 036/037 两张卡与 `check_apple_shells.sh` 等入了库。
+  **tracked 数每次提交后重取**，不要拿上一节的数当本批的账（P163 的同一条）。

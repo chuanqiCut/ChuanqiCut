@@ -16,7 +16,7 @@
 #   2f. commit-msg 提交信息硬线（tools/ci/check_commit_msg.py，INFRA-047：行长也是规矩，
 #                只数行数的规矩会被"合规的作文"绕过；判的是已入库区间，钩子跳不掉它）
 #   3. core-dbg  内核 Debug 构建 + 单测（-Werror）—— **跳过 LABELS=heavy 的 14 例**（ADR-0046 决定 3）
-#   4. core-rel  内核 Release 构建 + 全量单测（-Werror + LTO），**52 例全跑 = heavy 的唯一覆盖点**
+#   4. core-rel  内核 Release 构建 + 全量单测（-Werror + LTO），**全例跑（不带 --skip-label）= heavy 的唯一覆盖点**
 #   5. apple     XCFramework 三切片 + Swift 绑定测试 + SharedUI/功能 Pod 测试
 #   6. apple-shells 双 App 壳构建（tools/ci/check_apple_shells.sh，INFRA-037 收池 [18]：
 #                用 App 自己的 workspace 真编一次，podspec/Pbxproj/门面接线坏了会在这里红）
@@ -333,11 +333,11 @@ run_step "commit-msg" python3 tools/ci/check_commit_msg.py \
 # 3. 内核 Debug + 单测（**跳 heavy**，ADR-0046 决定 3）
 #    heavy = 需要真实素材 / VideoToolbox / Metal 的 14 例，Debug 与 Release 跑的是同一套断言，
 #    两档各付一遍纯属重复（实测 Debug ctest 段 107.55s 里 94.6% 是这 14 例的前身）。
-#    判据是**语义**不是秒数；覆盖点唯一 = 下面 core-rel 的全 52 例。
+#    判据是**语义**不是秒数；覆盖点唯一 = 下面 core-rel 的全例趟。
 #    名单与被跳过的例由 build_core.sh 打印在日志里（"跳过名单不打印"会让漏跑看不出来）。
 run_step "core-dbg" tools/build/build_core.sh --platform=apple --config=Debug --test --skip-label=heavy
 
-# 4. 内核 Release + 全量单测（52 例全跑，**这里不带 --skip-label**）
+# 4. 内核 Release + 全量单测（全部用例，**这里不带 --skip-label**）
 if [ "${FAST}" -eq 1 ]; then
     skip_step "core-rel" "--fast 快速档"
 else

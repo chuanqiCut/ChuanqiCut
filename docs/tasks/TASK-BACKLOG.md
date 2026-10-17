@@ -599,6 +599,9 @@ RENDER-001/红线 #6 路线，勿把相机滤镜直接当 SDK 能力引用。
 
 > **本节的号原本欠登记**：UIA-041~045 只有任务卡没有 BACKLOG 行（模块册有记录），
 > 2026-10-17 回收时一次补齐。号段：**UIA-046**、**CORE-011** 为本轮新领（现取现核，无撞号）。
+> ⚠️ **仍欠六行**：SHADER-010 / RENDER-010 / RENDER-011 / EXPORT-001 / UIA-007 / PALA-030 有卡无行
+> （MODEL-004 本轮补上）。这属于池 **[28]**（磁盘卡数 vs 表内行数）那一族欠账，
+> 不在本批逐条补齐——等池 [28] 的机器判据落地后一次性对齐，避免手写第二遍。
 
 | ID | 层 | 任务 | 依赖 | 写集要点 | 验收（要点） | 状态 |
 |---|---|---|---|---|---|---|
@@ -606,6 +609,7 @@ RENDER-001/红线 #6 路线，勿把相机滤镜直接当 SDK 能力引用。
 | UIA-045 | UI | 接入后四项回归：返回键分层 / 播放中编辑先暂停 / 拖轨道同步 seek / iPad 与 iPhone 统一 | UIA-044 | `ui/ChuanqiCutEditor/**`（AppEntry/TrackInteraction/EditorLayout/UIKit）+ 组件侧 3 处 | 底栏逐层退出；播放中编辑先停；iOS 只有一条轨道区实现 | ✅ 2026-10-17（同上回收趟；卡内「`.selectClip` 不暂停」一条**被 D5 裁定推翻**，转 UIA-046） |
 | UIA-046 | UI | 播放中**点选片段也暂停**（D5 裁定的行为变更） | UIA-044/045 | `TrackInteraction.swift`、`EditorViewController.swift:585`、`TimelineInteractionTests.swift` | 点选后 `!isPlaying`；谓词改名 `isEditing`→`pausesPlayback`；81 例零回归 + 双壳 | ⏳ **v0.2.0 射程第 4 张**（2026-10-17 已裁定；一行级改动但要重命名语义，手感题并入导出趟那张问卷、不单发） |
 | CORE-011 | SDK | 轨道静音写路径：`ChqTimeline::SetTrackMuted` + `ChqSetTrackMutedCommand` + `cq_session_set_track_muted` + Swift 穿透 + 适配层去回滚（E1 裁定） | 池 [19] | `cq_sdk.{h,cpp}`（**高冲突，集成机独占**）、`model/chq_timeline.*`、`command/chq_command.*`、`session/chq_editor_session.*`、`tests/unit/{command,session,abi}`、`api/swift/**`、`EditorTimelineKitView.swift`、`docs/api/engine-api.md` | 未知轨 `kInvalidArgument`；可撤销可重做；`--check` 声明行 **88→89**（卡面原「103→104」是无出处估算，已订正）；全量 20 步 + 双壳（L3 随 v0.2.0 批末一趟）；**零改仓库外 TimelineKit** | ✅ **2026-10-17 编码闭环、窄检全绿**（v0.2.0 射程第 1 张；关池 [19]；同批开池 [29] UIKit 窄检覆盖缺口 + P181）。Debug **38/38**、Release **52/52**、双壳 `BUILD SUCCEEDED`/error 0；`enabled` 是否同批仍等传哲一句话。**iOS 上看不到 M 按钮**（轨道头整条不创建）＝射程边界不是漏做 |
+| MODEL-004 | SDK | 空间与交互地基第一块（B5.5）：`ChqTransform`（位移/缩放/旋转/镜像/相对尺寸/透明度）+ 显式 `layer` + `speed` 整数比 + 关键帧数据槽；`SetCanvas` 连带修正 relative 并留档供 Undo | ADR-0040 §2、MODEL-003 | `model/chq_transform.{h,cpp}`(新)、`model/chq_timeline.{h,cpp}`、`model/chq_editor_model_state.cpp`、`command/chq_command.{h,cpp}`、`engine/core/CMakeLists.txt`、`tests/unit/model/test_model_transform.cpp`(新)、`tests/CMakeLists.txt` | 默认值恒等；写路径四处同一道校验；改比例后子元素漂移有单测锁死；digest 覆盖四组新字段；20 轮往返回初始态 | ✅ **2026-10-17 编码闭环、窄检全绿**（v0.2.0 射程第 2 张）。`model_transform` **203 断言 0 失败**；Debug 跳 heavy **39/39**、Release 全跑 **53/53**（heavy 14）；headers **44/0**；golden **21/0/0**。**L3 未跑**（批末一趟）、真机问卷待回收。三条与 ADR-0040 的有意偏差 + 序列化验收点未到（B3 未做）见卡内落地记录 |
 
 **批次**：044 → 045（同域同批交付）→ 046 ∥ 011 之外**不得并行**（011 动 `cq_sdk.h`，
 且其 Swift/UI 段与 046 同写 `EditorViewController.swift` 邻域——**046 先、011 后**，或反过来，串行）。

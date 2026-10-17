@@ -128,8 +128,30 @@
   **apple-draft** · apple-shells · golden。**步数以脚本为准**（真源不写死，见 INFRA-045）。
 - 版本真源 = 根 `VERSION`（`0.1.0`），根 `CMakeLists.txt` 与 `run_gate.sh` 都从它读；批账在
   [VERSIONS](../reports/VERSIONS.md)（append-only）。
-- ctest **52 例**，`LABELS "heavy"` **14** 例 = Debug 档跳过、Release 档全跑；
-  **heavy 的唯一验收覆盖点是 `core-rel`**（和 CI 的 Debug 全跑，但那条防线尚未在远端验证过）。
+- ctest **53 例**（2026-10-17 MODEL-004 加 `model_transform` 一例），`LABELS "heavy"` **14** 例 = Debug 档跳过、
+  Release 档全跑；**heavy 的唯一验收覆盖点是 `core-rel`**（和 CI 的 Debug 全跑，但那条防线尚未在远端验证过）。
+  ⚠️ **这两个数是会漂的**：活文档已改成"例数以 ctest 日志为准"，引用时先跑 `ctest -N`，别抄任何文档里的数。
 - 公共头只有 `engine/core/cq/cq_sdk.h`；`api/swift/Sources/ChuanqiCutCore/include/cq_sdk.h` 是它的
   **符号链接**（全仓唯一，别用 `-i` 类工具碰它）。
 - SPM 六包：SharedUI 与 ChuanqiCutDraft **无 `Tests/`** → 只能 `swift build`；其余四包有用例。
+
+## 五、追加（2026-10-17 22:0x）：MODEL-004 已闭环，接手点是 SHADER-010 + RENDER-010
+
+- **状态**：编码 + 窄检绿（数字见 [TASK-MODEL-004](../tasks/TASK-MODEL-004.md) 落地记录与
+  `model.md` 门禁行）。**L3 仍未跑**（裁定 = 编码链闭环后一趟，绿了随批升 `0.2.0`）；
+  真机问卷待传哲回收，口径 = 「编辑页画面与本卡之前一致」。
+- **新增接口**（下游只认这些，别再开第二处真源）：
+  `ChqTransform`（含 `opacity`）/ `ChqMirrorKind` / `kLayerMin~kLayerMax` / `ChqSpeed::ApplyTo` /
+  `ChqKeyframeList`（只有数据槽，**没有求值器**）；`ChqClip.transform|layer|speed|keyframes`、
+  `ChqTrack.transform`；六个 setter 与六条同名命令；`SetCanvas(w,h,out_fix)`。
+- **下一张（#40）= SHADER-010 → RENDER-010**：`ChqTransform` 的第一个消费者。
+  开工前必读两条：① Portable 层禁平台扩展、先有 Portable 才准写 native
+  （`.agents/skills/cq-shader-portability`）；② 变换的**坐标语义**沿用 clip-local 归一化 +
+  y 向下（`chq_transform.h` 头部已定），不得在 shader 侧另立一套。
+- **RENDER-011 的前置欠账**（本卡留的明账，不是可选项）：`layer` **不是排序键**，
+  `(轨序, layer)` 不是全序 → 合成必须先定一个确定性 tiebreak，否则"同 layer 每次渲染换一个叠法"。
+- **本卡没做的三件事**（别当成已完成）：关键帧插值/求值（B8）、`TrimClipIn` 是否平移关键帧（B8，
+  头文件已写明）、序列化往返（B3 未开工 → 卡上那条"不得破坏既有序列化"是**未到验收点**，不是通过）。
+- **本轮两个新坑**：**P185**「写"本机实测"之前要跑被测代码那一条算式」（我拿 python 的 `x/1.5`
+  去替代 C++ 的 `x*(float(old)/float(new))`，结论正好相反）；**P186**「单测夹具里的非法状态先确认它可达」
+  （不可达的"空关键帧"让后续 5 条断言连着假红）。

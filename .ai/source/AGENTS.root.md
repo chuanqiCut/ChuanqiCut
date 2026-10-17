@@ -101,8 +101,9 @@ ChuanqiCut 是**跨平台视频编辑 SDK + 各端原生 App**：
 ```bash
 tools/build/build_core.sh --platform=<apple|android>   # 编译，-Werror
 tools/build/build_core.sh --platform=apple --config=Debug --test --skip-label=heavy
-   # L1 自查档：38 个纯 CPU 例。**Release 不带该 flag 才是全 52 例**（heavy = 需要真实素材
-   # 或硬件 codec/Metal 的用例，判据是语义不是秒数，ADR-0046 决定 3；名单与被跳过的例都打进日志）
+   # L1 自查档：Debug 只跑纯 CPU 例。**Release 不带该 flag 才是全跑**（heavy = 需要真实素材
+   # 或硬件 codec/Metal 的用例，判据是语义不是秒数，ADR-0046 决定 3；名单与被跳过的例都打进日志）。
+   # 例数一律以 ctest 日志为准，不抄文档：写死的数每加一张卡漂一次（现 Debug 39 / Release 53）
 ctest --test-dir build -R <相关模块>                    # 单测
 "${PYTHON_BIN:-python3}" tests/golden/verify.py --json   # golden 齐备性（渲染/导出相关）
 # ⚠️ verify.py 需要 Python ≥ 3.11（`tomllib`）。本机**系统 python3 = 3.9 会 ModuleNotFoundError**，

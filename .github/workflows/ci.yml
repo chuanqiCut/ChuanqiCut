@@ -69,7 +69,7 @@ jobs:
       - name: 内核构建（-Werror，Debug）
         run: CMAKE_BIN=cmake tools/build/build_core.sh --platform=apple --config=Debug
 
-      - name: 单测（全 52 例，排除 P147 flake，排除名单打印）
+      - name: 单测（全部用例，排除 P147 flake，排除名单打印）
         run: |
           set -uo pipefail
           EXCLUDE='platform_apple_decode'
@@ -77,7 +77,7 @@ jobs:
           ctest --test-dir build -N | grep -E "Test *#.*${EXCLUDE}" || echo "  （无命中）"
           # ⚠️ **有意与本机 core-dbg 不同口径**（ADR-0046 决定 3 的最后一条）：本机 Debug 档
           # 带 `-LE heavy` 是为了省那 100s 墙钟，而 CI 的墙钟**不花传哲的时间**，跳过它只是
-          # 少验。所以 CI 保持全 52 例，它是 heavy 用例在 **Debug 档**的唯一覆盖点
+          # 少验。所以 CI 保持全例（`ctest -N` 当前 53，加例就变，以日志为准），它是 heavy 用例在 **Debug 档**的唯一覆盖点
           # —— 这正是 ADR-0046「代价 ①」的缓解措施，删掉这行就等于把缓解删掉。
           # 两档名单都打印（跳过不打印 = 覆盖面缩了没人知道，P145/P170 同族）。
           echo "== heavy 用例（本机 Debug 档跳过、这两趟全跑）："

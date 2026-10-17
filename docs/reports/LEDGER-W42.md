@@ -1344,3 +1344,32 @@ CA 首次提交事务走到「有 view / 无 layer」的畸形状态 →
   并在 PLAN 那节加记账 blockquote（谁将来读到都能核）。
 - 落账面：BACKLOG 行 156/184 与 §16（裁定三次 / 九张 / 共六张 / ①①'②③）、VERSIONS §一、
   HANDOFF-026 §二、`shader.md` 与 `render.md` 指针、`audio.md` 未落地清单。
+
+## 补记二十 · MODEL-004 编码闭环：空间/层级/变速/关键帧数据槽（2026-10-17 22:0x，Qoder 集成机）
+
+- **交付**：新增 `engine/core/cq/model/chq_transform.{h,cpp}`；`ChqClip` 挂 `transform/layer/speed/keyframes`、
+  `ChqTrack` 挂 `transform`；`SetCanvas` 多一个可选出参 `ChqCanvasRelativeFix`（Do 时留档、Undo 原样写回）；
+  六个 setter + 六条命令 + digest 覆盖；`SplitClip` 按切点给关键帧分箱。
+  单测 `tests/unit/model/test_model_transform.cpp`（`model_transform`，203 断言）。
+- **数字**：Debug/Release 双 `-Werror` 全过；Debug 跳 heavy **39/39**、Release 全跑 **53/53**（heavy 14 例）；
+  headers **44 头 0 违规**；hygiene 5/5、clang-format 0；golden **21/0/0 / 901784B**。
+  **L3 未跑**（裁定：编码链闭环后一趟，绿了随批升 0.2.0）。
+- **三条与 ADR-0040 §2 的有意偏差**（都写在卡与头文件里，不静默）：
+  ① `ChqTransform` 多一个 `opacity`（RENDER-011 叠合要用逐片段 alpha，属性袋那条路要等 EFFECT-001）；
+  ② `layer` 只挂片段不挂轨（两份层级会互相问"谁赢"）；
+  ③ 关键帧时刻取**相对片段起点**（拖片段不改动画相位）→ 副作用是 Split 必须分箱，
+     而 `TrimClipIn` 是否平移归 **B8**（负时刻直接拒，因为局部时间里"片段开始之前"永远采不到）。
+- **两处我自己写错又改回的**（→ **P185 / P186**）：注释里那句"0.3 回不到原值"来自 python 的
+  **不等价算式**（我按 `x/1.5`，代码是 `x*(float(old)/float(new))`）——真跑之后是 `0.3` 恰好回来、
+  `1.7` 差 1.2e-7 回不来；卡片里那句"`cmake --build build --target test` 不能用"是从上一轮源根报错
+  搬来的，复跑就绿了。同批还有一条夹具不可达（空关键帧被 `Set` 自己拦住）串出 5 条假失败。
+- **搭车改动（声明式）**：本卡加例让写死的"38/52"在四处漂了 —— `gate_scope.sh` why 行、`run_gate.sh`
+  三步注释、`ci.yml` 步名、真源 `.ai/source/AGENTS.root.md`（5 份生成物已重刷）+ `tests/CMakeLists.txt`
+  的 P172 警示。**改法 = 活文档去死数，例数以 ctest 日志为准**；案底（baselines 历史行、模块册历史行、
+  ADR-0046、已关卡片）一律不改写。
+- **落账面**：[TASK-MODEL-004](../tasks/TASK-MODEL-004.md)（状态 + 落地记录 + 写集欠账三条）、
+  `model.md`（新增落地节 + 门禁行 + **`model_serialize`/`anim_interp` 两个不存在的用例名已订正**）、
+  BACKLOG §16（补 MODEL-004 行，另记**仍欠六行**归池 [28]）、`baselines.md`（52→53 计数基线 + 浮点实测）、
+  `pitfalls.md`（P185/P186）。
+- **下一张**：#40 = SHADER-010 + RENDER-010（`ChqTransform` 的第一个消费者）。
+  RENDER-011 开工前必须先定 `(轨序, layer)` 的确定性 tiebreak —— `layer` 相等时数组顺序不是全序。

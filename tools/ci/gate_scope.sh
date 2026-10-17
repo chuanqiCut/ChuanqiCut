@@ -110,7 +110,7 @@ if hits 'engine/core/*' || hits 'tests/*'; then
     # heavy 14 例**只在 Release 跑**（ADR-0046 决定 3）→ 动了内核就必须补这一条，
     # 否则"窄检全绿"会变成媒体链路从未被验过的遮羞布。
     add_cmd 'tools/build/build_core.sh --platform=apple --config=Release --test'
-    add_why 'R2 动了内核或其单测 → Debug 跑 38 个纯 CPU 例 + Release 跑全 52 例（heavy 的唯一覆盖点）'
+    add_why 'R2 动了内核或其单测 → Debug 跑纯 CPU 档（跳 heavy）+ Release 跑全例（heavy 的唯一覆盖点）；例数以 ctest 日志为准，别抄脚本里的数'
 fi
 
 # ---- R3 Apple 平台层 / Swift 绑定 ----

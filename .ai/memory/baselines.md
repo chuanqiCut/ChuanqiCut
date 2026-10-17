@@ -1478,3 +1478,25 @@ core Debug **52/52**、Release **52/52**；6 包用例 26+52+77+16+81 = **252**�
 ⚠️ 本机该设备**USB 上 0 命中**（`ioreg -p IOUSB` 无 iPhone）= 走无线配对；装/起/推文件/`-e`/`--console`
 在无线下**全都可用**，所以「无线不能跑真机」这条旧口径（zcode 计划里的 `Intel 本机无法跑真机`）
 在本机不成立，别拿它当理由把真机验证推给"以后"。
+
+## 2026-10-17 · MODEL-004（B5.5 空间地基）窄检实跑 —— ctest 例数水位从 52 变 53
+
+**计数基线**（下一张加例的卡必须同时改这几处，别只改一处；活文档已去死数，见下）：
+
+| 项 | 命令 | 数字（本机 Intel x86_64，AppleClang） |
+|---|---|---|
+| 新增用例 | `ctest -N` | **53**（原 52 + `model_transform`）；`LABELS heavy` 仍 **14** |
+| Debug L1 档 | `build_core.sh --config=Debug --test --skip-label=heavy` | **39/39**（原 38），real **33.15s** |
+| Release 全档 | `build_core.sh --config=Release --test` | **53/53**（原 52），real **124.40s**，`heavy = 114.16 sec*proc (14)` |
+| 契约头 | `check_platform_headers.py` | **44 头 0 违规**（原 43，+`chq_transform.h`） |
+| golden | `verify.py --json` | built_ok **21** / fail **0** / unbuilt **0** / **901784B** |
+
+⚠️ **单趟 `cmake --build build --target test` 跑的是最后一次 configure 的配置**（`build/` 是
+Debug/Release 共用单棵树，池 [25]）：本批紧跟 Release 之后实跑 = 53 例 / heavy 120.37 sec*proc，
+不是 Debug 的数。引用例数必须带"哪个配置 + 带不带 `--skip-label=heavy`"。
+
+**浮点实测（float32，`chq_transform.cpp:116-120` 那条算式，非模拟）**：
+`1080×1920→720×1280→回` 宽 `1.7→2.55000019→1.70000017`（差 **1.2e-7**，不回来）、
+`0.3→0.450000018→0.3`（**恰好回来**）、`1.0→1.5→1.0`（回来）；
+`1080×1920→1080×1080→回` 高 `0.7→1.05→0.70000005`（不回来）。
+⇒ 结论是"回不回取决于值"，所以 `ChqSetCanvasCommand::Undo` 走 **Do 时留档原样写回**，不重算反比。

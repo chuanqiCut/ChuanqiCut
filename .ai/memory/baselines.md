@@ -1456,3 +1456,25 @@ core Debug **52/52**、Release **52/52**；6 包用例 26+52+77+16+81 = **252**�
   不新建文件 —— 避开 UIA-046 的写集。
 - ⚠️ 卡面原写「公共符号 103 → 104」是**无出处的估算**（那个 103 来自 INFRA-032 的**另一个计数器**），
   已按实测 88 → 89 订正。
+
+### 真机趟 2026-10-17 20:3x（iPhone 17 Pro，CORE-011 build，Debug-iphoneos）
+
+| 步 | 命令 | 结果 |
+|---|---|---|
+| 装 | `devicectl device install app` | rc=0，`App installed:`（产物 = 双壳门禁那份 `build/gate-logs/dd-ios/…/Debug-iphoneos/ChuanqiCutApp.app`，Team `JGFAHCM926`、arm64、含 `embedded.mobileprovision`） |
+| 推素材 | `devicectl device copy to … /Documents/demo.mp4` | rc=0，45 KB（`tests/golden/frames/gf_1080p_h264.mp4`） |
+| 起（不带 console） | `launch --terminate-existing -e '{"CQ_AUTO_ROUTE":"editor",…}'` | rc=0，**`-e` 注入可用**，App 留前台 |
+| 起（带 console） | `launch --console --log-output …` 后台跑 | rc=0，stderr 全拿到 |
+| 起（带 console + `nohup … &`） | 同配方旧写法 | **rc≠0，CoreDeviceError 10002 / POSIX 22 EINVAL**（改掉 `nohup` 就好了 → **P182**） |
+
+**日志里读到的事实**（一次 22s 窗口）：`demo_loaded=true`、`clips=1`、`[tk:track] rebuild tracks=1 clips=1`、
+硬解 `hw=YES out=1920x1080`、`pump_req/s=120 pump_rendered/s=112~120 pump_nonok/s=0`、
+`mtk_draw/s=120`（一次 392 = 首帧突发）、`audio_drop=0 audio_under=0 audio_resync=0`、
+`footprint 87.0 → 92.9 MB`、`tick_p95=0ms`、playhead 处理 avg **3.4~3.7ms** max **5.4ms**。无崩溃、
+`DebugCrashDumper` 已装。**没有多轨 Warn**：演示钩子只铺一条轨一个片段
+（`installDemoClipFromEnvironment`，`AppEntry.swift:782`），要触发
+`多轨命中 N 条但 B0 只渲染第一条` 需要**手动把片段拖上副轨**，或给钩子加第二条轨（归 RENDER-011 卡的验收基建）。
+
+⚠️ 本机该设备**USB 上 0 命中**（`ioreg -p IOUSB` 无 iPhone）= 走无线配对；装/起/推文件/`-e`/`--console`
+在无线下**全都可用**，所以「无线不能跑真机」这条旧口径（zcode 计划里的 `Intel 本机无法跑真机`）
+在本机不成立，别拿它当理由把真机验证推给"以后"。

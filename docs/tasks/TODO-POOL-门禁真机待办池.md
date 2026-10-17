@@ -841,3 +841,18 @@ SPM 临时产物一律 `swift test --disable-sandbox --scratch-path "$ROOT/build
 - 要做的：`gate_scope.sh` 的 R4 命中 `ui/*/Sources/**/UIKit/**` 或 `apps/**` 时补吐
   `tools/ci/check_apple_shells.sh`（并说明为什么不是"保守地全跑"）；同步记坑 **P181**。
 - 归口：`tools/ci/gate_scope.sh`（基建，模块册 = `.ai/modules/core.md`）；不塞进 CORE-011 的写集。
+
+### [30] 多轨画面的真机取证**没拿到**：演示钩子只铺一条轨（开放 · 2026-10-17 发现，集成机）
+
+- 来源：本机 / 2026-10-17 20:3x 真机趟（iPhone 17 Pro，CORE-011 build，装/起/日志三件通）。
+- 现象：`[hook] demo_loaded=true clips=1` + `rebuild tracks=1` —— 装配器那条
+  `多轨命中 N 条但 B0 只渲染第一条`（`engine/core/cq/render/chq_graph_assembler.cpp:74-77`）的 Warn
+  **一次都没出现**。根因不是渲染：`installDemoClipFromEnvironment`（`ui/.../AppEntry.swift:782`）
+  按设计只建**一条轨 + 一个片段**，所以真机上没有"多轨命中"这个状态。
+- 为什么算欠账：RENDER-011（多轨合成，已排进 v0.2.0 射程）的**验收基线**就是这条 Warn 消失、
+  副轨画面真的叠上去。今天没有任何自动化路径能构造"两轨同时命中"，届时的证据只能靠手拖 —— 手拖不可复现。
+- 待办（二选一，归 RENDER-011 建卡时定）：
+  [ ] 给 DEBUG 冒烟钩子加 `CQ_DEMO_TRACKS=<n>`：一次建 n 条视频轨、每轨铺同一时长的片段，
+      让"多轨命中"在真机上可复现（写集 = `AppEntry.swift` 的 `#if DEBUG` 段，不动正式路径）；
+  [ ] 或由传哲手拖一次副轨 + 回报观感（**只能出观感、出不了基线**，问卷口径）。
+- 验收回填：RENDER-011 卡 + 本条 ✅ + baselines「真机趟」补一行合成后的帧率/内存数字。

@@ -3370,3 +3370,19 @@ L1：`swift test` 编辑器包 **81/81 全绿**、`check_ios_compile.sh --prime`
      ——SPM 用 `.binaryTarget` 链接**拷贝进仓库的 XCFramework**，新加 C ABI 符号后必须先
      `build_core_apple.sh --config=Release` 再 `api/swift/prepare.sh`。这是 **P70 第 3 条**的
      SPM 包变体（原条目只写了 App 壳的 podspec vendored 路径）。
+
+## P182：真机配方里 `nohup … &` 与 `--console` 互斥——旧写法今天报 EINVAL，日志一条都拿不到（2026-10-17，iPhone 17 Pro 真机趟，verified）
+
+**场景**：配方是"`--console` 由我的 shell 持有"＋"本机无 `timeout`，用 `nohup … &` + `sleep N` 控时长"，
+两条拼起来今天直接 **CoreDeviceError 10002 / POSIX EINVAL(22)**，连试两次（带 `-e`、不带 `-e`）都红。
+把 `nohup … &` 去掉、改用工具自带的后台执行 + `--log-output` 把 devicectl 自己的日志分出去，**同一台
+设备同一个包立刻通**，stderr 全量落文件。⇒ 红的一直是 `nohup`，不是设备、不是签名、不是 `-e`。
+
+- 规则：
+  1. **`--console` 不要和 `nohup` 拼**：它需要 stdio 由自己接管；`nohup` 换掉的描述符语义让它建流失败，
+     报的还是"Invalid argument"这种**指向别处**的错。
+  2. 时长控制交给**后台任务 + 读文件**，不要用 `sleep` 掐断；devicectl 自身的运行日志用
+     `--log-output <文件>` 分出去，别和应用 stderr 挤同一个文件（挤在一起时 `grep -v` 才看得见正文，
+     判据很容易误读）。
+  3. **报错先做"最小变量"复现**：本条若第一步就试"不带 `-e`"，会以为锅是 JSON；真正变一次
+     （去 `nohup`）才定到位。同族 = P180（拿错状态源）、P168（通知不可信）。

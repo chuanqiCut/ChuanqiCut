@@ -68,7 +68,7 @@ ARCH-003 §5/§6/§8/§9、ADR-0005（美型实现切换）
 | GFX-001 | GFX 抽象 | ✅ |
 | **RENDER-001** | RenderGraph **第一步（B0）** | ✅ **已落地**（编码 2026-10-12，提交 `6ccf29b` 2026-10-13，62 文件 / +5727 −346）：节点 DAG + Kahn 拓扑与环检测 + FNV-1a 结构指纹 + 三用途装配器（kPreview/kExport/kAudioOnly）+ 两阶段求值 + 时钟源；预览已改吃该图且 `preview_renderer` 51/51 与原 blit 路径**像素一致**。⚠️ 按 ADR-0034 **真机问卷未回收前不标记验收完成** |
 | RENDER-004/005 | Pass 合并 / 纹理别名 / LOD | ❌ 未开工（性能优化项，随 RENDER-011 一起评估） |
-| RENDER-011 | 效果节点 + **多轨合成** | ❌ 未开工。**当前渲染仍只画第一条命中视频轨**（`chq_graph_assembler.cpp:77` 与 `chq_preview_renderer.h:24` 双自陈）；001 落地后本项成为多轨/导出（EXPORT-002）的新瓶颈 |
+| RENDER-011 | 效果节点 + **多轨合成** | ❌ 未开工。**当前渲染仍只画第一条命中视频轨**（`chq_graph_assembler.cpp:77` 与 `chq_preview_renderer.h:24` 双自陈）；001 落地后本项成为多轨/导出（EXPORT-002）的新瓶颈。**2026-10-17 追加裁定排进 v0.2.0 射程第 3 张**（CORE-011 ✅ → MODEL-004 → **本卡** → EXPORT-001 → …），排在导出之前是为了让导出交付的就是"所见"画面。⚠️ **磁盘无卡**、BACKLOG 那行写集 `core/src/effect/composite.*` 已过期；且这行把「效果节点」与「多轨 blend」混挂一张，建卡时判拆 |
 
 ### 测试与门禁记录（阶段批）
 
@@ -76,7 +76,8 @@ ARCH-003 §5/§6/§8/§9、ADR-0005（美型实现切换）
 |---|---|---|
 | 2026-10-13 | B0 合并快检（本机 Intel x86_64 / macOS 26.7.1 / Xcode 26.6） | `build_core.sh` Debug **3m49s、0 错 0 警**（-Werror）；`ctest` **52/52**（78.66s）；`render_graph` / `model_property` 179 检查 / `c_abi_property` 76 检查均 0 失败；`preview_renderer` **51/51** 像素一致 |
 | 2026-10-13 | AUDIO-004 同批窄检 | 平台头门禁 **43 头 0 违规**；`ctest -R audio` 5/5 |
-| ⚠️ 未做 | 全量 `run_gate.sh`（最后一次 = 2026-10-12 PASS=14）、golden `verify.py`、真机 | 均**未跑**；池 [18]（门禁不含 App 壳构建）仍未决 |
+| ⚠️ 未做 | 全量 `run_gate.sh`（最后一次 = 2026-10-12 PASS=14）、golden `verify.py` | 均**未跑**（真机已在 2026-10-17 单独上过一趟，见下一行）；池 [18] 已随 INFRA-037 解决 |
+| 2026-10-17 20:3x | **真机趟**（iPhone 17 Pro 无线配对，CORE-011 build Debug-iphoneos） | 编辑页不崩；硬解生效 `hw=YES out=1920x1080`；`pump_req/s=120 → pump_rendered/s=112~120`、`pump_nonok/s=0`、`mtk_draw/s=120`、`tick_p95=0ms`、`footprint 87.0→92.9MB`。⚠️ **多轨命中那条 Warn 没出现** —— 演示钩子只铺一轨一片段，构造不出两轨同时命中 → 池 **[30]**（RENDER-011 的验收基线目前无可复现路径）。配方与失败趟数字见 baselines「真机趟」+ **P182** |
 
 ### 调研 · 决策 · 池指针
 

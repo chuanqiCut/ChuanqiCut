@@ -1293,3 +1293,18 @@ CA 首次提交事务走到「有 view / 无 layer」的畸形状态 →
 - **同批踩到的一次假绿风险**：`swift test` 首跑报 `Undefined symbols: _cq_session_set_track_muted`，
   因为 SPM `.binaryTarget` 链的是**拷进仓库的旧 XCFramework**（**P70 第 3 条**的 SPM 变体）→
   `build_core_apple.sh --config=Release` + `api/swift/prepare.sh` 后才绿。
+
+## 补记十七 · 射程追加裁定 + 真机趟（2026-10-17 20:3x，Qoder 集成机）
+
+- **追加裁定「把这些都排进来」**：多轨画面逻辑插进 v0.2.0，链变 **CORE-011 ✅ → MODEL-004 → RENDER-011 →
+  EXPORT-001 → UIA-007 → UIA-046 → PALA-030（七张）+ 池 [28]**。位置理由：画面多轨的前置是数据槽
+  （`ChqClip` 无 transform/layer），导出排在合成之后交付的就是"导出 = 所见"。
+- **建卡欠账从三张变四张**：EXPORT-001 / UIA-007 / PALA-030 / **RENDER-011** 磁盘无卡
+  （MODEL-004、EDIT-012 已有卡）。BACKLOG 这几行的写集 `core/src/export/*`、`core/src/effect/composite.*`
+  **都不存在**，`engine/core/cq/export` 零实现 → 建卡时按真源重写，依赖列（`MEDIA-012/CORE-005/RENDER-003`）逐个核。
+- **真机趟（不等批末了）**：装 rc=0、推素材 rc=0、`-e` 注入可用、`--console` 拿到 22s stderr ——
+  编辑页不崩、硬解 1920x1080、`pump_rendered/s=112~120`、`audio_drop=0`、`footprint 87.0→92.9MB`。
+  数字与口径见 baselines「真机趟」。**没拿到的**：多轨合成那条 Warn（演示钩子只铺一轨）→ 新开池 **[30]**。
+- **坑 P182**：`--console` 与配方里的 `nohup … &` 互斥，报 CoreDeviceError 10002 / POSIX 22 EINVAL，
+  连试两次都以为是 `-e` 或设备的锅；去掉 `nohup`、改用后台任务 + `--log-output` 立刻通。
+  ⚠️ 顺带证伪一条旧口径：**无线配对下装/起/推文件/注入/`--console` 全可用**，"本机不能跑真机"不成立。

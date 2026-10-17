@@ -79,6 +79,19 @@
 3. 真机 = **UIA-007 导出闭环后上一次** iPhone 17 Pro；`QUESTIONNAIRE-UIA-046` 的手感题**并入那一张**，
    不单发（问卷未回收不得标记完成）。
 
+**同日 20:3x 追加裁定（覆盖上面第 1、3 条，接手以这段为准）**：
+1. 射程 = **七张**，链 **CORE-011 ✅ → MODEL-004 → RENDER-011 → EXPORT-001 → UIA-007 → UIA-046 → PALA-030**。
+   传哲「把这些都排进来」= 把**多轨画面逻辑**（MODEL-004 轨道变换/层级 → RENDER-011 视频多轨合成）
+   从 B4 之后前移到导出之前——顺序是数据依赖决定的：`ChqClip` 现在没有 `transform`/`layer`，
+   合成器拿不到"第二轨画什么、画在哪"，先做 RENDER-011 只能空转。
+   现状：音频**已是真多轨**（`engine/core/cq/audio/chq_preview_mixer.cpp` 遍历全轨、跳 `!enabled || muted`），
+   视频**只取第一条命中的轨**（`engine/core/cq/render/chq_graph_assembler.cpp` 命中第二条即 Warn）。
+   **建卡欠账 = 四张**（EXPORT-001 / UIA-007 / PALA-030 / RENDER-011，磁盘无卡且 BACKLOG 写集过期）。
+2. 真机 = **不等批末**（2026-10-17 20:3x 已上一次，数字见 `.ai/memory/baselines.md`「真机趟」节）。
+   D5 手感题仍并入导出那张问卷，不单发。
+   ⚠️ 那次只证明"能装能起能拿日志"，**没拿到多轨画面的取证** → 立为池 **[30]**；
+   踩到的 `--console` × `nohup` 互斥记 **P182**。
+
 ## 三、接手前必读的三条纪律（本批刚立的）
 
 1. **不知道该跑什么就问脚本**：`tools/ci/gate_scope.sh`（只读，吐该跑的窄检命令 + 理由；判不准自动升一档）。

@@ -27,7 +27,7 @@ ctest --test-dir build                          # 全量
 xcodebuild -workspace apps/apple/ios/ChuanqiCut.xcworkspace -scheme ChuanqiCutApp -sdk iphonesimulator build
 xcodebuild -workspace apps/apple/mac/ChuanqiCut.xcworkspace -scheme ChuanqiCutMacApp build
 # SPM 测试宿主（临时编译统一目录 /build/spm/，P84：包目录内不得落 .build）
-swift test --disable-sandbox --scratch-path "$PWD/../../../../../build/spm/SharedUI"     # 在 apps/apple/packages/SharedUI 下
+swift test --disable-sandbox --scratch-path "$PWD/../../build/spm/SharedUI"     # 在 ui/SharedUI 下（INFRA-031：两层上溯到仓库根）
 ```
 
 ### Android
@@ -39,8 +39,11 @@ swift test --disable-sandbox --scratch-path "$PWD/../../../../../build/spm/Share
 
 ### Shader
 ```bash
-# ⚠️ tools/shaders/ 目前是占位（构建/lint 脚本尚未实现）。改 shader 时人工确认
-#    Portable 层（shaders/src/）无平台扩展；脚本落地后（BACKLOG INFRA）补命令。
+# Portable 层：engine/shaders/portable/*.glsl（禁平台扩展）。生成链已落地（SHADER-001），
+# 由 engine/platform/apple/CMakeLists.txt 的 add_custom_command 在构建期调用：
+python3 tools/shaders/build_shaders.py --repo-root . --out-dir build/generated/shaders
+# 改完必须删 build/generated/ 重跑一次，确认产物由新路径重生成（增量复用会假绿）。
+# ⚠️ lint 仍无脚本：Portable 层禁平台扩展靠人工 + 本 skill 的四条硬约束。
 ```
 
 ### Golden（渲染/导出相关改动必跑）
@@ -77,6 +80,6 @@ tools/ci/run_gate.sh --fast   # 快速档：跳过 Release 与 Apple/Swift
 ## 常见失败处理
 - 构建产物缓存污染 → 手动删 `build/`（无 clean.sh 脚本）后重跑
 - 改了 `core/` 之后 Swift 侧报 `symbol(s) not found` → SPM 用的是 XCFramework 复制件，
-  先 `tools/build/build_core_apple.sh --config=Release && bindings/swift/prepare.sh`
+  先 `tools/build/build_core_apple.sh --config=Release && api/swift/prepare.sh`
 - 多个 worktree 共用 DerivedData → 每个 worktree 必须独立 DerivedData 路径
 - golden 失败 → 先确认是"预期变更"还是"回归"，预期变更需更新 golden 并在 PR 说明

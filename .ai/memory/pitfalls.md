@@ -130,7 +130,7 @@
 ### P2 · 冻结接口只有头文件、实现缺失，编译期 `static_assert` 会把它掩盖成"全绿"
 - 现象：`core/include/cq/platform/capabilities.h` 冻结的 `SetCapabilitiesBackend` /
   `QueryCapability` **长期只有声明、没有定义**。CTest 一直 22/22 全绿。
-- 根因：全仓库唯一引用是 `tests/unit/platform_headers_compile.cpp` 里的 `static_assert`
+- 根因：全仓库唯一引用是 `tests/unit/platform/platform_headers_compile.cpp` 里的 `static_assert`
   （校验返回类型）。**`static_assert` 是编译期检查、不链接** —— 只要声明对就能过，
   实现存不存在它管不着。
 - 影响范围：任何「接口冻结」类任务都可能这样静默断掉。这是 CORE-006 当时
@@ -140,7 +140,7 @@
 - 修复：CORE-007 补上实现（`core/src/platform/capabilities.cpp` + `platform/apple/capabilities.mm`）。
 - 防复发规则：**冻结接口后必须补一个「链接并运行」的最小用例**，
   `static_assert` / 头文件编译验证**不能**作为"接口可用"的证据。
-  本轮已落的样例：`tests/unit/test_capabilities.cpp`（注入后端后真查询）。
+  本轮已落的样例：`tests/unit/platform/test_capabilities.cpp`（注入后端后真查询）。
 - 日期 / 来源 / 验证状态：2026-09-29 / CORE-007 / **verified**（24/24，其中 2 个新用例
   链接并运行了这两个函数；Apple 后端查询结果与本机已知硬件事实交叉吻合）
 
@@ -188,7 +188,7 @@
 - 日期 / 来源 / 验证状态：2026-09-30 / BIND-002 / **verified**
 
 ### P4 · CMake `LANGUAGES` 没启用 C → `.c` 源文件被**静默忽略**
-- 现象：BIND-001 新增 `tests/unit/test_c_abi.c`（用于机器校验 cq_sdk.h 是纯 C），
+- 现象：BIND-001 新增 `tests/unit/abi/test_c_abi.c`（用于机器校验 cq_sdk.h 是纯 C），
   根 `CMakeLists.txt` 写的是 `project(... LANGUAGES CXX)`。构建日志里
   **没有任何 `Building C object` 行**，直接 `Linking CXX executable`，
   报 `Undefined symbols: _main`。
@@ -223,7 +223,7 @@
   与产品名一致就不会暴露此坑，一旦有人重命名目录就会突然断链。
 - 修复：`.product(name: "ChuanqiCut", package: "swift")`。
 - 防复发规则：本地包引用一律以**目录名**为准写 `package:` 参数；给绑定包
-  目录改名 = 破坏性变更，须全仓同步（apps/apple/packages/SharedUI）。
+  目录改名 = 破坏性变更，须全仓同步（现落点 `ui/SharedUI`，INFRA-031 上提）。
 - 日期 / 来源 / 验证状态：2026-10-01 / UIA-002 / **verified**
   （改后 `swift build` + `swift test` 4/4 通过）
 
@@ -539,7 +539,7 @@
   * session 队列 FIFO ⇒ 哨兵落地就证明此前所有提交（含被拒的）都已执行完；
     而「+1」正好是**失败语义的判据**：X 被拒时版本只推进哨兵那一次。
 - 防复发：**不要用 sleep 赌时长**，也不要无参数地「等一次推进」。
-  参考实现：`tests/unit/test_c_abi_edit.c::DrainAfter(s,k)`、
+  参考实现：`tests/unit/abi/test_c_abi_edit.c::DrainAfter(s,k)`、
   `bindings/swift/Tests/ChuanqiCutTests/TimelineTests.swift::drain(_:from:expecting:)`。
 - 日期 / 来源 / 验证状态：2026-10-03 / UIA-005 / **verified**
   （C 61/61、Swift 绑定 18/18、SharedUI 18/18）
@@ -711,7 +711,7 @@
 - 现象：同一仓库在原机（macOS 15.4 / AppleClang 17，见各 baselines 条目）全绿，
   本机（macOS 13.7 / Xcode 15.2 / AppleClang 15，`xcodebuild -version` 确认）连
   既有 core 都编不过：① `core/src/base/log.cpp` 的 `std::va_list` 在旧 libc++
-  不存在；② `tests/unit/test_perf.cpp` 的 volatile 复合赋值触发
+  不存在；② `tests/unit/base/test_perf.cpp` 的 volatile 复合赋值触发
   `-Wdeprecated-volatile`（C++20 P1152，AppleClang 15 更早把该警告拉进 -Werror 集）。
 - 处理：① log.cpp 改用全局 `::va_list` + `<cstdarg>`（新旧工具链都成立）；
   ② `acc += i` → `acc = acc + i`。均为语义不变的兼容修复。
@@ -2216,7 +2216,7 @@ cannot find 'TimelinePalette' in scope                       // podspec 文件�
    正好相反，同一份 palette 必须同时提供两种取值（见 `TimelinePalette.RGBA.uiColor` / `.cgColor`）。
 
 - **影响范围**：任何 Apple 端 UI 改动。`swift test` 数字**不能替代**壳构建结论。
-- **防复发规则**：改了 `apps/apple/packages/**/UIKit/**` 或任何 os(iOS) 文件后，
+- **防复发规则**：改了 `ui/**/UIKit/**` 或任何 os(iOS) 文件后（INFRA-031 前该路径为 `apps/apple/packages/**`），
   ① 必跑 iOS 壳构建；② 若动过 podspec 涉及的文件集合，两端 `bundle exec pod install` 都要跑；
   ③ 改了共享的配色/几何常量，两端壳都要编一遍。
 
@@ -2507,3 +2507,406 @@ CA::Transaction::flush_as_runloop_observer → CA::Layer::perform_update_
 - 同类预防：接缝签名改动尽量**接口 + 实现 + 调用点 + 假实现（tests/unit/fake）同笔**，
   跨批次拆分时把接口文件归到**最早**那笔，而不是留给后续批。
 - 修复：`b471b8c` 补齐接口与剩余链路。
+
+## P144：`.gitignore` 的两种**静默失效**写法 —— 规则看着在、实际一条没挡（2026-10-16，INFRA-027 收口，已证实 verified）
+- 现象一（行内注释）：写成 `/vendor/   # bundler gems 缓存` 之后，`git check-ignore vendor/x` 返回**未忽略**。
+  gitignore 不把行内 `#` 当注释：整串（含空格与"说明"）被当成**路径的一部分**，规则变成一条永不匹配的模式。
+  同批一起失效的还有 `/build/`、`/prebuilt/`、`third_party/prebuilt/` —— 一次改写漏掉 4 条，
+  而且 `git status` 立刻冒出 `?? build/`、`?? vendor/`、`?? third_party/prebuilt/` 三个大目录，
+  才被人眼抓到。**注释必须单独成行。**
+- 现象二（含斜杠≠任意层级）：`shaders/generated/` 这种**模式里带斜杠**的条目是**锚定到 .gitignore 所在目录**的，
+  只匹配仓库根的 `shaders/generated/`，不匹配 `engine/shaders/generated/`。
+  INFRA-033 要把 shader 挪进 `engine/` 时，旧规则就盖不住新落点了。
+  对比：`tmp*/`、`vendor/`（无斜杠）才是真·任意层级。要两头都盖必须**各写一条**，或用 `**/`。
+- 防复发（本仓口径）：改 `.gitignore` 之后固定三条取证，不接受"看起来对了"：
+  1. `git ls-files | wc -l` 改前后相同（防误伤已入库源码）；
+  2. `git status --porcelain | grep '^??'` 只剩本次预期新增（防漏网产物现形）；
+  3. 对每条关键规则打一个**存在性探针**：`git check-ignore -v <该目录>/x`，逐条核对返回的规则行号。
+     本轮就是靠探针把 4 条静默失效规则当场抓出来的。
+- 关联：裸模式误忽略的历史案底见本文件"三个构建脚本从未入库"那条（顶部注释亦引用）；
+  INFRA-027 的验收条款 3 即本坑的固化版本。
+
+## P145：门禁摘要会**替没跑过的步骤背书** —— 失败即退出时 `print_summary` 读的是上一次的同名日志（2026-10-16，INFRA-029 首跑，已证实 verified）
+- 现象：`tools/ci/run_gate.sh` 在 `core-rel` 段 FAIL 后走 `print_summary; exit 1`，**apple 五个包段根本没执行**。
+  但摘要仍打出 `apple-swift-bindings: Test Suite ... passed`、`apple-player` / `apple-camera` /
+  `apple-import` / `apple-editor` 共 10 行"通过"，看着像全跑过。真相在时间戳：`grep` 的是
+  `build/gate-logs/*.log`，文件是 **2026-10-12 12:04** 写的，被当作本次结果打印。照抄这段摘要 = 拿四天前的数字给今天的改动验收。
+- 根因：`run_gate.sh:46-60` 的 `print_summary()` 只判断 `[ -f 日志 ]`，不判断该日志是否本次产出。
+- 防复发（本仓口径，固化进 INFRA-034）：
+  1. 读摘要前先看**门禁是否跑到该段**——本次日志 mtime 必须晚于启动时间，或直接看有没有对应的
+     `==> [apple-*]` 起始行；没有起始行的"通过"一律按**未验证**处理。
+  2. `run_gate.sh` 应在每个 step 开头把日志截断（`: > "$log"`）或给文件名加运行时间戳；
+     `print_summary` 只统计本次 `PASS=` 计数里的 step。
+- 同批第二个坑（同一根因的另一面）：**搬家不得与门禁并发**。本次 `git mv` 夹具时 Release 段 ctest 正在跑，
+  旧目录被清空 → `ai_edit_plan` 报 `FAIL: manifest 非空 / 总 0`。这是假失败，但长得跟真丢夹具一模一样。
+  收口顺序固定为：**门禁跑完（或明确 kill）→ 再动文件 → 再跑门禁**。
+- 关联：INFRA-029 的 risk 条款；远端"已验证"按未验证处理的同源纪律见 AGENTS「双机分工」节。
+
+## P146：`core-dbg`/`core-rel` 走 macOS 切片，**编不到 iOS-only 代码** —— `-Werror` 破坏可以带着"门禁绿"入库（2026-10-16，INFRA-029 批暴露，已修复 verified）
+- 现象：同一次门禁里 `core-dbg`、`core-rel` **PASS**，紧随其后的 `apple-xcframework` **FAIL(rc=2)**：
+  `engine/platform/apple/media/audio_engine.mm:252:65: error: unused parameter 'note' [-Werror,-Wunused-parameter]`。
+  两条 step 编译的是同一份源，结论相反。
+- 根因：`RegisterSessionObservers()` 整段在
+  `engine/platform/apple/media/audio_engine.mm:212-271` 的 `#if defined(TARGET_OS_IPHONE) && TARGET_OS_IPHONE` 里；
+  `build_core.sh --platform=apple` 只出 macOS 切片，这段被预处理掉 → 该 step 永远绿。
+  真编它的只有 `build_core_apple.sh`（ios-device / ios-sim / macos 三切片）。
+  引入者是 b471b8c（#18 音频打断恢复），当时只跑了 `build_core.sh` 窄检就入了库。
+- 防复发（口径，非自动化）：**动过 `engine/platform/apple/**` 里任何 `#if … TARGET_OS_IPHONE` 包裹的代码，
+  窄检必须加跑 `tools/build/build_core_apple.sh --config=Release`**（含 consumer smoke-link），
+  不能只看 `build_core.sh --platform=apple --test` 的 52/52。
+  把 ios 切片纳入 `build_core.sh` 的默认覆盖面属门禁改造，归 INFRA-034 一并评估。
+- 本次修复：block 形参改匿名 `^(NSNotification* /* note */) {`（与同文件 :239 那个 block 的写法一致），
+  重跑 `build_core_apple.sh --config=Release` → exit 0，`ChuanqiCut version = 0.1.0`，产物 4.5M。
+
+## P147：全量 ctest 里 `platform_apple_decode` 的**负载相关假失败** —— 1s 丢帧判据在机器被打满时会真触发（2026-10-16，INFRA-029/035 批复跑门禁，已复现取证 verified；根因未修）
+- 现象：`run_gate.sh` 的 `core-dbg` 段 `98% tests passed, 1 tests failed out of 52`，
+  唯一失败 `45 - platform_apple_decode`（**44.38s**，而基线单跑 **6.92s**，慢 6 倍）。
+  用例内部报 3 条 FAIL：`解码帧数 = 150` / `= demux 视频包数` / `pts 集合 == demux pts 集合`，
+  实际 `解出帧数 = 147`。前一条同族记录是 P143（当时 148/150，我并发跑了第二个 ctest）。
+- 触发链（代码级，已核实）：`engine/platform/apple/media/media_decode.mm:681-698` 的 `PopFrame`
+  在输出队列空时轮询 pending，**最老一笔提交 >1s（`1'000'000'000ull` ns）即判"丢帧超时"并放弃等待**，
+  日志形如 `丢帧超时：dts=588000 等 1832ms 未完成，放弃等待（重新 seek 恢复）`。
+  这条 1s 判据是 2026-10 为修「VT 静默丢帧时 VTWait 永久阻塞」加的**固定值**，不随负载自适应；
+  机器忙时 VideoToolbox 回调确实能压过 1s → 内核主动丢 3 帧 → 单测"无丢帧"断言必挂。
+- 判定方法（**遇到这条就用它，别当回归**）：单独重跑三次
+  `ctest --test-dir build -R '^platform_apple_decode$'`。
+  本次实测 3/3 全过（9.82 / 9.33 / 9.55 s），而全量段 44.38s 失败 → 判为负载抖动，非布局搬家引起
+  （该用例读 `tests/golden/frames/*.mp4` 与 `CQ_SOURCE_DIR` 注入宏，本批两处都没动）。
+- 防复发：
+  1. 门禁口径：**同一用例单跑绿 + 全量红**才允许记作 flake，且必须写清两边的秒数与帧数，不得只写"重跑过了"。
+  2. 门禁期间**本机不得再起构建/ctest**（P143 同条纪律，这条是它的第二次实证）。
+  3. CI（INFRA-034）不得把该用例直接放进 workflow：要么 `--exclude-regex platform_apple_decode`
+     并在本机阶段批跑，要么给整段 ctest 加一次重试且**重试必须写明是重试**。
+- 未做（本期明确不动，属内核媒体线债务）：把 1s 固定判据改成随负载自适应
+  （或 demux 排空后按 pending 数等待）。要改须走 `cq-media-pipeline` 分析并挂 AUDIO/MEDIA 线的真机一趟。
+
+## P148：Editor 包在 **mac 宿主**上 4 天没跑过 —— 一个裸 `import UIKit` 把两条红一起藏住（2026-10-16，全量门禁 run2 的 apple-editor 段，已修复 verified）
+- 背景：`run_gate.sh` 的五个包段都是 `swift test`（**在 macOS 宿主机上跑**，`Target Platform: x86_64-apple-macos14.0`）。
+  上一次 apple-editor 绿是 **2026-10-12**；10-15/10-16 两天都在改编辑页（UIA-043/044/045），
+  验证口径走的是 iOS 真机与 iOS 壳构建，**没人跑过 mac 侧的包测试**。
+- 第一条（编译）：`ui/ChuanqiCutEditor/Sources/ChuanqiCutEditor/DebugOverlayView.swift:15`
+  无条件 `import UIKit` + `UIScreen.main.bounds`（:79-80）→ mac 侧 `error: no such module 'UIKit'`，
+  **整个包编不过**，于是第二条红根本没机会露头。
+  本包既有约定是「iOS-only 文件整体 `#if os(iOS)` 守卫」（`Sources/ChuanqiCutEditor/UIKit/` 5 个文件皆如此），
+  这个新文件在包根目录、没进 UIKit 子目录，也就没守。
+  修法 = `#if canImport(UIKit)` 守 import + 把屏幕尺寸收进 `panelSize` 计算属性，mac 退固定 380×320。
+- 第二条（断言过期）：`Tests/ChuanqiCutEditorTests/TimelineInteractionTests.swift:190`
+  `testToolbarModeTransitions` 断言「closePanel 后仍有选中 → `.clipSelected`」，
+  但 `closePanel` 在 **2026-10-15 有意改过语义**（AppEntry.swift:523-526 注释写明：
+  旧写法导致「选中条上点返回，底栏一动不动」），现在 `.clipSelected` 态收起 = 退出选中 → `.primary`。
+  实测失败信息 `("primary") is not equal to ("clipSelected")`。
+  **判定"是测试过期还是产品回归"的依据**：源码里有带日期与动机的显式修复注释 → 测试跟新；
+  没有 → 按产品回归走。另外原用例把 drawer 分支（有选中收起→回选中条）挤掉了，
+  修时补了一条从 `.drawer` 态进入的断言，两条语义都保住。
+- 顺带纠一条我自己的**错判**：看到 `apple-sharedui` 段日志里没有 `Executed N tests`，
+  我判断"门禁漏跑了 SharedUI 的 88 个用例"。实跑 `swift test` → `error: no tests found`，
+  且 `run_gate.sh:158` 本来就是 `swift build` —— SharedUI 的测试早在 INFRA-014~019 就拆进各功能 Pod 了，
+  包段 build-only 是对的。**教训：门禁覆盖面判断要先读 step 命令再下结论**（"88" 是 2026-10-07 的历史数字）。
+- 当前 mac 侧包用例基线（2026-10-16 实测，INFRA-031 搬家后必须逐段对上）：
+  bindings **26** / player **52** / camera **77** / import **16** / editor **81**（+ SharedUI build-only）。
+- 防复发：改编辑页 Swift UI 时，除真机一趟外**必须**跑
+  `(cd ui/ChuanqiCutEditor && swift test --disable-sandbox --scratch-path "$ROOT/build/spm/ChuanqiCutEditor")`；
+  新增 iOS-only 视图文件一律进 `Sources/<包>/UIKit/` 或自带 `#if os(iOS)` 守卫
+  （机器化检查归 INFRA-034 的 `check_repo_hygiene.sh`：包根目录出现裸 `import UIKit` 即报）。
+
+## P149：`pod install` **不会**重写 pbxproj 里 run-script 的路径字面 —— 搬家批的"靠重生成兜底"假设不成立（2026-10-16，INFRA-031，已取证 verified）
+
+- 现象/背景：INFRA-031 把 `apps/apple/packages/` 上提为顶层 `ui/`。卡面初稿写的是
+  「pbxproj 禁止手改，路径变化靠 `pod install` 重生成 + Xcode 里核对」—— **这条假设是错的**：
+  ADR-0037（2026-10-11，传哲拍板）已退役 XcodeGen，把 `ChuanqiCut.xcodeproj` 冻结为
+  **手工维护的唯一真源**，`pod install` 只重写 `Pods/` 与自己注入的 integration 段，
+  **不碰**工程里人写的 `shellScript` 字符串。
+- 具体雷：iOS 工程的 `[CAM] metallib CIKernel` 编译阶段内嵌 **3 处**
+  `$PROJECT_DIR/../packages/ChuanqiCutCamera/Sources/…/*.metal`（beauty_bilateral / face_warp / beauty_guided）。
+  不改 → 整壳构建红；改了 pod install 也不会帮你，**任何"搬家批不用碰 pbxproj"的默认假设都要先 `grep` 一次**。
+- 取证口径（比"构建过了"更强）：脚本 `set -euo pipefail` + metal 源文件缺失即报错 → **失败是响的**，不会假绿；
+  正确性用**产物**证明：三个 `.metallib` 时间戳为本次构建且体积 **9215B / 5792B / 8118B**（非 ADR-0021 案底的 96B 空壳）。
+- 改动纪律：pbxproj 是 plist 单行巨串，`sed` 只替换路径子串，改完必须
+  `git diff --stat` 核到 **1 insertion / 1 deletion**（本批实测如此，mac 工程 0 改动）——
+  行数一旦大于 1 就说明换行或结构被动过，立即回滚重来。
+- **防复发规则**：以后凡涉及目录搬家（INFRA-032 `api/swift`、INFRA-033 `engine/shaders`），
+  验收清单里必须有一条「`grep -rn "<旧路径片段>" apps/apple/*/*.xcodeproj/project.pbxproj` 零命中」，
+  并把「双壳构建 + 相关 run-script 的产物体积/时间戳」当作通过证据，而不是只看 `BUILD SUCCEEDED`。
+
+## P150：`podspec` 的 `source_files` 是 **pod 根相对** —— 搬家时做全局路径替换会把源文件静默丢光（2026-10-16，INFRA-032，已拦下 verified）
+
+- 现象：`engine/bindings/swift` 外提为 `api/swift` 后，`ChuanqiCutEngine.podspec` 的
+  `s.source_files = 'bindings/swift/Sources/ChuanqiCut/**/*.swift'` 若按"路径字面替换"改成
+  `'api/swift/Sources/ChuanqiCut/**/*.swift'`，glob 是相对**新 pod 根 `api/swift/`** 解析的 →
+  实际指向不存在的 `api/swift/api/swift/Sources/...` → **匹配 0 个文件**。
+- 为什么危险：CocoaPods 对 0 匹配**不报错**（`pod install` exit 0、"Installing ChuanqiCutEngine 0.1.0"照打），
+  Pods 工程里该 target 的 Sources phase 变空、`libChuanqiCutEngine.a` 只剩桩；消费侧要到
+  **链接期**才炸 —— 与 2026-10-07「pod 根外源文件静默丢弃 → 空目标」是同一个雷的第二次触发。
+- 正确写法：去掉前缀 = `s.source_files = 'Sources/ChuanqiCut/**/*.swift'`（路径永远相对 pod 根）。
+- 取证口径（三层，逐层变强）：
+  ① `python3 -c` 读 `Pods/Local Podspecs/ChuanqiCutEngine.podspec.json` 的 `source_files`；
+  ② `grep -oE "path = Sources/ChuanqiCut/[A-Za-z]+\.swift" Pods/Pods.xcodeproj/project.pbxproj | uniq -c`
+     = **8 个文件各 1 次**；
+  ③ App 二进制 `nm -a ChuanqiCutApp | grep -c ChuanqiCutEngine` = **1838**（mac 壳 **1842**）——
+     只有链接产物里有门面符号，才算"装得上且用得上"。
+- **防复发规则**：凡改 podspec 路径（搬家、拆 Pod、换 pod 根），验收必须含 ②③ 两条；
+  `pod install` 成功与 `BUILD SUCCEEDED` 都**不能**单独证明 Pod 里编进了源码。
+
+## P151：相对符号链接跟着 `git mv` 一起搬走但**目标不会自动改写**（2026-10-16，INFRA-032，已修 verified）
+
+- 现象：`api/swift/Sources/ChuanqiCutCore/include/cq_sdk.h` 是指向内核真源的**相对符号链接**
+  （`120000` blob）。旧值 `../../../../../core/cq/cq_sdk.h` 从 `engine/bindings/swift/...` 上溯 5 层
+  落在 `engine/`；搬到 `api/swift/...` 后同样上溯 5 层落在**仓库根** → 悬空。
+- git 表现易误判：`git status` 显示为 `D` + `A` 成对（不是 `R`），rename 检测配对不上；
+  **只看 `git diff --stat` 会以为"搬家纯度被破坏了"**，实际是链接目标必须重写。
+- 改法：目标改为 `../../../../../engine/core/cq/cq_sdk.h`（层数不变、加 `engine/` 前缀）。
+  `ln -sfn` 之后**必须** `test -f <link>` 实证解析，别只信 `readlink` 的字符串。
+- 附带发现（本批重跑生成器时暴露）：`docs/api/engine-api.md` 已过期 4 天多 ——
+  符号 **76 → 103**（新增 24 个函数 + 3 个 struct：`cq_session_split_clip`/`remove_clip`/
+  `set_canvas`/效果参数系列/`cq_audio_preview_*`），文件行数 406 → 516，**且没有任何符号消失**。
+  根因：`tools/docs/gen_api_reference.py --check` **不在 `run_gate.sh` 的 15 步里**，接口文档无人校验。
+  → 归 INFRA-034 把它做成门禁步骤（同 P146 的"覆盖面盲区"族）。
+
+## P152：目录搬家后 SPM **增量缓存仍钉死旧绝对路径** —— 未受影响包照样红（2026-10-16，INFRA-032 全量门禁 run1，已修 verified）
+
+- 现象：门面 `engine/bindings/swift` → `api/swift` 之后，单包窄检全绿（bindings 26、editor 81、
+  SharedUI build 过），但全量门禁第 12 步 **apple-import FAIL**：
+  ```
+  error: couldn't build build/spm/ChuanqiCutImport/x86_64-apple-macosx/debug/libChuanqiCut.a
+         because of missing inputs:
+         /…/engine/bindings/swift/Frameworks/ChuanqiCut.xcframework/macos-arm64_x86_64/libChuanqiCut.a
+  ```
+- 根因：`build/spm/<包>/workspace-state.json` + 各 `.d`/`.swiftdeps` 里存的是**依赖的绝对路径**。
+  `ChuanqiCutImport` 自己不引用门面（它只引 `../SharedUI`），但**传递依赖**把旧路径带了进来。
+  所以"我改的包我重跑过"不足以证明门禁会绿 —— **搬家批必须清的是所有消费方包的 scratch，不只被搬的那个**。
+- 判据（可机器验，清理前先取证）：`grep -rl "<旧路径>" build/spm/` 命中即说明还有缓存钉着旧根；
+  清理后该 grep 必须零命中，且门禁从**空 scratch** 一趟跑到 PASS=15。
+- 处置：`rm -rf build/spm/*`（全在忽略的 `/build/` 产物根内，非源码）后重跑全量。
+  顺带发现 `build/spm/ChuanqiCutDebug`（10-11 留下、对应包已不在树里）= 死 scratch，
+  属 INFRA-034 `check_repo_hygiene.sh` 该管的"产物根残留"一类。
+- **防复发规则**：凡是 `git mv` 顶层/二级目录的批次（032 门面、033 shader、以后任何搬家），
+  收口流程固定为「`grep -rl <旧路径> build/` 取证 → `rm -rf build/spm/*` → 全量门禁一趟到底」，
+  **不得**用"相关包窄检已过"替代全量重跑。
+
+## P153：`linkcheck_docs.py` 把「叙述里提到的死路径」也当链接 —— 治理卡越写越红（2026-10-16，INFRA-032 收口时发现，**未修 → 归 INFRA-034**）
+
+- 现象：INFRA-035 收口时实测断链 **6** 条；本次收口重跑变成 **9** 条。多出的 3 条全是
+  `docs/tasks/TASK-BACKLOG.md:567`、`TASK-INFRA-034.md:90`、`TASK-INFRA-035.md:70` 指向
+  已改名的 `docs/specs/PAL-接口契约.md` —— **而这正是那几张卡"登记待清理死链"的清单本身**。
+- 根因：`tools/ai/linkcheck_docs.py:22` `BACKTICK_PATH = re.compile(r"`([^`\s]+\.md)`")`
+  对**所有**反引号内的 `*.md` 字面做存在性检查，不区分"可导航的链接"与"作为讨论对象的路径"。
+- 后果（不止是数字难看）：判据"断链数 < 6"**永不可达** —— 卡片要描述这个死链就必须写出它，
+  写出来就+1。这类"判据会被自己的文档触发"的 checker，最后一律被人加 `|| true` 废掉（同 P146 教训）。
+- 处置方向（二选一，由 INFRA-034 定并写进 checker 注释）：
+  ① checker 按域豁免 append-only 叙述域 `docs/{tasks,reports,handoff}`；
+  ② 收紧 `BACKTICK_PATH`：只在反引号路径出现在指路语境（或干脆只查 `[..](..)` 链接语法）时判定。
+- 通用规则：**新写任何"存在性检查"类工具时，先问它扫不扫讨论该问题的文档本身**；
+  扫就要给叙述域开豁免，否则这个门禁是自反的。
+
+## P154：构建脚本里的**散文残片**能穿过两次全量门禁静默存活 —— CMake 不校验未知关键字参数（2026-10-16，INFRA-033 改 `add_custom_command` 时发现，已修 verified）
+
+- 现象：`engine/platform/apple/CMakeLists.txt` 的 SHADER-001 块第 72 行是
+  `    其编辑器组件)` —— 一段中文散文后面跟个右括号，**本应是 `VERBATIM)`**。
+  它由 `6ccf29b`（2026-10-13 "B0"，本块首次入库）引入，在仓库里活了 3 天。
+- **为什么没人发现**：CMake 对 `add_custom_command` 的未知关键字**不报错也不警告**，
+  裸词 + `)` 恰好把括号闭合，`-- Configuring done` 照打；而门禁的编译段（`-Werror`）、
+  单测段（ctest 52/52）、golden 段都在**下游**，抓不到 configure 阶段的垃圾。
+  全量门禁跑过两次（INFRA-031 / 032）全绿。
+- **不是脱敏批干的**（先怀疑过，已排除）：`git show 488129f 脱敏 -- engine/platform/apple/CMakeLists.txt` = 空 diff，
+  且 `6ccf29b` 是该块的新增提交 → 残片与原文都出自 B0 那次写入。**原词不可考**，
+  只能按 CMake 惯例补 `VERBATIM)`，靠行为验证而不是靠猜原文。
+- 补完后的等价取证（缺一不算改对）：
+  ① `rm -rf build/generated` 后重跑 `build_core.sh --platform=apple --test` → exit 0、
+  `error:` 0 行、ctest **52/52**、`[27%] SHADER-001` 步骤真实执行；
+  ② 产物字节对比搬家前：`spv` **960/548B**、`msl` **418/410B** **逐字节相等**；
+  ③ 剥离注释后的 GLSL md5 与 `HEAD:shaders/src/*` 相同 → 变的只有 banner。
+- 通用规则：
+  1. **改构建脚本（CMakeLists / podspec / 脚本）时，目视读被改动函数块的整块内容**
+     （`git diff -U20`），不要只看 diff 的 +/- 行 —— 残片是"未被改动的那一行"，diff 里根本看不见。
+  2. 门禁绿色的覆盖面**不等于** configure/generate 阶段正确：该阶段的静默容忍项只能靠**步骤日志逐条对**
+     （本案是 `SHADER-001: …` 这行有没有出现、产物是不是新字节）来验。
+  3. 发现"原词不可考"的残片时，**补最符合该语言惯例的那个写法**并用行为等价证明它，
+     同时在卡面明写"原词不可考"，不要伪造一段来历。
+
+## P155：`git ls-files` 不带 `-z` 会把**非 ASCII 路径加引号转义**，逐行遍历 = 中文文件名整批静默漏检（2026-10-16，INFRA-034 活文档旧路径扫描，verified）
+
+- 现象：旧路径残留扫描第一版用 `for f in $(git ls-files)` 逐文件 `grep`，报 **40 处命中**；
+  换成 `git ls-files -z` + 按 `\0` 分记录后同一判据变成 **60 处**（多出的 20 处全在
+  `docs/specs/UIA-011-相册素材导入.md` 这类**中文名文件**里）。
+- **为什么会漏**：`git ls-files` 默认按 `core.quotepath=true` 输出，非 ASCII 路径被打成
+  `"docs/specs/UIA-011-\347\233\270\345\206\214..."` 这种**带引号的八进制转义串**。
+  该串既不是真实路径（文件打不开 → `grep` 报 No such file 或被 `2>/dev/null` 吞掉），
+  也不匹配任何以真实路径写的判据 → **漏检是静默的**，命令退出码还是 0。
+- 与 P153 是同一条纪律的两面：**判据只认入库文件**（`git ls-files`，不是裸 `grep -r`），
+  且**必须 `-z` 分记录**（不是逐行）。两条合起来才是"既不误报本机产物、又不漏报中文文件"。
+- 落地：`tools/ci/check_repo_hygiene.sh` 的四条判据全部走 `git ls-files -z`
+  （旧路径扫描、产物入库、editorconfig 四条件、clang-format 统计），并把这条写在脚本头部。
+- 自查配方（任何"扫全库"的脚本上线前先跑一次）：
+  `git ls-files | wc -l` 与 `git ls-files -z | tr -d '\0' | wc -l` 的**命中数必须相同**；
+  再单独数一遍非 ASCII：`git ls-files | grep -c '"'` 应远大于 0 才算真的存在被转义的路径。
+
+## P156：批量路径回填的脚本替换会**二次改写「原 xxx」标注行**，把历史说明改成反向错误（2026-10-16，INFRA-034 `docs/specs/` 重写，verified）
+
+- 现象：`docs/specs/ARCH-005-UI层策略与工程结构.md` 里搬家批**故意**留的两行标注
+  `api/swift/ …（原 engine/bindings/swift/）`、`ui/<Module>/ …（原 apps/apple/packages/）`
+  被本轮的同一条替换规则再吃一次 → 变成 `（原 api/swift/）`、`（原 ui/*）`，
+  即**把"从哪里搬来"改成了"搬到哪里去"**，语义反转且看不出是错的。
+- 根因：替换脚本按"旧路径字面量 → 新路径"全局匹配，而标注行**同时含旧路径与新路径**，
+  一遍替换无法区分"这行是指路"还是"这行是案底"。
+- 规则（本批的处置口径，后续搬家批照此）：
+  1. 批量路径回填**必须先按行分类再替换**：含迁移标记（`原 ` / `已迁` / `当时在` / `→` / `作废` …）
+     的行**整行跳过**——这正是 `check_repo_hygiene.sh` 里 MARKER 豁免集合的由来，
+     判据与写入用同一套标记，不能两边各写一份。
+  2. 替换完成后**必须抽查标注行**：`grep -rn "原 .*" <本次改过的文件>`，逐条确认"原"后面跟的是**旧**路径。
+  3. 脚本改动一律先 `git diff --stat` 对照**预期文件数**，再 `git diff` 看**具体行**；
+     只有 stat 就动手 = 把语义反转带进 commit。
+
+## P157：**未提交大改批里对单文件跑 `git checkout -- <file>` = 直接销毁本批未提交工作**（2026-10-16，INFRA-034，verified + 已恢复）
+
+- 现象：为修 P156 造成的标注行反转，对 `docs/specs/ARCH-005-…md` 跑了
+  `git checkout -- <file>`。该文件带着 **INFRA-030/031/032 批的 38 insertions / 15 deletions**
+  （§6 工程结构树按 ADR-0044 整段重写过），checkout 把它们**一并抹回 HEAD**，
+  而 HEAD 版本里根本没有新布局树 → 该文件对整批布局整改变成"文档没跟上"。
+  发现时已经丢了，靠事前的保险提交才拿回来。
+- **为什么本批特别危险**：INFRA-026~034 全程**未 commit**（传哲要求收口后统一提交），
+  所以索引里既有 032 的改名又有 033/034 的在途编辑；此时 `git checkout --` 恢复到的是
+  **HEAD 而非"本批开始时的状态"**，中间三批的文档工作全在射程内。同类地雷：`git restore`、
+  `git stash`（共享 worktree 里还违反 ADR 约束）、`git reset --hard`。
+- 恢复路径（本次实际用的）：
+  `git ls-tree 11152db1b51c70a2eedbcfb5fa95f4146bdd064b -- "<file>"` → blob `2a9d12d8`；
+  `git show <insurance>:<file> > <file>` → 172 行、两处「原 」标注都在，
+  与 HEAD 版 153 行对比只剩 §6 那一整段重写。**判据：恢复后 `grep -c "原 "` = 2、行数 172。**
+- 规则：
+  1. **长批次开工先建保险提交**（本次是 `11152db1` "pre-032 insurance"）。保险提交不推远端、
+     不作为交付，只作为"最坏情况下能回到哪儿"的锚点；收口时用 `git reset` 或 squash 处理。
+  2. 修单个文件的局部错误**禁止 `git checkout --`**：改用"从保险提交取回 + 只重放我要改的那几行"，
+     或先 `cp <file> /tmp/<file>.bak` 再动手（本次最初就该这么做，代价 30 分钟与一次风险敞口）。
+  3. `git diff` 有三个比较对象（worktree/index/HEAD）。在混合暂存状态的批里，任何恢复类命令前
+     先跑 `git status --porcelain <file>` + `git diff --cached --stat <file>`，
+     看清"索引里是本批工作还是 HEAD"，再决定恢复到哪儿。
+
+## P158：`if cmd; then …; fi` 之后读 `$?` 恒为 0 —— 负向测试会"看起来红、实际绿"（2026-10-16，INFRA-034，verified）
+
+- 现象：`check_ios_compile.sh` 写成 `if "${CMAKE_BIN}" --build …; then echo PASS; exit 0; fi` +
+  紧跟一行 `rc=$?`。注入负向探针后打印的是 `FAIL（rc=0）` —— **退出码 0 被当成"编译失败但原因未知"**，
+  而真实失败码（cmake 的 2）已经在进入 `fi` 时被 if 语句自身覆盖（bash：`if` 无 `else` 分支时，
+  整个语句的退出码是 0，不是条件命令的退出码）。
+- 为什么会踩：shell 里两种写法都常见，`if …; then …; fi; rc=$?` 与 `cmd; rc=$?; if [ $rc -ne 0 ]` 看起来等价。
+  差别只在**有没有 else**：有 else 时 `$?` 仍是条件命令的码，无 else 时被 if 归零。
+- 影响面不止这个脚本：任何"失败分支里要打印/上报退出码"的门禁脚本（`run_gate.sh` 的 `run_step` 用的是
+  `if "$@"; then … else local rc=$?`，**有 else 所以是对的**）都可能被后续改动写成无 else 形式。
+- 规则：
+  1. 需要退出码时**先取码再判**：`cmd; rc=$?` 紧跟，然后 `[ "${rc}" -eq 0 ]` 显式测试；
+     或保留 `if …; then …; else rc=$?; …; fi` 形态（else 不能省）。
+  2. 负向测试的判据必须包含**具体码值**（`FAIL（rc=2）` 而非只要求非零）；只验"红/不红"的脚本
+     自身就可能是恒绿（同 P154：解析器匹配不到 ≠ 规则不存在）。
+
+## P159：非交互 shell **没有 `LANG`** → `bundle exec pod install` 在 Ruby 的 `unicode_normalize` 处崩（2026-10-16，INFRA-034，verified）
+
+- 现象：agent/CI 类非交互环境里 `LANG` 与 `LC_ALL` 都是 unset，CocoaPods 1.17 在
+  `Pod::Config#installation_root`（`config.rb:167`）对路径做 `unicode_normalize` 时抛
+  `Encoding::CompatibilityError: Unicode Normalization not appropriate for ASCII-8BIT`，
+  紧接着自己再崩一次（`ErrorReport.markdown_podfile` 同一路径），日志里只看到 ruby 栈、
+  **看不到"编码"两个字** —— 第一反应容易误判成 Podfile 或本地 Pod 路径写错。
+  实测两端 `pod install` 各 `rc=1`、日志 61 行全是栈。
+- 判据（先花 5 秒排除环境而不是查 Podfile）：`echo "LANG=${LANG:-unset}"`；
+  或看 CocoaPods 日志开头那段 `WARNING: CocoaPods requires your terminal to be using UTF-8 encoding`。
+- 修复：脚本里显式 `export LANG=en_US.UTF-8 LC_ALL=en_US.UTF-8`（本仓双壳 SOP 已按此跑通）。
+- 规则：**任何调 CocoaPods/Ruby 工具链的非交互脚本必须自带 locale**，不依赖调用方环境；
+  同类地雷还有 `git`（中文文件名，见 P155）与 `xcodebuild`（`-quiet` 下告警语言随 LC 变）。
+
+## P160：**构建期第三方工具只存在于本机暖缓存**，仓库里没有产出它的脚本 → 清 build / 新克隆 / CI 全数编不出内核（2026-10-16～17，INFRA-034 CI 复现，verified）
+
+- 现象（本机实测，不是推测）：按 workflow 顺序复刻 CI 的 core 段并真的清空 `build/`，构建停在
+  ```
+  [ 27%] SHADER-001: glslang → SPIR-V → spirv-cross → MSL (blit)
+  error: shader 工具链不可用（试过：…/build/tools/glslang/StandAlone/glslang）
+  make[2]: *** [generated/shaders/blit_msl.h] Error 1
+  ```
+  随后 `ctest rc=8`、`2% tests passed, 50 tests failed out of 51`，失败原因全是
+  `Could not find executable …/build/bin/cq_tests_cxx20_smoke` —— **50 个红是 27% 那一个红的下游噪声**，
+  第一眼看成"单测大面积崩"会走错方向。
+- 根因：`tools/shaders/build_shaders.py` 在**编译期**硬要两个二进制
+  （`build/tools/glslang/StandAlone/glslang`、`build/tools/spirv-cross/spirv-cross`），
+  而**仓库里从来没有任何脚本能产出它们**。逐条核过（判据只认入库文件）：
+  `tools/deps/deps.py` 只有 validate/lock/check/selfcheck，**没有 build 子命令**；
+  `tools/CMakeLists.txt` 是占位；`third_party/CMakeLists.txt` 只处理 ffmpeg；`git log` 搜不到产出脚本。
+  本机那套是历史会话手搓的，源码树 `third_party/src/` 与产物 `build/tools/` 又都在 `.gitignore` 里。
+- 为什么藏了这么久：17 步门禁从不删 `build/tools/`，所以"编译期第三方工具"这一层**从未进入判据**。
+  这正是 P147/P151 那类"暖缓存假绿"的加强版：**只要判据只在暖缓存上跑，缺依赖就等于不存在**。
+- 修复（已入库）：`tools/build/build_shader_toolchain.sh` ——
+  pin 从 `third_party/manifest.toml` 读（脚本自己不写死 commit，避免同一判据两份真源，红线 #10）；
+  源码缺失按 `pin_ref` 浅 fetch 并校验 `HEAD == pin`，本机非 git 树则只做版本级核对并**明打"commit 级不可校验"**；
+  产物齐备后 `--version` 自检 + 端到端真转一遍 SHADER-001（复现 `blit_msl.h` = **1689 B**，
+  与基线同一判据）。`.github/workflows/ci.yml` 增加装配步，并把它写成第 4 条约束
+  （**必须在 `build_core.sh` 之前**：`--clean` 会把刚装好的 `build/tools/` 一起清掉）。
+- 规则：
+  1. **任何构建期依赖必须有一个入库脚本能从零产出它**；只有"本机能跑"的证据 = 该依赖不存在。
+     新增构建期依赖时，交付判据里必须包含"清空产物目录后重跑"，不能只交暖缓存门禁。
+  2. 复现 CI 就用真破坏性动作（`rm -rf build` / `--clean`）。增量复现只会复述已知的绿。
+  3. 看到"大面积 ctest 红 + 找不到可执行文件"，先回到**构建日志最早的那条 error**，
+     不要开始查测试（本次 50 个失败里 0 个是测试自身的问题）。
+  4. 同一次干净复现还顺手抓到新脚本自己的第二个"只在暖目录上成立"缺陷：
+     日志重定向写到 `build/tools/<name>.configure.log`，而 `rm -rf build` 后该目录不存在，
+     于是真实失败被 `No such file or directory` 盖掉（修法：装配前 `mkdir -p build/tools`）。
+     **凡"创建目录 + 重定向日志"的脚本都要显式建父目录**，不能假设产物树已经存在。
+  5. **大小写陷阱**（同一批干净复现抓到的第三个）：脚本第一版把产物写到 `build/tools/SPIRV-Cross/`
+     （跟随源码树的大写目录名），而 `tools/shaders/build_shaders.py:111-113` 的默认路径是全小写
+     `build/tools/spirv-cross/spirv-cross` —— **本机不报错**，因为 APFS 默认大小写不敏感。
+     换到大小写敏感的卷（Linux runner / 区分大小写的 APFS 宗卷）就是"工具链装好了但脚本说找不到"。
+     修法：`build_tool` 的第二个参数显式传产物目录名（`glslang` / `spirv-cross`），不再由源码目录名推导。
+     **凡是"两侧各自拼路径"的构建期约定，判据必须在一台大小写敏感机上跑过**，本机绿不算。
+- 可复用排障：`tools/build/build_shader_toolchain.sh --check-only`（只验产物在不在、能不能跑，rc 可见）；
+  判据 `ls -l build/tools/glslang/StandAlone/glslang build/tools/spirv-cross/spirv-cross`
+  （⚠️ 小写，与 `build_shaders.py` 默认路径逐字一致；写大写在 macOS 上"碰巧也能过"，见规则 5）。
+
+## P161：改了 `-D` 重跑仍复现同一 FATAL_ERROR —— **失败的 configure 已经把 CMakeCache 落盘**，旧值锁死新默认（2026-10-17，INFRA-034 P160 修复过程，verified）
+
+- 现象：第一版 `build_shader_toolchain.sh` 给 SPIRV-Cross 传了 `-DSPIRV_CROSS_ENABLE_GLSL=OFF`，
+  configure 死在 `CMake Error at CMakeLists.txt:305: Must enable GLSL support to enable MSL support.`。
+  把 flag 删对之后重跑，**打印同一条 305 行错误**，看起来"我的修改没生效"。
+  真因：`build/tools/SPIRV-Cross/CMakeCache.txt` 里留着 `SPIRV_CROSS_ENABLE_GLSL:BOOL=OFF` ——
+  `option()` 只在 cache 缺该键时取默认值，已有 cache 值优先，重跑不会覆盖。
+- 修复（脚本已含）：产物缺失即视为"上次没成功"，重配前先 `rm -rf build/tools/<name>/`，
+  另给 `--rebuild` 强制清；两步都在日志里明打，避免"静默重编"和"静默复用"两种误读。
+- 规则：
+  1. 幂等的装配/构建脚本必须自带**残骸清理判据**（"产物不存在 ⇒ 缓存不可信"），
+     否则它的失败模式是"改对了也红"，把后续排查引到源码上去。
+  2. 诊断顺序：改 flag 重跑复现同一条 CMake 错误时，先 `grep <OPTION> <build目录>/CMakeCache.txt`，
+     再看 `CMakeLists.txt`。
+- 顺带记两条外部事实，省得重踩：
+  - `spirv-cross` 的 **CLI** 在 `CMakeLists.txt:429-456` 硬要求 GLSL/HLSL/MSL/CPP/REFLECT/UTIL/STATIC
+    **全开**（关任一个直接 FATAL_ERROR）；想"只留 MSL 瘦身"不可能，能省的只有 `ENABLE_TESTS` 与 install 规则。
+  - `spirv-cross` **没有** `--version`（未知参数打 usage 并 rc=1，会把 `set -e` 的脚本打断），
+    `--help` 首行才是版本横幅；且非 git 源码树里它的 CMake 会**向上**找到宿主仓库 `.git`，
+    把 ChuanqiCut 的 HEAD 打进自己横幅（实测 `Git commit: v0.1.0-244-g5cfcdcb+`）——
+    二进制自报版本**不可作为 pin 证据**，判据只能用 manifest + 端到端产物字节数。
+
+## P162：自称"只读校验"的模式里混着 `rm -rf`，而且幂等守卫的 cache 键 grep **恒不命中** → `--check-only` 把判据现场删了（2026-10-17，INFRA-034 负向测试，verified）
+
+- 现象（跑 P160 的排障配方时撞上，不是推测）：`tools/build/build_shader_toolchain.sh --check-only`
+  在**只验产物在不在**的模式下打出 `本地补丁指纹 … 与缓存不符 → 强制重编`，随后
+  `rm -rf build/tools/spirv-cross/` —— 我为了做负向测试临时挪到同目录的备份探针一起被删，
+  探针与被探针的东西同归于尽，只能重编 ~90s 才恢复。
+- 更根本的第二层：那条"补丁变了自动强制重编"的守卫**从未正确生效过一次**。
+  cache 里实际落的行是 `SPVC_PATCH_FP:UNINITIALIZED=1794616739117`（未走 `option()` /
+  `set(... CACHE)` 的裸 `-D` 一律落成 `UNINITIALIZED`），而脚本 grep 的是 `SPVC_PATCH_FP:STRING=`
+  → **恒不命中** → 只要 `CMakeCache.txt` 存在就每遍误判"补丁变了"，暖跑每次都白删白重编（实测每遍多 ~65s）。
+  脚本自称幂等，实际是"一遍一删"。
+- 规则（三条可复用）：
+  1. **凡是"只读 / 只校验 / dry-run"模式，代码路径里不能出现任何删除**，且必须在**函数入口**短路，
+     不是每个副作用点各判一次 —— 逐点判漏一个就是本次这个下场。`build_tool()` 的删除分支原本写在
+     `CHECK_ONLY` 早退**之前**，所以 `--check-only` + 指纹不符 的组合恰好走到删除。
+  2. **grep CMake cache 键时把类型段当可选**：`grep -qE "^KEY(:[A-Z]+)?=<value>$"`。
+     `-D` 落进 cache 的类型后缀取决于该键有没有被 `option()`/`set(CACHE)` 声明过，
+     照"看着合理"的 `:STRING=` 写 = 一条永远不会为真的判据（与 P158 的"恒 0"同类：**判据静默失效**）。
+  3. **负向测试的探针别放在被测对象有权删除的目录里**，先 `cp/mv` 到 `/tmp` 再在原位破坏；
+     并且每次破坏前记下 md5，恢复后逐字节比对 —— 本次靠 md5 才确认"没丢东西"。
+- 修复与取证（本机 09:3x~09:4x）：删除分支与 `FORCE_NEXT` 置位两处都加 `[ "$CHECK_ONLY" -eq 0 ]`，
+  grep 改 `^SPVC_PATCH_FP(:[A-Z]+)?=`。
+  - 暖态 `--check-only`：两产物均 `OK`、`spirv-cross` md5 与跑前一致（**不再删**）；
+  - 暖态完整跑：`[glslang] 产物已存在，跳过编译` + `[SPIRV-Cross] 产物已存在，跳过编译`，
+    **"强制重编"一行不再出现** → 幂等成立（修之前每次暖跑都会删）；
+  - 负向：挪走 `build/tools/glslang/StandAlone/glslang` → `--check-only` rc=**1** 且报 `产物缺失`；
+    恢复后 md5 一致；正向 rc=**0**。
+- ⚠️ **判据版本说明**（别把这段当成"三遍绿作废"）：干净复现 run1~run3 跑的是修复前的脚本，
+  但本次改动只碰"删除 / 强制重编"两个分支，**从 `rm -rf build` 起手的复现里这两个分支根本不会触发**
+  （没有 `CMakeCache.txt` 可比）→ 三遍绿结论不受影响。交付版脚本的"连续 2 次绿"另由 run3 + run4 取证。
+- **已升为 ADR-0045**（2026-10-17）：P160 的铁律 + 本条的四项幂等硬规则 + "引用门禁绿必须同时说明缓存状态"
+  的口径，一起写成 `docs/decisions/ADR-0045-构建期依赖必须入库产出与门禁缓存状态口径.md`。
+  没写进 `AGENTS.md` 红线（真源是热点文件，本批已因红线 #6 动过一次），边界见该 ADR 末节。

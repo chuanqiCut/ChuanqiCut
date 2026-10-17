@@ -567,3 +567,86 @@ SPM 临时产物一律 `swift test --disable-sandbox --scratch-path "$ROOT/build
   [ ] UI：把 `buildTrackHeaders` 里的 disabled 态换成真开关（届时一行改回）
   [ ] 同期评估 `enabled`（单开关）是否也要写 —— 与其他268效果开关的关系
 - 验收回填：本池条目 + LEDGER-W42 + RESEARCH-017 §2 S2 行
+
+### [20] TimelineKit 在仓库外且无版本控制 —— iOS 轨道区依赖一个不可复现的本地路径（⏳ 待决策 / 资产风险）
+
+- 来源：本机（集成机）/ 2026-10-16 RESEARCH-018 复勘（布局整改批顺带捞出）
+- 现象：iOS 轨道区真源 = 本地开发 Pod `TimelineKit`（[ADR-0042](../decisions/ADR-0042-轨道区接入TimelineKit与内核真源方向.md)），
+  Podfile 里写的是仓库外绝对路径：
+  `apps/apple/ios/Podfile` → `pod 'TimelineKit', :path => '../../../../ChatGPT/zui'`
+  即 `/Users/zhuning/Documents/ChatGPT/zui`。实测该目录**不是 git 工作树**
+  （源码 = 15 个 Swift 文件 / `Sources` 252K；目录本体 119M，其中 116M 是它自己的 `.build`，
+  落在本仓 `build/` 分区之外）。
+- 后果：
+  1. 换机 / 新 clone / 另一台开发机拉本仓后 `pod install` **必失败**（路径不存在）；
+  2. 组件自身改动没有历史，UIA-045 已**就地改过 3 处**（无 commit 可回溯、无法 review、无法回滚）；
+  3. 资产丢失风险：该目录不在任何版本控制下，误删即永久丢。
+- 本轮明确**不收编**（传哲 2026-10-16 决策 1：先只登记风险 + 给 Podfile 加路径守卫，避免静默假绿）。
+- 待办：
+  [ ] 收编落点：`ui/TimelineKit`（与 INFRA-031 上提后的 UI 组件同层），Podfile 改相对路径 `../../../../ui/TimelineKit`
+  [ ] 收编前把 UIA-045 就地改的 3 处 diff 固化（先建 git 历史再搬，否则搬完就分不清"原有"与"改过"）
+  [ ] 判定归属线：轨道区组件属 UI 线（`.ai/modules/ui-apple.md`）还是独立组件册
+  [x] 过渡防护：`apps/apple/ios/Podfile` 加路径存在性断言，缺失时**直接 fail 并打印本条目编号**，
+      不要退化成"跳过该 pod 继续构建"的假绿 —— **已落（2026-10-16，INFRA-031）**：
+      Podfile 内 `File.exist?('<dir>/TimelineKit.podspec')` 不成立即 `raise`，消息点名本条目 [20]。
+      实测守卫生效后 ios `pod install` 仍 exit 0（14 dependencies / 14 pods）；收编本体仍未做。
+- 验收回填：收编后双壳 `pod install` + xcodebuild 数字 + 本池条目 ✅
+
+### [21] `ui/ChuanqiCutDraft/` 零门禁覆盖 —— 顶层六包里唯一一个从未被编译的包（⏳ 待决策）
+
+- 来源：本机（集成机）/ 2026-10-16 INFRA-031 搬家时顺带核出
+- 定性：这是 **INFRA-020 的原始意图**（BACKLOG §「骨架，暂不进 Podfile，首功能落地时接线」），不是事故；
+  但"暂不进"已持续 9 天且无人认领接线，本条要的是**把状态写实**，不是追责。
+- 现象：顶层 `ui/` 六个包中，`ChuanqiCutDraft` **既不在两份 Podfile**（`apps/apple/{ios,mac}/Podfile`）
+  **也没有 `run_gate.sh` 的 step**，只有 `Package.swift` + `Sources` + `.podspec`。
+  本批对它只做通 `swift package resolve`，**从未 `swift build`/`swift test` 过一次**。
+- 后果：包内坏到什么程度都不会被门禁发现；一旦别的卡开始引用它，第一手报错会落在业务卡上
+  （P148 同类事故：Editor 包在 mac 宿主 4 天没跑，裸 `import UIKit` 一直无人知）。
+- 待办：
+  [ ] 判定是否本期交付物：是 → `run_gate.sh` 加一段 `swift build`（无测试则先 build）；
+      否 → 按 ADR-0044 决策 ⑨「预留空壳保留 + README 标注」写明"未接入、不保证可编译"
+  [ ] 若保留，`.ai/modules/ui-apple.md` 补该包的归属与状态行
+- 验收回填：本池条目 + 加段后的 `run_gate.sh` 分段数字
+
+### [22] 活文档里仍在用**上上代**布局路径 `core/include/cq/**` —— 本批卫生门禁管不到它（⏳ 待施工）
+
+- 来源：本机（集成机）/ 2026-10-17 INFRA-034 收口时顺手量的
+- 现象：`git grep -l 'core/include/cq'`（只认入库文件）命中 **90** 个 tracked 文件。其中
+  **描述当前状态**（不是「原 xxx」历史说明）的集中在
+  `.ai/modules/{core,media,preview,ai,session,gfx,model,platform,platform-apple}.md` 与
+  `docs/specs/PLATFORM-接口契约.md`；其余在 `docs/tasks/TASK-*.md`、`docs/archive/handoff/**`、
+  `.workbuddy/memory/**` 这些 **append-only 叙述域**，按红线保持原样。
+  真路径：`engine/core/cq/**`（ADR-0033 起头与实现共置，`core/include` 这一层早就不存在）。
+- 为什么门禁没报：`tools/ci/check_repo_hygiene.sh` 的旧路径判据只覆盖**本批搬过的**前缀
+  （`engine/bindings/`、`apps/apple/packages/`、`shaders/src/`、`ai/plan/`、`tools/probe/`），
+  实测 raw 命中 23 行全部带迁移标记、非豁免 0。`core/include/cq` 是**上一代**（ADR-0033）的债，
+  不在本批判据射程内 —— 不是它绿，是没人判。
+- 待办：
+  [ ] 逐文件人改非叙述用法的 9 份模块册 + 1 份 spec（**禁止批量替换**，P156：
+      脚本替换会二次改写「原 」标注行，把历史说明改成反向错误）
+  [ ] 改完后把 `core/include/` 加进 `check_repo_hygiene.sh` 的旧路径模式，让判据覆盖这一代
+- 验收回填：改动的文件清单 + `git grep -c 'core/include/cq' .ai/modules docs/specs` 归零 +
+  hygiene 步新增模式的命中数
+
+### [23] 本机 SPIRV-Cross 源码树里有一处**不入库的本地补丁** —— 依赖治理口径要写实（⏳ 待决策）
+
+- 来源：本机（集成机）/ 2026-10-17 INFRA-034 P160 修复过程
+- 补丁内容与位置：`third_party/src/SPIRV-Cross/CMakeLists.txt`（非 git 树，补丁只在**本机**存在，
+  整个 `third_party/src/` 在 `.gitignore` 里 → **无法随仓库分发**）。
+  补丁只做一件事：把 `spirv-cross-build-version` 固定成 `third_party/manifest.toml` 的 pin。
+- 为什么必须改上游：该变量原本由 `git describe` 得出，而我们的源码树是**非 git 拷贝**，
+  `git describe` 会**向上**抓到宿主仓库 `.git`，把 **ChuanqiCut 的 HEAD** 打进 SPIRV-Cross 自己的
+  版本横幅（实测 `v0.1.0-244-g5cfcdcb+`）；`spirv-cross` 没有 `--version`，`--help` 首行就把这条
+  假归属打给每一个读日志的人（P160 附注、P161 第二条）。
+- 已落地的防护：`tools/build/build_shader_toolchain.sh` 把补丁行指纹当 cache key
+  （`-DSPVC_PATCH_FP=…`），**指纹变了自动强制重编**，不依赖人记得手动 `--rebuild`。
+- 口径写实（别当成"三端一致"）：CI / 新克隆机走 pin 的 `git checkout`，拿到的是**未打补丁的
+  上游树**——那时 `git describe` 在真 git 树里跑，打印的是它自己的 commit，**可信**；
+  本机与非 git 树则依赖这处补丁。两条路径的版本证据来源不同，已在脚本头部写明。
+- 待办：
+  [ ] 传哲判定是否接受"本机树带本地补丁"这一状态；不接受 → 改为**始终**按 pin 做 git checkout
+      （`ensure_src` 已有该路径，代价是本机 `third_party/src/` 重取 ~25-40s/仓）
+  [ ] 若接受，`tools/deps/deps.py` 的 lock/check 是否需要把"本地补丁存在"登记成一个显式字段
+- 验收回填：本池条目 ✅ + 选定路径后的 `build_shader_toolchain.sh` 首行输出对比
+- 关联：本条与 P160 铁律一起写进 **ADR-0045**（`docs/decisions/ADR-0045-构建期依赖必须入库产出与门禁缓存状态口径.md`），
+  该 ADR 的「明确没做 / 边界」节把这处不同源列为**未决项**——拍板结果请回填 ADR 与本池两处

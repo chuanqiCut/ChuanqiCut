@@ -125,9 +125,9 @@ ChqPreviewRenderer(gfx, blit.get(), &factory, &timeline, &assets, cfg)
 ctest --test-dir build -R preview_renderer   # 51 项：像素真值 / 方向 / 零拷贝 / 空隙 / Resize / ChqFitMode
 ctest --test-dir build -R c_abi_preview      # 78 项：真正的 C TU，契约与诊断量（含 set_fit_mode）
 
-cd bindings/swift && swift test --disable-sandbox          # Previewer 契约 + golden 帧
-./bindings/swift/run_smoke.sh                              # 链接级 + 空隙语义
-cd apps/apple/packages/SharedUI && swift test --disable-sandbox
+cd api/swift && swift test --disable-sandbox             # Previewer 契约 + golden 帧
+./api/swift/run_smoke.sh                                 # 链接级 + 空隙语义
+cd ui/SharedUI && swift test --disable-sandbox
 #   MetalPreviewViewTests：恒等映射逐字节 + golden 帧上屏链路非黑（像素级）
 #   ⚠️ 读回必须 blit→Shared Buffer→contents；本机 getBytes 读不到 GPU 写入（P21）
 ```
@@ -149,8 +149,12 @@ SwiftUI PreviewZone
 
 要点：
 - **Swift 绑定类型名是 `Previewer`**（不是 `Preview`，与 SwiftUI 撞名，见 pitfalls P22）。
-- MSL 几何与 `platform/apple/shaders/blit_fullscreen_msl.h` **逐值一致**（uv(0,0)=左上），
-  两侧必须同步改（SharedUI 像素级用例锁定）。
+- MSL 几何与内核 `engine/platform/apple/gfx/blit_pass.mm` 的 `kBlitVerts` **逐值一致**
+  （uv(0,0)=左上；Swift 侧那份是手写的平台原生 shader，见
+  `ui/ChuanqiCutEditor/…/PreviewFrameRenderer.swift` 文件头，两侧必须同步改，
+  SharedUI 像素级用例锁定）。**不存在** `platform/apple/shaders/blit_fullscreen_msl.h`
+  这个源码文件 —— 内核那份 MSL 是构建期产物 `build/generated/shaders/blit_msl.h`
+  （源 = `engine/shaders/portable/blit.{vert,frag}`）。
 - 视图是「单帧按需渲染」；连续播放须由上层异步推进 pts，**不得**在视图内加渲染循环。
 - `GetColorTexture` 现在返回**裸原生纹理**（id<MTLTexture>），不是 CqTexture* 包装
   （接口缺陷修复，见 pitfalls P20）；「导出用」与「SetTexture 用」两种句柄语义已
@@ -288,8 +292,8 @@ ctest --test-dir build -R core_preview_pump    # 41 断言（假帧源，只链 
 ctest --test-dir build -R c_abi_preview        # 78 断言（真实链路 + 泵段 + set_fit_mode 契约）
 ctest --test-dir build -R preview_renderer     # 51 断言（含单帧耗时实测段 + ChqFitMode [8]）
 ctest --test-dir build -R gfx_device           # 30 断言（含视口原语用例 C）
-cd bindings/swift && swift test --disable-sandbox                 # 23 用例
-cd apps/apple/packages/SharedUI && swift test --disable-sandbox   # 20 用例
+cd api/swift && swift test --disable-sandbox                    # 23 用例（现 26）
+cd ui/SharedUI && swift test --disable-sandbox   # 20 用例
 ```
 
 ---

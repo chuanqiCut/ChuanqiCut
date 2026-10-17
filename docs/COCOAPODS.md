@@ -1,19 +1,32 @@
 # CocoaPods 集成（Engine 层）与 App 依赖策略
 
 > 建立日期：2026-09-30；重构：2026-10-02（INFRA-009）、**2026-10-09（INFRA-024 / ADR-0033：拆 CChuanqiCut + ChuanqiCutEngine）；2026-10-11（ADR-0038：CChuanqiCut 更名 ChuanqiCutCore + FFmpeg 独立 Pod）**
-> 范围：`engine/ChuanqiCutCore.podspec`、`engine/ChuanqiCutEngine.podspec`、
-> `apps/apple/packages/*/*.podspec`、`apps/apple/{ios,mac}/` 双工程。
+> 范围：`engine/ChuanqiCutCore.podspec`、`engine/ChuanqiCutFFmpeg.podspec`、
+> `api/swift/ChuanqiCutEngine.podspec`、`ui/*/*.podspec`、`apps/apple/{ios,mac}/` 双工程。
+> 目录三次搬家（INFRA-031 `apps/apple/packages` → 顶层 `ui/`；INFRA-032 `engine/bindings/swift`
+> → `api/swift/`；INFRA-033 `shaders/src` → `engine/shaders/portable`）后的现状由本文件描述，
+> 布局契约见 `docs/decisions/ADR-0044*`。
 
 ## 1. 现行拓扑（ADR-0033 起）
 
 ```
-engine/                              ← pod 根（两个本地 spec 同目录）
+engine/                              ← pod 根（Core + FFmpeg 两份本地 spec 同目录）
 ├── ChuanqiCutCore.podspec              ← C ABI + C++20 内核 + Apple Platform（唯一 public 头 core/cq/cq_sdk.h）
-├── ChuanqiCutEngine.podspec         ← Swift 适配层（依赖 ChuanqiCutCore）
 ├── ChuanqiCutFFmpeg.podspec         ← FFmpeg vendored 独立 Pod（LGPL，ADR-0038）
 ├── core/cq/<功能>/                  ← 内部 C++ 头与实现共置（base/audio/command/gfx/media/model/platform/preview/session/ai）
 ├── platform/apple/{base,gfx,media}/      ← Apple 私有头与实现共置（shader 随 gfx）
-└── bindings/swift/                  ← SPM 测试宿主（App 不使用 SPM）
+└── shaders/{portable,native}/       ← Portable GLSL 基线 + 平台特化预留（INFRA-033；生成产物落 build/，不入库）
+
+api/swift/                           ← pod 根（INFRA-032 自 engine/bindings/swift 外提；SPM package 根 = 同目录）
+├── ChuanqiCutEngine.podspec         ← Swift 适配层（依赖 ChuanqiCutCore）
+├── Sources/ChuanqiCut/              ← 门面 Swift（8 个文件）
+├── Sources/ChuanqiCutCore/          ← C target：cq_sdk.h 是指向 engine/core/cq/cq_sdk.h 的相对符号链接
+└── Frameworks/ChuanqiCut.xcframework ← SPM binaryTarget 用；prepare.sh 从 build/apple/ **复制**（产物，不入库）
+
+ui/<Module>/                         ← 6 个功能 Pod（SharedUI + Editor/Player/Import/Camera/Draft）
+
+# ⚠️ Core 与 FFmpeg 的 pod 根**必须**留在 engine/：`vendored_frameworks` / 头文件路径按
+#    pod 根相对解析，且 Engine 的 pod 根已外提 —— 再动就是 ADR-0044 决策 4 的范围。
 ```
 
 依赖链：
@@ -28,7 +41,7 @@ App → SharedUI / 功能 Pod → ChuanqiCutEngine
 
 - 两个本地 spec 必须都在 Podfile 里显式给 `:path`，否则 CocoaPods 会为传递依赖
   去远端 spec repo 找 `ChuanqiCutCore`（:path 目录里存在同名 podspec 不代表会用它；
-  engine/ 下现有 ChuanqiCutCore.podspec + ChuanqiCutFFmpeg.podspec 两份，Pod 按名匹配）。
+  现在 spec 分居 `engine/`（Core、FFmpeg）与 `api/swift/`（Engine）两处，Pod 按名匹配）。
 - 同一份源码不要既引 pod 又引 SPM（重复符号）。SPM 只作 `swift test` 宿主。
 
 ## 2. 头文件可见性（不再靠补丁）
@@ -37,7 +50,7 @@ App → SharedUI / 功能 Pod → ChuanqiCutEngine
 |---|---|
 | Swift / App | `import ChuanqiCutEngine`，经正常 Pod 依赖解析 |
 | Engine public C ABI | `ChuanqiCutCore` Pod 的 `public_header_files = core/cq/cq_sdk.h` |
-| Engine 内部 C++/Apple 头 | 与实现同目录，在 `CChuanqiCut` Pod 内编译并可浏览，**不进 module umbrella、不进主工程** |
+| Engine 内部 C++/Apple 头 | 与实现同目录，在 `ChuanqiCutCore` Pod 内编译并可浏览，**不进 module umbrella、不进主工程** |
 
 已删除的三处补丁（ADR-0033 起因）：
 
@@ -50,7 +63,7 @@ App → SharedUI / 功能 Pod → ChuanqiCutEngine
 
 ## 3. 编译设置
 
-`CChuanqiCut` 现场编译 C++20 内核与 ObjC++ Platform，设置在 podspec 内手工重建
+`ChuanqiCutCore` 现场编译 C++20 内核与 ObjC++ Platform，设置在 podspec 内手工重建
 （不经 CMake）：C++20 / 禁异常 / 禁 RTTI / 系统框架列表（IOSurface 仅 macOS）/
 版本宏 `CQ_VERSION_*` 从 `s.version` 注入。
 
@@ -61,7 +74,7 @@ XCFramework 分发（SPM 宿主用）：
 
 ```bash
 tools/build/build_core_apple.sh --config=Release   # 只把 cq_sdk.h 打进 Headers
-engine/bindings/swift/prepare.sh
+api/swift/prepare.sh
 ```
 
 ## 4. 环境与日常工作流
@@ -134,7 +147,7 @@ open ChuanqiCut.xcworkspace  # 注意开 workspace，不是 xcodeproj
 - **依赖**：`s.ios.dependency 'SnapKit', '~> 5.7.0'`（**iOS 专属**；版本钉 `5.7.1`，MIT）。
 - **作用域**：SnapKit 只被 `#if os(iOS)` 的 UIKit 布局代码 `import`；`ChuanqiCutEditor.podspec`
   用 `s.ios.dependency` 声明，**macOS 端不拉入**（mac 构建/测试完全不感知 SnapKit）。
-- **为何不引 SPM**：`bindings/swift/Package.swift` 只是 macOS `swift test` 宿主，而本机 macOS SPM
+- **为何不引 SPM**：`api/swift/Package.swift` 只是 macOS `swift test` 宿主，而本机 macOS SPM
   **整文件跳过 `#if os(iOS)`**（P129），引了也编不到；且 UIKit 改动的最小自证是两端壳构建，不是 SPM。
 - **落地现状（2026-10-14）**：iOS 端 `bundle exec pod install` 已落地 SnapKit 5.7.1（两端 Podfile.lock
   钉死）；mac 端 mac 专属依赖不拉入、`pod install` 通过、壳构建 `BUILD SUCCEEDED`。

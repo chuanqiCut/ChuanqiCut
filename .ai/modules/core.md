@@ -43,7 +43,7 @@ tools/build/build_core.sh --platform=apple --config=Debug --test
 tools/build/build_core.sh --platform=apple --config=Release
 
 # 等价手写命令（若 PATH 无 cmake）：
-CMAKE_BIN=/Users/zhuning/.workbuddy/binaries/cmake/CMake.app/Contents/bin/cmake
+CMAKE_BIN="$HOME/.workbuddy/binaries/cmake/CMake.app/Contents/bin/cmake"
 $CMAKE_BIN -S . -B build -DCMAKE_BUILD_TYPE=Debug
 $CMAKE_BIN --build build
 $(dirname $CMAKE_BIN)/ctest --test-dir build --output-on-failure
@@ -60,7 +60,7 @@ ADR-0006（有理数时间与版本模型）、ARCH-001 §5/§6
 
 ## 已实现：CORE-001 ChqRationalTime（2026-09-25）
 
-> 写集：`core/include/cq/base/time.h`、`core/src/base/time.cpp`、`tests/unit/test_time.cpp`
+> 写集：`core/include/cq/base/time.h`、`core/src/base/time.cpp`、`tests/unit/base/test_time.cpp`
 
 - 存储 `struct ChqRationalTime { int64_t value; int32_t timescale; }`，全程 **int64 整数运算，零浮点中间值**。
 - 项目 timescale 常量 `kProjectTimeScale = 60000`（沿用 ADR-0006，未就地改值）。
@@ -86,7 +86,7 @@ ADR-0006（有理数时间与版本模型）、ARCH-001 §5/§6
 
 ## 已实现：CORE-002 ChqStatus（2026-09-25）
 
-> 写集：`core/include/cq/base/chq_status.h`、`core/src/base/status.cpp`、`tests/unit/test_status.cpp`
+> 写集：`core/include/cq/base/chq_status.h`、`core/src/base/status.cpp`、`tests/unit/base/test_status.cpp`
 
 - **稳定数值错误码**：`enum class ChqStatusCode : int32_t`，每个值**显式写死**（不依赖编译器自动编号），保证 iOS/macOS/Android/鸿蒙/桌面三端一致、ABI 稳定。
 - 分类覆盖媒体管线：I/O(1000)、解码(2000)、编码(3000)、格式不支持(4000)、资源不足(5000)、取消(6000)、参数非法(7000)、数值溢出(8000)、内部(9000)、未知(9900)。
@@ -104,7 +104,7 @@ ADR-0006（有理数时间与版本模型）、ARCH-001 §5/§6
 - `core/include/cq/cq_sdk.h` — 对外 C ABI（**BIND-001 已冻结**，2026-09-29；红线 #7：
 仅 C 类型 + opaque 句柄）。实现在 `core/src/cq_sdk.cpp`。
 覆盖：版本 / 状态码 / 线程角色标记 / **能力查询** / ChqEditorSession 会话门面。
-由 `tests/unit/test_c_abi.c`（**真正的 C 翻译单元**）机器校验"零 C++ 类型"——
+由 `tests/unit/abi/test_c_abi.c`（**真正的 C 翻译单元**）机器校验"零 C++ 类型"——
 已反向验证：临时插入 `std::string` 后该 TU 立即 fatal error。
 ⚠️ 观察者回调在 session 线程，Swift 侧（BIND-002）须自行 dispatch 到主线程。
 - `core/src/cq_build_anchor.cpp` — 构建锚点 TU（INFRA-002 新增，可链接、零业务逻辑、证明 -Werror 下可编译）
@@ -115,7 +115,7 @@ ADR-0006（有理数时间与版本模型）、ARCH-001 §5/§6
 ## 单测目录（INFRA-002 建立）
 
 - `tests/CMakeLists.txt` — 启用 CTest，注册内核单测（顶层 `CMakeLists.txt` 已 `enable_testing()`）
-- `tests/unit/cxx20_smoke.cpp` — 占位 smoke 用例：`static_assert(__cplusplus >= 202002L)`，证明 C++20 生效；链接 `cq_core`
+- `tests/unit/base/cxx20_smoke.cpp` — 占位 smoke 用例：`static_assert(__cplusplus >= 202002L)`，证明 C++20 生效；链接 `cq_core`
 - 运行：`ctest --test-dir build`（或 `build_core.sh --test`）
 
 > 注：骨架阶段仅建占位，未创建 `core/src/<module>` 子目录与真实头文件，避免越界到 CORE 系列任务的写集。
@@ -194,7 +194,7 @@ int64 上限 @120000 ≈ 243 万年（原 487 万年），仍远超需求。
 ## CORE-005 `concurrency` — `core/include/cq/base/chq_concurrency.h` / `core/src/base/concurrency.cpp`（2026-09-25）
 
 > 写集（边界内，未碰 CORE-001~004 头文件、未碰 platform/）：
-> `core/include/cq/base/chq_concurrency.h`、`core/src/base/concurrency.cpp`、`tests/unit/test_concurrency.cpp`
+> `core/include/cq/base/chq_concurrency.h`、`core/src/base/concurrency.cpp`、`tests/unit/base/test_concurrency.cpp`
 > `core/CMakeLists.txt`（加 `concurrency.cpp`）、`tests/CMakeLists.txt`（注册 ctest `core_concurrency`）
 
 并发原语提供「必要的最小集合」——**只** ChqCancelToken（协作取消）+ ChqBoundedQueue（背压）。
@@ -242,7 +242,7 @@ int64 上限 @120000 ≈ 243 万年（原 487 万年），仍远超需求。
   其超预算返回 `kResourceExhausted(5000)` 与队列满（背压，应暂停而非失败）语义正交、职责不同。
   改用本任务原语既无必要也引入无关改动，故保持独立。
 
-### 单测（`tests/unit/test_concurrency.cpp`，ctest `core_concurrency`）
+### 单测（`tests/unit/base/test_concurrency.cpp`，ctest `core_concurrency`）
 - **32 项检查，0 失败**。覆盖：ChqCancelToken 基础 / 共享状态 / 语义闭合（static_assert + 运行期）；
   取消及时性（阻塞 Pop 被取消 0.061ms 返回）；正常路径不受影响；队列满（容量 3、第 4 次 TryPush
   返回 false）；满队列取消中断（返回 kCancelled 且非错误）；并发一致性（4 生产者×1000 / 4 消费者，
@@ -253,7 +253,7 @@ int64 上限 @120000 ≈ 243 万年（原 487 万年），仍远超需求。
 - `-Werror` 零警告：警告集合含 `-Wconversion`，时间/分配代码里的 int64/int32 混用
   **一律 `static_cast` 修掉，禁止 `-Wno-*` 逃逸**（INFRA-002 红线）
 - 头文件零平台类型；不抛异常；不含任何 Apple/Android/鸿蒙 API
-- 单测落地 `tests/unit/test_{time,status,log,alloc}.cpp`，由 `tests/CMakeLists.txt` 注册为 ctest
+- 单测落地 `tests/unit/base/test_{time,status,log,alloc}.cpp`，由 `tests/CMakeLists.txt` 注册为 ctest
 
 ## 下一步
 
@@ -272,7 +272,7 @@ core/include/cq/base/chq_log.h       ← ChqWorkflow 枚举 + 筛选/提级 API 
 core/src/base/log.cpp            ← Logger 单例：min_level_ + wf_mask_ + wf_level_[]（-1=回落全局）
 core/include/cq/base/chq_perf.h      ← ChqSlowCallAlarm（带 workflow，Release 可用）
 core/include/cq/cq_sdk.h         ← C ABI：cq_log_configure_from_env() / cq_log_set_level()
-bindings/swift/.../ChuanqiCut.swift ← Swift 投影：LogWorkflow / ChqLogLevel / configureLogFromEnvironment()
+api/swift/Sources/ChuanqiCut/ChuanqiCut.swift ← Swift 投影：LogWorkflow / ChqLogLevel / configureLogFromEnvironment()
 ```
 
 ### 三维正交（别把 ChqWorkflow 和 ChqPipelineStage 混为一谈）
@@ -301,7 +301,7 @@ bindings/swift/.../ChuanqiCut.swift ← Swift 投影：LogWorkflow / ChqLogLevel
 
 ### 单测
 
-`tests/unit/test_log_workflow.cpp`，ctest `core_log_workflow`，10 组用例：
+`tests/unit/base/test_log_workflow.cpp`，ctest `core_log_workflow`，10 组用例：
 名字/位唯一性、环节→链路归属、掩码白名单、独立提级、Warn 在 Release 可见、
 Trace 在 Release 编译期剔除、帧 trace 继承链路前缀、env 正常/非法值、慢调用阈值。
 Debug 43/43、Release 43/43（本机门禁 PASS=9 / FAIL=0）。
@@ -316,6 +316,29 @@ Debug 43/43、Release 43/43（本机门禁 PASS=9 / FAIL=0）。
 
 ---
 
+## 代码风格基线（INFRA-034，2026-10-16 落地 `.clang-format` / `.editorconfig`）
+
+`.clang-format` 是**描述现状**的配置（Google 基 + `IndentWidth: 4` + `AccessModifierOffset: -4` +
+`ColumnLimit: 0` + `ReflowComments: false` + `DerivePointerAlignment: true` + `SortIncludes: false`），
+不是理想态。每个选项都由实测变体计数反推（见 `.clang-format` 头部），冲突时以"能否 -Werror 编译 +
+是否描述现状"为准。
+
+违规基线（本机实测，`Apple clang-format 21.0.0`，`--dry-run --Werror` 逐文件计数）：
+
+| 范围 | 违规 / 文件数 | 口径 |
+|---|---|---|
+| `engine/**/*.h` | **48 / 65** | 手工对齐的尾注（`AlignTrailingComments` 语义）无法被任何配置保留 |
+| `engine/**/*.cpp` | **21 / 40** | 同上 + 局部指针风格混用 |
+| `engine/**/*.mm` | **10 / 10** | ObjC++ 全部违规（`^` 指针对齐与 `@interface` 缩进） |
+| `engine/**` 合计（h+cpp+mm+c） | **79 / 115** | `tools/ci/check_repo_hygiene.sh` 的 INFO 行口径 |
+| `tests/**`（cpp/c/h） | **34 / 51** | 与 engine 同一份配置 |
+
+**本批不重排任何源码**（红线：重排会把 300+ 文件塞进布局整改批，diff 淹没真实改动）。
+违规数**只做 INFO、不做红闸**的理由与 P146/P153 同源：恒红的判据最后都是被人加 `|| true` 废掉，
+不如一开始就把"当前是多少"写成可对照的数字。重排另开卡、按模块分批，每批窄检 + 双壳。
+
+---
+
 ## 模块册（ADR-0030：任务/进度/测试门禁记录按模块归口）
 
 > 本节由归属线更新（一机一线，天然单写者）；BACKLOG / pitfalls / baselines 等
@@ -327,6 +350,7 @@ Debug 43/43、Release 43/43（本机门禁 PASS=9 / FAIL=0）。
 |---|---|---|
 | CORE-001~010 | 内核基础各卡 | 状态见 BACKLOG §2（现状口径：core 45/45 双配置） |
 | INFRA-025 | 内核 Chq 前缀改名（ADR-0039，189 类型 + 83 文件） | ✅ 2026-10-11（本机，模块级验证过） |
+| INFRA-026~035 | **仓库布局整改批**（ADR-0044：`ui/` · `api/swift/` · `engine/shaders/` · `tests/unit/<module>` · 治理补齐） | ✅ 026~033/035 已绿；**034 末批 2026-10-16 本机全量门禁 + 双壳收口**（整批**尚未 commit**，等传哲点头） |
 
 ### 测试与门禁记录（阶段批）
 
@@ -335,6 +359,11 @@ Debug 43/43、Release 43/43（本机门禁 PASS=9 / FAIL=0）。
 | 2026-10-07 | 全量门禁 | PASS=9 / FAIL=0 / SKIP=0（core-dbg 45/45、core-rel 45/45） |
 | 2026-10-09 | INFRA-024 目录共置 + 双 Pod 拆分 | **全量 ctest 46/46**（Debug；机器 macOS 26.7.1 / AppleClang 21 / cmake 4.4.3）。头文件由 `core/include/cq/**` 迁到 `core/cq/**` 与实现共置，CMake include root 改 `engine/core`，`#include "cq/..."` 不变；`platform_header_gate` 加契约目录白名单后 38 头 0 违规（P95）。**Release 与双壳构建未跑** |
 | 2026-10-11 | INFRA-025 内核 Chq 前缀改名（模块级） | `build_core.sh --platform=apple` **Debug + Release 双配置 -Werror 全过**；**ctest 48/48**（154.5s，含 test_c_abi*.c 纯 C ABI 三卡零改动全绿）；check_platform_headers **41 头 0 违规**；golden **21/21** 齐备（python3.12）。`cq_sdk.h` 声明区 diff=0。收尾批：xcframework 三切片重建 + **bindings swift test 26/26**；修复 third_party ffmpeg 门禁（三 SDK 切片选择）与壳工程 Pods 远程依赖三件缺失（P108，edit_project.rb add-remote-dependency）→ **macOS（x86_64）+ iOS generic device（arm64）双壳 BUILD SUCCEEDED**（清 DerivedData 干净口径）。池 [13] 关；[14] = mac 通用双 arch × CP 1.17 兼容头 |
+| 2026-10-16 | INFRA-029 + 030 单测夹具与测试树布局整改（全量门禁） | **PASS=15 / FAIL=0 / SKIP=0**（exit 0，`build/gate-logs/` 本次日志，非沿用）。ctest **Debug 52/52** 133.05s、**Release 52/52** 226.96s；头纯净性 **43 头 0 违规**；图层卫生 **119 文件 R1 违规 0**；golden **built_ok=21 / built_fail=0 / unbuilt=0 / 901784 bytes**。目录形态：`tests/unit/` 51 个源文件按 **12 个模块子目录**（abi/ai/audio/base/command/gfx/media/model/platform/preview/render/session）重排，`add_test(NAME …)` **52 条一字未动**、`ctest -N` 迁移前后 diff 为空；edit_plan 夹具 59 个由 `engine/core/cq/ai/plan/edit_plan_golden/` 迁到 `tests/golden/edit_plan/`（`CQ_EDIT_PLAN_GOLDEN_DIR` 随之注入）。`platform_apple_decode` 本轮 Debug 8.72s / Release 10.74s 双过（同日全量段曾以 147/150 帧假失败一次，见 P147）。**双壳构建（P129 配方）4 步 exit 0 全过**：ios `pod install` 14 dependencies / 14 pods、mac 7 / 7，`Podfile.lock` 两份**零 diff**（搬家未触碰 pod 根）；ios `xcodebuild -scheme ChuanqiCutApp -destination generic/platform=iOS` **BUILD SUCCEEDED**（error 0 行，warning 24 行全为既有 deployment-target 9.0 与 SHADER-001 run-script 无输出项告警）；mac `-scheme ChuanqiCutMacApp -arch x86_64 ONLY_ACTIVE_ARCH=YES` **BUILD SUCCEEDED**（error 0 行，warning 6 行） |
+
+| 2026-10-16 | **INFRA-034 治理补齐 + 整改批末批收口**（全量门禁 + 双壳，本机=集成机） | **17 步全量门禁 PASS=17 / FAIL=0 / SKIP=0**（exit 0，墙钟 **10m57s** 暖缓存；步数 15→**17**：新增 `api-doc`、`ios-compile`，原内联 `artifacts` 并入 `hygiene`）。ctest Debug **52/52** 78.96s、Release **52/52** 74.55s；headers **43 头 0 违规**；layer-hygiene 两趟 **119** R1 **0**；包段 bindings **26** / player **52** / camera **77** / import **16** / editor **81** = **252** 与前四批逐字相等；golden **21/0/0 901784B**。新增四条判据全绿：`check_repo_hygiene.sh` **4/4**（tracked **856** 产物 **0**、旧路径非豁免 **0**（23 行 raw 全带迁移标记）、editorconfig 四条件 **0**、clang-format **INFO 79/115**）；`gen_api_reference.py --check` 全文比对（`engine-api.md` 516→**538 行 / 95 块 / 11 子节**）；`check_ios_compile.sh` P146 收口（`nm` 取证 `RegisterSessionObservers` **ios-device 4 / ios-sim 3 / macos 0**，暖 **2~6s**）；`linkcheck_docs.py` **10 → 0**。P145 负向测试：`PYTHON_BIN=/bin/ls` 强制首步红 → exit **1**、摘要**仅 1 行**、未执行步零行、遗留日志开跑即清。双壳（P129 配方）：ios **14/14 pods** + mac **7/7** 均 **BUILD SUCCEEDED**（error **0**；warning 24/11 行——**行数不可比**，见 baselines 口径），壳内 `*.metallib` **9215/5792/8118B** 与 031 基线逐字节相等、`blit_msl.h` **1689B** = 033 数字 → 壳吃的是 `engine/shaders/portable/`。⚠️ 踩坑：非交互 shell 无 `LANG` → `pod install` 在 Ruby `unicode_normalize` 崩（**P159**）；`if cmd; then …; fi` 后读 `$?` 恒 0（**P158**）；`git ls-files` 不带 `-z` 漏检中文文件名（**P155**）；批量替换二次改写「原 」标注（**P156**）；未提交批里 `git checkout --` 销毁本批工作、靠保险提交恢复（**P157**）。**远端 workflow 首跑未验证**（core 段的本机等价复现是**次日**才跑的，且第一遍就是红的 —— 见 2026-10-17 行与 P160）。
+
+| 2026-10-17 | **P160/P162：CI core 段干净复现 + shader 工具链装配脚本落地**（本机 = 集成机，`rm -rf build` 逐遍重装） | 首次复现（未装工具链）**红**：`build rc=2` → `cq_shaders_msl.dir/all Error 2`，`ctest rc=8`、`2% tests passed, 50 tests failed out of 51`（全是 `Could not find executable`）→ 根因 = **构建期第三方工具只在本机暖缓存里，仓库无脚本产出**（P160）。修复主体 = 新增 `tools/build/build_shader_toolchain.sh`（pin 读 `third_party/manifest.toml`）+ `ci.yml` 在内核构建**之前**插入装配步。**干净复现四遍**：run1/2/3/4 toolchain rc=0 / build rc=0 / **ctest 51/51 rc=0**（186.74s / 172.84s / 271.32s / 83.52s），四遍都显式打印排除名单 `Test #45: platform_apple_decode`；run2/run4 `hygiene rc=0`（4/4 PASS）。产物字节跨遍稳定：glslang **3 133 560 B**、spirv-cross **4 155 984 B**、`blit_msl.h` **1689 B**；干净单遍 **6m48s~11min**（run4 整段 09:42:02→09:48:50）。⚠️ ctest 墙钟四遍差 3 倍以上 → **本机 ctest 墙钟不可当指标**，只有 rc 与通过数可比。负向测试抓到两处脚本自身缺陷并修（**P162**）：`--check-only` 名义只读却走 `rm -rf` 分支、补丁指纹守卫拿 `:STRING=` grep 而裸 `-D` 在 cache 里是 `:UNINITIALIZED=`（恒不命中 → 每遍误删重编）；修后暖态完整跑 = 两工具均 `跳过编译`、"强制重编"零行，暖态 `--check-only` = 产物 md5 跑前后逐字节一致，藏 `glslang` 则 rc=**1** 报 `产物缺失`、恢复后 rc=**0**。⚠️ **口径更正**：10-16 的 `PASS=17` 与本模块册此前所有"绿"都**只在暖缓存上成立**，构建期依赖层从未进判据；今后引用"绿"必须同时说明缓存状态。未做：workflow **远端首跑**仍未验、CI 的 **FFmpeg 装配步**本机未复现、池 **[22]**（90 个 tracked 文件仍用上上代 `core/include/cq/**`，hygiene 判据射程外）、池 **[23]**（本机 SPIRV-Cross **不入库本地补丁**，待传哲判定） |
 
 ### 调研 · 决策 · 池指针
 

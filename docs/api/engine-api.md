@@ -1,7 +1,7 @@
 # ChuanqiCutEngine 公共接口参考（C ABI）
 
 > 由 `tools/docs/gen_api_reference.py` 从
-> `engine/bindings/swift/Sources/CChuanqiCut/include/cq_sdk.h` 自动生成
+> `api/swift/Sources/ChuanqiCutCore/include/cq_sdk.h` 自动生成
 > ——**不要手改本文件**；接口变更后重跑生成器。红线 #7：这是唯一对外接口。
 
 ## 版本
@@ -52,7 +52,7 @@ int32_t cq_is_main_thread(void);
 int32_t cq_query_capability(int32_t capability);
 ```
 
-## 会话（EditorSession 的 C ABI 句柄）
+## 会话（ChqEditorSession 的 C ABI 句柄）
 
 ```c
 CQSession* cq_session_create(void);
@@ -90,6 +90,8 @@ int32_t cq_session_change_count(const CQSession* session);
 void cq_session_set_observer(CQSession* session, CQSnapshotObserver observer, void* ctx);
 ```
 
+### 会话级模型：素材表 + 时间线（UIA-009 子步骤 1，2026-10-03）
+
 ```c
 int32_t cq_session_register_asset(CQSession* session, uint64_t asset_id, const char* path);
 ```
@@ -106,6 +108,8 @@ int32_t cq_session_add_track(CQSession* session, int32_t kind);
 int32_t cq_session_add_clip(CQSession* session, uint64_t track_id, uint64_t asset_id, int64_t start_value, int32_t start_timescale, int64_t duration_value, int32_t duration_timescale, int64_t source_in_value, int32_t source_in_timescale);
 ```
 
+### 片段编辑：移动 / 裁剪（UIA-005；异步提交，经 ChqCommandHistory 可撤销）
+
 ```c
 int32_t cq_session_move_clip(CQSession* session, uint64_t clip_id, int64_t start_value, int32_t start_timescale);
 ```
@@ -113,6 +117,104 @@ int32_t cq_session_move_clip(CQSession* session, uint64_t clip_id, int64_t start
 ```c
 int32_t cq_session_trim_clip(CQSession* session, uint64_t clip_id, int64_t duration_value, int32_t duration_timescale);
 ```
+
+```c
+int32_t cq_session_trim_clip_in(CQSession* session, uint64_t clip_id, int64_t start_value, int32_t start_timescale);
+```
+
+### 片段 / 轨道结构操作（EDIT-007；异步提交，经 ChqCommandHistory 可撤销）
+
+```c
+int32_t cq_session_split_clip(CQSession* session, uint64_t clip_id, int64_t at_value, int32_t at_timescale);
+```
+
+```c
+int32_t cq_session_remove_clip(CQSession* session, uint64_t clip_id);
+```
+
+```c
+int32_t cq_session_remove_track(CQSession* session, uint64_t track_id);
+```
+
+```c
+int32_t cq_session_move_clip_to_track(CQSession* session, uint64_t clip_id, uint64_t track_id, int64_t start_value, int32_t start_timescale);
+```
+
+### 画布比例（UIA-040；项目级属性）
+
+```c
+int32_t cq_session_set_canvas(CQSession* session, int32_t width, int32_t height);
+```
+
+```c
+int32_t cq_session_get_canvas(const CQSession* session, int32_t* out_width, int32_t* out_height);
+```
+
+### 片段效果属性（MODEL-003；异步提交，经 ChqCommandHistory 可撤销）
+
+```text
+效果查询条目（query_clip_effects 写入）。
+```
+
+```c
+typedef struct CQEffectInfo { char effect_id[128]; char effect_name[128]; int32_t enabled; int32_t param_count; int32_t truncated; } CQEffectInfo;
+```
+
+```c
+typedef struct CQEffectParamInfo { char key[128]; int32_t type; int64_t i; float v[4]; int32_t b; int32_t truncated; } CQEffectParamInfo;
+```
+
+```c
+int32_t cq_session_add_clip_effect(CQSession* session, uint64_t clip_id, const char* effect_id, const char* effect_name);
+```
+
+```c
+int32_t cq_session_remove_clip_effect(CQSession* session, uint64_t clip_id, const char* effect_id);
+```
+
+```c
+int32_t cq_session_set_clip_effect_enabled(CQSession* session, uint64_t clip_id, const char* effect_id, int32_t enabled);
+```
+
+```c
+int32_t cq_session_set_clip_effect_param_i64(CQSession* session, uint64_t clip_id, const char* effect_id, const char* key, int64_t value);
+```
+
+```c
+int32_t cq_session_set_clip_effect_param_float(CQSession* session, uint64_t clip_id, const char* effect_id, const char* key, float value);
+```
+
+```c
+int32_t cq_session_set_clip_effect_param_bool(CQSession* session, uint64_t clip_id, const char* effect_id, const char* key, int32_t value);
+```
+
+```c
+int32_t cq_session_set_clip_effect_param_color(CQSession* session, uint64_t clip_id, const char* effect_id, const char* key, float r, float g, float b, float a);
+```
+
+```c
+int32_t cq_session_set_clip_effect_param_vec2(CQSession* session, uint64_t clip_id, const char* effect_id, const char* key, float x, float y);
+```
+
+### 效果查询（**同步读**已发布快照；契约同 query_clips：状态码 + out_count）
+
+```c
+int32_t cq_session_clip_effect_count(const CQSession* session, uint64_t clip_id, int32_t* out_count);
+```
+
+```c
+int32_t cq_session_query_clip_effects(const CQSession* session, uint64_t clip_id, CQEffectInfo* out, int32_t capacity, int32_t* out_count);
+```
+
+```c
+int32_t cq_session_clip_effect_param_count(const CQSession* session, uint64_t clip_id, const char* effect_id, int32_t* out_count);
+```
+
+```c
+int32_t cq_session_query_clip_effect_params(const CQSession* session, uint64_t clip_id, const char* effect_id, CQEffectParamInfo* out, int32_t capacity, int32_t* out_count);
+```
+
+### 撤销 / 重做（UIA-005；异步提交）
 
 ```c
 int32_t cq_session_undo(CQSession* session);
@@ -129,6 +231,8 @@ int32_t cq_session_can_undo(const CQSession* session);
 ```c
 int32_t cq_session_can_redo(const CQSession* session);
 ```
+
+### 时间线查询（读已发布快照；任意线程）
 
 ```text
 ---- 时间线查询（读已发布快照；任意线程）----
@@ -161,6 +265,8 @@ int32_t cq_session_query_tracks(const CQSession* session, CQTrackInfo* out, int3
 ```c
 int32_t cq_session_query_clips(const CQSession* session, uint64_t track_id, CQClipInfo* out, int32_t capacity, int32_t* out_count);
 ```
+
+### 素材表查询（UIA-009 子步骤 3；读已发布快照，契约同上：状态码 + out_count）
 
 ```text
 ---- 素材表查询（UIA-009 子步骤 3；读已发布快照，契约同上：状态码 + out_count）----
@@ -212,6 +318,8 @@ int32_t cq_preview_resize(CQPreview* preview, uint32_t width, uint32_t height);
 int32_t cq_preview_set_fit_mode(CQPreview* preview, int32_t fit_mode);
 ```
 
+### 诊断量（不是渲染结果，供日志/埋点与自测使用）
+
 ```text
 上一帧是否命中片段（0/1）。
 ```
@@ -239,6 +347,8 @@ int32_t cq_preview_last_frame_pts(const CQPreview* preview, int64_t* out_value, 
 ```c
 int32_t cq_preview_last_timings(const CQPreview* preview, int64_t* out_acquire_ns, int64_t* out_import_ns, int64_t* out_draw_ns, int64_t* out_total_ns);
 ```
+
+### 预览取帧泵（UIA-010 子步骤 5）
 
 ```c
 CQPreviewPump* cq_preview_pump_create(CQPreview* preview);
@@ -274,6 +384,10 @@ int32_t cq_preview_pump_start(CQPreviewPump* pump);
 
 ```c
 int32_t cq_preview_pump_request(CQPreviewPump* pump, int64_t pts_value, int32_t pts_timescale);
+```
+
+```c
+int32_t cq_preview_pump_request_ex(CQPreviewPump* pump, int64_t pts_value, int32_t pts_timescale, int32_t seek_policy);
 ```
 
 ```text
@@ -392,6 +506,24 @@ int32_t cq_player_tick(CQPlayer* player);
 
 ```c
 int32_t cq_session_timeline_duration(const CQSession* session, int64_t* out_value, int32_t* out_timescale);
+```
+
+## 音频预览（AUDIO-002；MEDIA-030 全量音画同步的前置）
+
+```c
+CQAudioPreview* cq_audio_preview_create(CQSession* session);
+```
+
+```c
+void cq_audio_preview_destroy(CQAudioPreview* audio);
+```
+
+```c
+int32_t cq_audio_preview_sync(CQAudioPreview* audio, int64_t playhead_value, int32_t playhead_timescale, int32_t playing);
+```
+
+```c
+int32_t cq_audio_preview_stats(CQAudioPreview* audio, uint64_t* out_blocks_rendered, uint64_t* out_blocks_dropped, uint64_t* out_underruns, uint64_t* out_resyncs);
 ```
 
 ## 日志：按「端到端链路（workflow）」筛选（CORE-010）

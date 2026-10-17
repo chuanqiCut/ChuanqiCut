@@ -9,7 +9,7 @@
 ```bash
 cat AGENTS.md                          # 1. 根规则（自动加载）
 cat .ai/modules/<你负责的模块>.md        # 2. 模块上下文
-cat docs/handoff/HANDOFF-004-*.md      # 3. 最近交接（状态以最新一份为准）
+cat docs/handoff/HANDOFF-025-*.md      # 3. 最近交接（在位只留编号最新的 5 份）
 ```
 
 ---
@@ -52,8 +52,13 @@ cat docs/handoff/HANDOFF-004-*.md      # 3. 最近交接（状态以最新一份
 | [`RESEARCH-008-移动端编辑页范式与框架选型.md`](research/RESEARCH-008-移动端编辑页范式与框架选型.md) | 对标 App 移动端编辑页范式拆解 + SwiftUI/UIKit 框架选型，下游 ADR-0024 / BACKLOG §12（**原 006，2026-10-07 撞号让位改号**） |
 | [`RESEARCH-009-人像效果对标与追平路线.md`](research/RESEARCH-009-人像效果对标与追平路线.md) | 人像效果对标（对标产品/Instagram）与追平路线；数字一律 [E]，验收以 baselines 实测为准 |
 | [`RESEARCH-010-编辑功能现状核验与对齐路线.md`](research/RESEARCH-010-编辑功能现状核验与对齐路线.md) | **只读代码核验**编辑功能真实现状（不采信完成标记）+ 对标 App 对齐路线；关联 ADR-0034 / ADR-0024 |
-| [`RESEARCH-011-仓库布局与分层整改方案.md`](research/RESEARCH-011-仓库布局与分层整改方案.md) | 仓库布局与分层整改（磁盘实勘 + 业界布局惯例对照；**只出方案不动代码**），2026-10-10 22:10；**P0/P1/P2 已于 2026-10-11 执行完毕并提交**（见 ADR-0035 / HANDOFF-018），P3 未开工 |
+| [`RESEARCH-011-仓库布局与分层整改方案.md`](research/RESEARCH-011-仓库布局与分层整改方案.md) | 仓库布局与分层整改（磁盘实勘 + 业界布局惯例对照；**只出方案不动代码**），2026-10-10 22:10；**P0/P1/P2 已于 2026-10-11 执行完毕并提交**（见 ADR-0035 / HANDOFF-018），**P3 已由 INFRA-026~035 于 2026-10-16/17 执行**（见 [`RESEARCH-018`](research/RESEARCH-018-仓库布局复勘与整改执行方案.md) 复勘 + ADR-0044） |
 | [`RESEARCH-012-商用拍摄剪辑SDK对外Demo与UI调研.md`](research/RESEARCH-012-商用拍摄剪辑SDK对外Demo与UI调研.md) | 商用 SDK 竞品（该厂商 其创作 SDK × 阿里云 UGSV **iOS 端**）demo 获取门槛与 UI 功能清单；**UI 配置化（面板/色卡/尺寸 JSON）** 与 **公开 podspec 仓库 + CDN 直链可得性** 为主要增量 |
+| [`RESEARCH-013-开源轨道UI与本项目轨道操作面板优化调研.md`](research/RESEARCH-013-开源轨道UI与本项目轨道操作面板优化调研.md) | 开源 timeline/track UI 盘点（含阿里云开源那套轨道区）+ 本项目轨道操作与面板管理优化路线，2026-10-11 |
+| [`RESEARCH-014-主流NLE引擎架构综合调研与RENDER-001规划建议.md`](research/RESEARCH-014-主流NLE引擎架构综合调研与RENDER-001规划建议.md) | 主流 NLE 引擎架构综合调研 → RENDER-001（B0 渲染地基）规划建议；纯调研不开工 |
+| [`RESEARCH-015-相机美颜性能与效果重构方案.md`](research/RESEARCH-015-相机美颜性能与效果重构方案.md) | 相机美颜性能与效果重构（含 iOS 系统能力对照），源自传哲对"磨皮慢 + 效果差 + 没用满 iOS 优势"的三轮反馈 |
+| [`RESEARCH-017-轨道区截图对照与UI重构计划.md`](research/RESEARCH-017-轨道区截图对照与UI重构计划.md) | 对标 App 轨道区截图对照 + UI 重构计划，2026-10-13；§立卡清单产出 UIA-041（U0+U1 第一批） |
+| [`RESEARCH-018-仓库布局复勘与整改执行方案.md`](research/RESEARCH-018-仓库布局复勘与整改执行方案.md) | **RESEARCH-011 的复勘 delta**（10-16 实测：规模表、12 项问题分级、三项辟谣、A–J 逐项复勘）+ 传哲 14 项拍板 + 目标布局与搬家成本；下游 ADR-0044 / BACKLOG §15（INFRA-026~035） |
 | `legacy/`（7 份） | 第一代调研素材（2026-09-23 前）：6 份 `技术调研_*.md` + `技术方案决策书`。**只读**，每份头部有状态横幅；性能数字一律 [E]、结论已被评审修正 |
 
 **规则**：新的调研产出一律建 `RESEARCH-00x-<标题>.md`（编号纪律见 ADR-0019）；
@@ -92,7 +97,7 @@ cat docs/handoff/HANDOFF-004-*.md      # 3. 最近交接（状态以最新一份
 | [0029](decisions/ADR-0029-双机分工与门禁跑批节奏.md) | 双机分工与门禁跑批节奏（模块归属表 / 开发机编码优先简化档 / 待办池 / 集成机日批；0025~0028 预占素材库多轨，下一号 0030） |
 | [0030](decisions/ADR-0030-模块册分册制与阶段批门禁节奏.md) | 模块册分册制与阶段批门禁节奏（调研/任务/进度/测试门禁记录按模块归口；全局册单写者；日批→阶段批，修订 0029） |
 | [0031](decisions/ADR-0031-主工程壳化与功能Pod分治.md) | 主工程壳化与功能 Pod 分治（草稿/素材管理/播放器/拍摄/素材导入各自 podspec；基座 SharedUI 瘦身；横向零依赖） |
-| [0033](decisions/ADR-0033-Engine源码共置与C-Swift双Pod边界.md) | Engine 源码共置与 C-Swift 双 Pod 边界（内核头与实现共置 `engine/core/cq/<功能>/`；拆 `CChuanqiCut` + `ChuanqiCutEngine` 双 Pod，唯一 public 头 `cq_sdk.h`） |
+| [0033](decisions/ADR-0033-Engine源码共置与C-Swift双Pod边界.md) | Engine 源码共置与 C-Swift 双 Pod 边界（内核头与实现共置 `engine/core/cq/<功能>/`；拆 `CChuanqiCut`（ADR-0038 更名 ChuanqiCutCore）+ `ChuanqiCutEngine` 双 Pod，唯一 public 头 `cq_sdk.h`） |
 | [0034](decisions/ADR-0034-分批推进与禁临时方案及署名台账.md) | 分批推进与禁临时方案及署名台账（七条硬规则：一批一闭环 / 质量下限 / **禁临时方案** / 台账六字段 / 问卷驱动真机验收 / Mac 与 iOS 分端形态 / 撤销 RESEARCH-008 非目标） |
 | [0035](decisions/ADR-0035-PAL统一改名为Platform.md) | **`PAL` 统一改名为 `Platform`**（目录 + 标识符 + 概念名 + 文档全量改名；含映射表、`PALA`/`PALD` 卡号保留裁定、三条红线） |
 | [0036](decisions/ADR-0036-FFmpeg本地Pod二进制接入与LGPL处置.md) | FFmpeg 本地 Pod 二进制接入与 LGPL 处置（App 内声明 + 源码可获得 + 可重链接归档） |
@@ -103,6 +108,8 @@ cat docs/handoff/HANDOFF-004-*.md      # 3. 最近交接（状态以最新一份
 | [0041](decisions/ADR-0041-编辑器UIKit布局统一用SnapKit.md) | 编辑器 UIKit 布局统一用 **SnapKit**（5.7.1，iOS 专属依赖） |
 | [0042](decisions/ADR-0042-轨道区接入TimelineKit与内核真源方向.md) | iOS 轨道区接入本地 **TimelineKit**，**内核保持唯一数据真源**（自绘轨道区作废；回写入口唯一、翻译不了即回滚） |
 | [0043](decisions/ADR-0043-scrub廉价关键帧seek与限频.md) | scrub 拖动走**廉价关键帧 seek + 限频**，松手补精确帧；`ChqSeekPolicy` 以中立 `int32_t` 跨 Platform 接缝 |
+| [0044](decisions/ADR-0044-顶层布局按层分目录与门面外提.md) | 顶层按**层**分目录：`engine`(纯 C++) / `api`(门面) / `ui`(Swift 组件 Pod) / `apps`(壳) / `tests` / `third_party/prebuilt`；含五条搬家红线（目录名是门禁输入、CocoaPods pod 根约束、UI 与改名不同批）。下游 BACKLOG §15 = INFRA-026~035 |
+| [0045](decisions/ADR-0045-构建期依赖必须入库产出与门禁缓存状态口径.md) | **构建期依赖必须有入库产出脚本**；"门禁绿"必须标注**缓存状态**（P160 案底：glslang/SPIRV-Cross 只活在暖缓存 → 清 build/新克隆/CI 全红）。含幂等四硬规则（残骸自清、只读模式禁删除、cache 键类型段可选、大小写敏感卷验路径）。来源 INFRA-034 CI 复现；池 [23] 仍未决 |
 
 **规则**：改变既有惯例/架构约束必须新增 ADR；取号前先 `git fetch`（双机并行撞号纪律见 ADR-0019 §4）。
 
@@ -127,7 +134,7 @@ cat docs/handoff/HANDOFF-004-*.md      # 3. 最近交接（状态以最新一份
 
 | 文档 | 角色 |
 |---|---|
-| [`engine-api.md`](api/engine-api.md) | **引擎公共接口参考（C ABI）**：由 `tools/docs/gen_api_reference.py` 从 `engine/bindings/swift/Sources/CChuanqiCut/include/cq_sdk.h` 自动生成（接口变更后重跑；`--check` 可比对是否过期）。**不要手改**。 |
+| [`engine-api.md`](api/engine-api.md) | **引擎公共接口参考（C ABI）**：由 `tools/docs/gen_api_reference.py` 从 `api/swift/Sources/ChuanqiCutCore/include/cq_sdk.h` 自动生成（接口变更后重跑；`--check` 可比对是否过期）。**不要手改**。 |
 
 ---
 
@@ -155,22 +162,29 @@ cat docs/handoff/HANDOFF-004-*.md      # 3. 最近交接（状态以最新一份
 
 ---
 
-## 六、交接（handoff/）
+## 六、交接（handoff/ 在位 5 份 + archive/handoff/ 23 份）
+
+**在位窗口 = 编号最新的 5 份**（2026-10-16 INFRA-035 起）。更旧的全部进
+[`archive/handoff/`](archive/README.md)（只读，不得当当前状态引用，也不回填旧路径）。
 
 | 文档 | 覆盖 |
 |---|---|
-| [HANDOFF-001](handoff/HANDOFF-001-编码阶段会话交接.md) | 方案会话 → 编码会话的切换规则（含开场 prompt 模板，方法论仍有效） |
-| [HANDOFF-002](handoff/HANDOFF-002-编码阶段会话交接.md) | 编码阶段交接（历史） |
-| [HANDOFF-003](handoff/HANDOFF-003-编码阶段会话交接.md) | 编码阶段交接（历史） |
-| [HANDOFF-004-编码阶段会话交接](handoff/HANDOFF-004-编码阶段会话交接.md) | **编辑器线**当前状态（UIA / BIND / MEDIA 线） |
-| [HANDOFF-004-相机模块会话交接](handoff/HANDOFF-004-相机模块会话交接.md) | **相机线**当前状态（CAM 线，随 CAM 系列任务持续刷新） |
-| [HANDOFF-005-智能成片会话交接](handoff/HANDOFF-005-智能成片会话交接.md) | **智能成片线**当前状态（AIEDIT-000~011 立项轮，RESEARCH-003/ADR-0020/SPEC） |
-| [HANDOFF-006-音频线会话交接](handoff/HANDOFF-006-音频线会话交接.md) | **音频线**当前状态（AUDIO-001 已落地：池/环/图骨架；下一步 AUDIO-004 或 PALA-030） |
+| [HANDOFF-021-EDIT007008模型命令批](handoff/HANDOFF-021-EDIT007008模型命令批会话交接.md) | 模型/命令批：`ChqTimeline` + C ABI edit 面 |
+| [HANDOFF-022-UIA039编辑器接命令批](handoff/HANDOFF-022-UIA039编辑器接命令批会话交接.md) | 编辑器接 Command 的 UIA-039 批 |
+| [HANDOFF-023-UIA042-SnapKit迁移与红框修复](handoff/HANDOFF-023-UIA042-SnapKit迁移与红框修复会话交接.md) | 编辑页 UIKit 布局迁移（SnapKit）+ 预览红框 |
+| [HANDOFF-024-P142scrub快速seek与21旋转收尾](handoff/HANDOFF-024-P142scrub快速seek与21旋转收尾交接.md) | 轨道 scrub 根因（P142）+ #21 旋转收尾 |
+| [HANDOFF-025-布局整改批收口](handoff/HANDOFF-025-布局整改批收口交接.md) | 仓库布局整改批（INFRA-026~035 / ADR-0044）收口：**整批未 commit**、CI 与构建期依赖（P160） |
 
-| [HANDOFF-006-MEDIA播放链路会话交接](handoff/HANDOFF-006-MEDIA播放链路会话交接.md) | **MEDIA 播放链路**当前状态（MEDIA-021/023~027 + CORE-010 日志设施，含真机复现手法） |
-
-**规则**：新交接取下一个编号（下一份 = 007）；双线并行期间允许**同号双卡**（后缀区分主题），
+**规则**：新交接取下一个编号（下一份 = 026）；双线并行期间允许**同号双卡**（后缀区分主题），
 引用时务必带主题（"HANDOFF-004 相机版 §x"）。状态核对必须对着 commit 历史与门禁数字，不照抄上一版（pitfalls E10）。
+归档线：在位写满 6 份时，最旧那份随下一批搬家移入 `archive/handoff/`，并把该文件里的 `](../` 链接各补一层 `../`。
+
+**核过的"失效引用"**（INFRA-034，2026-10-16）：`HANDOFF-021` §台账里的
+`TASK-EDIT-007/008.md`（合写简写）**不是断链** —— 007 与 008 两份单卡都在位
+（[`TASK-EDIT-007.md`](tasks/TASK-EDIT-007.md) / [`TASK-EDIT-008.md`](tasks/TASK-EDIT-008.md)）。
+早期治理卡把它记成"指向从未存在的文件"是**未核磁盘的推断**；此处按实测登记，不改历史交接文档。
+（本面是导航面，故死路径只写名字不带 `docs/` 前缀 —— 加了前缀就会被 `linkcheck_docs.py`
+ 判成真断链；讨论死路径请放 `docs/tasks` 等叙述域。）
 
 ---
 
@@ -194,6 +208,10 @@ cat docs/handoff/HANDOFF-004-*.md      # 3. 最近交接（状态以最新一份
 - [`CODESTYLE.md`](CODESTYLE.md) — **代码风格唯一标准**（CODE-001 成文，`cq-code-review` skill 据此执行）
 - [`reviews/`](reviews/) — 审查记录（如 [REVIEW-2026-10-05 全库风格巡检](reviews/REVIEW-2026-10-05-全库风格巡检.md)、[REVIEW-2026-10-06 MEDIA-027 播放冻结与 jetsam 复盘](reviews/REVIEW-2026-10-06-MEDIA027-播放5秒冻结与jetsam复盘.md)）
 - [`../tools/ci/run_gate.sh`](../tools/ci/run_gate.sh) — 统一门禁脚本（本机总门禁入口）
+- [`../tools/ci/check_repo_hygiene.sh`](../tools/ci/check_repo_hygiene.sh) — 仓库卫生四条（忽略锚定 / 活文档旧路径 / 产物入库 / editorconfig），退出码 = 失败项数
+- [`../tools/ci/check_ios_compile.sh`](../tools/ci/check_ios_compile.sh) — iOS 切片"只编译"窄检（P146：`#if TARGET_OS_IPHONE` 分支在 macOS 切片里从不参与编译）
+- [`../tools/build/build_shader_toolchain.sh`](../tools/build/build_shader_toolchain.sh) — 构建期 shader 工具链装配（glslang + spirv-cross，按 `manifest.toml` 的 pin 取源码；P160：缺它则清 `build/` 后内核编不出，CI 与新克隆机同理）
+- [`../tools/docs/gen_api_reference.py`](../tools/docs/gen_api_reference.py) — [`api/engine-api.md`](api/engine-api.md) 生成器，`--check` 已入门禁（P151）
 - [`tasks/PLAN-三线并行.md`](tasks/PLAN-三线并行.md) — 相机/编辑器/智能成片三线并行的号段与写集规划
 
 ---
@@ -202,7 +220,7 @@ cat docs/handoff/HANDOFF-004-*.md      # 3. 最近交接（状态以最新一份
 
 | 想知道 | 看 |
 |---|---|
-| 项目现在做到哪了 | [`handoff/HANDOFF-004-*`](handoff/) 两份的 §1（对着 commit 核过） |
+| 项目现在做到哪了 | 先 `git log --oneline -15` + `.ai/modules/<模块>.md` 模块册；交接只看 [`handoff/`](handoff/) 在位最新那份（= 024），**别看 archive/** |
 | 下一个任务是什么 | HANDOFF 的"下一步"节 + [`tasks/TASK-BACKLOG.md`](tasks/TASK-BACKLOG.md) |
 | 某模块的接口与约束 | `.ai/modules/<模块>.md` |
 | 某个性能数字可不可信 | `.ai/memory/baselines.md`（不在其中 = 估算 [E]） |

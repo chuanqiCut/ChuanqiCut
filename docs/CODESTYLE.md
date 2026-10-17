@@ -72,7 +72,7 @@
 
 ## 3. Swift 层
 
-- **分层**：UI/App 只 `import ChuanqiCut`（门面），禁止直接 `import CChuanqiCut`
+- **分层**：UI/App 只 `import ChuanqiCut`（门面），禁止直接 `import ChuanqiCutCore`（该 Pod 原叫 `CChuanqiCut`，ADR-0038 已更名）
   或裸调 `cq_*`；相机栈豁免见 ADR-0014。
 - **日志**：统一 `os.Logger`（subsystem=`com.chuanqi.cut`，category=类型名），
   禁 `print()`。
@@ -98,7 +98,11 @@
 
 - 已有机器门禁：`-Werror` 编译、`ctest`、`tools/platform/check_platform_headers.py`、
   `tools/deps/deps.py validate`、`tests/golden/verify.py`、smoke_link。
-  **golden verify 需 Python ≥ 3.11（tomllib）——本机系统 python3 不带，用 `python3.12` 跑。**
+  **golden verify 需 Python ≥ 3.11（tomllib）——本机系统 python3 不带，`run_gate.sh` 会自动探测托管版本。**
 - `tools/ci/run_gate.sh` = 本机总门禁入口（合并守门/提交前跑）。
-- `.clang-format`/`.clang-tidy` 待引入（INFRA-012）；引入前以本文件 +
-  既有代码风格为准。
+- `.clang-format` + `.editorconfig` **已落地**（INFRA-034，2026-10-16）：两者同一口径
+  （4 空格、不设列宽、LF、文件末尾一个换行）。**它是"描述现状"的基线，不是重排指令** ——
+  落地时 `engine/**` 违规 79/115，只由 `tools/ci/check_repo_hygiene.sh` 以 INFO 报数，
+  不做红闸（做成红闸只会逼出 `|| true`）；全库重排另开卡分批。逐类拆分见 `.ai/modules/core.md`。
+- 仓库卫生四条（忽略规则锚定 / 活文档旧路径 / 产物未入库 / `.editorconfig` 四条件）
+  已做成退出码：`tools/ci/check_repo_hygiene.sh`。`.clang-tidy` 仍待引入。

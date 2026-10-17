@@ -1,5 +1,9 @@
 # AIEDIT-001：智能成片（本地特征 → 大模型决策 → SDK 执行 → 导出/二次编辑 + 对话式调整）
 
+> 路径注记（INFRA-034，2026-10-16）：本文写集/正文里的旧仓库路径已按现布局换算——
+> `apps/apple/packages/*` → `ui/*`、`bindings/swift` → `api/swift`、`shaders/src` → `engine/shaders/portable`。
+> 用例与结论未改，只改路径。
+
 > 版本：v1.0（2026-10-04 立项）
 > 日期：2026-10-04
 > 调研依据：`docs/research/RESEARCH-003-智能成片竞品调研.md`（竞品对比与差异化定位）
@@ -34,7 +38,7 @@
 | 取帧 | `core/include/cq/media/frame_provider.h` + Apple 实现（精确 seek） | 视觉特征抽帧的底座 |
 | 端侧推理抽象 | `core/include/cq/platform/inference.h`（IInferenceBackend，零实现）+ `CQ_CAP_NPU_INFERENCE` | 后续端侧检测模型的挂点（P0 特征提取用算法实现，不依赖模型） |
 | 相册选择 | UIA-013 `AlbumPickerScreen`（单击即插入/多选模式） | 智能成片的选素材 UI 直接复用，交付 URL 列表 |
-| C ABI + 绑定模式 | `cq_sdk.h` + `bindings/swift` + SharedUI（UI 不共享、共享会话） | 新 ABI 照既有模式扩展 |
+| C ABI + 绑定模式 | `cq_sdk.h` + `api/swift` + SharedUI（UI 不共享、共享会话） | 新 ABI 照既有模式扩展 |
 
 ### 2.2 完全缺失（本批次新建）
 

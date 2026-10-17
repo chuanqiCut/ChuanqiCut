@@ -60,7 +60,7 @@ GFX 抽象分两层，混淆会导致 RenderGraph 直接依赖平台类型，必
    （见 `platform_header_gate` ctest）。
 2. **零 FFmpeg 类型**：GFX 层不涉及任何 AV* 类型。
 3. **统一 base 类型**：时间 `ChqRationalTime`、错误 `ChqStatus`、长任务 `ChqCancelToken`、资源 `ChqPlatformPtr`。
-4. **`-Werror` 零警告**：编译验证 TU `tests/unit/gfx_headers_compile.cpp` 在
+4. **`-Werror` 零警告**：编译验证 TU `tests/unit/gfx/gfx_headers_compile.cpp` 在
    `-Wall -Wextra -Wconversion -Wshadow -Wold-style-cast` 下干净编译。
 5. **内核禁用异常**：无 `throw`，错误一律 `ChqStatus`；`kCancelled` 非错误（取消是独立停止信号）。
 
@@ -73,7 +73,7 @@ GFX 抽象分两层，混淆会导致 RenderGraph 直接依赖平台类型，必
 
 ## 验证（2026-09-25 真跑）
 ```bash
-CMAKE_BIN=/Users/zhuning/.workbuddy/binaries/cmake/CMake.app/Contents/bin/cmake
+CMAKE_BIN="$HOME/.workbuddy/binaries/cmake/CMake.app/Contents/bin/cmake"
 $CMAKE_BIN -S . -B build -DCMAKE_BUILD_TYPE=Debug
 $CMAKE_BIN --build build -j4
 $(dirname $CMAKE_BIN)/ctest --test-dir build   # 原 8 + gfx_headers_compile + media_* + 门禁

@@ -32,11 +32,35 @@
 - `ctest` 不在 PATH：`~/.workbuddy/binaries/cmake/CMake.app/Contents/bin/ctest --test-dir build`。
   SharedUI 无 Tests 目标（`swift test` 恒 no tests found，非失败）；SPM 须 `--disable-sandbox`
   + `--scratch-path "$ROOT/build/spm/<包>"`；构建产物不得入库，临时编译放根 `/build/`。
-- 最近全量门禁（2026-10-12）：`run_gate.sh` **PASS 14 / FAIL 0**（22m14s），core 各 48/48。
-  ⚠️ **门禁不含 App 壳构建**（池 [18]）。
-- 编号取号前必须 `git fetch` 核远端（并发时现取现核）。2026-10-15 晚：ADR 到 0042，
-  pitfalls 下一号 **P135**，池下一号 **[19]**。
+- 最近全量门禁（2026-10-16 晚，INFRA-034）：`run_gate.sh` **17 步 PASS=17 / FAIL=0 / SKIP=0**
+  （墙钟 **10m57s 暖缓存** / 18m58s 冷缓存），core Debug+Release 各 **52/52**，包段合计 **252**。
+  ⚠️ **门禁不含 App 壳构建**（池 [18]）；且 **17/17 的绿成立在暖缓存上**（见下条 P160 铁律）。
+- CI core 段**干净复现**（2026-10-17 早，`rm -rf build` 四遍）：toolchain/build/ctest 全 rc=0、
+  **51/51**，四遍都打印排除名单 `Test #45: platform_apple_decode`；干净单遍 **6m48s~11min**。
+  ⚠️ 本机 **ctest 墙钟不可当指标**（四遍 186.74 / 172.84 / 271.32 / 83.52s，同是 51/51 全过）。
+- 编号取号前必须 `git fetch` 核远端（并发时现取现核）。2026-10-17 水位：ADR 到 **0045**（0044/0045 均本机未推），
+  pitfalls 下一号 **P163**，池下一号 **[24]**，HANDOFF 下一份 **026**，BACKLOG §15 为布局整改批。
 - 收工同步顺序：模块册 → ADR → TASK → HANDOFF → pitfalls → baselines → 当日日志 → 本文件。
+
+## 构建期依赖铁律（P160/P162 → **ADR-0045**，2026-10-17 立）
+
+- **任何构建期依赖必须有一个入库脚本能从零产出它**。"本机能编"不是证据，
+  本机那台机器可能带着从没登记在仓库里的历史产物（案底：SHADER-001 要的
+  glslang + spirv-cross 两个二进制只活在 `build/tools/`，仓库里从来没有产出它们的脚本，
+  于是清 `build/` / 新克隆 / CI runner 一律编不出内核，症状是停在 27% 然后 **50/51 用例
+  "找不到可执行文件"** —— 看着像测试崩，实际全是那一个 error 的下游）。
+- **判据必须至少在"空产物根"上定期跑**：`tools/ci/run_gate.sh` 是暖缓存口径，
+  复刻 CI 时用真破坏性动作（`rm -rf build`），**增量复现只会复述已知的绿**。
+- 新增的装配脚本自身也要在**空树**上验：本批就是这么顺手抓到脚本自己的第二个坑
+  （日志重定向目标 `build/tools/` 在新克隆机上不存在，真实失败被 shell 错误盖掉）。
+- 出问题的构建期工具一律走 `tools/build/build_shader_toolchain.sh`（pin 从 `manifest.toml` 读，
+  脚本内不写死 commit）；CI 里该步必须在 `build_core.sh` **之前**（`--clean` 会连它一起清掉）。
+- **两侧各自拼的路径必须逐字一致**（P160 规则 5）：装配脚本写 `build/tools/SPIRV-Cross/`、
+  消费方默认找 `build/tools/spirv-cross/`，本机靠 APFS 不区分大小写"碰巧能用"，
+  换 Linux runner 就是"工具链装好了但找不到"。大小写判据只在敏感卷上才成立。
+- **只读/dry-run 模式不许有任何删除，且要在函数入口短路**（P162）；grep CMake cache 键时
+  类型段写成可选 `^KEY(:[A-Z]+)?=` —— 裸 `-D` 落的是 `:UNINITIALIZED=`，写死 `:STRING=`
+  等于一条**恒不命中**的判据（幂等守卫因此每遍误删重编）。
 
 ## Apple 端验证口径（P129，UI 改动必守）
 - **本机 macOS 的 `swift build/test` 整文件跳过 `#if os(iOS)`** → SPM 全绿**不是** UIKit 侧证据。

@@ -1,6 +1,6 @@
 # HANDOFF-011：相机 Pod 落地（阶段 4 提前）+ 壳工程三个假绿案底（会话交接）
 
-> 2026-10-07 深夜二轮。传哲指出「拍摄怎么还在工程」→ [INFRA-018](../tasks/TASK-INFRA-018.md)
+> 2026-10-07 深夜二轮。传哲指出「拍摄怎么还在工程」→ [INFRA-018](../../tasks/TASK-INFRA-018.md)
 > 从 PLAN 顺序中**提前执行完毕**：ChuanqiCutCamera 成为独立 iOS Pod。另含 P84（.build
 > 入库）与 P85（迁移假绿三连）两条新规则。阶段 0/1 见 HANDOFF-010。
 

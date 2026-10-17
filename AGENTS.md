@@ -19,8 +19,8 @@ ChuanqiCut 是**跨平台视频编辑 SDK + 各端原生 App**：
 3. **能力必须运行时查询，不得编译期推断。** 禁止用 `#if __APPLE__` 推断功能可用性，一律走 `cq_query_capability()`。
 4. **时间一律用有理数 `RationalTime{value, timescale}`**，禁止浮点秒。项目 timescale = 60000。
 5. **UI 不得直接改模型。** 所有变更走 `Command`，这是 Undo/Redo 与三端一致性的前提。
-6. **Shader 双层**：`shaders/src/*.glsl` 是 Portable 层（跨平台基线，**禁止平台扩展**，经 SPIR-V 生成）；平台特化只在 `platform/<platform>/shaders/`（Platform-Native 层，可用满平台特性）。**Platform-Native 永远可选**，必须先有 Portable 实现，且收益 < 20% 不予合入。
-7. **第三方类型不得出现在公共头文件**。唯一公共头 `engine/core/cq/cq_sdk.h` 只有 C 类型 + opaque 句柄；其余 C++/平台头与实现共置，随 `CChuanqiCut` Pod 以 private header 编译，不对外暴露。
+6. **Shader 双层**：`engine/shaders/portable/*.glsl` 是 Portable 层（跨平台基线，**禁止平台扩展**，经 SPIR-V 生成）；平台特化只在 `engine/shaders/native/<platform>/`（Platform-Native 层，可用满平台特性，**本期为空**）。**Platform-Native 永远可选**，必须先有 Portable 实现，且收益 < 20% 不予合入。生成产物落 `build/generated/shaders/`，禁止入库。
+7. **第三方类型不得出现在公共头文件**。唯一公共头 `engine/core/cq/cq_sdk.h` 只有 C 类型 + opaque 句柄；其余 C++/平台头与实现共置，随 `ChuanqiCutCore` Pod 以 private header 编译，不对外暴露（ADR-0033）。
 8. **主线程零阻塞**；音频线程无锁、无分配。
 9. **预览与导出走同一张 RenderGraph**，只换输出目标与时钟源。
 10. **依赖变更必须走 `third_party/manifest.toml`**，禁止直接把代码拷进仓库。
@@ -83,7 +83,9 @@ ChuanqiCut 是**跨平台视频编辑 SDK + 各端原生 App**：
 ```bash
 tools/build/build_core.sh --platform=<apple|android>   # 编译，-Werror
 ctest --test-dir build -R <相关模块>                    # 单测
-python3 tests/golden/verify.py --json                   # golden 齐备性（渲染/导出相关）
+"${PYTHON_BIN:-python3}" tests/golden/verify.py --json   # golden 齐备性（渲染/导出相关）
+# ⚠️ verify.py 需要 Python ≥ 3.11（`tomllib`）。本机**系统 python3 = 3.9 会 ModuleNotFoundError**，
+#    用与门禁同一个解释器：`tools/ci/run_gate.sh` 的探测顺序 = `$PYTHON_BIN` > 托管 3.13 > `~/.local` > 系统。
 # ⚠️ 旧文档里的 tools/qa/golden_compare.sh 不存在（2026-10-08 核）；golden 入口只有这一个。
 #    tools/qa/ 下实际只有 beauty_harness/（磨皮剖面，非 golden 门禁）。
 ```

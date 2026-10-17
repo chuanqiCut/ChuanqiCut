@@ -238,11 +238,11 @@ muxer 把帧（已解码像素 / 已编码包）封装成容器文件。两者�
   Audio 经 `AudioTrackConfig` 描述，绝不出现 `CVPixelBufferRef` / `AVPacket` 等；零 FFmpeg 类型。
   由门禁脚本 `tools/platform/check_platform_headers.py`（ctest 用例 `platform_header_gate`）扫描
   `core/include/cq/platform/media.h` 兜底——本接口已通过（无平台/FFmpeg 类型、无 `throw`、无裸 `double`）。
-- **编译期自洽验证**：`tests/unit/platform_headers_compile.cpp` 已扩展 `static_assert`，断言
+- **编译期自洽验证**：`tests/unit/platform/platform_headers_compile.cpp` 已扩展 `static_assert`，断言
   `IMediaMuxer` 继承 `IPlatformResource`、`WriteVideoFrame` 以 `NativeImageHandle` 传帧、`Finish` 接受
   `CancelToken`、`CreateMediaMuxer` 返回 `Status + PlatformPtr<IMediaMuxer>&`、`VideoTrackConfig.bitrate`
   为 `BitrateTier`、`BitrateTier` 底层为 `int32_t`——固化「接口自洽 / 零平台类型 / 与 demuxer 对称」契约。
-- **平台无关调用证明**：`tests/unit/test_media_muxer_apple.cpp`（`platform_apple_muxer` 用例）全程只通过
+- **平台无关调用证明**：`tests/unit/media/test_media_muxer_apple.cpp`（`platform_apple_muxer` 用例）全程只通过
   core 冻结接口 `IMediaMuxer` + 工厂 `CreateMediaMuxer` 完成一次真实导出（PALA-010 demux + PALA-011
   硬解 → `WriteVideoFrame(NativeImageHandle, RationalTime, CancelToken)` 写 60 帧 → `Finish`），
   **完全不碰 `AppleVideoEncoder` / `CVPixelBufferRef`**；产出经 ffprobe 验证（codec=h264 / 1920×1080 /
@@ -397,7 +397,7 @@ base 层已定义 `ILogSink`（CORE-003）。本领域的契约是：**Platform 
 - 头文件零平台类型（门禁脚本 `tools/platform/check_platform_headers.py` + 评审；已证明能抓出
   `jobject` 等违规，误报由「先剔除注释/字符串」消除）。
 - 零 FFmpeg 类型（门禁脚本扫描 `AV*` / `av_` 与 ffmpeg include，零违规）。
-- 新增编译验证 TU `tests/unit/platform_headers_compile.cpp` 自洽编译 + 29 条 `static_assert`，
+- 新增编译验证 TU `tests/unit/platform/platform_headers_compile.cpp` 自洽编译 + 29 条 `static_assert`，
   注册为 ctest 用例 `platform_headers_compile`。
 - 新增门禁用例 `platform_header_gate`（ctest 运行 `check_platform_headers.py`）。
 - `cmake --build build -j4` + `ctest --test-dir build` → 原 6 用例 + `platform_headers_compile`

@@ -87,6 +87,7 @@ CORE-006 冻结的 `cq/platform/audio.h`（PcmBuffer/IAudioEngine 契约）
 | 日期 | 阶段/范围 | 结论（数字） |
 |---|---|---|
 | 2026-10-13 | AUDIO-004 编码轮自查（本机 Intel x86_64） | `build_core.sh` Debug/Release -Werror 0 error 0 warning；`ctest` **Debug 52/52**（批前 51，+core_audio_mix）；`ctest -R audio` **5/5**；`core_audio_mix` **57 检查 0 失败**；头门禁 43 头 0 违规 |
+| 2026-10-16 | `audio_engine.mm` iOS-only 编译破坏修复（集成机 hotfix，P146） | 引入者 `b471b8c`（#18 打断恢复）：`RegisterSessionObservers()` 的第二个 block 形参 `note` 未用 → `-Werror,-Wunused-parameter` @ `engine/platform/apple/media/audio_engine.mm:252`。该函数整段在 `#if TARGET_OS_IPHONE`（:212-271）里，**`build_core.sh --platform=apple` 走 macOS 切片编不到**，所以 core-dbg/core-rel 一路绿、只有 `apple-xcframework` 段红。修复＝形参改匿名 `/* note */`（与 :239 同写法）；重跑 `tools/build/build_core_apple.sh --config=Release` → **exit 0**，三切片齐 + consumer smoke-link `ChuanqiCut version = 0.1.0`，`build/apple/ChuanqiCut.xcframework` 4.5M |
 | 2026-10-05 | AUDIO-001 收尾 | Debug/Release 44/44（含 core_audio_pcm / core_audio_graph） |
 
 ### 调研 · 决策 · 池指针

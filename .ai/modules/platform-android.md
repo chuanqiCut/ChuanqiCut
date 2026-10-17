@@ -2,7 +2,7 @@
 
 > **归属**：集成机（P2 预留） —— 归属表见 docs/tasks/PLAN-三线并行.md §1a / ADR-0029（双机分工与门禁跑批，2026-10-07）
 
-**边界**：`platform/android/`、`apps/android/`、`bindings/kotlin/`
+**边界**：`platform/android/`、`apps/android/`、`api/kotlin/`（预留占位，INFRA-032）
 
 ## 基线
 minSdk **26 (Android 8.0)**｜ABI **arm64-v8a only**｜NDK r27+｜C++20 + libc++_shared｜Kotlin + Compose

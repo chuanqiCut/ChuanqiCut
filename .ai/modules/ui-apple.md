@@ -2,7 +2,8 @@
 
 > **归属**：A 线（编辑器/UI） —— 归属表见 docs/tasks/PLAN-三线并行.md §1a / ADR-0029（双机分工与门禁跑批，2026-10-07）
 
-**边界**：`apps/apple/packages/SharedUI/`、`apps/apple/iOSApp/`、`apps/apple/MacApp/`、`apps/apple/project.yml`
+**边界**：`ui/<Module>/` 六包（SharedUI + ChuanqiCut{Player,Camera,Import,Editor,Draft}）、
+`apps/apple/{ios,mac}/` 壳工程（`ChuanqiCut.xcodeproj` = 冻结入库的手工真源，ADR-0037）
 
 ## 原则
 **UI 不跨平台共享，共享的是会话状态与命令**（ARCH-005）。
@@ -15,8 +16,8 @@
 ## 工程结构（INFRA-009 拆分版，2026-10-02；替代 UIA-002 单工程形态）
 
 ```
-apps/apple/
-├── packages/SharedUI/             # SwiftUI 共享包
+ui/                                # 顶层组件包（INFRA-031 上提，原 apps/apple/packages/）
+├── SharedUI/                      # SwiftUI 共享包
 │   ├── SharedUI.podspec           # App 集成真源（pod）
 │   ├── Package.swift              # 仅 swift test 测试宿主，不在 App 依赖链
 │   ├── Sources/SharedUI/
@@ -24,21 +25,38 @@ apps/apple/
 │   │   ├── Editor/                # EditorView / EditorLayout / 三区桩视图
 │   │   └── Common/Theme.swift
 │   └── Tests/SharedUITests/
+├── ChuanqiCutPlayer/  ChuanqiCutCamera/  ChuanqiCutImport/
+├── ChuanqiCutEditor/  ChuanqiCutDraft/   # 同名包（保留 ChuanqiCut 前缀，ADR-0044 决策 6）
+api/swift/                         # Swift 对外门面 = ChuanqiCutEngine 的 pod 根（INFRA-032）
+apps/apple/                        # 只剩两端壳工程
 ├── ios/                           # iOS 独立工程
-│   ├── project.yml                # xcodegen 真源（ChuanqiCutApp，iOS 16+）
+│   ├── ChuanqiCut.xcodeproj       # 冻结入库的手工真源（ADR-0037，XcodeGen 已退役）
 │   ├── Podfile / Gemfile(.lock)   # 本目录独立维护
 │   └── iOSApp/
 └── mac/                           # macOS 独立工程
-    ├── project.yml                # xcodegen 真源（ChuanqiCutMacApp，macOS 15.4+）
+    ├── ChuanqiCut.xcodeproj       # 冻结入库的手工真源（ADR-0037）
     ├── Podfile / Gemfile(.lock)   # 本目录独立维护
     └── MacApp/                    # 窗口 1280×720 / 最小 960×540
 ```
 
 **依赖链**（INFRA-009 起，全部走 CocoaPods，App 不用 SPM）：
-App → SharedUI (pod) → ChuanqiCut (pod，**默认 Source 模式**：现场编译
-C++20 内核 + ObjC++ Platform + Swift 绑定) → CChuanqiCut (clang module，
-经 SWIFT_INCLUDE_PATHS 共用 `bindings/swift/Sources/CChuanqiCut/include/`)。
-`bindings/swift/Package.swift` 仅作绑定层 `swift test` 测试宿主。
+App → SharedUI (pod) → **ChuanqiCutEngine**（Swift 对外门面）→ **ChuanqiCutCore**（C++20 内核 +
+ObjC++ Apple Platform）→ **ChuanqiCutFFmpeg**（LGPL vendored 二进制归属）。
+
+**pod 根表**（ADR-0044 决策 2/8；INFRA-032 落地 2026-10-16）：
+
+| Pod | podspec 位置 | pod 根 | 关键路径（**一律相对 pod 根**） |
+|---|---|---|---|
+| `ChuanqiCutCore` | `engine/ChuanqiCutCore.podspec` | `engine/` | `core/cq/**/*.{h,cpp}`、`public_header_files = core/cq/cq_sdk.h`、`vendor/libffmpeg.xcframework` |
+| `ChuanqiCutFFmpeg` | `engine/ChuanqiCutFFmpeg.podspec` | `engine/` | 无源，只挂 License/NOTICE（vendored 接线仍在 Core Pod，ADR-0038 附录） |
+| `ChuanqiCutEngine` | `api/swift/ChuanqiCutEngine.podspec` | `api/swift/` | `Sources/ChuanqiCut/**/*.swift`（8 个门面文件） |
+
+⚠️ **Core/FFmpeg 的 pod 根不能跟着门面外提**：CocoaPods 要求 `vendored_frameworks` 落在 podspec 同目录树下。
+⚠️ **`source_files` 写错前缀 = 静默丢源码**（pod install 照样 exit 0）—— 见 pitfalls P150，
+验收要看 `Pods.xcodeproj` 里 8 条 `path = Sources/ChuanqiCut/*.swift` + App 二进制 `nm` 有门面符号。
+`api/swift/Package.swift` 仅作门面 `swift test` 测试宿主；Swift 侧 clang module 由
+`api/swift/Sources/ChuanqiCutCore/`（`shim.c` + `include/cq_sdk.h` **相对符号链接** →
+`engine/core/cq/cq_sdk.h`，搬家时目标必须重写，P151）提供。
 集成细节与红线见 `docs/COCOAPODS.md` 与 pitfalls P9~P12。
 
 **工程生成**（clone 后 / project.yml 或 Podfile 变更后，在 ios/ 或 mac/ 下）：
@@ -78,7 +96,7 @@ ChuanqiCut.xcodeproj / .xcworkspace 均为生成产物（.gitignore 已排除）
 ## 验证
 ```bash
 # SharedUI 包（macOS 宿主，需先产出 xcframework：build_core_apple.sh && prepare.sh）
-cd apps/apple/packages/SharedUI && swift test --disable-sandbox
+cd ui/SharedUI && swift test --disable-sandbox
 
 # macOS App（INFRA-009 起，workspace 编译）
 cd apps/apple/mac && xcodegen generate && bundle install && bundle exec pod install
@@ -119,7 +137,7 @@ ARCH-005、TASK-UIA-002、pitfalls P7/P8
 
 # UIA-004 落地（2026-10-03）：时间线自绘
 
-- `apps/apple/packages/SharedUI/Sources/SharedUI/Timeline/EditorTimelineView.swift`
+- `ui/SharedUI/Sources/SharedUI/Timeline/EditorTimelineView.swift`
   （⚠️ 不叫 TimelineView —— SwiftUI 有同名系统类型，P22 同款）
 - 几何纯函数 `TimelineLayout`（时间↔像素 / 可见裁剪 / 标尺自适应）——可单测可 measure
 - **单 Canvas 绘制**（轨道行/片段/标尺/播放头），非组件堆叠
@@ -142,7 +160,7 @@ ARCH-005、TASK-UIA-002、pitfalls P7/P8
   由 FileManager 实时判定，文件被移走显示「⚠ 文件不在原路径（已失效）」，
   渲染侧届时以 kInvalidArgument 暴露。素材库整理（拷入沙箱）后续任务。
 - 媒体类型白名单：movie/video/mpeg4Movie。
-- **测试路径 helper 唯一真源**：`RepoPath`（SharedUI）/`TestPaths`（bindings），
+- **测试路径 helper 唯一真源**：`RepoPath`（SharedUI）/`TestPaths`（api/swift，上溯 5 层），
   #filePath 上溯链**不得在新测试里手写**（本轮两次踩层数错误，P30）。
 
 
@@ -747,6 +765,9 @@ RESEARCH-004/005 结论全部维持，本文补**操作层**，关键增量：
 | 2026-10-07 | Pod 拆分阶段 0/1 阶段批 | SharedUI swift test **88/88**；ChuanqiCutPlayer swift test **52/52**；合计 140 对齐迁移前 HEAD（守恒核过）；iOS 模拟器 + macOS 双壳 BUILD SUCCEEDED；全量门禁数字见当日日志 |
 | 2026-10-07 | SharedUI 测试套 + iOS 构建（迁移前基线） | 128→140 用例（美颜合并轮 +12）；iOS BUILD SUCCEEDED 项目代码 0 告警 |
 | 2026-10-11 | 壳工程图标/启动图修复（actool 独立验证，全量构建按阶段批） | actool `--app-icon AppIcon` 编 Assets.xcassets → Assets.car 1.0MB + partial.plist 含 `CFBundleIcons/CFBundlePrimaryIcon=AppIcon`（iPhone/iPad），0 warning；`showBuildSettings` 确认 APPICON setting 生效；真机验收（删重装）挂真机批 |
+| 2026-10-16 | **INFRA-031 包上提 `apps/apple/packages/` → 顶层 `ui/`**（全量门禁 + 双壳） | 全量门禁 **PASS=15 / FAIL=0 / SKIP=0**（exit 0）：ctest Debug **52/52** 165.11s、Release **52/52** 145.14s；headers 43 头 0 违规；golden 21/0/0 901784B；**layer-hygiene 两趟 4 + 115 = 119**（与迁移前单趟逐字相等，覆盖面没掉）。包段逐段复对 P148 基线：**bindings 26 / player 52 / camera 77 / import 16 / editor 81 = 252，0 失败**（搬家前后一字不差）。双壳：ios `pod install` 14/14、mac 7/7 exit 0，`Podfile.lock` 本地 Pod 路径全部 `../../../ui/...`；ios `ChuanqiCutApp` + mac `ChuanqiCutMacApp` **BUILD SUCCEEDED**。pbxproj 内嵌 metallib run-script 的 3 处 `../packages` **必须手改**（`pod install` 不重写，见 P149），产物 `beauty_bilateral 9215B / face_warp 5792B / beauty_guided 8118B` 时间戳为本次构建 → 非 96B 空壳。`RepoPath.swift` 上溯 7 层→5 层，运行日志实证 probe 命中 `tests/golden/frames/gf_1080p_{h264,hevc}.mp4`。目录形态：`git ls-files ui` = **124**（旧路径 0），六包 `swift package resolve` 全过。 |
+| 2026-10-16 | **INFRA-032 Swift 门面外提 `engine/bindings/swift` → 顶层 `api/swift/`**（全量门禁 + 双壳） | 门面 tracked **0→25**、`engine/bindings`=**0**、`engine` **149→124**（差恰 25）、总 tracked **857** 不变。移动集 = 15 条 `R100` + 9 条 `R0xx`（改路径字面）+ **1 条相对符号链接重写**（`cq_sdk.h` 上溯目标由 `core/cq` 改 `engine/core/cq`；git 里是 `D`+`A` 不是 `R`，必须 `test -f` 实证 → **P151**）。**pod 根改判**：`ChuanqiCutEngine.podspec` 的 `source_files` = `'Sources/ChuanqiCut/**/*.swift'`（pod 根相对；机械替换成 `api/swift/Sources/…` 会落根**之外**、CocoaPods **静默丢全部源码而 pod install 仍 exit 0** → **P150**）。链接级取证：Local Podspecs JSON 两端一致、Pods 工程各 **8** 条 `path = Sources/ChuanqiCut/*.swift`、`libChuanqiCutEngine.a` **507616B**(iphoneos)/**511248B**(mac)、App 二进制 `nm` 门面符号 ios **1838**/mac **1842**。全量门禁 **PASS=15 / FAIL=0 / SKIP=0**（18m58s）：Debug 52/52 149.75s、Release 52/52 144.73s、headers 43/0、layer-hygiene 119、golden 21/0/0 901784B、包段 **bindings 26 / player 52 / camera 77 / import 16 / editor 81 = 252** 与 031 基线逐字相等；双壳 pod install 14/14 + 7/7、两端 **BUILD SUCCEEDED**（error 0，warning 24/6）。⚠️ **run1 曾红**于 `apple-import`：`build/spm/*` 增量缓存把旧绝对路径钉死（`missing inputs: …/engine/bindings/swift/Frameworks/…`），清 1.2G scratch 后 run2 全绿 → **P152**（搬家批见"输入路径不存在"先清 scratch 再判回归）。顺带发现 `gen_api_reference.py` 从未入门禁、`docs/api/engine-api.md` 长期过期：符号 **76→103**、406→516 行，`--check` 入门禁已登记给 INFRA-034。 |
+| 2026-10-16 | **mac 宿主包用例基线重立**（全量门禁 run2 + 两处存量红修复，P148） | `swift test`（x86_64-apple-macos）逐包：**bindings 26 / player 52 / camera 77 / import 16 / editor 81 = 252 用例，0 失败**；SharedUI 段是 `swift build`（测试已随 INFRA-014~019 拆进功能 Pod，包内 `no tests found` 属预期，非漏跑）。修复两处 10-12 之后一直没被跑到的红：① `DebugOverlayView.swift:15` 裸 `import UIKit` → mac 侧整包编不过，改 `#if canImport(UIKit)` + `panelSize` 计算属性（mac 退 380×320）；② `TimelineInteractionTests.swift:190` 断言 `closePanel` 旧语义，与 2026-10-15 `AppEntry.swift:523-526` 的有意改动冲突 → 更新断言并补一条从 `.drawer` 态进入的"收起回选中条"覆盖。**INFRA-031 包上提 `ui/` 后必须逐段复对这四个数字**。 |
 
 #### 壳工程图标/启动图修复（2026-10-11，随 B-02 真机批）
 
@@ -801,7 +822,7 @@ ADR-0041（已批准）/ TASK-UIA-042。用户原始日志：`Unable to simultan
 
 两条合起来即「约束冲突 + 功能不可见」的孪生故障（pitfalls **P130**）。
 
-## 改动（写集 `apps/apple/packages/ChuanqiCutEditor/**` + `ChuanqiCutEditor.podspec`）
+## 改动（写集 `ui/ChuanqiCutEditor/**` + `ChuanqiCutEditor.podspec`）
 
 - `ChuanqiCutEditor.podspec`：`s.ios.dependency 'SnapKit', '~> 5.7.0'`（iOS 专属，钉 5.7.1，MIT）。
 - `EditorViewController.swift`：`import SnapKit`；四区栈 + 预览子视图改 DSL；

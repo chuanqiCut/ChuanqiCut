@@ -2,7 +2,7 @@
 
 > **归属**：集成机归口（相机/检测子域随 B、媒体编解码子域随 C，冲突由集成机裁决） —— 归属表见 docs/tasks/PLAN-三线并行.md §1a / ADR-0029（双机分工与门禁跑批，2026-10-07）
 
-**边界**：`platform/apple/`、`apps/apple/`、`bindings/swift/`
+**边界**：`engine/platform/apple/`、`apps/apple/`、`api/swift/`（门面，INFRA-032）
 
 ## 目标
 iOS 16+ / macOS 13+，**Apple Silicon 基线**（原方案以 Intel Mac 为基线已废弃，见 RESEARCH-001 F6）。
@@ -59,7 +59,7 @@ xcodebuild -workspace apps/apple/ChuanqiCut.xcworkspace -scheme MacApp build
 - **UV 原点约定**：经全屏三角形（uv.y 翻转，uv(0,0)=图像左上）绘制，渲染顶部像素==源顶部行、底部像素==源底部行（源顶=绿(0,190,0)、源底=(62,0,119)），证明**未上下颠倒**。
 - 注意（已记入 pitfalls E8）：BGRA8Unorm 采样返回的是逻辑 RGBA，着色器直接 `return c`，**不要**手动 R/B 交换。
 
-**测试**：`tests/unit/test_native_image_importer_apple.cpp`（仅 `if(APPLE)` 构建），已在 `tests/CMakeLists.txt` 登记为 `platform_apple_native_image`，并显式链接 CoreVideo/IOSurface。
+**测试**：`tests/unit/media/test_native_image_importer_apple.cpp`（仅 `if(APPLE)` 构建），已在 `tests/CMakeLists.txt` 登记为 `platform_apple_native_image`，并显式链接 CoreVideo/IOSurface。
 
 **后续任务**：
 - `PALA-003`（若设立）：把 importer 接到预览渲染图（RenderGraph），替换当前测试里的手工全屏三角形管线。
@@ -92,7 +92,7 @@ xcodebuild -workspace apps/apple/ChuanqiCut.xcworkspace -scheme MacApp build
 - 取消路径冒烟：`Open` 后 `Cancel` 安全中止并删除半成品文件（断言文件不存在）。
 - 全量 ctest：22/22 通过（含 `platform_header_gate` 零平台类型门禁、`platform_apple_encode` / `platform_apple_muxer` / `platform_apple_muxer_audio`），无回归。
 
-**测试**：`tests/unit/test_media_encode_apple.cpp`（仅 `if(APPLE)` 构建），登记为 `platform_apple_encode`。无缓冲输出（`setvbuf(stdout,nullptr,_IONBF,0)`）。
+**测试**：`tests/unit/media/test_media_encode_apple.cpp`（仅 `if(APPLE)` 构建），登记为 `platform_apple_encode`。无缓冲输出（`setvbuf(stdout,nullptr,_IONBF,0)`）。
 
 **后续任务**：
 - EXPORT-001：定义 frozen 导出控制器（状态机/进度/取消），本 `AppleMediaMuxer` 作为 Apple 实现接入。
@@ -122,7 +122,7 @@ xcodebuild -workspace apps/apple/ChuanqiCut.xcworkspace -scheme MacApp build
 - **源音频回路未打通**：仓库 `tests/golden/frames/gf_1080p_with_audio.mp4`（aac / 44100 Hz / mono）虽可被 PALA-010 解封装出音频包（`ChqMediaPacket{codec=kAac}`），但 PALA-010 是 **passthrough demux，不含解码**，没有 AAC→PCM 解码器把压缩包转成 `ChqPcmBuffer` 喂入 `WriteAudioFrame`。因此「从源文件取音频写回」卡在**解码环节（AUDIO-001 本期未实现）**，本任务只验证了「合成 PCM 能写出 AAC 音轨」。
 - `WriteAudioFrame` 仅支持 `kFloat32` / `kInt16`；`kInt32` / `kFloat64` 返回 `kEncodeUnsupported`。
 
-**测试**：`tests/unit/test_media_muxer_audio_apple.cpp`（仅 `if(APPLE)` 构建），登记为 `platform_apple_muxer_audio`。无缓冲输出。
+**测试**：`tests/unit/media/test_media_muxer_audio_apple.cpp`（仅 `if(APPLE)` 构建），登记为 `platform_apple_muxer_audio`。无缓冲输出。
 
 **后续任务**：
 - AUDIO-001：实现 AAC→PCM 解码，打通「源文件音频 → WriteAudioFrame」回路（届时需把 44100/mono 源映射为对应 `ChqAudioTrackConfig`）。

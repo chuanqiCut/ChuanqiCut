@@ -11,7 +11,7 @@
 2. 按 [`../../.ai/templates/task.md`](../../.ai/templates/task.md) 建卡，写集不得与其他在飞任务相交；
 3. 在 BACKLOG 对应行标注 ✅（完成后）；在本表登记一行。
 
-## 已建卡登记表（75 张，2026-10-07）
+## 已建卡登记表（87 行，2026-10-16 补 INFRA-026~035）
 ### 基建 INFRA / DOC
 | 卡 | 标题 |
 |---|---|
@@ -26,6 +26,16 @@
 | [INFRA-020](TASK-INFRA-020.md) | ChuanqiCutDraft Pod 骨架（PROJ-001 落地后填肉）✅ |
 | [INFRA-021](TASK-INFRA-021.md) | ChuanqiCutEngine pod 正常化（头文件可见 + docs 移除 + Binary 移除）✅ |
 | [INFRA-022](TASK-INFRA-022.md) | 引擎源码收拢 engine/（pod 根落位，目录结构调整）✅ |
+| [INFRA-026](TASK-INFRA-026.md) | 仓库布局整改 · 契约冻结（ADR-0044 + RESEARCH-018）✅ 2026-10-16 |
+| [INFRA-027](TASK-INFRA-027.md) | 忽略规则一次性收口（锚定 + 迁移前后路径同时覆盖） |
+| [INFRA-028](TASK-INFRA-028.md) | 孤儿产物清理 + build/ 分区收口 + 构建脚本去机器绝对路径 |
+| [INFRA-029](TASK-INFRA-029.md) | edit_plan golden 夹具出树 → tests/golden/edit_plan/ |
+| [INFRA-030](TASK-INFRA-030.md) | tests/unit 51 文件按模块分目录（ctest 用例名不动） |
+| [INFRA-031](TASK-INFRA-031.md) | UI 组件上提为扁平顶层 ui/（packages → ui） |
+| [INFRA-032](TASK-INFRA-032.md) | Swift 门面外提 engine/bindings/swift → api/swift（pod 根随之迁） |
+| [INFRA-033](TASK-INFRA-033.md) | shader 两半并入 engine/shaders/{portable,native}/ + 红线 #6 措辞修订 |
+| [INFRA-034](TASK-INFRA-034.md) | 治理补齐（CI / .clang-format / .editorconfig）+ 活文档路径收口 + probe→qa |
+| [INFRA-035](TASK-INFRA-035.md) | docs/handoff 归档（在位只留最近 5 份） |
 | [DOC-001](TASK-DOC-001.md) | 文档体系统一分层与归档（ADR-0019 落地） |
 
 ### 内核 CORE / MODEL / MEDIA

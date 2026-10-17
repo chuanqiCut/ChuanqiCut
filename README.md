@@ -13,7 +13,7 @@
 ## 0. 本期速览
 
 1. **B0 渲染地基落地**（10-13 `6ccf29b`，**62 文件 / +5727 −346**）：`ChqRenderGraph`（节点 DAG + Kahn 拓扑 + 环检测 + FNV-1a 结构指纹）、`ChqGraphAssembler`（**预览/导出/纯音频三图同源**）、`ChqRenderEvaluator`（CPU Prepare / GPU Encode 两阶段）、`ChqClockSource`（步进 / 实时）。**红线 #9「预览与导出走同一张 RenderGraph」从愿景变成代码**；预览渲染器已切到该图，`preview_renderer` **51/51 与原 blit 路径像素一致**。合并快检 ctest **52/52**。
-2. **两条"从未跑通"的地基同时补齐**：SHADER-001 Portable 链首次跑通（`shaders/src/blit.{vert,frag}` → glslang 16.0.0 → SPIR-V → SPIRV-Cross → MSL，产物 `blit_msl.h` 被 `blit_pass.mm` 消费，手写内联 MSL 退役）；MODEL-003 属性系统落地（`PropertyValue`/`PropertyBag` + `EffectBinding`/`EffectStack` 挂 `ChqClip`，4 条命令 + **11 个 ABI**）。
+2. **两条"从未跑通"的地基同时补齐**：SHADER-001 Portable 链首次跑通（`engine/shaders/portable/blit.{vert,frag}` → glslang 16.0.0 → SPIR-V → SPIRV-Cross → MSL，产物 `blit_msl.h` 被 `blit_pass.mm` 消费，手写内联 MSL 退役）；MODEL-003 属性系统落地（`PropertyValue`/`PropertyBag` + `EffectBinding`/`EffectStack` 挂 `ChqClip`，4 条命令 + **11 个 ABI**）。
 3. **轨道区换心脏**（ADR-0042 / UIA-044，10-15）：**删除 715 行自绘** `EditorTimelineUIView`，改接本地 UIKit 组件 `TimelineKit` + 新建 `TimelineKitAdapter`（映射）与 `EditorTimelineKitView`（容器）。**内核仍是唯一数据真源**：灌入 = 快照重建 store，回写只走 `.projectChanged → TrackIntent → TrackIntentApplier`，翻译不了的命令一律回滚。真机跑通：`[tk:track] rebuild tracks=1 clips=1 assets=1`、**零 resync、零崩溃**。
 4. **一次必现 SIGSEGV 治本 + 治理门禁化**（10-14~15）：自绘层全清 `layer.sublayers` 把子视图 backing layer 一起拔了 → CA 提交解野指针；真机 6+ 组二分定性，修复 = 专用 `canvasLayer`。**新门禁** `tools/compliance/check_uiview_layer_hygiene.py` 已挂进 `run_gate.sh`（step `layer-hygiene`，紧随 deps/headers），**116 文件 PASS、零假阳性**。同期 ADR-0041 把编辑器 UIKit 布局统一到 SnapKit，并抓到"红框解成 0×0 的假功能"（P130）。
 5. **scrub 卡顿结案**（ADR-0043 / P142，10-16 `c5d4bf5`）：根因 = 拖动每个 delta 走 `kExact`，**每次从最近关键帧重解整个 GOP**；而内核 `kKeyframeBefore`/`kNearest` 早已实现，被"Platform 接缝不携带 policy"挡死。改为**拖动中廉价关键帧 + 24Hz 限频、松手补一次精确帧**，并把策略以中立 `int32_t` 打通整条接缝。窄检 `ctest` **6/6 PASS**（含真素材 69s）。
@@ -31,9 +31,9 @@ ChuanqiCut = **跨平台视频编辑 SDK + 各端原生 App**，目标形态是"
 |---|---|---|
 | **共享内核** | `engine/core/cq/` | C++20：时间/模型/命令/会话/媒体/渲染图/预览/音频/AI plan，对外**纯 C ABI** |
 | **平台适配** | `engine/platform/apple/` | Metal / AVFoundation / VideoToolbox / CoreImage / AudioToolbox（Android·OHOS 目前仅 CMake 骨架，**零源码**） |
-| **原生 UI** | `apps/apple/{ios,mac,packages}` | SwiftUI 外壳 + UIKit 编辑三件套（ADR-0024） |
+| **原生 UI** | `ui/<Module>/` + `apps/apple/{ios,mac}` | SwiftUI 外壳 + UIKit 编辑三件套（ADR-0024；INFRA-031 起组件包上提为顶层 `ui/`） |
 
-**规模实况（本期实测）**：内核 100 个 `.h/.cpp` / **15,904 行**；Apple 平台层 15 个 `.mm/.h/.cpp` / **5,068 行**；`apps/apple` 非 Pod **119 个 `.swift`**；单测 51 个 TU；公共 ABI 89 个函数。
+**规模实况（本期实测）**：内核 100 个 `.h/.cpp` / **15,904 行**；Apple 平台层 15 个 `.mm/.h/.cpp` / **5,068 行**；`ui/` + `apps/apple/`（非 Pod）合计 **119 个 `.swift/.mm`**；单测 51 个 TU；公共 ABI 89 个函数。
 
 **架构红线（违反即驳回）**：除 UI 外一切下沉 C++；Platform 头零平台类型；能力运行时查询（`cq_query_capability`）不用编译期推断；时间一律 `ChqRationalTime`（**项目 timescale = 120000**，ADR-0009）；UI 不得直接改模型，全走 `Command`；Shader 双层且 Portable 先行；第三方类型不进公共头；主线程零阻塞、音频线程无锁无分配；**预览与导出同一张 RenderGraph**。
 
@@ -181,7 +181,7 @@ flowchart TB
 
 | 层 | 位置 | 实况（本期变化） |
 |---|---|---|
-| **Portable**（GLSL 4.50 → SPIR-V → MSL） | `shaders/src/blit.{vert,frag}` → `build/generated/shaders/blit_msl.h` | ✅ **链首次跑通**：`tools/shaders/build_shaders.py`，双构建接线（CMake custom command + podspec `script_phases`），幂等产物，spike `metal -c` rc=0。**上一期是零 .glsl、链从未跑过** |
+| **Portable**（GLSL 4.50 → SPIR-V → MSL） | `engine/shaders/portable/blit.{vert,frag}` → `build/generated/shaders/blit_msl.h` | ✅ **链首次跑通**：`tools/shaders/build_shaders.py`，双构建接线（CMake custom command + podspec `script_phases`），幂等产物，spike `metal -c` rc=0。**上一期是零 .glsl、链从未跑过** |
 | **Platform-Native** | `blit_pass.mm` 吃生成产物；手写 `blit_fullscreen_msl.h` **已退役** | ✅ 不再是"能力缺失降级路径" |
 | App 域特效 | `ChuanqiCutCamera/.../Effects/{beauty_bilateral,beauty_guided,face_warp}.metal` | ✅ 已实现，Xcode 编进 `default.metallib` |
 
@@ -383,9 +383,10 @@ cat .ai/modules/<你负责的模块>.md            # 3. 模块上下文 + 模块
 ```
 engine/core/cq/       C++20 内核（base/model/command/session/render/gfx/media/preview/audio/ai）
 engine/platform/      apple（Metal·AVFoundation·VideoToolbox·CoreImage）；android、ohos = 仅骨架
-engine/bindings/swift Swift 绑定层
-apps/apple/           iOS / macOS 壳 + 6 个功能包（Editor/Player/Import/Camera/Draft/SharedUI）
-shaders/src/          Portable GLSL（跨平台基线，禁平台扩展）
+api/swift/            Swift 对外门面（= ChuanqiCutEngine 的 pod 根）；api/{kotlin,arkts} = 平台预留
+ui/                   6 个源码 Pod（SharedUI + Editor/Player/Import/Camera/Draft）
+apps/apple/           ios/ 与 mac/ 两个壳工程（xcodeproj 手工真源，ADR-0037，禁 XcodeGen 重生成）
+engine/shaders/       Portable GLSL 在 portable/（跨平台基线，禁平台扩展）；native/ = 平台特化预留（本期空）
 tests/                单测 + golden 基准帧（tests/golden/verify.py）
 third_party/          依赖清单与锁（manifest.toml，禁直接拷源码入库）
 tools/                构建、门禁、shader 生成、探针、perf

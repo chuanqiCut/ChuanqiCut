@@ -82,7 +82,7 @@ xcrun devicectl device process launch --device <UDID> --terminate-existing --con
 ## 5. 追加：CORE-010 日志链路筛选（2026-10-06，门禁 PASS=9/FAIL=0）
 
 MEDIA-027 之后传哲要求「把这些排查日志沉淀进项目，像腾讯视频播放器 SDK 那样
-每个流程可以单独筛」。已完成，详见 [`docs/tasks/TASK-CORE-010.md`](../tasks/TASK-CORE-010.md)。
+每个流程可以单独筛」。已完成，详见 [`docs/tasks/TASK-CORE-010.md`](../../tasks/TASK-CORE-010.md)。
 
 ### 新会话要接 preview / decode 排障，先知道这几件事
 

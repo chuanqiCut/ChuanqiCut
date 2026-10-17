@@ -6,13 +6,13 @@ description: 新增或修改 shader 时必须跑。Portable 层保证三端一�
 # Shader 改动检查
 
 ## 触发
-新增 / 修改 `shaders/src/*.glsl`（Portable）或 `platform/<platform>/shaders/*`（Platform-Native）。
+新增 / 修改 `engine/shaders/portable/*.glsl`（Portable）或 `engine/shaders/native/<platform>/*`（Platform-Native）。
 
 ## 先判断改的是哪一层
 
 | | Portable | Platform-Native |
 |---|---|---|
-| 位置 | `shaders/src/*.glsl` | `platform/<platform>/shaders/*` |
+| 位置 | `engine/shaders/portable/*.glsl` | `engine/shaders/native/<platform>/*` |
 | 语言 | GLSL 4.50 Vulkan 方言 | 平台原生（MSL / GLES 扩展…） |
 | 能否用平台特性 | **禁止** | 可以，无限制 |
 | 是否必需 | 是（跨平台基线） | 否（可选加速） |
@@ -46,12 +46,15 @@ tools/qa/golden_compare.sh --case=shader_<name>
 1. **必须先有 Portable 实现** —— 特化只能是加速路径，不能是唯一实现
 2. **一致性**：特化 vs portable，PSNR ≥ 36dB、SSIM ≥ 0.98
 3. **收益门槛**：帧时间改善 **≥ 20%**，否则只是多一份要维护的重复代码
-4. **位置**：只在 `platform/<platform>/shaders/`，不得进 `shaders/src/` 或 core 层
+4. **位置**：只在 `engine/shaders/native/<platform>/`，不得进 `engine/shaders/portable/` 或 core 层
 
 ### 验证
 ```bash
-tools/qa/golden_compare.sh --case=shader_<name> --compare=native_vs_portable
-tools/perf/render_bench --shader=<name> --variant=portable,native
+# ⚠️ 以下两条**目前不存在对应脚本**（AGENTS 已登记 golden_compare.sh 不存在）：
+#    PSNR/SSIM 一致性与双变体帧时间比对当前无自动化工具，需手工出数并附进 PR。
+#    可跑的真实入口只有：
+python3 tests/golden/verify.py --json        # 需 Python>=3.11；见 run_gate.sh 的 PY 探测顺序
+python3 tools/shaders/build_shaders.py --repo-root . --out-dir build/generated/shaders  # Portable->SPIRV->MSL
 ```
 PR 必须附：收益数据 + 一致性报告 + 为什么值得维护两份代码的说明。
 

@@ -138,9 +138,11 @@ tools/build/build_core.sh --platform=apple
 - **宽松策略**：未知**字段**忽略（向前兼容），未知 **op/转场/schema 版本**拒绝——
   扩展必须走 schema 版本号，不走私加字段。校验器无时间线上下文，trim/remove 落点
   校验归执行器（AIEDIT-006）。
-- **golden**：`engine/core/src/ai/plan/edit_plan_golden/`（58 例 + manifest.txt 增量
-  登记处，append-only；生成脚本已删防覆盖手加用例）。测试目标 cq_tests_ai_edit_plan
-  需 `-I engine/core/src`（私有头）。
+- **golden**：`tests/golden/edit_plan/`（58 例 + manifest.txt 增量登记处，append-only；生成脚本已删防覆盖手加用例）。
+  夹具原在源码树 `engine/core/src/ai/plan/edit_plan_golden/`，INFRA-029（2026-10-16）出树到 golden 归口；
+  注入方式不变：`tests/CMakeLists.txt` 的 `target_compile_definitions(... CQ_EDIT_PLAN_GOLDEN_DIR=...)`。
+  实现头 `chq_edit_plan_validator.h` 在 `engine/core/cq/ai/plan/`（私有头），测试目标 cq_tests_ai_edit_plan
+  需 `-I engine/core` + `-I engine/core/cq`。
 - **EditPlanAction 用 has_asset/has_shot 存在性标志**（与空串/缺省区分）——下游执行器
   判字段时用 has_*，不要用字符串空判。
 

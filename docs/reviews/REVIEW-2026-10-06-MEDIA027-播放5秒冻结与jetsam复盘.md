@@ -283,5 +283,5 @@ fast=128000 / slow=116000   ← 快路径比慢路径提前 3 帧
 - 坑（编号与验证状态）：`.ai/memory/pitfalls.md` → **P75**
 - 实测数据：`.ai/memory/baselines.md` → §「播放冻结 / 内存（MEDIA-027）」
 - 模块装配形状：`.ai/modules/media.md` → § MEDIA-027
-- 会话交接：[HANDOFF-006](../handoff/HANDOFF-006-MEDIA播放链路会话交接.md)
+- 会话交接：[HANDOFF-006](../archive/handoff/HANDOFF-006-MEDIA播放链路会话交接.md)
 - 前情（同名不同因）：MEDIA-026 / 坑 **P72**

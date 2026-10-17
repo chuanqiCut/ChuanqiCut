@@ -1,7 +1,7 @@
 # HANDOFF-010：壳工程阶段 0/1 完成（Player Pod 落地）+ P83 相机构建修复（会话交接）
 
-> 2026-10-07 深夜。[ADR-0031](../decisions/ADR-0031-主工程壳化与功能Pod分治.md) 实施第一批：
-> **INFRA-013（壳改造）+ INFRA-015（ChuanqiCutPlayer 迁移）完成**，[ADR-0030](../decisions/ADR-0030-模块册分册制与阶段批门禁节奏.md)
+> 2026-10-07 深夜。[ADR-0031](../../decisions/ADR-0031-主工程壳化与功能Pod分治.md) 实施第一批：
+> **INFRA-013（壳改造）+ INFRA-015（ChuanqiCutPlayer 迁移）完成**，[ADR-0030](../../decisions/ADR-0030-模块册分册制与阶段批门禁节奏.md)
 > 阶段批节奏首次执行。数字与证据见 ui-apple 模块册 + 当日日志。
 
 ## 本轮成果（对着 commit 核）
@@ -23,7 +23,7 @@
    导入链。**开工先做跨域引用分析**（grep 域外符号，Player 阶段的 PickerFeedback 教训：
    不能只查类型名，要查所有未限定标识符）——落库接缝对 Assets（阶段 3）留注入点。
 3. **阶段 3（INFRA-017 Assets）→ 阶段 4（018 Camera，metallib 风险顶格）→ 阶段 5（019 Editor + 020 Draft）**。
-4. **池**：[TODO-POOL](../tasks/TODO-POOL-门禁真机待办池.md) 在飞 [1] 播放器真机 5 检查点、
+4. **池**：[TODO-POOL](../../tasks/TODO-POOL-门禁真机待办池.md) 在飞 [1] 播放器真机 5 检查点、
    [2] CAM-018/019 真机 5 项——攒齐一趟；真机执行前 `build_core_apple.sh --config=Debug &&
    bindings/swift/prepare.sh`（P70）。
 5. 发号水位：ADR 下一号 **0032**；pitfalls 下一号 **P84**（本轮已用 P83）；INFRA-016/017 未建卡

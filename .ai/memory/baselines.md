@@ -373,7 +373,7 @@ cd third_party/src/ffmpeg
 
 ## RationalTime 溢出边界（CORE-001, 2026-09-25）
 > 设备：Intel i7-9750H，macOS，AppleClang 17.0.0，构建 `tools/build/build_core.sh --platform=apple --config=Debug`。
-> 源码：`core/include/cq/base/time.h`、`core/src/base/time.cpp`。单测 `tests/unit/test_time.cpp::TestOverflowBoundary`。
+> 源码：`core/include/cq/base/time.h`、`core/src/base/time.cpp`。单测 `tests/unit/base/test_time.cpp::TestOverflowBoundary`。
 
 ### 数值基础
 - `RationalTime.value` 为 `int64_t`，`INT64_MAX = 9223372036854775807`（≈9.22×10¹⁸）。
@@ -439,7 +439,7 @@ int64 上限 @120000 ≈ 243 万年。素材仍可保留原生 timescale，两�
 全量 `build_core.sh --test` EXIT=0，总测试耗时 < 0.05s。
 
 ### 并发原语 / 取消 / 有界队列实测（CORE-005，2026-09-25，apple-x86_64 / AppleClang 17.0.0）
-> 源码：`core/include/cq/base/concurrency.h`、`core/src/base/concurrency.cpp`。单测 `tests/unit/test_concurrency.cpp`（ctest `core_concurrency`）。
+> 源码：`core/include/cq/base/concurrency.h`、`core/src/base/concurrency.cpp`。单测 `tests/unit/base/test_concurrency.cpp`（ctest `core_concurrency`）。
 
 | 项 | 实测 | 说明 |
 |---|---:|---|
@@ -907,3 +907,195 @@ UI 重建（ADR-0024）解决不了它 → 立即立 MEDIA-023（VT 输出降采
 全程**零 `resync`**（未发生「组件自我变更但内核不支持」的回滚）。
 
 ⚠️ 样本极小（1 轨 1 片段 8s），**不得**作为产品阈值；长片段/多轨/长时间播放待补。
+
+## 2026-10-16 · INFRA-027/028 布局整改前两批（本机 = 集成机，实测）
+
+磁盘形态（清理前后，`du -sh` 实测，非估算）：
+
+| 项 | 清理前 | 清理后 | 处置 |
+|---|---|---|---|
+| `build/` | 5.3G | **4.9G** | `shell-mac2` 481M 隔离出树 |
+| 根 `prebuilt/` | 35M | 0 | 隔离（1 个 2026-09-24 的 `libffmpeg.a`，已被 `third_party/prebuilt/ffmpeg/9.0.2/demux/` 取代） |
+| `third_party/prebuilt/apple-x86_64` + `-slim` | 14.3M | 0 | 隔离；**`-demux` 4.5M 保留**（`manifest.toml:85-88` + `deps.lock:44` sha256 锚定） |
+| `apps/apple/packages/ChuanqiCutEditor/.build` | 223M | 0 | 删除（SPM scratch，可再生；根因是手工 `swift test` 未带 `--scratch-path`） |
+| `tests/golden/frames/tmptws05f4p/` | 2.8M | 0 | 隔离（`tmp*/` 泄漏的中间帧） |
+| 隔离目录合计 | — | 533M | `~/Documents/.chuanqiCut-quarantine-2026-10-16/`，待双壳与真机无异常后由传哲决定删除 |
+| `apps/apple/ios/Pods/` | — | 5.8M | pod install 重生成 |
+
+门禁数字（清理后当批实跑）：
+
+- `tools/build/build_core.sh --platform=apple` → 100% built（增量）
+- `tools/build/build_core.sh --platform=apple --test` → **`100% tests passed out of 52`**，real 155.74s
+  （此 52 为 INFRA-029/030 搬家时的**对比基线**；`tests/unit` 有 51 个源文件（45 `.cpp` + 6 `.c`），
+  `tests/CMakeLists.txt` 有 **52** 个 `add_test(NAME ...)`（51 个可执行 + 1 个无源文件的
+  `platform_header_gate`，它直接 `COMMAND python3 tools/platform/check_platform_headers.py`），
+  `ctest -N` 实跑 52 例 —— 三个数不同名，别混用）
+- `git ls-files | wc -l` = **857**（改 `.gitignore` 前后相同，即无误伤）
+- 双壳 `pod install`：ios **14/14 pods**、mac **7/7 pods**，`Podfile.lock` 零 diff
+- ⚠️ 未实测：双壳 `xcodebuild`（027/028 未改壳内路径，推迟到 INFRA-031 批）
+
+## 2026-10-16 · INFRA-029/030/035 布局整改批 4/5 收口（本机 = 集成机，全量门禁实跑）
+
+**门禁计数基线**（下一批 INFRA-031 搬家后必须逐项对上，掉了就是搬家引起的）：
+
+| 项 | 命令 | 数字 |
+|---|---|---|
+| 全量门禁 | `tools/ci/run_gate.sh` | **PASS=15 / FAIL=0 / SKIP=0**，exit 0 |
+| 内核单测 Debug | `build_core.sh --platform=apple --config=Debug --test` | **52/52**，real **133.05s** |
+| 内核单测 Release | 同上 `--config=Release` | **52/52**，real **226.96s** |
+| 头纯净性 | `tools/platform/check_platform_headers.py` | scanned **43** header(s)，**0** violation(s) |
+| 图层卫生 | `check_uiview_layer_hygiene.py apps/apple` | 扫描 **119** 个文件，R1 违规 **0** |
+| golden 齐备 | `"${PY}" tests/golden/verify.py --json` | built_ok **21** / built_fail **0** / unbuilt **0** / **901784** bytes |
+| mac 宿主包用例 | `run_gate.sh` 五个 `swift test` 段 | bindings **26** / player **52** / camera **77** / import **16** / editor **81** = **252**，0 失败；SharedUI 段为 `swift build`（包内无测试目标，见 P148） |
+| 入库文件总数 | `git ls-files \| wc -l` | **857**（029 夹具搬家前后相同） |
+| 单测源文件 | `git ls-files tests/unit \| wc -l` | **51**（45 `.cpp` + 6 `.c`），分布在 **12** 个模块子目录，根目录平铺残留 **0** |
+| `add_test` 声明 | `grep -c "add_test(NAME" tests/CMakeLists.txt` | **52**（51 可执行 + `platform_header_gate` 无源文件） |
+| 交接文档 | `ls docs/handoff/*.md` / `git ls-files docs/archive/handoff` | 在位 **5** / 归档 **22** / 合计 **27** |
+| 文档死链 | `python3 tools/ai/linkcheck_docs.py` | **6** 条（全部存量；归档前基线 9） |
+| 双壳 pod install | `apps/apple/{ios,mac}` `LANG=en_US.UTF-8 bundle exec pod install` | ios **14 dependencies / 14 pods**、mac **7 / 7**，两份 `Podfile.lock` **零 diff** |
+| 双壳 xcodebuild | P129 配方（ios `-scheme ChuanqiCutApp -destination generic/platform=iOS`；mac `-scheme ChuanqiCutMacApp -arch x86_64 ONLY_ACTIVE_ARCH=YES`） | 均 **BUILD SUCCEEDED**，exit 0；`error:` **0** 行，warning ios **24** / mac **6** 行（全为既有 deployment-target 9.0 与 SHADER-001 run-script 无输出项告警） |
+
+**耗时基线**（用于判断"搬家有没有把构建拖慢"，非性能结论）：
+`platform_apple_decode` 空载单跑 **9.24~9.82s**、全量段内 **8.72s(Debug) / 10.74s(Release)**；
+`media_sequential_real` **63.97~65.97s**（全量里最慢的一例）。
+⚠️ decode 在机器忙时会以 **147/150 帧**假失败（P147，`media_decode.mm:681-698` 固定 1s 丢帧判据），
+**不得**把它当回归，也不得写进 CI 无脑重试。
+
+## 2026-10-16 · INFRA-031 包上提 `ui/` 收口（本机 = 集成机，实测）
+
+搬家类数字（下一批 INFRA-032/033 照此对，掉了就是搬家引起的）：
+
+| 项 | 命令 | 迁移前 → 迁移后 |
+|---|---|---|
+| UI 组件包 tracked 文件 | `git ls-files ui`（前为 `git ls-files apps/apple/packages`） | **124 → 124**（旧路径归 0） |
+| 搬家纯度 | `git diff --cached -M --stat` | **124 files, 0 insertions / 0 deletions** |
+| 图层卫生覆盖面 | `check_uiview_layer_hygiene.py apps/apple` + `... ui` | 单趟 **119** → 两趟 **4 + 115 = 119**（逐字相等） |
+| mac 宿主包用例 | `run_gate.sh` 五段 | **bindings 26 / player 52 / camera 77 / import 16 / editor 81 = 252**，迁移前后一字不差 |
+| 双壳 pod install | ios / mac | **14/14** 与 **7/7**，`Podfile.lock` 本地 Pod 路径 `../packages/…` → `../../../ui/…` |
+| 双壳 xcodebuild | P129 配方 | 两端 **BUILD SUCCEEDED**，`error:` 0 行 |
+| metallib 产物 | iOS App bundle（run-script 路径手改后） | `beauty_bilateral **9215B**` / `face_warp **5792B**` / `beauty_guided **8118B**`，时间戳为本次构建（**非 96B 空壳**） |
+| 全量门禁 | `tools/ci/run_gate.sh` | **PASS=15 / FAIL=0 / SKIP=0**，exit 0；Debug 52/52 **165.11s**、Release 52/52 **145.14s**；headers 43/0；golden 21/0/0 901784B |
+| 入库文件总数 | `git ls-files \| wc -l` | **857**（搬家不改总数） |
+
+- `RepoPath`（`ui/ChuanqiCutEditor/Tests/ChuanqiCutEditorTests/RepoPath.swift`）上溯层数 **7 → 5**；
+  实证不是"用例过了"而是运行日志里的 `probe 4ms path=…/tests/golden/frames/gf_1080p_h264.mp4`
+  与 `gf_1080p_hevc.mp4`（两个夹具 46003B / 27972B 真实存在）。
+- 本批**没有**新的性能结论；以上都是布局与覆盖面数字。
+
+## 2026-10-16 · INFRA-032 Swift 门面外提 `api/swift/` 收口（本机 = 集成机，全量门禁实跑）
+
+搬家类数字（下一批 INFRA-033/034 照此对，掉了就是搬家引起的）：
+
+| 项 | 命令 | 迁移前 → 迁移后 |
+|---|---|---|
+| 门面 tracked 文件 | `git ls-files api` | **0 → 25**（= 原 `engine/bindings/swift` 的 24 + 随迁 `ChuanqiCutEngine.podspec`；`engine/bindings` → **0**） |
+| `engine/` tracked | `git ls-files engine \| wc -l` | **149 → 124**（差恰为 25） |
+| 入库总数守恒 | `git ls-files \| wc -l` | **857**（与 031 收口基线逐字相等） |
+| 全量门禁 | `tools/ci/run_gate.sh` | **PASS=15 / FAIL=0 / SKIP=0**，exit 0（21:43:41 → 22:02:39，**18m58s**） |
+| 内核单测 | `build_core.sh --platform=apple --{Debug,Release} --test` | Debug **52/52** real **149.75s**；Release **52/52** real **144.73s** |
+| 头纯净性 / 图层卫生 / golden | `check_platform_headers.py`、`check_uiview_layer_hygiene.py`、`verify.py --json` | 43 头 **0** 违规；两趟合计 **119** 文件 R1 **0**；built_ok **21** / fail **0** / unbuilt **0** / **901784B** |
+| mac 宿主包用例 | `run_gate.sh` 五段 `swift test` | **bindings 26 / player 52 / camera 77 / import 16 / editor 81 = 252**，0 失败（与 031 基线逐字相等） |
+| 双壳 pod install | ios / mac | **14/14** 与 **7/7**，exit 0；`Podfile.lock` 的 `ChuanqiCutEngine :path` = `../../../api/swift` |
+| 双壳 xcodebuild | P129 配方 | 均 **BUILD SUCCEEDED**，`error:` **0** 行，warning ios **24** / mac **6**（同 031） |
+| Pod 链接级证据 | `nm -a <App 二进制> \| grep -c ChuanqiCutEngine`；`libChuanqiCutEngine.a` | ios **1838** / mac **1842** 个符号；静态库 **507616B**(iphoneos) / **511248B**(mac)；Pods 工程各 **8** 条 `path = Sources/ChuanqiCut/*.swift` |
+
+- **搬家批的耗时对照**（非性能结论）：core-dbg 149.75s / core-rel 144.73s，落在 031 的 165.11s / 145.14s 同区间，
+  门面外提没有拖慢内核。
+- ⚠️ **本轮新踩的缓存坑（P152）**：门禁 run1 在 `apple-import` 段红，`missing inputs: …/engine/bindings/swift/Frameworks/…`
+  —— `build/spm/*` 的 SPM 增量缓存（`workspace-state.json`、`build.db`、index store）把**旧绝对路径钉死**，
+  与被迁移文件毫无关系的下游包也会因传递依赖而中招。清 `build/spm/*`（1.2G）后 run2 全绿。
+  **搬家批若出现"路径不存在的输入"类失败，先清 scratch 再判回归**，不要改代码。
+- 本批**没有**新的性能结论；以上都是布局、覆盖面与链接证据数字。
+
+## 2026-10-16 · INFRA-033 shader 两半并入 `engine/shaders/`（本机 = 集成机，模块级窄检）
+
+搬家类数字（034 末批全量门禁照此对）：
+
+| 项 | 命令 | 迁移前 → 迁移后 |
+|---|---|---|
+| shader tracked 文件 | `git ls-files engine/shaders` / `git ls-files shaders` | **0 → 3**（`portable/blit.{vert,frag}` + `native/README.md`）/ **2(.gitkeep+两份 glsl) → 0** |
+| `engine/` tracked | `git ls-files engine \| wc -l` | **124 → 127**（差恰为 3） |
+| 入库总数守恒 | `git ls-files \| wc -l` | **857** 不变（+3 新路径、−2 旧 glsl、−1 `shaders/src/.gitkeep`） |
+| 内核单测（清产物后重跑） | `rm -rf build/generated && tools/build/build_core.sh --platform=apple --test` | exit 0，**100% tests passed out of 52**，real **135.17s**，`error:` **0** 行 |
+| SPIR-V / MSL 产物字节 | `ls -l build/generated/shaders/{spv,msl}` | `blit.vert.spv` **960B** / `blit.frag.spv` **548B** / `blit.vert.metal` **418B** / `blit.frag.metal` **410B** —— **四条搬家前后逐字节相等** |
+| 生成头大小 | `ls -l build/generated/shaders/blit_msl.h` | **1665B → 1689B**；+24B 由 `git show HEAD:tools/shaders/build_shaders.py` 的 `HEADER_BANNER` 逐行比差算出（两行路径字面各 +12B），**精确对上** → 变的是 banner 不是转译结果 |
+| GLSL 代码等价 | 剥离 `//` 注释后 md5 对比 `HEAD:shaders/src/*` | vert `568b81024e9e24d46e75f60fa0775eda`、frag `687a47617c0344e74f95f849726783d4` **两侧相同** → 红线 #6「Portable 禁平台扩展」未被顺手破 |
+| 头纯净性 | `check_platform_headers.py` | `scanned **43** header(s) … **0** violation(s)`（与 032 基线逐字相同；N 变了说明误改扫描根） |
+
+- ⚠️ **本批只跑模块级窄检**：全量 15 步门禁、双壳 `pod install`/`xcodebuild`、真机都**没跑**，归 INFRA-034 末批一趟。
+  上面的 135.17s 是**清掉 `build/generated` 后**的重建耗时，与 032 的 149.75s(增量产物已存在) 不可直接比较。
+- **防"静默假绿"的标准动作**（写进 `.agents/skills/cq-build-test`）：改 shader 输入路径后必须
+  `rm -rf build/generated` 再构建，否则 CMake 会复用旧产物报绿、新 `DEPENDS` 路径写错也发现不了。
+- 本批**没有**新的性能结论。
+
+## 2026-10-16 · INFRA-034 治理补齐与收口（本机 = 集成机，**整改批末批 = 整批全量门禁 + 双壳**）
+
+机器：macOS 26.7.1 / Xcode 26.6 / Swift 6.3.3 / **Intel x86_64** / cmake 4.4.3（不在 PATH，`$HOME/.workbuddy/...`）。
+
+| 项 | 命令 | 数字 |
+|---|---|---|
+| 全量门禁 | `tools/ci/run_gate.sh`（**17 步**） | **PASS=17 / FAIL=0 / SKIP=0**，exit 0，墙钟 **10m57s**（23:31:05→23:42:02，暖缓存） |
+| 内核单测 | `build_core.sh --platform=apple --test` | Debug **52/52** **78.96s**；Release **52/52** **74.55s** |
+| 头纯净性 | `check_platform_headers.py` | `scanned **43** header(s) … **0** violation(s)`（与 032/033 基线逐字相同） |
+| 图层卫生 | `check_uiview_layer_hygiene.py` | 两趟 **119** 文件，R1 违规 **0** |
+| Swift 包测试 | `run_gate.sh` 包段 | bindings **26** / player **52** / camera **77** / import **16** / editor **81** = **252**，0 失败 → **与 P148/031/032/033 基线逐字相等** |
+| golden | `tests/golden/verify.py --json` | `built_ok=21 / built_fail=0 / unbuilt=0 / total_bytes=901784` |
+| iOS 切片只编译 | `tools/ci/check_ios_compile.sh`（P146 收口） | **暖机 2~6s**；`nm -a` 取证同一份 `audio_engine.mm` 的 `RegisterSessionObservers` 符号数 **ios-device 4 / ios-sim 3 / macos 0** |
+| 双壳 | P129 配方（`bundle exec pod install` + `xcodebuild`） | ios **14/14 pods** + **BUILD SUCCEEDED**（error 0 / warning 24 行）；mac **7/7** + **BUILD SUCCEEDED**（error 0 / warning 11 行） |
+| 壳内 shader 产物 | App 包 `*.metallib` | `beauty_bilateral` **9215B** / `face_warp` **5792B** / `beauty_guided` **8118B**（23:45:04 本次构建，与 031 基线**逐字节相等**，非 96B 空壳 P149） |
+| 壳重写的生成头 | `build/generated/shaders/blit_msl.h` | **1689B** = 033 搬家后数字 → 壳吃的是 `engine/shaders/portable/` 那份 |
+| 仓库卫生 | `tools/ci/check_repo_hygiene.sh` | **4/4 PASS**；tracked **856** 文件、产物命中 **0**；旧路径 raw 命中 **23** 行全部带迁移标记（**33 行**豁免 / 非豁免 **0**）；editorconfig 四条件 **0** 命中 |
+| clang-format 基线 | 同上（**INFO，不判红**） | `engine/**` **79/115**（`.h` 48/65、`.cpp` 21/40、`.mm` 10/10）、`tests/**` **34/51** |
+| 接口参考 | `gen_api_reference.py --check` | `docs/api/engine-api.md` **538 行 / 95 个 c 块 / 11 个 `###` 子节 / 9 个 `##` 大节**，符号 **103** |
+| 文档链接 | `tools/ai/linkcheck_docs.py` | 修 checker 前 **10** 条命中（**10/10** 落在叙述域）→ 域豁免后 **0** 条，exit 0 |
+| 门禁判据自证 | `PYTHON_BIN=/bin/ls tools/ci/run_gate.sh --fast` | 强制第 1 步红 → exit **1**、摘要**只有 1 行**、后续 16 步零行、`build/gate-logs/` 只剩 `deps.log`（P145 两层防御取证） |
+
+### P160 干净复现（`rm -rf build` 逐遍重装，2026-10-17 09:06~09:48，workflow core 段的等价本机跑）
+
+脚本：`/tmp/cirepro034b.sh`（run1/run2）+ `/tmp/ci3.sh`（run3）+ `/tmp/ci4.sh`（run4）= `rm -rf build` →
+`CMAKE_BIN=cmake tools/build/build_shader_toolchain.sh` → `build_core.sh --platform=apple --config=Debug`
+→ `ctest -N` 打印排除名单 → `ctest -E platform_apple_decode` → （run2/run4）`check_repo_hygiene.sh`。
+
+| 遍 | 用的脚本 | toolchain | build_core | ctest `-E platform_apple_decode` | hygiene |
+|---|---|---|---|---|---|
+| run1 | ⚠️ **大小写修正前** | rc=0 | rc=0 | rc=0，**51/51**，**186.74s** | — |
+| run2 | 大小写修正版 | rc=0 | rc=0 | rc=0，**51/51**，**172.84s** | rc=0 |
+| run3 | 大小写修正版 + 本地补丁（见池 [23]） | rc=0 | rc=0 | rc=0，**51/51**，**271.32s** | — |
+| run4 | **P162 修复后的交付版** | rc=0 | rc=0 | rc=0，**51/51**，**83.52s** | rc=0 |
+
+- **四遍都打印了排除名单**：`Test #45: platform_apple_decode` —— 判据要求"日志里能看到被排除的用例名单"，
+  靠 `ctest -N | grep` 显式取证，不靠 `ctest -E` 静默少跑一个（少跑与跑绿在日志里长一样）。
+- **单次干净跑 ≈ 7~11min**（run4 整段 09:42:02→09:48:50 = **6m48s**；run2 段 09:16:03→09:25:30 含 hygiene）。
+  其中工具链 ≈ **2min**（glslang ≈50s + SPIRV-Cross ≈65s，-j12）。
+  ⚠️ **ctest 墙钟在四遍之间是 186.74 / 172.84 / 271.32 / 83.52s** —— 同是 51/51 全过，波动 3 倍以上，
+  **本机 ctest 墙钟不可当指标**，可比的只有 rc 与通过数。
+- 产物字节数（干净装配后，跨四遍稳定）：`glslang` **3 133 560 B**、`spirv-cross` **4 155 984 B**、
+  `build/generated/shaders/blit_msl.h` **1689 B**。
+- ⚠️ **本表不是"门禁变快"的证据**：17 步全量门禁的 10m57s 是**暖缓存**数字，
+  与本表的干净复现数字（~9min 只覆盖 core 段）不同口径，不可互相替换。
+
+### P162 幂等/只读自证（`build_shader_toolchain.sh`，2026-10-17 09:3x~09:4x，暖态）
+
+| 场景 | 命令 | 结果 |
+|---|---|---|
+| 暖态完整跑 | `CMAKE_BIN=cmake tools/build/build_shader_toolchain.sh` | rc=**0**，两工具均 `产物已存在，跳过编译`，**"强制重编"零行**（修之前每遍都会删重编，多 ~65s） |
+| 暖态只读校验 | 同上 `--check-only` | rc=**0**，两产物 `OK`，`spirv-cross` **md5 跑前后逐字节一致**（修之前这条命令会 `rm -rf build/tools/spirv-cross/`） |
+| 负向（产物缺失） | 挪走 `build/tools/glslang/StandAlone/glslang` 后 `--check-only` | rc=**1**、报 `产物缺失`；恢复后 md5 一致、再跑 rc=**0** |
+
+**新口径（替代旧数字使用方式）**
+
+- **门禁步数从 15 → 17**：加 `api-doc`、`ios-compile`；原内联 `artifacts` 一步并入 `hygiene`
+  （同一件事两套正则必然走偏，判据只留一份）。以后对基线请对 **17**。
+- **摘要行数 = `PASS+FAIL+SKIP`**（P145）：`apple-*` 摘要行取 `Executed N tests, with M failures`，
+  不再取只带时间戳的 `Test Suite … passed at`。
+- **xcodebuild 的 `warning:` 行数不是可比数字**（032 记 6、034 记 11，差在增量重编了多少 TU）。
+  可比的是 `error: 0` + 告警**类别**集合；引用 warning 行数时必须写清增量前提。
+- **暖缓存门禁 10m57s**（032 冷缓存 18m58s）：`build/` 被 `--clean` 或搬家清过之后耗时会翻倍以上，
+  不能拿 10m57s 去判"变快了"。
+- 本机调 CocoaPods 的脚本**必须自带 locale**（`LANG`/`LC_ALL` 未设时 `pod install` 直接崩，见 P159）。
+- 本批**没有新的性能结论**（治理与布局批）；上表全部是判据/守恒类数字。
+- **P160（2026-10-17 立）：以后引用"门禁 17/17 绿"必须同时说明缓存状态。**（口径已升为 **ADR-0045**）
+  `build/shader 工具链`（glslang + SPIRV-Cross）历史上只存在于**本机暖缓存**，仓库里没有任何脚本产出它
+  → 上面 10m57s 的 17/17 与 10-16 之前所有"绿"都**只是暖缓存证据**，`--clean` / 新克隆 / CI 上必然红
+  （实测：停在 27% SHADER-001，随后 `ctest rc=8`、50/51 "Could not find executable"）。
+  现在的判据是**干净复现**（见上表），暖缓存绿不再算验收。

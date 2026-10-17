@@ -40,7 +40,7 @@ Platform 是**所有平台实现的契约**（iOS / macOS / Android / 鸿蒙四�
 3. **统一 base 类型**：时间一律 `ChqRationalTime`（Clock 用纳秒 timescale=1e9，与项目 120000 网格
    可 Rescale 对齐）；错误一律 `ChqStatus`；长任务（`Seek`/`Read`/`Run`/`Read`）接受 `ChqCancelToken`；
    需背压管线用 `ChqBoundedQueue<T>`（后续 MEDIA/AUDIO 使用，本契约预留）。
-4. **`-Werror` 零警告**：编译验证 TU `tests/unit/platform_headers_compile.cpp` 在
+4. **`-Werror` 零警告**：编译验证 TU `tests/unit/platform/platform_headers_compile.cpp` 在
    `-Wall -Wextra -Wconversion -Wshadow -Wold-style-cast` 下干净编译。
 
 ## 关键设计取舍（与契约文档一致）
@@ -58,7 +58,7 @@ Platform 是**所有平台实现的契约**（iOS / macOS / Android / 鸿蒙四�
 
 ## 验证（2026-09-25 真跑，含评审后两处修正）
 ```bash
-CMAKE_BIN=/Users/zhuning/.workbuddy/binaries/cmake/CMake.app/Contents/bin/cmake
+CMAKE_BIN="$HOME/.workbuddy/binaries/cmake/CMake.app/Contents/bin/cmake"
 $CMAKE_BIN -S . -B build -DCMAKE_BUILD_TYPE=Debug
 $CMAKE_BIN --build build -j4        # 全目标 -Werror 零警告
 $(dirname $CMAKE_BIN)/ctest --test-dir build
@@ -72,7 +72,7 @@ $(dirname $CMAKE_BIN)/ctest --test-dir build
 
 CORE-006 只冻结了 `core/include/cq/platform/chq_capabilities.h` 的接口与枚举，
 `SetCapabilitiesBackend` / `QueryCapability` **长期只有声明无定义**。全仓库唯一引用是
-`tests/unit/platform_headers_compile.cpp` 的 `static_assert`（编译期检查、不链接），
+`tests/unit/platform/platform_headers_compile.cpp` 的 `static_assert`（编译期检查、不链接），
 所以 CTest 全绿也看不出接口是断的 —— 与 CORE-006 当时的教训同型。
 
 现已补上实现，分散在两处（平台无关 / 平台专属）：
@@ -141,8 +141,8 @@ Platform 实现它就要反向 include GFX 头 —— 依赖方向直接冲突�
 
 | 文件 | 实现的契约 |
 |---|---|
-| `platform/apple/blit_pass.mm` | `CreateBlitPass`（MSL 源在 `platform/apple/shaders/blit_fullscreen_msl.h`） |
-| `platform/apple/frame_provider_apple.mm` | `CreateFrameProvider` = PALA-010 demux + PALA-011 VideoToolbox → MEDIA-020 `ChqSystemFrameProvider` |
+| `platform/apple/gfx/blit_pass.mm` | `CreateBlitPass`（MSL 源码是**构建期产物** `build/generated/shaders/blit_msl.h`，由 `engine/shaders/portable/blit.{vert,frag}` 经 glslang→SPIR-V→spirv-cross 生成，不在源码目录） |
+| `platform/apple/media/frame_provider_apple.mm` | `CreateFrameProvider` = PALA-010 demux + PALA-011 VideoToolbox → MEDIA-020 `ChqSystemFrameProvider` |
 
 ⚠️ `CreateFrameProvider` 的 Apple 实现**不含新的编排逻辑**：取帧的跨平台编排
 （精确 seek / B 帧）仍在 core（MEDIA-020 `ChqSystemFrameProvider`），Platform 侧只是

@@ -81,7 +81,7 @@ class ChqFrameProvider {                 // 跨平台帧接口（抽象，MEDIA-
 1. **零平台类型**：仅 base + Platform 类型；无平台类型、无平台头、无 AV* / ffmpeg 类型。
    门禁 `tools/platform/check_platform_headers.py` 已扩展覆盖 `cq/media/`（见 `platform_header_gate`）。
 2. **统一 base 类型**：ChqRationalTime / ChqStatus / ChqCancelToken；lease 模型与 Platform 一致。
-3. **`-Werror` 零警告**：编译 TU `tests/unit/media_frame_provider_compile.cpp` 干净编译。
+3. **`-Werror` 零警告**：编译 TU `tests/unit/media/media_frame_provider_compile.cpp` 干净编译。
 4. **内核禁用异常**：无 throw。
 
 ## 实现进度与真跑记录（PALA-010 + MEDIA-020，2026-09-25 落地）
@@ -137,7 +137,7 @@ class ChqFrameProvider {                 // 跨平台帧接口（抽象，MEDIA-
   **实则仓库已有 B 帧 golden**：`tests/golden/frames/gf_1080p_h264_long_gop_bframes.mp4`
   （manifest: `fps=30, frame_count=300, gop_size=60, bframes=3`）。教训：**提"新增素材"前先确认
   现有仓库里有没有**。本任务据此把 B 帧精确 seek 从「mock 小 GOP」升级到「真实文件」。
-- **新用例**：ctest `media_bframe_real`（`tests/unit/test_media_bframe_real_apple.cpp`，仅 Apple）。
+- **新用例**：ctest `media_bframe_real`（`tests/unit/media/test_media_bframe_real_apple.cpp`，仅 Apple）。
   真实 `CreateMediaDemuxer` 读该文件 + **仅按 pts 网格重排**的 `ReorderingMockDecoder`（不预知 GOP，
   刻意暴露并消化「解码序≠显示序」分离）驱动 `ChqSystemFrameProvider::AcquireFrame(kExact, ...)`。
 - **真实文件 ground truth（ffprobe / AVFoundation 一致，仅参考基准，不进产物）**：300 帧；
@@ -217,7 +217,7 @@ class ChqFrameProvider {                 // 跨平台帧接口（抽象，MEDIA-
 
 ## 验证（2026-09-25 落地；2026-09-26 PALA-010 修复后复跑）
 ```bash
-CMAKE_BIN=/Users/zhuning/.workbuddy/binaries/cmake/CMake.app/Contents/bin/cmake
+CMAKE_BIN="$HOME/.workbuddy/binaries/cmake/CMake.app/Contents/bin/cmake"
 $CMAKE_BIN --build build -j4 && $(dirname $CMAKE_BIN)/ctest --test-dir build
 # 构建：cq_platform_apple 在 -Werror 下零警告（临时调试 printf 已清除）。
 # media_bframe_real（PALA-010 修复验收）：15/15 检查通过，EXIT=0。
@@ -245,7 +245,7 @@ ADR-0003、ARCH-003 §3、Platform-接口契约 §4.2、BACKLOG MEDIA-010/011/01
 - 新增 `core/src/media/decoder_pool.cpp` + `core/include/cq/media/chq_decoder_pool.h`（MEDIA-012）
 - 修改 `core/include/cq/media/chq_system_frame_provider.h`：接入 `SetFrameCache` / `SetDecoderPool`
   （仅用冻结接口，未改 `ChqIFrameCache`/`ChqIDecoderPool` 定义；未改 `core/platform/*`）
-- 新增 `tests/unit/test_cache.cpp`（`media_cache`）、`tests/unit/test_decoder_pool.cpp`（`media_decoder_pool`）
+- 新增 `tests/unit/media/test_cache.cpp`（`media_cache`）、`tests/unit/media/test_decoder_pool.cpp`（`media_decoder_pool`）
 - 修改 `core/CMakeLists.txt`、`tests/CMakeLists.txt`（注册源与用例）
 - **未做**：PALA-012、FFmpeg 链接、PALA-011 真实解码、`ChqICapabilities`（CORE-007）、`git` 提交
 
@@ -302,7 +302,7 @@ ADR-0003、ARCH-003 §3、Platform-接口契约 §4.2、BACKLOG MEDIA-010/011/01
 
 ### 验证命令（复跑）
 ```bash
-CMAKE_BIN=/Users/zhuning/.workbuddy/binaries/cmake/CMake.app/Contents/bin/cmake
+CMAKE_BIN="$HOME/.workbuddy/binaries/cmake/CMake.app/Contents/bin/cmake"
 $CMAKE_BIN --build build -j4
 $(dirname $CMAKE_BIN)/ctest --test-dir build        # 18/18 绿（含 platform_header_gate）
 $(dirname $CMAKE_BIN)/ctest --test-dir build -R media_cache        # MEDIA-011
@@ -325,10 +325,10 @@ $(dirname $CMAKE_BIN)/ctest --test-dir build -R media_decoder_pool # MEDIA-012
   `CVPixelBufferRef` 委托编码；提供 `CreateMediaMuxer` 工厂。
 - 修改 `platform/apple/CMakeLists.txt`：把 `media_muxer.mm` 登记到 `add_library` 源列表 **与**
   `set_source_files_properties(... PROPERTIES COMPILE_FLAGS "-fobjc-arc")` 的 ARC 列表（两处都已登记）。
-- 新增 `tests/unit/test_media_muxer_apple.cpp`：仅经 `CreateMediaMuxer` + `ChqIMediaMuxer` 完成一次
+- 新增 `tests/unit/media/test_media_muxer_apple.cpp`：仅经 `CreateMediaMuxer` + `ChqIMediaMuxer` 完成一次
   导出（全程不碰 `AppleVideoEncoder` / 不 include `media_encode.h`），ffprobe 验证 +
   首帧像素对照 + 取消路径；登记到 `tests/CMakeLists.txt`（仅 Apple）。
-- 修改 `tests/unit/platform_headers_compile.cpp`：新增 `ChqIMediaMuxer` 的 `static_assert`
+- 修改 `tests/unit/platform/platform_headers_compile.cpp`：新增 `ChqIMediaMuxer` 的 `static_assert`
   （继承 ChqIPlatformResource、ChqPlatformPtr move-only、WriteVideoFrame/ Finish/ Open 签名、码率档位枚举、
   `CreateMediaMuxer` 工厂签名）。
 
@@ -365,7 +365,7 @@ ChqStatus CreateMediaMuxer(ChqPlatformPtr<ChqIMediaMuxer>&);
 
 #### 验证（真跑，Debug 构建；Release 下 test_log.cpp 有预存 NDEBUG 相关 -Wunused 问题，见下）
 ```bash
-CMAKE_BIN=/Users/zhuning/.workbuddy/binaries/cmake/CMake.app/Contents/bin/cmake
+CMAKE_BIN="$HOME/.workbuddy/binaries/cmake/CMake.app/Contents/bin/cmake"
 $CMAKE_BIN -S . -B build -DCMAKE_BUILD_TYPE=Debug   # 与前期「18/18 绿」同配置（无 NDEBUG）
 $CMAKE_BIN --build build -j4
 $(dirname $CMAKE_BIN)/ctest --test-dir build
@@ -384,7 +384,7 @@ $(dirname $CMAKE_BIN)/ctest --test-dir build -R platform_apple_encode        # �
 
 #### 已知风险 / 后续
 - **预存 Release 构建红**（非本次引入）：`build/` 被配置为 `CMAKE_BUILD_TYPE=Release`
-  （`-DNDEBUG`），`CQ_LOG_FRAME` 在 NDEBUG 下展开为 `do{}while(0)`，导致 `tests/unit/test_log.cpp`
+  （`-DNDEBUG`），`CQ_LOG_FRAME` 在 NDEBUG 下展开为 `do{}while(0)`，导致 `tests/unit/base/test_log.cpp`
   中仅被宏使用的 `pts` 被判 `-Wunused-variable` 而 `-Werror` 失败。本任务未改 `test_log.cpp` /
   `chq_log.h` / 构建配置；验证在 Debug（与前期绿构建同配置）下完成。建议 `test_log.cpp` owner 在该
   用例加 `#ifndef NDEBUG` 守卫或 `(void)pts;`，使 Release 亦绿。
@@ -555,7 +555,7 @@ CQ_LOG_LEVEL=debug  CQ_LOG_WORKFLOW=decode,mem,perf  CQ_LOG_WF_LEVEL=decode=trac
 | Platform 解码 | `platform/apple/media/audio_track_reader.mm` | AVAssetReader PCM 输出（解码一体：AAC→PCM/重采样/上混）；P33 加载纪律 + 纯 C++ 线程 @autoreleasepool |
 | Platform 引擎 | `platform/apple/media/audio_engine.mm`（PALA-030） | AVAudioEngine + AVAudioSourceNode；SPSC 环=唯一无锁执行点；Flush=代数递增由回调侧落地（无锁清环） |
 | C ABI | `cq/audio/cq_sdk_audio.cpp` + cq_sdk.h 音频段 | `cq_audio_preview_create/destroy/sync/stats`（独立 TU，链接隔离论证同 cq_sdk_preview.cpp） |
-| Swift | `bindings/swift/.../PreviewAudio.swift` + EditorViewModel | `sync(playhead:playing:)` 每 tick；暂停/停止/拖拽全接线（AppEntry） |
+| Swift | `api/swift/Sources/ChuanqiCut/PreviewAudio.swift` + EditorViewModel | `sync(playhead:playing:)` 每 tick；暂停/停止/拖拽全接线（AppEntry） |
 
 ### 时钟语义（MVP，MEDIA-030 全量音画同步前的诚实边界）
 - **视频（墙钟 Player）为主、音频为从**：Sync 60Hz 喂播放头，混音线程在两次 Sync 之间按
@@ -604,6 +604,7 @@ CQ_LOG_LEVEL=debug  CQ_LOG_WORKFLOW=decode,mem,perf  CQ_LOG_WF_LEVEL=decode=trac
 |---|---|---|
 | 2026-10-07 | core 全量 | core-dbg 45/45、core-rel 45/45（P77 并发修复后零回归） |
 | 2026-10-12 | DEPS-012 冒烟切片 | 5 slice 链接闭合冒烟 5/5 + GPL 扫描 0 命中；FFmpegProbeFile 手动链接测试 **11 checks / 0 failures**（golden h264：5.0s/1080p/h264/无音轨 + 错误路径）；deps.py validate+lock+check ✓（7 条）；pod install ✓ vendored 接线（App OTHER_LDFLAGS -lffmpeg + FSP engine/vendor）；全量 ctest/xcodebuild 顺延阶段批（并行 audio 线写集阻断） |
+| 2026-10-16 | 全量门禁 `core-dbg` 段（布局整改批复跑） | `98% tests passed, 1 failed out of 52`，唯一红 = `platform_apple_decode`（**44.38s**，基线单跑 **6.92s**；解出 **147/150** 帧，`丢帧超时：dts=588000 等 1832ms`）。单跑 3/3 绿（9.82/9.33/9.55s）→ **判为负载相关假失败（P147），非搬家回归**。根因在 `engine/platform/apple/media/media_decode.mm:681-698` 的固定 1s 丢帧判据；**内核侧未修**，改造须走 cq-media-pipeline + 真机一趟 |
 
 ### 调研 · 决策 · 池指针
 

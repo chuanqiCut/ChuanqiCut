@@ -110,25 +110,44 @@ void            cq_snapshot_release(CQSnapshot*);
 
 ---
 
-## 6. 工程结构（落地版）
+## 6. 工程结构（落地版，2026-10-16 按 [ADR-0044](../decisions/ADR-0044-顶层布局按层分目录与门面外提.md) 更新）
+
+> 本节原为 ADR-0031 之前的设想树（`iOSApp`/`MacApp` 已被双壳工程取代）。
+> 现在的口径：**顶层 = 一层一名，层内 = 一模块一文件夹**；壳工程不再内嵌组件包。
 
 ```
-apps/apple/
-├── ChuanqiCut.xcworkspace
-├── packages/
-│   └── SharedUI/                  # SwiftUI 共享包（Package.swift）
-│       ├── Sources/SharedUI/
-│       │   ├── Editor/            # TimelineView / PreviewView / PropertyPanel
-│       │   ├── ProjectList/
-│       │   ├── Export/
-│       │   └── Settings/
-│       └── Tests/
-├── iOSApp/                        # iOS target（App 生命周期、权限、文档选择）
-└── MacApp/                        # macOS target（窗口、菜单、快捷键）
+engine/                          纯 C++（不含任何语言门面）
+├── core/cq/<module>/            base/time/model/command/gfx/media/preview/session/audio/render/ai/platform
+├── platform/<os>/               Apple 平台实现（Android/HarmonyOS 预留）
+├── shaders/{portable,native}/   Portable GLSL 基线 + 平台特化（红线 #6 的落点）
+├── vendor/                      FFmpeg xcframework（ignored，由 tools/deps 同步）
+└── ChuanqiCutCore.podspec / ChuanqiCutFFmpeg.podspec      # pod 根 = engine/（CocoaPods vendored 约束）
+
+api/swift/                       Swift 对外门面（原 engine/bindings/swift/）
+├── Sources/ChuanqiCut/          包装 C ABI 的 Swift 层
+├── Tests/                       swift test 宿主
+└── ChuanqiCutEngine.podspec     # pod 根 = api/swift/
+api/kotlin/ · api/arkts/         P1/P2 预留占位
+
+ui/<Module>/                     Swift UI 组件 Pod（原 apps/apple/packages/）
+├── SharedUI/                    基座（Theme/Common）
+├── ChuanqiCutPlayer|Import|Editor|Camera|Draft/
+└── Sources/<Target>/ + Tests/   # Sources 一层由 SPM 强制，不可去
+
+apps/apple/{ios,mac}/            两个独立壳工程（冻结入库，ADR-0037）
+├── ChuanqiCut.xcodeproj / .xcworkspace / Podfile / Podfile.lock / Gemfile
+apps/{android,ohos}/             显式预留空壳（README 标注，非垃圾）
+
+tests/
+├── unit/<module>/               按 engine/core/cq 模块名分组（ctest 用例名不带目录前缀）
+└── golden/                      基准夹具唯一归口（含 edit_plan/；frames/ 已登记项必须入库）
+
+third_party/prebuilt/            唯一预置二进制入库口（manifest.toml 驱动）
+build/                           唯一临时产物根（spm/ xcode/ third_party/ gate-logs/；cmake 留根）
 
 apps/android/
-├── app/                           # Compose UI
-├── cqbind/                        # JNI 绑定 module
+├── app/                         Compose UI
+├── cqbind/ → api/kotlin/        JNI 绑定按 ADR-0044 归顶层 api/
 └── build.gradle.kts
 
 apps/ohos/                         # 预留（本期为空目录 + README）

@@ -24,7 +24,7 @@
 | `core/src/session/thread_model.cpp` | `thread_local` 角色状态实现 |
 | `core/include/cq/session/chq_task_runner.h` | `ChqTaskRunner`：串行任务执行器 |
 | `core/src/session/task_runner.cpp` | worker 线程循环、投递与背压 |
-| `tests/unit/test_thread_model.cpp` | 含「主线程零阻塞」实测 |
+| `tests/unit/session/test_thread_model.cpp` | 含「主线程零阻塞」实测 |
 
 ## 线程角色
 
@@ -176,7 +176,7 @@ include 用相对路径 `../chq_session_impl.h`，pod 构建无私有 search pat
 | `cq_session_undo` / `cq_session_redo` | 异步提交；空历史在 session 线程失败 |
 | `cq_session_can_undo` / `cq_session_can_redo` | **同步**读原子标志；返回 **0/1 数据**，不是状态码（P26，别拿去比 cq_status_is_ok） |
 
-守卫：`tests/unit/test_c_abi_edit.c`（61 条断言，只链 cq_core）。
+守卫：`tests/unit/abi/test_c_abi_edit.c`（61 条断言，只链 cq_core）。
 
 ⚠️ **左边缘裁剪本期不支持**：需同时改 start + source_in + duration，是另一条
 命令。UI 左边缘归「移动」，见 ADR-0012 D5。

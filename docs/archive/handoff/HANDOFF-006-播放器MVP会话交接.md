@@ -1,7 +1,7 @@
 # HANDOFF-006：播放器 MVP 会话交接（构建机验收待执行）
 
 - **日期**：2026-10-05
-- **上游**：[TASK-UIA-015](../tasks/TASK-UIA-015.md) · [SPEC-UIA-020](../specs/UIA-020-独立视频播放器.md) · [ADR-0022](../decisions/ADR-0022-独立播放器AVPlayer过渡与内核演进接缝.md) · [RESEARCH-006](../research/RESEARCH-006-独立播放器内核与交互调研.md)
+- **上游**：[TASK-UIA-015](../../tasks/TASK-UIA-015.md) · [SPEC-UIA-020](../../specs/UIA-020-独立视频播放器.md) · [ADR-0022](../../decisions/ADR-0022-独立播放器AVPlayer过渡与内核演进接缝.md) · [RESEARCH-006](../../research/RESEARCH-006-独立播放器内核与交互调研.md)
 - **状态**：代码与文档全部落盘；**本机（Swift 5.5 / P45）只做了语法级验证**，构建机验收未执行
 
 ## 本轮做了什么（对着 commit 核）

@@ -9,7 +9,7 @@
   [ADR-0046](../decisions/ADR-0046-版本批门禁节奏与单源版本.md)、
   [TODO-POOL](../tasks/TODO-POOL-门禁真机待办池.md)、
   [VERSIONS](../reports/VERSIONS.md)、[.ai/modules/core.md](../../.ai/modules/core.md)
-- 本批新增坑号：**P175 ~ P179**（`.ai/memory/pitfalls.md`）
+- 本批新增坑号：**P175 ~ P180**（`.ai/memory/pitfalls.md`）
 - 本机前提：Intel x86_64 / macOS 26.7.1 / Xcode 26.6 / 无 Homebrew / **无 `gh`**（远端 CI 状态取不到）
 
 ---

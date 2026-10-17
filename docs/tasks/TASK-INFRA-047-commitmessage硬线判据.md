@@ -54,5 +54,5 @@ INFRA-042 只约束行数、不约束行长 → 标题贴线 40 字、正文每�
 
 ## 回写
 
-真源 §提交 + `sync_context.py` 重刷 5 份生成物 · 坑 **P179** · 裁定 [LEDGER-W42](../reports/LEDGER-W42.md) 补记十四（append-only）·
+真源 §提交 + `sync_context.py` 重刷 5 份生成物 · 坑 **P179**（判据本身）· **P180**（拿 rc 的两处壳陷阱）· 裁定 [LEDGER-W42](../reports/LEDGER-W42.md) 补记十四（append-only）·
 [HANDOFF-026](../handoff/HANDOFF-026-infra收尾批与编辑批开工前置.md) 的 sha 与步数按**订正声明**更新 · 建卡登记欠账 → 池 **[28]**。

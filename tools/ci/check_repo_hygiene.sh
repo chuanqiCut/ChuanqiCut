@@ -125,13 +125,16 @@ PAT = re.compile(
     r"|(^|[^/a-z])shaders/generated|tools/probe"
     r"|tests/unit/[a-z_0-9]+\.(cpp|c)")
 MARKER = re.compile(r"原 |已迁|自 |当时在|INFRA-0|ADR-0|更名|拆 |→|作废|旧|历史")
+# 本脚本自己的 PAT 定义行天生就是旧路径字面量，任何 MARKER 都盖不住；而且它未跟踪时
+# 不在 `git ls-files` 射程内、一提交就把自己判红（P163）→ 显式排除自己。
+SELF = "tools/ci/check_repo_hygiene.sh"
 EXEMPT = ("docs/decisions/", "docs/research/", "docs/reports/", "docs/handoff/",
           "docs/reviews/", "docs/tasks/", "docs/archive/", ".workbuddy/", ".ai/memory/")
 files = [f for f in subprocess.run(["git", "ls-files", "-z"],
                                    capture_output=True).stdout.decode().split("\0") if f]
 hits, exempted = [], 0
 for f in files:
-    if f.startswith(EXEMPT):
+    if f == SELF or f.startswith(EXEMPT):
         continue
     try:
         text = pathlib.Path(f).read_text(encoding="utf-8")

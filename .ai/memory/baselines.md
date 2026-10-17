@@ -1099,3 +1099,19 @@ UI 重建（ADR-0024）解决不了它 → 立即立 MEDIA-023（VT 输出降采
   → 上面 10m57s 的 17/17 与 10-16 之前所有"绿"都**只是暖缓存证据**，`--clean` / 新克隆 / CI 上必然红
   （实测：停在 27% SHADER-001，随后 `ctest rc=8`、50/51 "Could not find executable"）。
   现在的判据是**干净复现**（见上表），暖缓存绿不再算验收。
+
+### 提交后基线（2026-10-17 10:3x，INFRA-026~035 落 main，**本机未 push**）
+
+**tracked 文件数从 856 → 878**（本批 22 个新入库文件：CI workflow、`.clang-format`、`.editorconfig`、
+3 个新脚本、ADR-0044/0045、RESEARCH-018、HANDOFF-025、`docs/archive/README.md`、TASK-INFRA-026~035 十张、
+当日日志）。**以后 hygiene 的 tracked 数对 878，不再是 856。**
+
+| 判据 | 提交前（未跟踪态） | 提交后复测 |
+|---|---|---|
+| `check_repo_hygiene.sh` | 4/4 PASS，tracked 856，legacy 非豁免 **0**（豁免 23 行） | 首跑 **3/4（FAIL legacy-paths 2 行）** → 修 P163 后 **4/4 PASS**，tracked **878**，豁免 **33 行** |
+| `linkcheck_docs.py` | rc=0 | rc=0（不变） |
+| `gen_api_reference.py --check` | rc=0 | rc=0（不变） |
+| `sync_context.py --check` | rc=0 | rc=0（不变） |
+
+- ⚠️ 这张表的重点不是数字，是**"提交前 4/4"与"提交后 4/4"是两次不同的测量**：判据脚本自己从未跟踪
+  变跟踪会改变扫描集（P163）。**收工口径一律取提交后那一列。**

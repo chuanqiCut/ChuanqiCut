@@ -57,7 +57,7 @@ Pod::Spec.new do |s|
   # 路径，两套构建系统写同一份幂等产物，不互相覆盖）。
   s.script_phases = [
     {
-      :name => 'SHADER-001: Portable shader -> MSL (blit_msl.h)',
+      :name => 'SHADER-001/010: Portable shader -> MSL (blit_msl.h, transform_msl.h)',
       :script => <<-SH,
 set -e
 REPO_ROOT="${PODS_TARGET_SRCROOT}/.."

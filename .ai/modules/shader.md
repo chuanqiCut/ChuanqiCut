@@ -66,20 +66,25 @@ RenderGraph 运行时：有特化 + 能力查询通过 → 用特化；否则 fa
 
 ## 三、每新增/修改 shader 必做
 
-**Portable 层：**
+**可执行的入口只有这些**（2026-10-18 SHADER-010 核：`tools/shaders/build.sh`、`lint.sh`、
+`tools/qa/golden_compare.sh`、`tools/perf/render_bench` **都不存在** —— 本仓没有 PSNR/SSIM 比对器，
+"禁用特性检查"靠人工 + 红线 #6 评审，不靠脚本。空头命令写进判据 = 恒不命中的红闸，比没有更坏，P162）：
+
 ```bash
-tools/shaders/build.sh --all     # 三端生成产物都能编译
-tools/shaders/lint.sh            # 禁用特性检查
-tools/qa/golden_compare.sh --case=shader_<name>
+tools/build/build_shader_toolchain.sh    # glslang / SPIRV-Cross 装配（构建期依赖唯一入口）
+python3 tools/shaders/build_shaders.py --repo-root . --out-dir build/generated/shaders
+tools/build/build_core.sh --platform=apple --config=Release --test   # 含 Metal 端 shader 编译与像素断言
+tools/ci/check_apple_shells.sh           # podspec 侧接线只有双壳能判红
 ```
 
-**Platform-Native 层（额外）：**
-```bash
-tools/qa/golden_compare.sh --case=shader_<name> --compare=native_vs_portable
-tools/perf/render_bench --shader=<name> --variant=portable,native   # 收益 ≥ 20%
-```
+**加一组的登记点**（漏一个就是"看起来绿但产物没重生成"）：
+`build_shaders.py` 的 `SHADER_GROUPS` + `engine/platform/apple/CMakeLists.txt` 的
+`CQ_SHADER_MSL_HEADERS` **与** `DEPENDS`（少写一个源文件 = 增量构建假绿）+ podspec 的 script_phase 名。
 
-## 四、Compute Shader 专项
+**一致性判据用同帧 A/B，不用 dB**：同一帧分别走新旧两条编码路径，读回整张 RT 逐像素相减
+（范式见 `tests/unit/preview/test_layer_identity.cpp`，heavy 档）。恒等档实测最大通道差 0。
+
+## 四、Compute Shader 专项（**本期无实现，是预留规则**）
 GLES 3.0 无 compute；ES 3.1 可用但部分机型有缺陷（中端机也可能中招，不是低端专属问题）。
 - Portable 层必须提供 fragment 等价实现
 - 运行时 `CQ_CAP_COMPUTE_SHADER` 查询 + 自动降级 + 设备黑名单
@@ -99,6 +104,7 @@ ADR-0002（含修订记录）、ARCH-003 §4、Skill `cq-shader-portability`
 
 | Task ID | 标题 | 状态 |
 |---|---|---|
+| TASK-SHADER-010 | Portable 层新增基础变换 shader（`transform.{vert,frag}`）+ 生成链从单 shader 泛化成 `SHADER_GROUPS` | **编码完成**（2026-10-18 集成机）；消费方 = [TASK-RENDER-010](../../docs/tasks/TASK-RENDER-010.md)；`engine/shaders/native/` 仍为空（红线 #6 未破） |
 | TASK-INFRA-033 | Portable GLSL 从仓库根 `shaders/src/` 并入 `engine/shaders/portable/`，Platform-Native 落 `engine/shaders/native/<platform>/`（本期只建 `native/README.md` 说明预留），删空残壳 `shaders/`，修订红线 #6 路径措辞并重生成 5 个入口文件 | **本机窄检已绿**（模块级：清 `build/generated` 重生成 + `-Werror` 编译 + ctest 52/52）；全量门禁与双壳由末批 INFRA-034 统一跑 |
 
 ### 测试与门禁记录（阶段批）
@@ -108,6 +114,7 @@ ADR-0002（含修订记录）、ARCH-003 §4、Skill `cq-shader-portability`
 | 2026-10-16 | **INFRA-033 shader 两半并入 `engine/shaders/`**（模块级窄检，本机=集成机） | tracked 形态：`git ls-files engine/shaders` = **3**（`portable/blit.{vert,frag}` + `native/README.md`）、`git ls-files shaders` = **0**（目录已不在磁盘上）。**防"增量复用假绿"**：先 `rm -rf build/generated` 再 `tools/build/build_core.sh --platform=apple --test` → exit 0，日志 `[27%] SHADER-001: glslang → SPIR-V → spirv-cross → MSL (blit)` 真实执行、`ctest 100% tests passed out of 52`、real **135.17s**、`error:` **0** 行。**产物逐字节核对**：`spv/blit.vert.spv` **960B**、`spv/blit.frag.spv` **548B**、`msl/blit.vert.metal` **418B**、`msl/blit.frag.metal` **410B** —— 四条与搬家前**完全相等** → 转译结果未被搬动污染；`blit_msl.h` **1665B → 1689B**（+24B 恰好等于 banner 两行路径字面各 +12B：`shaders/src/*.glsl`→`engine/shaders/portable/*.glsl`、`来源：shaders/src/blit.vert`→`来源：engine/shaders/portable/blit.vert`）→ 差额可解释，非代码变化。**GLSL 代码等价取证**：剥离 `//` 注释后 md5 与 `HEAD:shaders/src/*` 逐字相同（vert `568b81024e9e24d46e75f60fa0775eda`、frag `687a47617c0344e74f95f849726783d4`）→ 红线 #6「禁平台扩展」没被顺手破。**扫描根未误改**：`check_platform_headers.py` = `scanned 43 header(s) … 0 violation(s)`（与 INFRA-032 基线逐字相同），exit 0。**入口一致性**：`sync_context.py --check` → 所有入口文件与真源一致。⚠️ **本批未跑**：全量 15 步门禁、双壳 `pod install`、iOS/mac 真机（shader 只碰构建路径，归 034 末批一趟）。 |
 | 2026-10-17 | **INFRA-034 · SHADER-001 构建期依赖出树**（本机=集成机，CI 等价复现顺手抓的 P160） | 清空 `build/` 复现 CI 才暴露：**仓库里从来没有产出 glslang/spirv-cross 的脚本**，两个二进制只活在历史会话的 `build/tools/` 里。新增 `tools/build/build_shader_toolchain.sh` 后从零实测：glslang **3 133 560B**（pin `a57276bf`，`CHANGES.md` 版本级核对 16.0.0，非 git 树故 commit 级**明打不可校验**）、SPIRV-Cross **4 155 984B**（pin `aa217aeb`），端到端 `blit_msl.h` = **1689B** 与 033 基线相等；`.github/workflows/ci.yml` 增加装配步（约束：**必须在 `build_core.sh` 之前**）。构建耗时：glslang ≈50s、SPIRV-Cross ≈65s（-j12，Intel x86_64）。 |
 | 2026-10-17 | **P162：装配脚本的幂等/只读自证**（负向测试抓出来的两处自身缺陷） | 四遍干净复现全绿后跑 `--check-only` 负向测试，抓到：① 名义"只读"的模式里 `rm -rf` 分支照走（把探针连目录删了）；② 补丁指纹守卫拿 `SPVC_PATCH_FP:STRING=` grep cache，而裸 `-D` 在 cache 里落 `:UNINITIALIZED=` → **恒不命中** → 每次暖跑误判"补丁变了"、白删白重编 ~65s。两处修完复验：暖态完整跑两工具均 `产物已存在，跳过编译`、暖态 `--check-only` 产物 md5 前后一致、藏 `glslang` 则 rc=**1**。规则见 pitfalls P162。**对本模块的净效果**：SHADER-001 的构建期依赖第一次有了"入库脚本能从零产出 + 幂等 + 可只读校验"三件，`blit_msl.h` 四遍恒为 **1689B**。 |
+| 2026-10-18 | **SHADER-010 Portable 变换 shader + 生成链多组化**（本机=集成机，编码轮窄检） | **幂等自证（本卡最重要的一行）**：`SHADER_GROUPS` 改造后重跑，`blit_msl.h` = **1689B / md5 `93d6e0bf4f8bfc475c997c2cbd22d941`**，与 INFRA-033/034 两次的基线**逐位相同** → 泛化没有改动既有产物（banner 走 `{name}` 模板而不是硬编码文案，是这条成立的前提）。新产物 `transform_msl.h` = **1867B**。**清目录一次产出**：`rm -rf build/generated/shaders` → 0.73s 出齐 2 组，md5 复现同上。**MSL 侧对齐**：spirv-cross 生成 `[[attribute(0)]] aPos(float2)` / `[[attribute(1)]] aUv(float2)` / `[[attribute(2)]] aAlpha(float)`、`texture(0)` + `sampler(0)` → 与 `blit_pass.mm` 管线描述（stride 20、三属性 offset 0/8/16）逐项对上；`metal -c` 双变体 rc=0。**工具链自检**：`build_shader_toolchain.sh` 暖跑两工具均跳过、glslang `11:16.0.0`、SPIRV-Cross `aa217aeb`（= manifest pin）。⚠️ **glslang 对 `precision highp/mediump float;` 在 `#version 450` 下 rc=0**（探针实测；skill 的"精度限定符必须显式"这条与 Vulkan 默认规则并不冲突，照写）。**未验**：Android / HarmonyOS 切片（本机只有 Apple），全量 L3 随 v0.2.0 批末。 |
 
 ### 调研 · 决策 · 池指针
 

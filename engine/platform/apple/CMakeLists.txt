@@ -42,25 +42,30 @@ target_include_directories(cq_platform_apple PUBLIC
 target_link_libraries(cq_platform_apple PUBLIC cq_core)
 
 # ===========================================================================
-# SHADER-001：Portable shader（engine/shaders/portable/*.glsl）→ MSL 生成链
+# SHADER-001 / SHADER-010：Portable shader（engine/shaders/portable/*.glsl）→ MSL 生成链
 #
 # 红线 #6：Portable 层是跨平台基线，平台特化只能来自转译或 platform/ 下的**可选**覆盖。
-# 故这里在**构建期**跑 glslang → SPIR-V → spirv-cross → MSL，把产物写成 build/ 下的
-# 一个 .h，由 blit_pass.mm include。
+# 故这里在**构建期**跑 glslang → SPIR-V → spirv-cross → MSL，把每组 shader 写成一个 .h，
+# 由 gfx/blit_pass.mm include。
 #
 # 为什么走构建期而不是运行时转译：运行时转译要把 glslang / SPIR-V-Cross 链进 App
 # （体积 + 启动耗时），而 shader 集合是编译期已知的常量——没有理由付出这个代价。
 #
 # 产物必须在 CMAKE_BINARY_DIR 下：AGENTS 禁止提交 shader 生成产物，放 build/ 既满足
 # 「不入库」，又能被 .mm 直接 include（无需运行时 IO）。
+#
+# ⚠️ 新增一组 shader 要改**两处**：`tools/shaders/build_shaders.py` 的 SHADER_GROUPS
+#    与下面的 OUTPUTS + DEPENDS。DEPENDS 少写一个源文件 = 改了 .glsl 增量构建不重跑，
+#    拿旧产物编译（假绿），比编译失败更难查（INFRA-033 就是拿这条清单防的）。
 # ===========================================================================
 find_package(Python3 COMPONENTS Interpreter REQUIRED)
 
 set(CQ_GENERATED_SHADER_DIR "${CMAKE_BINARY_DIR}/generated/shaders")
-set(CQ_BLIT_MSL_HEADER "${CQ_GENERATED_SHADER_DIR}/blit_msl.h")
+set(CQ_SHADER_MSL_HEADERS "${CQ_GENERATED_SHADER_DIR}/blit_msl.h"
+                          "${CQ_GENERATED_SHADER_DIR}/transform_msl.h")
 
 add_custom_command(
-    OUTPUT "${CQ_BLIT_MSL_HEADER}"
+    OUTPUT ${CQ_SHADER_MSL_HEADERS}
     COMMAND "${CMAKE_COMMAND}" -E make_directory "${CQ_GENERATED_SHADER_DIR}"
     COMMAND "${Python3_EXECUTABLE}" "${CMAKE_SOURCE_DIR}/tools/shaders/build_shaders.py"
             --repo-root "${CMAKE_SOURCE_DIR}"
@@ -68,12 +73,14 @@ add_custom_command(
     DEPENDS "${CMAKE_SOURCE_DIR}/tools/shaders/build_shaders.py"
             "${CMAKE_SOURCE_DIR}/engine/shaders/portable/blit.vert"
             "${CMAKE_SOURCE_DIR}/engine/shaders/portable/blit.frag"
-    COMMENT "SHADER-001: glslang → SPIR-V → spirv-cross → MSL (blit)"
+            "${CMAKE_SOURCE_DIR}/engine/shaders/portable/transform.vert"
+            "${CMAKE_SOURCE_DIR}/engine/shaders/portable/transform.frag"
+    COMMENT "SHADER-001/010: glslang → SPIR-V → spirv-cross → MSL (blit, transform)"
     VERBATIM)
 
 # 用中间 target 承接依赖：直接 add_dependencies 到一个 custom command 的 OUTPUT 文件
 # 在部分 CMake 版本上不生效，target 形态则是明确支持的。
-add_custom_target(cq_shaders_msl DEPENDS "${CQ_BLIT_MSL_HEADER}")
+add_custom_target(cq_shaders_msl DEPENDS ${CQ_SHADER_MSL_HEADERS})
 add_dependencies(cq_platform_apple cq_shaders_msl)
 
 # PRIVATE 而非 PUBLIC：生成目录只被本目录的 .mm 消费，不进导出接口

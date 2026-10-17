@@ -51,3 +51,30 @@ SHADER-001 已经把链跑通一次：`engine/shaders/portable/blit.{vert,frag}`
 
 `.ai/modules/shader.md`（第二个 shader + 多 shader 管理实况）、`.ai/memory/baselines.md`
 （恒等变换回归数字 + 清 `build/` 后重产一次的耗时）、`docs/tasks/TASK-BACKLOG.md` §3.1 行状态。
+
+## 落地记录（2026-10-18，集成机编码轮）
+
+状态：**编码完成 + 本机窄检绿**。L3 不在本卡（随 v0.2.0 批末一趟）。
+
+产物：`transform.vert` / `transform.frag`（顶点不做任何变换算术，几何由 core 烘焙 ——
+理由写在 transform.vert 头部）；`build_shaders.py` 从单 shader 泛化成 `SHADER_GROUPS`，
+新增一组只加一行；`engine/platform/apple/CMakeLists.txt` 与 podspec 两个构建入口都注册了
+`transform_msl.h`。
+
+幂等自证（本卡第一项，也是"多 shader 管理不是纸面能力"的证据）：改链后重跑，
+**`blit_msl.h` md5 与改前逐位相同** = `93d6e0bf4f8bfc475c997c2cbd22d941`（1689 B）；
+`transform_msl.h` = 1867 B。MSL 侧 `[[attribute(0/1/2)]]` 与 `texture(0)`/`sampler(0)` 由
+spirv-cross 生成，与管线顶点布局逐项对齐。
+
+两条偏差声明（不静默）：
+
+1. **验收第 2 条换了形式**：`golden 回归 ≥40dB` 在本仓**没有可执行判据** —— `verify.py` 只校验
+   夹具齐备性，`tools/qa/golden_compare.sh` 不存在（卡片 verification 里已声明）。换成同帧走
+   两条路径（`Encode()` vs `EncodeLayer()`）读回整张 RT 逐像素相减，见
+   `tests/unit/preview/test_layer_identity.cpp`。实测最大通道差 **0**（64×64，逐位相同）。
+   恒不命中的判据比没有更坏（P162），所以这里是换判据而不是"降标"。
+2. **`--groups` 之类的选择器没加**：多组一次生成，增量由 CMake `OUTPUT` 列表决定。
+   ⚠️ 新增一组要同时改 `SHADER_GROUPS` 与 CMake 的 `CQ_SHADER_MSL_HEADERS` + `DEPENDS`；
+   `DEPENDS` 少写一个源文件 = 增量构建假绿（已写进 CMakeLists 注释）。
+
+跨端未验（risk 条照旧）：本机只有 Apple 切片。Android / HarmonyOS 侧这份 GLSL 没跑过。

@@ -1,9 +1,12 @@
 #!/usr/bin/env python3
-# ChuanqiCut — Portable shader 编译链（SHADER-001）
+# ChuanqiCut — Portable shader 编译链（SHADER-001 / SHADER-010）
 #
-# 链路：engine/shaders/portable/blit.{vert,frag}（Portable，Vulkan GLSL 450）
+# 链路：engine/shaders/portable/<name>.{vert,frag}（Portable，Vulkan GLSL 450）
 #         -- glslang -V -->  *.spv  -- spirv-cross --msl -->  *.metal
-#         -- 本脚本拼装 -->  <out-dir>/blit_msl.h（raw string 常量，供 .mm include）
+#         -- 本脚本拼装 -->  <out-dir>/<name>_msl.h（raw string 常量，供 .mm include）
+#
+# 一个 shader = 一份头（SHADER-010 起有多个，故按组登记见 SHADER_GROUPS）。
+# 加一行就多出一种产物：产物名、宏卫、常量名全部由组名派生，**不复制粘贴脚本**。
 #
 # 为什么用 Python 而不是在 CMake 里直接串两条 COMMAND：
 #   * 工具缺失 / 步骤失败要给出**可读**的诊断（缺哪个工具、哪一步挂了），
@@ -30,18 +33,21 @@ import subprocess
 import sys
 from pathlib import Path
 
-# (逻辑名, Portable GLSL 文件名, 生成的 C++ 常量名)
-# glslang 按**输入文件后缀**判定 stage，故 .vert/.frag 后缀不能改。
-STAGES = (
-    ("vert", "blit.vert", "kBlitVertMsl"),
-    ("frag", "blit.frag", "kBlitFragMsl"),
+# (组名, ((stage, Portable GLSL 文件名, 生成的 C++ 常量名), ...))
+# 一组 = 一个逻辑 shader = 一份 `<组名>_msl.h`。SHADER-010 起有了第二组，
+# 产物名 / 宏卫 / 常量名全部由组名派生，不在脚本里复制粘贴第二遍。
+SHADER_GROUPS = (
+    ("blit", (("vert", "blit.vert", "kBlitVertMsl"),
+              ("frag", "blit.frag", "kBlitFragMsl"))),
+    ("transform", (("vert", "transform.vert", "kTransformVertMsl"),
+                   ("frag", "transform.frag", "kTransformFragMsl"))),
 )
 
 RAW_DELIM = "MSL"
 
 HEADER_BANNER = """// 自动生成文件 —— 请勿编辑，改 engine/shaders/portable/*.glsl 后重新构建。
 //
-// 来源：engine/shaders/portable/blit.vert / blit.frag（Portable，Vulkan GLSL 450）
+// 来源：engine/shaders/portable/{name}.vert / {name}.frag（Portable，Vulkan GLSL 450）
 //       → glslang(SPIR-V) → spirv-cross(MSL)
 // 生成者：tools/shaders/build_shaders.py
 //
@@ -73,21 +79,22 @@ def resolve_tool(explicit: str | None, env_var: str, repo_root: Path, rel: str) 
     )
 
 
-def render_header(entries: list[tuple[str, str]]) -> str:
-    out = [HEADER_BANNER, "\n"]
-    out.append("#ifndef CQ_GENERATED_SHADERS_BLIT_MSL_H_\n")
-    out.append("#define CQ_GENERATED_SHADERS_BLIT_MSL_H_\n\n")
+def render_header(name: str, entries: list[tuple[str, str]]) -> str:
+    guard = f"CQ_GENERATED_SHADERS_{name.upper()}_MSL_H_"
+    out = [HEADER_BANNER.format(name=name), "\n"]
+    out.append(f"#ifndef {guard}\n")
+    out.append(f"#define {guard}\n\n")
     out.append("namespace cq {\nnamespace apple {\nnamespace shaders {\n")  # MSL 产物：归 apple 命名空间
-    for name, msl in entries:
+    for const, msl in entries:
         terminator = f"){RAW_DELIM}\""
         if terminator in msl:
             raise SystemExit(
-                f"error: {name} 的 MSL 里出现了 raw string 终止符 {terminator}，"
+                f"error: {const} 的 MSL 里出现了 raw string 终止符 {terminator}，"
                 "内联进 .h 会被静默截断。请调整 RAW_DELIM。"
             )
-        out.append(f'\ninline constexpr char {name}[] = R"{RAW_DELIM}(\n{msl}){RAW_DELIM}";\n')
+        out.append(f'\ninline constexpr char {const}[] = R"{RAW_DELIM}(\n{msl}){RAW_DELIM}";\n')
     out.append("\n}  // namespace shaders\n}  // namespace apple\n}  // namespace cq\n\n")
-    out.append("#endif  // CQ_GENERATED_SHADERS_BLIT_MSL_H_\n")
+    out.append(f"#endif  // {guard}\n")
     return "".join(out)
 
 
@@ -112,23 +119,27 @@ def main() -> int:
     spirv_cross = resolve_tool(args.spirv_cross, "CQ_SPIRV_CROSS", repo_root,
                                "build/tools/spirv-cross/spirv-cross")
 
-    entries: list[tuple[str, str]] = []
-    for stage, glsl_name, const_name in STAGES:
-        src = src_dir / glsl_name
-        if not src.is_file():
-            raise SystemExit(f"error: Portable shader 缺失：{src}")
-        spv = spv_dir / f"blit.{stage}.spv"
-        msl = msl_dir / f"blit.{stage}.metal"
-        log(f"{glsl_name} → {spv.name}")
-        # -V：产出 SPIR-V；--target-env vulkan1.1：按 Vulkan 语义校验（GLSL 450 的归宿）。
-        run([str(glslang), "-V", "--target-env", "vulkan1.1", "-o", str(spv), str(src)])
-        log(f"{spv.name} → {msl.name}")
-        run([str(spirv_cross), "--msl", str(spv), "--output", str(msl)])
-        entries.append((const_name, msl.read_text(encoding="utf-8")))
+    built = 0
+    for group, stages in SHADER_GROUPS:
+        entries: list[tuple[str, str]] = []
+        for stage, glsl_name, const_name in stages:
+            src = src_dir / glsl_name
+            if not src.is_file():
+                raise SystemExit(f"error: Portable shader 缺失：{src}")
+            spv = spv_dir / f"{group}.{stage}.spv"
+            msl = msl_dir / f"{group}.{stage}.metal"
+            log(f"{glsl_name} → {spv.name}")
+            # -V：产出 SPIR-V；--target-env vulkan1.1：按 Vulkan 语义校验（GLSL 450 的归宿）。
+            run([str(glslang), "-V", "--target-env", "vulkan1.1", "-o", str(spv), str(src)])
+            log(f"{spv.name} → {msl.name}")
+            run([str(spirv_cross), "--msl", str(spv), "--output", str(msl)])
+            entries.append((const_name, msl.read_text(encoding="utf-8")))
 
-    header = out_dir / "blit_msl.h"
-    header.write_text(render_header(entries), encoding="utf-8")
-    log(f"生成 {header}")
+        header = out_dir / f"{group}_msl.h"
+        header.write_text(render_header(group, entries), encoding="utf-8")
+        log(f"生成 {header}")
+        built += 1
+    log(f"共 {built} 组 shader → {out_dir}")
     return 0
 
 

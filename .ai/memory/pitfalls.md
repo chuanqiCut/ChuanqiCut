@@ -3048,3 +3048,25 @@ CA::Transaction::flush_as_runloop_observer → CA::Layer::perform_update_
      `echo "PAR-CORE $cfg rc=$rc wall=…" >> 日志`，有这行才算跑完）。
   2. 需要连续拿多个数字时，优先**前台阻塞 + 有界超时**；确实要后台就在等待端用
      `while pgrep -f <特征> >/dev/null; do sleep 5; done` 主动收敛，而不是等通知。
+
+## P169：commit message 写成 19~26 行小作文 —— 因为根本没有规则管它（2026-10-17，传哲当场指出，verified）
+
+**场景**：传哲问「commit message 没有 rule 控制吗，怎么又在里边写作文了」。
+去查规则：`docs/CODESTYLE.md` 五节全是命名/分层/日志/测试/工具链，**没有提交节**；
+真源 `.ai/source/AGENTS.root.md` §提交 只有分支、禁提产物、PR 链 Spec 三条。
+→ **不是我没遵守规则，是规则不存在**，而我把自己每天写的模块册内容原样搬进了 commit 正文。
+
+**取证（`git log -15` 的正文行数，全是我最近自己发的）**：
+INFRA-038 **26 行** / INFRA-037 收口 **19 行** / INFRA-037 **19 行** / 治理批 **17 行** /
+搬家批 **14 行** / INFRA-036 **8 行** —— 平均一行放不下一个数字，正文就成了表格的复刻。
+
+**为什么会滑过去**：真源里那句「PR 必须链接 Spec/Task/ADR，并**附机器验证证据**」被我读成了
+"证据要写进提交本身"。它说的是 PR（可以随批更新），不是 commit（**发了就冻结**，
+改它等于重写历史 —— 而这两条已经 push 了）。证据写在 commit 里的下场是：
+下一批更新后，历史里留着一堆**过期数字**，而活文档那边才是当前口径。
+
+- 规则（已落 `.ai/source/AGENTS.root.md` §提交，AGENTS.md 随之生成）：
+  1. 标题一行 ≤40 字（`<任务ID>：<一句话>`），正文**最多 5 行**，只写「为什么」+ 指针
+     （任务号 / 池号 / P 号 / ADR 号）。
+  2. **数字与表格进 `.ai/modules/<模块>.md` 和 `.ai/memory/baselines.md`，不进提交信息。**
+  3. 要写长东西就写进任务卡或 HANDOFF，commit 里给一句"详见 `<file>`"。

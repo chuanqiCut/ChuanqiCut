@@ -1428,4 +1428,6 @@ core Debug **52/52**、Release **52/52**；6 包用例 26+52+77+16+81 = **252**�
 | 全链差 | `git diff --name-only ff1e9d8 <新 tip>` = **0 行** |
 | 回退路 | 改写前打 `refs/backup/pre-rewrite-20261017`（= 旧 tip `ff1e9d8`） |
 | 为什么不分组重排 | 三笔写集有一个文件相交（`.workbuddy/memory/2026-10-17.md` 在 046 与交接两笔都改过），拆开要靠 `git add -p`，本 shell 不可用 → 拆错就是真丢内容 |
-| 门禁步数 | `run_gate.sh` **19 → 20 步**（新增 `commit-msg`，`--fast` 档照跑） |
+| 门禁步数 | `run_gate.sh` **19 → 20 步**（新增 `commit-msg`，`--fast` 档照跑；**L3 全量尚未跑过 20 步**，513s 那趟是 19 步） |
+| `--fast` 同档两趟（本批实测，`build/gate-logs/gate-history.tsv`） | 17:36 **PASS=9 / FAIL=0 / SKIP=3、墙钟 101s**（`core-dbg` 88s）；17:55 **9/0/3、38s**（`core-dbg` 21s、`Building CXX` 计数 **0** = 零重编，21s 全是 ctest 38 例；`commit-msg` 两趟均 **0s**） |
+| ⇒ 口径 | **同档同树差 2.7× 全在构建态**，与判据无关。引用 `--fast` 必须带步数与缓存态；**88s 那趟的重编构成未取证**（日志被后一趟覆盖），只报数不解释 |

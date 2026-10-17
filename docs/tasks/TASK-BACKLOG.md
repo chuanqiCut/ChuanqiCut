@@ -153,7 +153,7 @@ parallel:    false          # 是否与同批次其他任务并行
 | SHADER-003 | 跨平台 | shader 规范检查（禁用扩展/显式精度等） | SHADER-001 | `tools/shaders/lint.*` | 违规 shader 构建失败 |
 | SHADER-004 | 跨平台 | **Platform-Native 层机制**：`RenderNode.specialize()` + 运行时选择 + fallback | SHADER-001, RENDER-001 | `core/src/graph/*` | 有特化用特化，无特化 fallback portable |
 | SHADER-005 | 跨平台 | 特化 vs portable 一致性对比工具 | SHADER-004 | `tools/qa/*` | 输出 PSNR/SSIM 对比报告 |
-| SHADER-010 | 跨平台 | [基础变换 shader（平移/旋转/缩放/裁剪）](TASK-SHADER-010.md) 📌 2026-10-17 建卡 | SHADER-001 ✅ | ~~`shaders/src/transform.glsl`~~ → `engine/shaders/portable/transform.{vert,frag}` | 恒等变换与 blit 逐像素一致；Android/HarmonyOS 切片本机未验（明账） |
+| SHADER-010 | 跨平台 | [基础变换 shader（平移/旋转/缩放/裁剪）](TASK-SHADER-010.md) 📌 2026-10-17 建卡 → ✅ **2026-10-18 编码闭环** | SHADER-001 ✅ | ~~`shaders/src/transform.glsl`~~ → `engine/shaders/portable/transform.{vert,frag}` | 恒等变换与 blit 逐像素一致；Android/HarmonyOS 切片本机未验（明账） |
 | SHADER-110 | 跨平台 | **[Apple 优先] Metal 特化：变换/合成** | SHADER-004, PALA-001 | `platform/apple/shaders/` | 收益 ≥ 20%，与 portable 一致性达标 |
 | SHADER-111 | 跨平台 | **[Apple 优先] Metal 特化：LUT/调色** | SHADER-004, COLOR-002 | `platform/apple/shaders/` | 同上 |
 | SHADER-112 | 跨平台 | **[Apple 优先] Metal 特化：美颜磨皮** | SHADER-004, AI-020 | `platform/apple/shaders/` | 同上 |
@@ -181,8 +181,8 @@ parallel:    false          # 是否与同批次其他任务并行
 | RENDER-001 | 跨平台 | RenderGraph：节点 DAG 与拓扑排序 | GFX-001 | `core/src/graph/*` | 拓扑正确，环检测 |
 | RENDER-002 | 跨平台 | Pass 合并与中间纹理别名分配 | RENDER-001 | `core/src/graph/*` | 4K 下中间纹理数显著少于朴素实现 |
 | RENDER-003 | 跨平台 | LOD 机制（预览跳过昂贵节点） | RENDER-002 | `core/src/graph/*` | 预览/导出走同一图 |
-| RENDER-010 | 跨平台 | [TransformNode](TASK-RENDER-010.md) 📌 2026-10-17 建卡 | SHADER-010, MODEL-004, RENDER-001 ✅ | ~~`core/src/effect/transform.*`~~ → `engine/core/cq/render/*`、`engine/platform/apple/gfx/*` | golden 通过；节点校验与执行分支同批补齐 |
-| RENDER-011 | 跨平台 | [多轨合成节点（Z-order 叠合）](TASK-RENDER-011.md) 📌 2026-10-17 建卡 | RENDER-001, **MODEL-004** | `engine/core/cq/render/*`、`engine/{core,platform}/…/gfx/*` | 多轨命中不再只取第一条；见卡内范围裁决 |
+| RENDER-010 | 跨平台 | [TransformNode](TASK-RENDER-010.md) 📌 2026-10-17 建卡 → ✅ **2026-10-18 编码闭环** | SHADER-010 ✅, MODEL-004 ✅, RENDER-001 ✅ | ~~`core/src/effect/transform.*`~~ → `engine/core/cq/render/*`、`engine/platform/apple/gfx/*` | golden 通过；节点校验与执行分支同批补齐 |
+| RENDER-011 | 跨平台 | [多轨合成节点（Z-order 叠合）](TASK-RENDER-011.md) 📌 2026-10-17 建卡 | RENDER-001 ✅, MODEL-004 ✅, **SHADER-010 ✅, RENDER-010 ✅**（前置已清 2026-10-18）| `engine/core/cq/render/*`、`engine/{core,platform}/…/gfx/*` | 多轨命中不再只取第一条；见卡内范围裁决 |
 | RENDER-012 | 跨平台 | 转场节点（dissolve / wipe 起步） | RENDER-001 | `core/src/effect/transition.*` | golden 测试通过 |
 | COLOR-001 | 跨平台 | 色彩管道定义（working space / 输入输出转换） | RENDER-001 | `core/src/color/*` | 预览与导出色彩一致 |
 | COLOR-002 | 跨平台 | 3D LUT 节点（.cube 加载 + 强度混合） | COLOR-001, SHADER-001 | `core/src/effect/lut.*` | LUT 应用位置与顺序固定 |
@@ -600,7 +600,8 @@ RENDER-001/红线 #6 路线，勿把相机滤镜直接当 SDK 能力引用。
 > **本节的号原本欠登记**：UIA-041~045 只有任务卡没有 BACKLOG 行（模块册有记录），
 > 2026-10-17 回收时一次补齐。号段：**UIA-046**、**CORE-011** 为本轮新领（现取现核，无撞号）。
 > ⚠️ **仍欠六行**：SHADER-010 / RENDER-010 / RENDER-011 / EXPORT-001 / UIA-007 / PALA-030 有卡无行
-> （MODEL-004 本轮补上）。这属于池 **[28]**（磁盘卡数 vs 表内行数）那一族欠账，
+> （MODEL-004 本轮补上）。**2026-10-18：SHADER-010 / RENDER-010 编码闭环，仍是「有卡无行」，欠账不变。**
+> 这属于池 **[28]**（磁盘卡数 vs 表内行数）那一族欠账，
 > 不在本批逐条补齐——等池 [28] 的机器判据落地后一次性对齐，避免手写第二遍。
 
 | ID | 层 | 任务 | 依赖 | 写集要点 | 验收（要点） | 状态 |
@@ -613,14 +614,14 @@ RENDER-001/红线 #6 路线，勿把相机滤镜直接当 SDK 能力引用。
 
 **批次**：044 → 045（同域同批交付）→ 046 ∥ 011 之外**不得并行**（011 动 `cq_sdk.h`，
 且其 Swift/UI 段与 046 同写 `EditorViewController.swift` 邻域——**046 先、011 后**，或反过来，串行）。
-**关键路径**：MODEL-004 → SHADER-010 → RENDER-010 → RENDER-011 → EXPORT-001 → UIA-007（决定最早交付；
+**关键路径**：MODEL-004 ✅ → SHADER-010 ✅ → RENDER-010 ✅ → **RENDER-011 → EXPORT-001 → UIA-007**（决定最早交付；
 UIA-046 与 PALA-030 挂链尾）。CORE-011 的下一环「轨道头恢复显示」**不在本批关键路径上**
 （等锁定/排序的写 ABI，池 [19] 明账）。
 **v0.2.0 射程（2026-10-17 裁定三次）**：首裁「五张 + 清欠账」= CORE-011 → EXPORT-001 → UIA-007 → UIA-046 →
 PALA-030，另加池 **[28]**；同日 20:3x 追加裁定「把这些都排进来」= **多轨画面逻辑插进本批**，
 链变成 **CORE-011 ✅ → MODEL-004 → RENDER-011 → EXPORT-001 → UIA-007 → UIA-046 → PALA-030（七张）+ 池 [28]**；
 同日 21:3x **第三裁**（建卡时把"画中画要不要"提成选择题）= 「把 RENDER-010 + SHADER-010 也拉进来」
-→ 射程 **九张**，链变成 **CORE-011 ✅ → MODEL-004 → SHADER-010 → RENDER-010 → RENDER-011 → EXPORT-001
+→ 射程 **九张**，链变成 **CORE-011 ✅ → MODEL-004 ✅ → SHADER-010 ✅ → RENDER-010 ✅ → RENDER-011 → EXPORT-001
 → UIA-007 → UIA-046 → PALA-030**；同一次裁定另一半 = **播放器线先记账、v0.2.0 不动**。
 - 为什么排在这个位置：画面多轨的前置是**数据槽**——`ChqClip` 没有 `transform`/`layer`
   （MODEL-004，卡已立），渲染侧 `chq_graph_assembler.cpp:67-78` 只取第一条命中视频轨

@@ -404,6 +404,18 @@ if(APPLE)
     apply_cq_warnings(cq_tests_preview_renderer)
     add_test(NAME preview_renderer COMMAND cq_tests_preview_renderer)
 
+    # ---- RENDER-010：变换层 GPU 恒等回归（同一帧走 blit / 走 kTransform 两路读回比对）----
+    add_executable(cq_tests_layer_identity
+        unit/preview/test_layer_identity.cpp)
+    target_include_directories(cq_tests_layer_identity PRIVATE
+        ${CMAKE_SOURCE_DIR}/engine/core
+        ${CMAKE_SOURCE_DIR}/engine/platform/apple)
+    target_link_libraries(cq_tests_layer_identity PRIVATE
+        cq_core cq_platform_apple ${COREVIDEO_T6_LIB})
+    cq_require_cxx20(cq_tests_layer_identity)
+    apply_cq_warnings(cq_tests_layer_identity)
+    add_test(NAME layer_identity COMMAND cq_tests_layer_identity)
+
     # ---- BIND-003 子步骤 5：预览 C ABI（**真正的 C 翻译单元**）----
     # 与 core 侧 test_c_abi.c 同性质：只要 cq_sdk.h 混进 C++ 类型，本 TU 就编译失败。
     # 分工：本用例验证 C ABI 契约（句柄/状态码/诊断量）；像素正确性由
@@ -703,6 +715,16 @@ cq_require_cxx20(cq_tests_render_graph)
 apply_cq_warnings(cq_tests_render_graph)
 add_test(NAME render_graph COMMAND cq_tests_render_graph)
 
+# ---- RENDER-010：变换层顶点烘焙单测 ----
+# 恒等回归的**逐位**判据放在这里而不是像素比对：几何由 core 算，
+# 各端拿到的是同一批顶点（放 shader 就把三端一致交给了着色器实现）。
+add_executable(cq_tests_layer_geometry
+    unit/render/test_layer_geometry.cpp)
+target_link_libraries(cq_tests_layer_geometry PRIVATE cq_core)
+cq_require_cxx20(cq_tests_layer_geometry)
+apply_cq_warnings(cq_tests_layer_geometry)
+add_test(NAME layer_geometry COMMAND cq_tests_layer_geometry)
+
 # ============================================================================
 # 用例分档（ADR-0046 决定 3）：LABELS "heavy"
 # ----------------------------------------------------------------------------
@@ -718,7 +740,8 @@ add_test(NAME render_graph COMMAND cq_tests_render_graph)
 #     留在 Debug 才能让 CI 的 Debug 步也跑到（INFRA-034 传哲认可的那个补法）。
 #   · core_audio_preview_mixer / core_preview_pump —— 5.4s / 4.7s 是**实时等待**造成的，
 #     两者纯 CPU（无素材、无平台类型，红线 #2），按语义规则不属 heavy。
-# 改这里必须同步 ADR-0046 §决定 3 与 TASK-INFRA-043 的 14 例清单（三处不一致就是漏跑的开端）。
+# 改这里必须同步 ADR-0046 §决定 3 与 TASK-INFRA-043 的 heavy 清单（三处不一致就是漏跑的开端）；
+# **名单真源是本变量**，文档只记增量（MODEL-004「活文档去死数」同一口径）。
 set(CQ_HEAVY_TESTS
     media_sequential_acquire
     platform_apple_metal_render
@@ -727,6 +750,7 @@ set(CQ_HEAVY_TESTS
     media_bframe_real
     platform_apple_native_image
     preview_renderer
+    layer_identity
     c_abi_preview
     platform_apple_encode
     platform_apple_muxer

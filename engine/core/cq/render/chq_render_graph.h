@@ -34,15 +34,19 @@
 
 #include "cq/base/chq_rational_time.h"
 #include "cq/base/chq_status.h"
+#include "cq/model/chq_transform.h"  // ChqTransform（kTransform 节点的空间参数）
 #include "cq/render/chq_fit_mode.h"  // ChqFitMode（画布适配模式）
 
 namespace cq {
 
 // 节点种类（B0 最小集；新增种类必须同步本文件的校验与执行分支，别只加枚举）。
 enum class ChqRenderNodeKind : int32_t {
-    kSource = 0,  // 取帧 + 导入 → 产出一张可采样纹理（CPU 侧，Prepare 阶段执行）
-    kBlit = 1,    // 把输入纹理画进目标（GPU 侧，Encode 阶段执行）
-    kSink = 2,    // 输出标记：整图的终点，有且仅有一个
+    kSource = 0,    // 取帧 + 导入 → 产出一张可采样纹理（CPU 侧，Prepare 阶段执行）
+    kBlit = 1,      // 把输入纹理画进目标（GPU 侧，Encode 阶段执行）
+    kSink = 2,      // 输出标记：整图的终点，有且仅有一个
+    kTransform = 3  // 按 MODEL-004 的空间参数把输入纹理画进目标（RENDER-010）
+                    // —— kBlit 的推广：恒等变换下与 kBlit 画同一批像素。
+                    // 几何不在这里算，见 chq_layer_geometry.h。
 };
 
 // 单节点最大输入数。固定上限而非动态容器：
@@ -72,6 +76,14 @@ struct ChqRenderNodeDesc {
     uint32_t target_height = 0;
     uint32_t source_width = 0;  // 源帧像素尺寸（0 = 未知，取帧后回填）
     uint32_t source_height = 0;
+
+    // ---- kTransform（RENDER-010）----
+    // 片段的空间参数 + 其父级（同一条轨）的参数；两份都由 `BakeLayerQuad` 合成顶点，
+    // 本图**不做**几何算术（几何算在哪一层本身就是口径，见 chq_layer_geometry.h）。
+    // 直接放模型类型而不是另抄一份浮点字段：两份"同一个变换"必然漂移（ADR-0034），
+    // 而且指纹可以由 ChqTransform::Fingerprint() 提供。
+    ChqTransform clip_transform;
+    ChqTransform track_transform;
 
     // ---- 边（DAG）：inputs[i] 是本节点的输入节点索引 ----
     uint32_t input_count = 0;

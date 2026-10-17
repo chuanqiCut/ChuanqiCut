@@ -224,7 +224,7 @@ public:
 };
 
 // ===========================================================================
-// 全屏纹理拷贝 pass（ExternalImage 的下游消费者）
+// 全屏纹理拷贝 pass（ExternalImage 的下游消费者）+ 单层变换绘制（RENDER-010）
 // ===========================================================================
 // 为什么定义在 **Platform** 而不是 GFX 层（engine/core/cq/gfx/）：
 //   它必然由**平台原生 shader** 实现（MSL / GLSL ES），而平台原生 shader 按红线 #6
@@ -253,6 +253,19 @@ public:
     // （与既有的 `ChqIGfxDevice::PlatformDevice()` 同一套路）。
     virtual ChqStatus Encode(ChqICommandEncoder& encoder, TextureHandle src,
                              uint32_t rotation_deg = 0) = 0;
+
+    // RENDER-010：按**已烘焙好的顶点**画一层（位移 / 缩放 / 旋转 / 裁剪 / 逐层 alpha）。
+    //   * vertices = 交错 `pos.x, pos.y, uv.u, uv.v, alpha`（float，stride 20），
+    //     位置已在 core 里换算成 NDC、适配矩形已烤进去（`chq_layer_geometry.cpp`）。
+    //     平台**不做**任何几何算术 —— 三端一致的口径由 core 的单测锁，而不是各端 shader。
+    //   * 恒等参数下画出的像素集合与 `Encode()` 同一批（RENDER-010 的回归判据）。
+    //   * alpha 走顶点不走 uniform 缓冲：本契约的编码器没有绑 constant buffer 的方法，
+    //     加一个等于改契约头。多轨叠合真要 per-draw 独立 uniform 时再议（RENDER-011）。
+    //   * ⚠️ 顶点缓冲是**共享的一块**：与 `Encode()` 的旋转重烤同一前提 ——
+    //     一帧内只有一次编码在 GPU 开始执行前发生。同帧多层必须换成分槽缓冲，
+    //     那是 RENDER-011 的射程，不要在这里默默叠加。
+    virtual ChqStatus EncodeLayer(ChqICommandEncoder& encoder, TextureHandle src,
+                                  const float* vertices, uint32_t vertex_count) = 0;
 };
 
 class ChqIGraphicsDevice : public ChqIPlatformResource {

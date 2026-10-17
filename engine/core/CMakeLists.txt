@@ -69,6 +69,7 @@ add_library(cq_core STATIC
     cq/render/chq_clock_source.cpp
     cq/render/chq_render_graph.cpp
     cq/render/chq_graph_assembler.cpp
+    cq/render/chq_layer_geometry.cpp
     cq/render/chq_render_evaluator.cpp
     # BIND-003 子步骤 4：预览渲染器（ChqTimeline + ChqAssetRegistry + 取帧 + 零拷贝导入 → 离屏 RT）。
     # 平台无关：取帧走 ChqIFrameProviderFactory 接缝、绘制走 ChqIBlitPass 接缝。

@@ -155,3 +155,20 @@
 - **本轮两个新坑**：**P185**「写"本机实测"之前要跑被测代码那一条算式」（我拿 python 的 `x/1.5`
   去替代 C++ 的 `x*(float(old)/float(new))`，结论正好相反）；**P186**「单测夹具里的非法状态先确认它可达」
   （不可达的"空关键帧"让后续 5 条断言连着假红）。
+
+## 六、追加（2026-10-18 00:3x）：SHADER-010 + RENDER-010 已闭环，接手点是 RENDER-011
+
+- **状态**：两张卡编码 + 本机窄检绿（数字见 `shader.md` / `render.md` 门禁行与两份卡片落地记录）。
+  **L3 仍未跑**（随 v0.2.0 批末那一趟）；**真机一次没上** —— 本卡的恒等回归是 Metal 单测里的
+  同帧 A/B（`layer_identity`），不等于设备上的画面。
+- **新增接口**（下游只认这些）：`ChqRenderNodeKind::kTransform`、`ChqRenderNodeDesc.clip_transform`
+  / `track_transform`、`cq::BakeLayerQuad(ChqLayerInput, float*, cap)`（**几何在 core，不在 shader**）、
+  `ChqIBlitPass::EncodeLayer`。`ChqICommandEncoder` 没动 —— 逐层 alpha 走顶点而非 uniform。
+- **RENDER-011 的三件前置欠账**（本卡留的明账，不是可选项）：
+  ① **分槽顶点缓冲**：所有叠合层共用一块 `layer_vbuf_`，一帧内第二次 `EncodeLayer` 会覆盖第一次
+     —— 这是多层的**第一个**必须改的地方；② `(轨序, layer)` 不是全序，合成前定确定性 tiebreak；
+  ③ `blend_enabled`（MODEL-004 只留了数据位，没人消费）。
+- **本卡明确没做**：关键帧求值（装配器对带关键帧的片段发 Warn、按静态值取）、`ChqEffectStack`、
+  `engine/shaders/native/`（仍空，红线 #6）、Android / HarmonyOS 切片（本机无法验，跨端**未验**）。
+- **本轮新坑**：**P187**「判据脚本里"工具没跑成"和"跑成了且违规"必须是两个状态」——
+  `clang-format` 不在 PATH 时我拿空串跑循环，把全库 168 个文件判成违规，真实只有 4 个。

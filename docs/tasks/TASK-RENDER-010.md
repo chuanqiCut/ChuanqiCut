@@ -49,3 +49,55 @@ parallel:    false
 
 `.ai/modules/render.md`（节点表 + 变换参数形状）、`.ai/modules/shader.md`（变换 shader 的消费方落地）、
 `docs/tasks/TASK-BACKLOG.md` §3.3 行状态、`.ai/memory/baselines.md`（恒等变换回归 + 单帧成本实测）。
+
+## 落地记录（2026-10-18，集成机编码轮）
+
+状态：**编码完成 + 本机窄检绿**。L3 随 v0.2.0 批末那一趟。
+
+形状（与卡片"实现要点"的差别，逐条说清）：
+
+* 节点加 `kTransform = 3` 与两份 `ChqTransform`（片段级 + 轨级），`ChqRenderNodeDesc` 里没有
+  裁剪矩形 —— 适配矩形由 `ChqFitMode` + 源/画布尺寸在烘焙时算，**与 blit 共用同一个
+  `ComputeFitViewport`**（要点 1 说的"POD 参数形状"因此是变换 + 尺寸，不是绝对矩形）。
+* **装配器无条件走 kTransform**（不是"非恒等才走"）：分两条路就是两套渲染逻辑（ADR-0034）。
+  于是既有的像素断言（`preview_renderer` 的顶红底蓝 / smptebars 真值 / contain·cover / #21 旋转）
+  本身就变成恒等回归的证据 —— 它们全绿。`kBlit` 分支保留但生产路径不再产出，
+  登记为欠账，由 RENDER-011 决定是否退役。
+* 几何**在 core 烘焙**（`chq_layer_geometry.{h,cpp}`）而不是在 shader 里算：
+  各端 libm/GPU 三角函数末位不保证一致，且放 core 才能用普通单测逐位锁
+  （`tests/unit/render/test_layer_geometry.cpp`，41 项）。旋转在**像素平面**做 ——
+  归一化空间的 45° 在非正方画布上会变成斜切（单测第 3 节专抓这个）。
+* 叠加顺序 `M(轨) ∘ M(片段)`：MODEL-004 把这一格让给本卡（`ChqTrack::transform` 注释即此）。
+  轨级恒等时合成恒等，单测逐位比过。**有意不立 ADR**（同 INFRA-047 先例）：口径落在
+  `chq_layer_geometry.h` 头部与 `.ai/modules/render.md`。
+* 契约头加 `ChqIBlitPass::EncodeLayer(encoder, src, vertices, vertex_count)`：交错
+  `pos.xy / uv.xy / alpha`（stride 20），平台不做几何算术。**alpha 走顶点不走 uniform 缓冲**
+  —— `ChqICommandEncoder` 没有绑 constant buffer 的方法，加一个等于改契约头。
+* **视口机制让位给顶点**：变换层不调 `SetViewport`（两套同时生效会让旋转中心跟着视口漂）。
+  因此 `render_graph` 单测里"contain 设了视口"那三条断言换成了顶点 NDC 包围盒断言，
+  数值与原视口矩形一一对应（1080×607.5，y=656.25 → ±0.31641）。**改的是机制不是像素。**
+
+验收第 2 条换了判据形式（同 SHADER-010 偏差 1）：恒等 A/B 实测 **最大通道差 0**（逐位相同），
+比 ≥40dB 更严；`layer_geometry` 41 项、`layer_identity` 21 项、`render_graph` 全绿。
+风险条要的"单帧成本"拆成两半：CPU 侧 `BakeLayerQuad` **63 ns/层**（Release 配置；Debug 351 ns），
+32 层上限最坏 ≈ 2.0 µs/帧；判据是松上界 20µs，只抓灾难级回归，数字在 `baselines.md`。**每层 GPU 编码成本未实测** —— 本机 `layer_identity` 只有 64×64 单例，
+拿它当每帧成本是假数，归 **池 [30]** 真机趟。
+
+写集欠账（本卡实际动到、但不在上面 write_set 里列出的文件 —— 高冲突文件归集成机，此处正是本机）：
+
+| 文件 | 为什么必须动 |
+|---|---|
+| `engine/core/cq/platform/chq_gfx.h` | 契约：`EncodeLayer` 声明（不加就没有平台侧入口） |
+| `engine/core/cq/render/chq_layer_geometry.{h,cpp}` | 新文件：几何烘焙的唯一事实来源 |
+| `engine/core/CMakeLists.txt` | 高冲突文件：把新 .cpp 挂进 cq_core |
+| `engine/core/cq/render/chq_render_evaluator.h` | 卡片只列了 `.cpp`；`EncodedTransforms()` 计数必须同批 |
+| `tests/unit/preview/test_layer_identity.cpp` | 写集写的是 `tests/unit/render/`，但 GPU A/B 回归要 Metal，只能放 preview 目录 |
+| `tests/CMakeLists.txt` 的 heavy 名单 | 见下 |
+
+heavy 名单增量：本卡加 `layer_identity`（跑真 GPU）→ 分档判据不变（"需要素材文件 / 硬件 codec·Metal"），
+`layer_geometry` 是纯 CPU 不标。名单真源在 `tests/CMakeLists.txt`，ADR-0046 §决定 3 与
+TASK-INFRA-043 记的是当时那批，不回头改数（MODEL-004「活文档去死数」同一口径）。
+
+本卡明确不做（照抄进代码注释，不只写在对话里）：多轨叠合与分槽顶点缓冲归 RENDER-011
+（当前顶点缓冲共享一块，一帧内多次编码会互相覆盖）；关键帧求值归 B8，装配器对带关键帧的
+片段**发 Warn 并按静态值取**；`ChqEffectStack` 不消费，`effects_dropped` 照旧。

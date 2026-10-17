@@ -6,6 +6,7 @@
 
 #include "cq/base/chq_logging.h"
 #include "cq/render/chq_fit_viewport.h"
+#include "cq/render/chq_layer_geometry.h"
 
 namespace cq {
 namespace {
@@ -24,6 +25,7 @@ ChqStatus ChqRenderEvaluator::Prepare(ChqRenderGraph& graph, const Resources& re
     res_ = res;
     prepared_sources_ = 0;
     encoded_blits_ = 0;
+    encoded_transforms_ = 0;
     last_source_reused_ = false;
     last_encode_ns_ = 0;
     prepared_ = false;
@@ -99,7 +101,9 @@ ChqStatus ChqRenderEvaluator::Encode(ChqIGfxEncoder& encoder, const ChqFrameCont
         const uint32_t index = order[k];
         const ChqRenderNodeDesc* node = graph_->Node(index);
         if (node == nullptr) return ChqStatus(ChqStatusCode::kInternal);
-        if (node->kind != ChqRenderNodeKind::kBlit) continue;  // sink 无动作；source 已 Prepare
+        const bool is_blit = node->kind == ChqRenderNodeKind::kBlit;
+        const bool is_transform = node->kind == ChqRenderNodeKind::kTransform;
+        if (!is_blit && !is_transform) continue;  // sink 无动作；source 已 Prepare
 
         if (node->input_count != 1) return ChqStatus(ChqStatusCode::kInvalidArgument);
         const ChqRenderNodeDesc* src_node = graph_->Node(node->inputs[0]);
@@ -113,6 +117,28 @@ ChqStatus ChqRenderEvaluator::Encode(ChqIGfxEncoder& encoder, const ChqFrameCont
         const bool swap = (rot == 90 || rot == 270);
         const uint32_t eff_w = swap ? src_node->source_height : src_node->source_width;
         const uint32_t eff_h = swap ? src_node->source_width : src_node->source_height;
+
+        if (is_transform) {
+            // 变换层**不用视口**：适配矩形与位移/缩放/旋转一起烤进顶点
+            // （BakeLayerQuad 内部复用同一个 ComputeFitViewport）。两套机制同时生效
+            // 会让旋转中心跟着视口漂 —— 见 chq_layer_geometry.h 的坐标口径。
+            ChqLayerInput layer;
+            layer.canvas_width = node->target_width;
+            layer.canvas_height = node->target_height;
+            layer.source_width = src_node->source_width;
+            layer.source_height = src_node->source_height;
+            layer.source_rotation = rot;
+            layer.fit_mode = node->fit_mode;
+            layer.clip = node->clip_transform;
+            layer.track = node->track_transform;
+            float verts[kLayerFloatCapacity] = {};
+            ChqStatus bs = BakeLayerQuad(layer, verts, kLayerFloatCapacity);
+            if (!bs.IsOk()) return bs;
+            s = res_.blit->EncodeLayer(*platform_encoder, src, verts, kLayerVertexCount);
+            if (!s.IsOk()) return s;
+            ++encoded_transforms_;
+            continue;
+        }
 
         // 适配视口：**源尺寸在上游 source 节点上**（Prepare 阶段取到帧后回填到那里，
         // 装配时帧还没取、尺寸未知）。取 blit 节点自己的 source_width 会恒为 0

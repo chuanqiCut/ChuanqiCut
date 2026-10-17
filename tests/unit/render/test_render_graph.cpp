@@ -127,12 +127,44 @@ public:
         last_rotation = rotation_deg;
         return fail_next ? cq::ChqStatus(cq::ChqStatusCode::kInternal) : cq::ChqStatus::Ok();
     }
+    // RENDER-010：变换层。整份顶点抄下来，供执行器分支断言传进来的就是烘焙好的那份。
+    cq::ChqStatus EncodeLayer(cq::ChqICommandEncoder&, cq::TextureHandle tex,
+                              const float* vertices, uint32_t vertex_count) override {
+        ++layer_calls;
+        last_tex = tex;
+        last_layer_count = vertex_count;
+        const uint32_t n = vertex_count < kMaxRecordedVerts ? vertex_count : kMaxRecordedVerts;
+        for (uint32_t i = 0; i < n * 5; ++i) last_layer_verts[i] = vertices[i];
+        return fail_next ? cq::ChqStatus(cq::ChqStatusCode::kInternal) : cq::ChqStatus::Ok();
+    }
     void Destroy() override {}
+    static constexpr uint32_t kMaxRecordedVerts = 6;
     int calls = 0;
+    int layer_calls = 0;
     cq::TextureHandle last_tex = nullptr;
     uint32_t last_rotation = 0;  // #21：记录传给 blit 的旋转角
+    uint32_t last_layer_count = 0;
+    float last_layer_verts[kMaxRecordedVerts * 5] = {};
     bool fail_next = false;
 };
+
+// 变换层顶点里 pos 的包围盒（RENDER-010：适配矩形现在烤进顶点，不再靠视口）。
+// 顶点顺序由 core 烘焙，测试只关心覆盖了哪块画面，故取 min/max 而非逐顶点比对。
+void LayerPosBounds(const float* v, uint32_t count, float out[4]) {
+    float minx = v[0], maxx = v[0], miny = v[1], maxy = v[1];
+    for (uint32_t i = 1; i < count; ++i) {
+        const float x = v[i * 5 + 0];
+        const float y = v[i * 5 + 1];
+        if (x < minx) minx = x;
+        if (x > maxx) maxx = x;
+        if (y < miny) miny = y;
+        if (y > maxy) maxy = y;
+    }
+    out[0] = minx;
+    out[1] = maxx;
+    out[2] = miny;
+    out[3] = maxy;
+}
 
 // ---- 实时时钟（预览语义）：Advance 必须拒绝 ----
 class RealtimeClock final : public cq::ChqIClockSource {
@@ -300,12 +332,37 @@ int main() {
         in.purpose = cq::ChqGraphPurpose::kPreview;
         const cq::ChqStatus s = asm0.Assemble(in, g, r);
         Check(s.IsOk(), "单轨命中：装配成功");
-        Check(g.NodeCount() == 3, "装配出 3 个节点（source/blit/sink）");
+        Check(g.NodeCount() == 3, "装配出 3 个节点（source/绘制/sink）");
         Check(r.hit_clip_id == cid && r.hit_asset_id == 42, "命中片段与素材 id 正确");
         // source_time = source_in(0) + (pts 3.0s - start 1.0s) = 2.0s
         Check(cq::CompareRational(r.source_time, cq::ChqRationalTime{240000, 120000}) == 0,
               "素材内时间 = 2.0s（source_in + (pts - start)）");
         Check(!r.multi_track_ignored, "单轨：未标记多轨忽略");
+        // RENDER-010：时间线路径的绘制节点一律是 kTransform（恒等也不例外，
+        // 分两条路就是两套渲染逻辑 —— ADR-0034）。
+        const cq::ChqRenderNodeDesc* draw = nullptr;
+        for (uint32_t i = 0; i < g.NodeCount(); ++i) {
+            const cq::ChqRenderNodeDesc* n = g.Node(i);
+            if (n != nullptr && n->kind == cq::ChqRenderNodeKind::kTransform) draw = n;
+        }
+        Check(draw != nullptr, "绘制节点是 kTransform");
+        Check(draw != nullptr && draw->input_count == 1, "kTransform 恰好一个输入");
+        Check(draw != nullptr && draw->clip_transform.IsIdentity() &&
+                  draw->track_transform.IsIdentity(),
+              "未设变换：两份 transform 都是恒等（像素判据的前提）");
+        const uint64_t fp_identity = g.Fingerprint();
+        cq::ChqTransform moved;
+        moved.translate_x = 0.1f;
+        Check(tl.SetClipTransform(cid, moved).IsOk(), "给片段设一个位移（画中画）");
+        Check(asm0.Assemble(in, g, r).IsOk(), "重新装配（位移变换）");
+        Check(g.Fingerprint() != fp_identity, "位移 → 指纹变化（缓存不会端着旧图不放）");
+        const cq::ChqRenderNodeDesc* draw2 = nullptr;
+        for (uint32_t i = 0; i < g.NodeCount(); ++i) {
+            const cq::ChqRenderNodeDesc* n = g.Node(i);
+            if (n != nullptr && n->kind == cq::ChqRenderNodeKind::kTransform) draw2 = n;
+        }
+        Check(draw2 != nullptr && draw2->clip_transform.translate_x == 0.1f,
+              "位移写进绘制节点，供执行器烘焙");
     }
     {
         cq::ChqTimeline tl;
@@ -453,8 +510,15 @@ int main() {
         cq::ChqFrameContext ctx;
         ctx.pts = in.pts;
         Check(ev.Encode(genc, ctx, token).IsOk(), "Encode 成功");
-        Check(blit.calls == 1, "Encode 只画一次（1 个 blit 节点）");
-        Check(genc.viewport_calls == 0, "stretch：不设视口（与引入 RenderGraph 前逐该厂商一致）");
+        // RENDER-010：时间线路径的绘制节点是 kTransform（不分两条路，见装配器注释）。
+        Check(blit.calls == 0 && blit.layer_calls == 1, "Encode 走变换层一次，不走全屏拷贝");
+        Check(blit.last_layer_count == 6, "一层 = 6 顶点（两个三角形）");
+        Check(genc.viewport_calls == 0, "stretch：不设视口（适配矩形烤进顶点）");
+        float bounds[4] = {};
+        LayerPosBounds(blit.last_layer_verts, blit.last_layer_count, bounds);
+        Check(bounds[0] < -0.999f && bounds[1] > 0.999f && bounds[2] < -0.999f && bounds[3] > 0.999f,
+              "stretch 顶点铺满整个目标（NDC ±1）");
+        Check(blit.last_layer_verts[4] == 1.0f, "alpha = 1（未设变换时不半透明）");
     }
     {
         // contain：源 16:9 → 目标 9:16，视口必须非整目标（否则静默退化成 stretch）
@@ -489,12 +553,16 @@ int main() {
         cq::ChqFrameContext ctx;
         ctx.pts = in.pts;
         Check(ev.Encode(genc, ctx, token).IsOk(), "Encode 成功（contain）");
-        Check(genc.viewport_calls == 1, "contain：设了视口（不是整目标）");
-        // 16:9 装进 1080x1920（9:16）→ 内切宽度贴边：w=1080, h=607.5，上下留 bar
-        Check(penc.has_viewport && penc.vp[2] > 1079.0f && penc.vp[2] < 1081.0f,
-              "contain 视口宽 = 目标宽（宽度贴边）");
-        Check(penc.vp[3] > 600.0f && penc.vp[3] < 615.0f, "contain 视口高 ≈ 607.5（16:9 内切）");
-        Check(penc.vp[1] > 650.0f && penc.vp[1] < 660.0f, "contain 视口 y ≈ 656（垂直居中）");
+        // RENDER-010 改的机制不是像素：contain 由视口改成把内切矩形烤进顶点。
+        // 判据跟着换成顶点的 NDC 包围盒 —— 数值与原视口矩形一一对应：
+        //   16:9 装进 1080x1920 → w=1080（x 铺满）、h=607.5、y=656.25
+        //   → y_ndc = 1 - 2y/1920 = ±0.31641
+        Check(genc.viewport_calls == 0, "contain：不再设视口（矩形进了顶点）");
+        float bounds[4] = {};
+        LayerPosBounds(blit.last_layer_verts, blit.last_layer_count, bounds);
+        Check(bounds[0] < -0.999f && bounds[1] > 0.999f, "contain：宽度贴边（x 铺满）");
+        Check(bounds[2] > -0.325f && bounds[2] < -0.308f, "contain：下边 y_ndc ≈ -0.316（h=607.5）");
+        Check(bounds[3] > 0.308f && bounds[3] < 0.325f, "contain：上边 y_ndc ≈ +0.316（垂直居中）");
     }
     {
         // 未 Prepare 就 Encode → 必须报错（顺序契约）

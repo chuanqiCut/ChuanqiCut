@@ -36,7 +36,7 @@ class ChqRenderEvaluator final : public ChqIFrameEncoderClient {
 public:
     // 注入资源（全部非拥有，生命周期归调用方）。
     struct Resources {
-        ChqIBlitPass* blit = nullptr;              // Platform 全屏拷贝 pass（B0 唯一的 GPU 节点实现）
+        ChqIBlitPass* blit = nullptr;              // Platform 绘制 pass（全屏拷贝 + 变换层，同一对象）
         ChqIFrameSource* frames = nullptr;         // 取帧接缝
         const ChqAssetRegistry* assets = nullptr;  // 当前帧素材表（转发给取帧接缝）
     };
@@ -63,6 +63,9 @@ public:
     // 上一帧的执行观测（诊断与单测用，不是渲染结果本身）。
     uint32_t PreparedSources() const { return prepared_sources_; }
     uint32_t EncodedBlits() const { return encoded_blits_; }
+    // RENDER-010：时间线路径的绘制节点（与 EncodedBlits 分开记，
+    // 混成一个数就看不出"这帧走的是老 blit 还是变换层"）。
+    uint32_t EncodedTransforms() const { return encoded_transforms_; }
     bool LastSourceReused() const { return last_source_reused_; }
     // 上一帧 GPU 命令录制耗时（ns）。**不含**提交与 GPU 等待 —— 那部分在 GFX 层
     // （ChqIGfxDevice::RenderFrame 结尾是 WaitUntilCompleted），由调用方计入 draw_ns。
@@ -74,6 +77,7 @@ private:
     TextureHandle outputs_[kMaxOutputs] = {};  // 节点索引 → 产出纹理（仅 kSource 有）
     uint32_t prepared_sources_ = 0;
     uint32_t encoded_blits_ = 0;
+    uint32_t encoded_transforms_ = 0;
     bool last_source_reused_ = false;
     int64_t last_encode_ns_ = 0;
     bool prepared_ = false;

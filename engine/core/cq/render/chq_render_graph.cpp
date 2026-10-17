@@ -85,17 +85,26 @@ ChqStatus ChqRenderGraph::Validate() const {
         return ChqStatus(ChqStatusCode::kInvalidArgument);
     }
 
-    // 3. kBlit 必须有输入（画什么？）；kSource 必须无输入（它是图的叶子）
+    // 3. kBlit / kTransform 必须有输入（画什么？）；kSource 必须无输入（它是图的叶子）
     for (uint32_t i = 0; i < node_count_; ++i) {
         const ChqRenderNodeDesc& n = nodes_[i];
-        if (n.kind == ChqRenderNodeKind::kBlit && n.input_count != 1) {
-            CQ_LOG_WARN_WF(ChqWorkflow::kGfx, "blit 节点 %u 输入数 = %u（B0 要求恰好 1）",
+        if ((n.kind == ChqRenderNodeKind::kBlit || n.kind == ChqRenderNodeKind::kTransform) &&
+            n.input_count != 1) {
+            CQ_LOG_WARN_WF(ChqWorkflow::kGfx, "绘制节点 %u 输入数 = %u（要求恰好 1）",
                            static_cast<unsigned>(i), static_cast<unsigned>(n.input_count));
             return ChqStatus(ChqStatusCode::kInvalidArgument);
         }
         if (n.kind == ChqRenderNodeKind::kSource && n.input_count != 0) {
             CQ_LOG_WARN_WF(ChqWorkflow::kGfx, "source 节点 %u 不应有输入（输入数 = %u）",
                            static_cast<unsigned>(i), static_cast<unsigned>(n.input_count));
+            return ChqStatus(ChqStatusCode::kInvalidArgument);
+        }
+        // kTransform 的变换必须在语义域内：非法值（负 scale、opacity > 1、NaN）
+        // 在这里拦，而不是等烘焙函数每帧再判一次。
+        if (n.kind == ChqRenderNodeKind::kTransform &&
+            (!n.clip_transform.Validate().IsOk() || !n.track_transform.Validate().IsOk())) {
+            CQ_LOG_WARN_WF(ChqWorkflow::kGfx, "transform 节点 %u 的空间参数越界",
+                           static_cast<unsigned>(i));
             return ChqStatus(ChqStatusCode::kInvalidArgument);
         }
     }
@@ -163,6 +172,13 @@ uint64_t ChqRenderGraph::Fingerprint() const {
         FnvUpdate(h, n.target_height);
         FnvUpdate(h, static_cast<uint64_t>(n.input_count));
         for (uint32_t k = 0; k < n.input_count; ++k) FnvUpdate(h, n.inputs[k]);
+        // kTransform 才混入变换指纹：拖动画中画**就是**结构变化，指纹不变的话
+        // 装配缓存会端着旧图不放，画面停在拖之前（预览最常见的静默失败）。
+        // 只对 transform 节点混合，纯 blit 图的指纹值与引入本字段前逐位相同。
+        if (n.kind == ChqRenderNodeKind::kTransform) {
+            FnvUpdate(h, n.clip_transform.Fingerprint());
+            FnvUpdate(h, n.track_transform.Fingerprint());
+        }
     }
     return h;
 }

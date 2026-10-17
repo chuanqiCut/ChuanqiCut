@@ -1373,3 +1373,30 @@ CA 首次提交事务走到「有 view / 无 layer」的畸形状态 →
   `pitfalls.md`（P185/P186）。
 - **下一张**：#40 = SHADER-010 + RENDER-010（`ChqTransform` 的第一个消费者）。
   RENDER-011 开工前必须先定 `(轨序, layer)` 的确定性 tiebreak —— `layer` 相等时数组顺序不是全序。
+
+## 补记二十一 · SHADER-010 + RENDER-010 编码闭环：变换从"视口"变成"一层顶点"（2026-10-18 00:3x，Qoder 集成机）
+
+- **交付**：`engine/shaders/portable/transform.{vert,frag}`（Portable 第二个 shader）+ 生成链从单 shader
+  泛化成 `SHADER_GROUPS`；`ChqRenderNodeKind::kTransform` + `chq_layer_geometry.{h,cpp}`（顶点烘焙）+
+  `ChqIBlitPass::EncodeLayer`（平台执行）；`test_layer_geometry.cpp`（41 断言，纯 CPU）+
+  `test_layer_identity.cpp`（21 断言，heavy / 真 Metal）。
+- **数字**：ctest 水位 **53→55**、heavy **14→15**；Debug 跳 heavy **40/40**、Release 全跑见 `render.md` 门禁行；
+  headers **44/0**；golden **21/0/0 / 901784B**；双壳两端 error **0**；`blit_msl.h` **1689B md5 不变**（幂等自证）。
+- **两条机制改动**（都不是像素改动，但都改了判据）：
+  ① **恒等回归没有 dB** —— 本仓无 PSNR/SSIM 比对器，卡片原文那条当场不可判，换成**同帧两路读回相减**，
+     实测最大通道差 **0**；② **视口机制在变换层退场** —— 适配矩形与位移/缩放/旋转一起烤进顶点
+     （两套同时生效会让旋转中心跟着视口漂），原视口数值由单测逐值对撞（contain 的 ±0.31641 ↔ y=656.25）。
+- **几何为什么在 core 不在 shader**：各端 libm / GPU 三角函数末位不保证一致，放 shader 等于把三端一致
+  交给着色器实现；放 core 才能用普通单测逐位锁。旋转在**像素平面**做（归一化空间的 45° 在非正方画布会变斜切）。
+- **与卡片的形状差别 + 写集欠账**都明写在两张卡的「落地记录」里（6 处超出声明写集，含 `chq_gfx.h`
+  加一个纯虚、`engine/core/CMakeLists.txt`、heavy 名单）。契约面**没**加 `SetBuffer`/uniform 通路 ——
+  逐层 alpha 走第 3 个顶点属性，代价是顶点缓冲从 3 顶点涨到 6。
+- **本轮新坑**：**P187**「判据脚本里"工具没跑成"和"跑成了且违规"必须是两个状态」——
+  `clang-format` 不在 PATH 时 `CF` 是空串，我把全库 **168** 个文件判成违规，真实只有 **4** 个。
+- **账面**：`shader.md` / `render.md`（任务行 + 门禁行 + `## 变换层` 节 + **`## 验证` 块里的三条空头命令换成可执行入口**）、
+  BACKLOG §3.1/§3.3/§16（关键路径与射程链前四环打 ✅）、两张卡片落地记录、HANDOFF-026 加 §六、
+  `baselines.md` 新增本节计数基线。
+- **RENDER-011 接手的三件前置欠账**（明账，不是可选项）：**分槽顶点缓冲**（所有叠合层共用一块
+  `layer_vbuf_`，一帧第二次 `EncodeLayer` 覆盖第一次）、`(轨序, layer)` 确定性 tiebreak、`blend_enabled` 消费。
+- **下一张**：#41 = RENDER-011（多轨叠合）。**L3 仍未跑**、**真机仍未上**（本卡恒等回归是单机 Metal，
+  不等于设备画面）；MODEL-004 真机问卷仍待回收。

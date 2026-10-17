@@ -63,13 +63,17 @@ ChqStatus ChqGraphAssembler::Assemble(const ChqAssembleInput& in, ChqRenderGraph
     // 多轨混合语义（alpha/转场）归 RENDER-011（B7），在此之前命中多轨只能取一条 ——
     // 关键是要**说出来**（Warn，Release 可见），不能像以前那样只有一句代码注释。
     const ChqClip* clip = nullptr;
+    const ChqTrack* hit_track = nullptr;  // 片段空间参数的父级（轨级变换）
     int hit_track_count = 0;
     for (const ChqTrack& track : in.timeline->Tracks()) {
         if (track.kind != ChqTrackKind::kVideo || !track.enabled) continue;
         const ChqClip* hit = in.timeline->FindClipAt(track.id, pts);
         if (hit == nullptr) continue;
         ++hit_track_count;
-        if (clip == nullptr) clip = hit;  // 只保留第一条（保持既有像素行为）
+        if (clip == nullptr) {
+            clip = hit;  // 只保留第一条（保持既有像素行为）
+            hit_track = &track;
+        }
     }
     out_result.multi_track_ignored = (hit_track_count > 1);
     if (out_result.multi_track_ignored) {
@@ -122,6 +126,14 @@ ChqStatus ChqGraphAssembler::Assemble(const ChqAssembleInput& in, ChqRenderGraph
                        static_cast<unsigned long long>(clip->id));
     }
 
+    // MODEL-004 的关键帧通道本批**不插值**（求值引擎归 B8 anim）：带关键帧的片段
+    // 只会用静态 transform 画，动画不动。这必须说出来，不能让用户以为"加了没生效"是 bug。
+    if (!clip->keyframes.Empty()) {
+        CQ_LOG_WARN_WF(ChqWorkflow::kGfx,
+                       "片段 %llu 有 %zu 个关键帧但变换按静态值取（关键帧求值归 B8）",
+                       static_cast<unsigned long long>(clip->id), clip->keyframes.Size());
+    }
+
     // 仅音频用途：不装配任何 GPU 节点（导出音轨 / 音频预览走这条路）。
     if (in.purpose == ChqGraphPurpose::kAudioOnly) {
         last_fingerprint_ = InputFingerprint(in, out_result);
@@ -140,16 +152,22 @@ ChqStatus ChqGraphAssembler::Assemble(const ChqAssembleInput& in, ChqRenderGraph
         ChqStatus s = out_graph.AddNode(n, src_index);
         if (!s.IsOk()) return s;
     }
-    uint32_t blit_index = 0;
+    uint32_t draw_index = 0;
     {
+        // RENDER-010：时间线路径改走 kTransform（**不是**"非恒等才走"）。
+        // 理由：分两条路就是两套渲染逻辑（ADR-0034 的老坑），而且恒等档必须被现有
+        // 像素断言覆盖到，否则"变换没改写 blit"这句话永远只能靠眼睛验。
+        // 几何不在这里算，装配只搬运模型里的两份 ChqTransform。
         ChqRenderNodeDesc n;
-        n.kind = ChqRenderNodeKind::kBlit;
+        n.kind = ChqRenderNodeKind::kTransform;
         n.fit_mode = in.fit_mode;
         n.target_width = tw;
         n.target_height = th;
-        ChqStatus s = out_graph.AddNode(n, blit_index);
+        n.clip_transform = clip->transform;
+        n.track_transform = hit_track != nullptr ? hit_track->transform : ChqTransform();
+        ChqStatus s = out_graph.AddNode(n, draw_index);
         if (!s.IsOk()) return s;
-        s = out_graph.Connect(src_index, blit_index);
+        s = out_graph.Connect(src_index, draw_index);
         if (!s.IsOk()) return s;
     }
     {
@@ -160,7 +178,7 @@ ChqStatus ChqGraphAssembler::Assemble(const ChqAssembleInput& in, ChqRenderGraph
         uint32_t sink_index = 0;
         ChqStatus s = out_graph.AddNode(n, sink_index);
         if (!s.IsOk()) return s;
-        s = out_graph.Connect(blit_index, sink_index);
+        s = out_graph.Connect(draw_index, sink_index);
         if (!s.IsOk()) return s;
     }
 

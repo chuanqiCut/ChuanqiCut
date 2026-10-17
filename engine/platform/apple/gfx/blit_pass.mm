@@ -16,9 +16,16 @@
 #include "cq/platform/chq_gfx.h"
 #include "gfx_metal_internal.h"  // ToShaderHandle / ToPipelineHandle / ToBufferHandle / ToSamplerHandle
 #include "blit_msl.h"            // 构建期生成（build/generated/shaders/），非源码目录
+#include "transform_msl.h"       // 同上：SHADER-010 的变换层 shader
 
 namespace cq {
 namespace {
+
+// RENDER-010：变换层顶点缓冲的容量。6 顶点 = 一个矩形（两个三角形，无索引缓冲可绑）。
+// 同帧多层要更大的槽位，那是 RENDER-011 的射程（见 chq_gfx.h 的 EncodeLayer 注释）。
+constexpr uint32_t kLayerVertexFloats = 5;  // pos.xy + uv.xy + alpha
+constexpr uint32_t kLayerMaxVertices = 6;
+constexpr uint32_t kLayerStrideBytes = kLayerVertexFloats * static_cast<uint32_t>(sizeof(float));
 
 // #21：把 90° 倍数旋转施加到全屏三角形的 uv 分量（pos 不变）。
 // 约定 uv(0,0)=图像左上（见 kBlitVerts 注释）。旋转角 = 显示旋转角，满足
@@ -102,6 +109,29 @@ public:
         encoder.SetTexture(src, 0);
         encoder.SetSampler(sampler_handle_, 0);
         encoder.Draw(kVertexCount);
+        return ChqStatus::Ok();
+    }
+
+    // RENDER-010：画一层已烘焙的顶点。几何全部来自 core（chq_layer_geometry.cpp），
+    // 这里只做「拷顶点 → 绑管线 → draw」，不做任何算术。
+    ChqStatus EncodeLayer(ChqICommandEncoder& encoder, TextureHandle src,
+                          const float* vertices, uint32_t vertex_count) override {
+        if (src == nullptr || vertices == nullptr) {
+            return ChqStatus(ChqStatusCode::kInvalidArgument);
+        }
+        // 一个矩形 = 6 顶点（两个三角形，无索引缓冲）。超出即调用方算错了，
+        // 不能靠扩容兜底 —— 那会让 RENDER-011 的分槽缓冲需求被静默吞掉。
+        if (vertex_count == 0 || vertex_count > kLayerMaxVertices) {
+            return ChqStatus(ChqStatusCode::kResourceExhausted);
+        }
+        ChqStatus s = EnsureLayerResources();
+        if (!s.IsOk()) return s;
+        std::memcpy(layer_mapped_, vertices, static_cast<size_t>(vertex_count) * kLayerStrideBytes);
+        encoder.SetPipeline(layer_pipeline_handle_);
+        encoder.SetVertexBuffer(layer_vbuf_handle_, 0);
+        encoder.SetTexture(src, 0);
+        encoder.SetSampler(sampler_handle_, 0);
+        encoder.Draw(vertex_count);
         return ChqStatus::Ok();
     }
 
@@ -191,6 +221,62 @@ private:
 
     static constexpr uint32_t kVertexCount = 3;  // 全屏三角形
 
+    // RENDER-010：变换层的第二套 shader / 管线 / 顶点缓冲。
+    // 先走 EnsureResources()：采样器与目标格式两项是两套管线共用的，重建一遍既浪费
+    // 也没意义；而「同一对象、同一帧里 blit 与 transform 混用」是 RENDER-011 的常态，
+    // 让公共部分只有一份能避免那时再回来拆一次。
+    ChqStatus EnsureLayerResources() {
+        if (layer_ready_) return ChqStatus::Ok();
+        ChqStatus s = EnsureResources();
+        if (!s.IsOk()) return s;
+
+        ChqShaderModuleDesc vd;
+        vd.stage = ChqShaderStage::kVertex;
+        vd.code = static_cast<const void*>(apple::shaders::kTransformVertMsl);
+        vd.code_size = std::strlen(apple::shaders::kTransformVertMsl);
+        vd.is_platform_native = true;  // MSL 源（Portable GLSL 转译产物），非 SPIR-V
+        s = device_->CreateShaderModule(vd, layer_vs_);
+        if (!s.IsOk()) return s;
+        if (!layer_vs_) return ChqStatus(ChqStatusCode::kInternal);
+
+        ChqShaderModuleDesc fd = vd;
+        fd.stage = ChqShaderStage::kFragment;
+        fd.code = static_cast<const void*>(apple::shaders::kTransformFragMsl);
+        fd.code_size = std::strlen(apple::shaders::kTransformFragMsl);
+        s = device_->CreateShaderModule(fd, layer_fs_);
+        if (!s.IsOk()) return s;
+        if (!layer_fs_) return ChqStatus(ChqStatusCode::kInternal);
+
+        ChqBufferDesc bd;
+        bd.usage = ChqBufferUsage::kVertex;
+        bd.size_bytes = static_cast<size_t>(kLayerMaxVertices) * kLayerStrideBytes;
+        s = device_->CreateBuffer(bd, layer_vbuf_);
+        if (!s.IsOk()) return s;
+        if (!layer_vbuf_) return ChqStatus(ChqStatusCode::kInternal);
+        s = layer_vbuf_->Map(layer_mapped_);
+        if (!s.IsOk()) return s;
+        if (layer_mapped_ == nullptr) return ChqStatus(ChqStatusCode::kInternal);
+
+        ChqPipelineDesc pd;
+        pd.vertex_shader = apple::ToShaderHandle(layer_vs_.get());
+        pd.fragment_shader = apple::ToShaderHandle(layer_fs_.get());
+        pd.target_format = target_format_;
+        pd.vertex_layout.stride = kLayerStrideBytes;  // pos.xy + uv.xy + alpha
+        pd.vertex_layout.attr_count = 3;
+        // location 必须对应 transform.vert 的 in 变量：pos=0 / uv=1 / alpha=2。
+        pd.vertex_layout.attrs[0] = ChqVertexAttribute{0, 0, ChqVertexFormat::kFloat32x2};
+        pd.vertex_layout.attrs[1] = ChqVertexAttribute{1, 8, ChqVertexFormat::kFloat32x2};
+        pd.vertex_layout.attrs[2] = ChqVertexAttribute{2, 16, ChqVertexFormat::kFloat32};
+        s = device_->CreatePipeline(pd, layer_pipeline_);
+        if (!s.IsOk()) return s;
+        if (!layer_pipeline_) return ChqStatus(ChqStatusCode::kInternal);
+
+        layer_pipeline_handle_ = apple::ToPipelineHandle(layer_pipeline_.get());
+        layer_vbuf_handle_ = apple::ToBufferHandle(layer_vbuf_.get());
+        layer_ready_ = true;
+        return ChqStatus::Ok();
+    }
+
     ChqIGraphicsDevice* device_ = nullptr;
     ChqTextureFormat target_format_ = ChqTextureFormat::kRGBA8;
     ChqPlatformPtr<ChqIShaderModule> vs_;
@@ -206,6 +292,15 @@ private:
     // #21：已烤进顶点缓冲的旋转角；变化才重烤（同片段恒定，几乎不每帧触发）。
     uint16_t cached_rotation_ = 0xFF;
     bool ready_ = false;
+    // RENDER-010：变换层的一套（与 blit 那套并存于同一对象，共用采样器）。
+    ChqPlatformPtr<ChqIShaderModule> layer_vs_;
+    ChqPlatformPtr<ChqIShaderModule> layer_fs_;
+    ChqPlatformPtr<ChqIPipeline> layer_pipeline_;
+    ChqPlatformPtr<ChqIBuffer> layer_vbuf_;
+    PipelineHandle layer_pipeline_handle_ = nullptr;
+    BufferHandle layer_vbuf_handle_ = nullptr;
+    void* layer_mapped_ = nullptr;
+    bool layer_ready_ = false;
 };
 
 }  // namespace

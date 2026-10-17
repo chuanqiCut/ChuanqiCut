@@ -1500,3 +1500,38 @@ Debug/Release 共用单棵树，池 [25]）：本批紧跟 Release 之后实跑 
 `0.3→0.450000018→0.3`（**恰好回来**）、`1.0→1.5→1.0`（回来）；
 `1080×1920→1080×1080→回` 高 `0.7→1.05→0.70000005`（不回来）。
 ⇒ 结论是"回不回取决于值"，所以 `ChqSetCanvasCommand::Undo` 走 **Do 时留档原样写回**，不重算反比。
+
+## 2026-10-18 · SHADER-010 + RENDER-010（Portable 变换 shader + TransformNode）窄检实跑
+
+**计数基线**（本机 Intel x86_64 / macOS 26.7.1 / Xcode 26.6 / AppleClang；活文档去死数，此处只记增量）：
+
+| 项 | 命令 | 数字 |
+|---|---|---|
+| 新增用例 | `ctest -N` | **55**（原 53 + `layer_geometry` + `layer_identity`）；`LABELS heavy` **15**（原 14） |
+| Debug L1 档 | `build_core.sh --config=Debug --test --skip-label=heavy` | **40/40**（原 39），real **36.82s** |
+| Release 全档 | `build_core.sh --config=Release --test` | **55/55**（原 53），real **67.83s**，`heavy = 43.73 sec*proc (15)` |
+| 断言数 | `./build/bin/cq_tests_layer_geometry` | **41 checks / 0 failures**（纯 CPU）；`layer_identity` **21 / 0**（Metal） |
+| 契约头 | `check_platform_headers.py` | **44 头 0 违规**（与 MODEL-004 基线相同，本批没加平台可见头） |
+| golden | `verify.py --json` | built_ok **21** / fail **0** / unbuilt **0** / **901784B**（本批零新夹具） |
+| 双壳 | `check_apple_shells.sh` | ios `pod install` 14 deps、mac 7 deps，两端 `BUILD SUCCEEDED`、error **0**、warning **13 / 5** |
+
+**恒等变换回归 = 同帧两路读回逐像素相减**（`tests/unit/preview/test_layer_identity.cpp`，heavy）：
+64×64 半红半蓝合成帧，`Encode()`（全屏拷贝）vs `EncodeLayer()`（恒等顶点）各走一次 `RenderFrame`，
+**最大通道差 = 0**（逐位相同；断言容差留 2，覆盖浮点光栅化末位）。
+⚠️ 本仓**没有** PSNR/SSIM 比对器（`tools/qa/golden_compare.sh`、`tools/shaders/build.sh`、`lint.sh`、
+`tools/perf/render_bench` 四个入口都不存在），卡片原文的「同平台 ≥40dB」当场不可判 → 换成这个形式（P162）。
+
+**单层顶点烘焙成本** `cq::BakeLayerQuad`（200000 次含 sink 读回，判据是松上界 20µs，不当性能门禁）：
+
+| Debug 配置产物 | **351 ns/次** |
+| Release 配置产物 | **63 ns/次**（同机同循环，5.6×） |
+
+RENDER-011 的叠合层数直接乘在这个数上：Release 口径 32 层上限 ≈ **2.0 µs/帧**，Debug 口径 ≈ 11.2 µs/帧。
+**每层 GPU 编码成本 = 未实测**：本机 `layer_identity` 的 RT 只有 64×64、且一次只叠一层，
+拿它当"每帧成本"是假数 —— 归 **池 [30]** 真机趟（多层同时命中在演示钩子下构造不出来，见 P182）。
+
+**shader 产物基线**（生成链从单 shader 泛化成 `SHADER_GROUPS` 之后）：
+`blit_msl.h` **1689B / md5 `93d6e0bf4f8bfc475c997c2cbd22d941`**（与 INFRA-033/034 两次基线**逐位相同**
+⇒ 泛化没动既有产物）、`transform_msl.h` **1867B**、`rm -rf build/generated/shaders` 后一次产出 2 组 = **0.73s**。
+MSL 顶点属性对齐：`[[attribute(0)]] aPos(float2)` / `(1) aUv(float2)` / `(2) aAlpha(float)` →
+`blit_pass.mm` 管线描述 **stride 20、offset 0/8/16**；`metal -c` 双变体 rc=0。

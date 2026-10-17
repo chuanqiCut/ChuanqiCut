@@ -33,17 +33,17 @@ namespace cq {
     struct Cq##Name;                  \
     using Name##Handle = Cq##Name*;
 
-CQ_DEFINE_OPAQUE_HANDLE(Device)            // GFX Device
-CQ_DEFINE_OPAQUE_HANDLE(CommandQueue)      // GFX CommandQueue
-CQ_DEFINE_OPAQUE_HANDLE(CommandBuffer)     // GFX CommandBuffer
-CQ_DEFINE_OPAQUE_HANDLE(CommandEncoder)    // GFX Encoder
-CQ_DEFINE_OPAQUE_HANDLE(Texture)           // GFX Texture
-CQ_DEFINE_OPAQUE_HANDLE(Buffer)            // GFX Buffer
-CQ_DEFINE_OPAQUE_HANDLE(RenderTarget)      // GFX RenderTarget
-CQ_DEFINE_OPAQUE_HANDLE(Pipeline)          // GFX Pipeline
-CQ_DEFINE_OPAQUE_HANDLE(ShaderModule)      // GFX ShaderModule
-CQ_DEFINE_OPAQUE_HANDLE(Sampler)           // GFX Sampler
-CQ_DEFINE_OPAQUE_HANDLE(Fence)             // GFX Fence
+CQ_DEFINE_OPAQUE_HANDLE(Device)          // GFX Device
+CQ_DEFINE_OPAQUE_HANDLE(CommandQueue)    // GFX CommandQueue
+CQ_DEFINE_OPAQUE_HANDLE(CommandBuffer)   // GFX CommandBuffer
+CQ_DEFINE_OPAQUE_HANDLE(CommandEncoder)  // GFX Encoder
+CQ_DEFINE_OPAQUE_HANDLE(Texture)         // GFX Texture
+CQ_DEFINE_OPAQUE_HANDLE(Buffer)          // GFX Buffer
+CQ_DEFINE_OPAQUE_HANDLE(RenderTarget)    // GFX RenderTarget
+CQ_DEFINE_OPAQUE_HANDLE(Pipeline)        // GFX Pipeline
+CQ_DEFINE_OPAQUE_HANDLE(ShaderModule)    // GFX ShaderModule
+CQ_DEFINE_OPAQUE_HANDLE(Sampler)         // GFX Sampler
+CQ_DEFINE_OPAQUE_HANDLE(Fence)           // GFX Fence
 
 // 平台原生图像资源（CVPixelBuffer / AHardwareBuffer / OHNativeWindow 等的包装）。
 // 视频解码帧、外部图片（含 HEIC）统一用此句柄，由 GFX 的 ChqINativeImageImporter
@@ -62,10 +62,10 @@ enum class ChqPixelFormat : int32_t {
     kRGBA8,
     kBGRA8,
     kRGBA16F,
-    kYUV420Planar,     // I420 / IYUV
-    kYUV420SemiPlanar, // NV12
+    kYUV420Planar,      // I420 / IYUV
+    kYUV420SemiPlanar,  // NV12
     kYUV422Planar,
-    kYUV422SemiPlanar, // NV16
+    kYUV422SemiPlanar,  // NV16
     kGray8,
 };
 
@@ -84,9 +84,9 @@ enum class ChqTextureFormat : int32_t {
 // 纹理用途（bitmask）。
 enum class ChqTextureUsage : uint32_t {
     kNone = 0,
-    kSampled = 1u << 0,        // 可被着色器采样
-    kRenderTarget = 1u << 1,   // 可作为渲染目标
-    kStorage = 1u << 2,        // 可读写存储（compute / blend）
+    kSampled = 1u << 0,       // 可被着色器采样
+    kRenderTarget = 1u << 1,  // 可作为渲染目标
+    kStorage = 1u << 2,       // 可读写存储（compute / blend）
 };
 
 constexpr ChqTextureUsage operator|(ChqTextureUsage a, ChqTextureUsage b) {
@@ -115,12 +115,12 @@ constexpr ChqBufferUsage operator|(ChqBufferUsage a, ChqBufferUsage b) {
 // 色彩空间 / 转换（承接 ARCH-003 §8 色彩管理，working space 待 ADR 定）。
 enum class ChqColorSpace : int32_t {
     kUnknown = 0,
-    kSRGB,        // 显示参照
-    kRec709,      // HDTV
-    kRec2020,     // UHD
-    kLinear,      // 线性 working space 候选
-    kPQ,          // HDR10 PQ
-    kHLG,         // HDR HLG
+    kSRGB,     // 显示参照
+    kRec709,   // HDTV
+    kRec2020,  // UHD
+    kLinear,   // 线性 working space 候选
+    kPQ,       // HDR10 PQ
+    kHLG,      // HDR HLG
 };
 
 // PCM 采样格式（Audio）。
@@ -142,8 +142,8 @@ enum class ChqContainerFormat : int32_t {
     kMpegPs,
     kAvi,
     kFlv,
-    kMov,       // 与 kMp4 同族，单独列出便于精确识别
-    kQuickTimeImage, // image2 / 图片序列（HEIC 等走原生，不在此）
+    kMov,             // 与 kMp4 同族，单独列出便于精确识别
+    kQuickTimeImage,  // image2 / 图片序列（HEIC 等走原生，不在此）
     kOther,
 };
 

@@ -68,11 +68,17 @@ bool Contains(const cq::ChqMediaFrame& f, const cq::ChqRationalTime& t) {
 // ---------------------------------------------------------------------------
 class CountingDemuxer : public cq::ChqIMediaDemuxer {
 public:
-    struct GP { int64_t dts, pts; bool kf; };
+    struct GP {
+        int64_t dts, pts;
+        bool kf;
+    };
     explicit CountingDemuxer(std::vector<GP> gop) : packets_(std::move(gop)) {}
 
     void Destroy() override { delete this; }
-    cq::ChqStatus Open(const cq::ChqMediaSource&) override { idx_ = 0; return cq::ChqStatus::Ok(); }
+    cq::ChqStatus Open(const cq::ChqMediaSource&) override {
+        idx_ = 0;
+        return cq::ChqStatus::Ok();
+    }
     cq::ChqStatus GetDuration(cq::ChqRationalTime& d) const override {
         d = cq::ChqRationalTime{kFrames, kTs};
         return cq::ChqStatus::Ok();
@@ -133,7 +139,9 @@ private:
 // ---------------------------------------------------------------------------
 class CountingDecoder : public cq::ChqIFrameDecoder {
 public:
-    struct Spec { int64_t dts, pts, release, gop; };
+    struct Spec {
+        int64_t dts, pts, release, gop;
+    };
     explicit CountingDecoder(std::vector<Spec> specs) : specs_(std::move(specs)) {
         for (const Spec& s : specs_) all_pts_.insert({s.pts, s.gop});
     }
@@ -193,7 +201,9 @@ public:
     int flush_calls() const { return flush_calls_; }
 
 private:
-    struct P { int64_t pts, release, gop; };
+    struct P {
+        int64_t pts, release, gop;
+    };
     std::vector<Spec> specs_;
     std::vector<P> pending_;
     std::set<std::pair<int64_t, int64_t>> all_pts_;  // (pts, gop) 全集
@@ -251,7 +261,7 @@ Rig MakeRig() {
 }
 
 cq::ChqStatus Acquire(cq::ChqFrameProvider& fp, int64_t t_val, cq::ChqSeekPolicy policy,
-                   const cq::ChqCancelToken& token, cq::ChqMediaFrame& out) {
+                      const cq::ChqCancelToken& token, cq::ChqMediaFrame& out) {
     cq::ChqFrameRequest req;
     req.at = cq::ChqRationalTime{t_val, kTs};
     req.policy = policy;
@@ -356,7 +366,7 @@ int main() {
             cq::ChqMediaFrame g{};
             // 参照：显式 Seek 强制「每帧都从关键帧重解」的旧语义。
             cq::ChqStatus s0 = ref.provider->Seek(cq::ChqRationalTime{t, kTs},
-                                               cq::ChqSeekPolicy::kExact, no_cancel);
+                                                  cq::ChqSeekPolicy::kExact, no_cancel);
             cq::ChqStatus s2;
             if (s0.IsOk()) s2 = Acquire(*ref.provider, t, cq::ChqSeekPolicy::kExact, no_cancel, g);
             const int64_t want = (s0.IsOk() && s2.IsOk()) ? g.video.pts.value : -2;
@@ -377,11 +387,13 @@ int main() {
     {
         Rig rig = MakeRig();
         if (rig.provider == nullptr) return 1;
-        const struct { int64_t t, kf; } cases[] = {{2, 0}, {5, 4}, {10, 8}, {15, 12}};
+        const struct {
+            int64_t t, kf;
+        } cases[] = {{2, 0}, {5, 4}, {10, 8}, {15, 12}};
         for (const auto& c : cases) {
             cq::ChqMediaFrame f{};
             cq::ChqStatus s = Acquire(*rig.provider, c.t, cq::ChqSeekPolicy::kKeyframeBefore,
-                                   no_cancel, f);
+                                      no_cancel, f);
             const bool ok = s.IsOk() && f.video.pts.value == c.kf;
             std::printf("  t=%lld -> 关键帧 pts=%lld (expect %lld)\n",
                         static_cast<long long>(c.t),
@@ -420,7 +432,7 @@ int main() {
         if (rig.provider == nullptr) return 1;
         cq::ChqMediaFrame f{};
         cq::ChqStatus s0 = rig.provider->Seek(cq::ChqRationalTime{6, kTs},
-                                           cq::ChqSeekPolicy::kExact, no_cancel);
+                                              cq::ChqSeekPolicy::kExact, no_cancel);
         Check(s0.IsOk(), "显式 Seek(6) 成功");
         cq::ChqStatus s1 = Acquire(*rig.provider, 6, cq::ChqSeekPolicy::kExact, no_cancel, f);
         Check(s1.IsOk() && f.video.pts.value == 6, "显式 Seek 后 Acquire 返回帧 6");

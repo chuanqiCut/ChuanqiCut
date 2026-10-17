@@ -5,8 +5,8 @@
 namespace cq {
 
 ChqStatus ChqAudioGraph::Prepare(const std::vector<ChqIAudioNode*>& nodes,
-                           const std::vector<ChqAudioEdge>& edges,
-                           const ChqAudioGraphSpec& spec) {
+                                 const std::vector<ChqAudioEdge>& edges,
+                                 const ChqAudioGraphSpec& spec) {
     order_.clear();
     const uint32_t n = static_cast<uint32_t>(nodes.size());
 
@@ -21,7 +21,7 @@ ChqStatus ChqAudioGraph::Prepare(const std::vector<ChqIAudioNode*>& nodes,
     }
 
     // 链式拓扑校验：每节点出度≤1、入度≤1、无自环/重复边、边数 = n-1（连通）。
-    std::vector<int64_t> succ(n, -1);      // 唯一后继
+    std::vector<int64_t> succ(n, -1);  // 唯一后继
     std::vector<uint32_t> indeg(n, 0);
     for (const ChqAudioEdge& e : edges) {
         if (e.from >= n || e.to >= n || e.from == e.to) {

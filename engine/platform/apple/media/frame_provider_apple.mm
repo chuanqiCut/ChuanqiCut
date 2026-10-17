@@ -17,8 +17,8 @@
 #include <utility>  // std::move
 
 #include "cq/media/chq_system_frame_provider.h"  // CreateSystemFrameProvider（所有权重载）
-#include "cq/platform/chq_media.h"                    // ChqIFrameProvider / ChqMediaSource / CreateMediaDemuxer
-#include "media_decode.h"                    // VideoToolboxDecoder（PALA-011，仅 Apple TU 可见）
+#include "cq/platform/chq_media.h"               // ChqIFrameProvider / ChqMediaSource / CreateMediaDemuxer
+#include "media_decode.h"                        // VideoToolboxDecoder（PALA-011，仅 Apple TU 可见）
 
 namespace cq {
 namespace {
@@ -62,7 +62,7 @@ public:
     // 按策略真正实现 —— kKeyframeBefore/kNearest 用于 scrub 廉价定位，kExact 用于
     // 播放/导出/松手后确认。此前这里硬编码 kExact 会把策略吞掉。
     ChqStatus AcquireFrame(const ChqRationalTime& at, ChqMediaFrame& out_frame,
-                        const ChqCancelToken& token, int32_t seek_policy = 0) override {
+                           const ChqCancelToken& token, int32_t seek_policy = 0) override {
         if (!provider_) return ChqStatus(ChqStatusCode::kInvalidArgument);
         ChqFrameRequest req;
         req.at = at;

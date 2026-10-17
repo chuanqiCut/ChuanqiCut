@@ -71,9 +71,9 @@ enum class ChqEditPlanOp : int32_t {
 // 与 model/timeline.h 的 ChqTransitionKind 对齐（AIEDIT-006 执行时直接投影），
 // JSON 名 = 枚举名的 snake_case。
 enum class ChqEditPlanTransitionKind : int32_t {
-    kNone = 0,        // "none"：显式清除转场
-    kCrossFade,       // "cross_fade"
-    kDipToBlack,      // "dip_to_black"
+    kNone = 0,    // "none"：显式清除转场
+    kCrossFade,   // "cross_fade"
+    kDipToBlack,  // "dip_to_black"
     kUnknown = -1,
 };
 
@@ -98,7 +98,7 @@ bool EditPlanTransitionKindFromName(const char* name, ChqEditPlanTransitionKind&
 struct ChqEditPlanAction {
     ChqEditPlanOp op = ChqEditPlanOp::kUnknown;
     std::string asset;
-    bool has_asset = false;             // 字段存在性（与「空串」区分，宽松校验的基础）
+    bool has_asset = false;  // 字段存在性（与「空串」区分，宽松校验的基础）
     int32_t shot = -1;
     bool has_shot = false;
     bool has_timeline_start = false;
@@ -109,7 +109,7 @@ struct ChqEditPlanAction {
     ChqRationalTime duration{};
     bool has_transition = false;
     ChqEditPlanTransitionKind transition = ChqEditPlanTransitionKind::kNone;
-    std::vector<int32_t> order;         // reorder 专用
+    std::vector<int32_t> order;  // reorder 专用
     std::string reason;
 };
 
@@ -137,11 +137,11 @@ struct ChqEditPlanBasedOn {
 struct ChqEditPlan {
     std::string schema = kEditPlanSchema;
     ChqEditPlanBasedOn based_on{};
-    std::vector<ChqEditPlanAction> actions;    // 允许为空（结构合法的 no-op plan；
-                                            // 是否算决策失败由管线层判定）
+    std::vector<ChqEditPlanAction> actions;  // 允许为空（结构合法的 no-op plan；
+                                             // 是否算决策失败由管线层判定）
     ChqEditPlanNarrative narrative{};
     bool has_generator = false;
-    std::string generator;                  // "llm"（默认，可省）| "local_rules"（降级，AIEDIT-011）
+    std::string generator;  // "llm"（默认，可省）| "local_rules"（降级，AIEDIT-011）
 };
 
 // 校验上下文：资产参照表（AIEDIT-005 从 ChqFeatureReport 组装；

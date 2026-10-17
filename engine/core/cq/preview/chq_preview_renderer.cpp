@@ -13,7 +13,7 @@
 #include <chrono>
 #include <utility>  // std::move
 
-#include "cq/base/chq_logging.h"  // CQ_LOG_*_WF：带 workflow 的分级日志（CORE-010）
+#include "cq/base/chq_logging.h"         // CQ_LOG_*_WF：带 workflow 的分级日志（CORE-010）
 #include "cq/render/chq_fit_viewport.h"  // 视口计算（与 RenderGraph 共用同一份，避免两套）
 
 namespace cq {
@@ -53,8 +53,8 @@ public:
 }  // namespace
 
 ChqPreviewRenderer::ChqPreviewRenderer(ChqIGfxDevice* gfx, ChqIBlitPass* blit,
-                                 ChqIFrameProviderFactory* providers,
-                                 ChqIModelSnapshotProvider* snapshots, const Config& cfg)
+                                       ChqIFrameProviderFactory* providers,
+                                       ChqIModelSnapshotProvider* snapshots, const Config& cfg)
     : gfx_(gfx),
       blit_(blit),
       providers_(providers),
@@ -103,7 +103,7 @@ ChqStatus ChqPreviewRenderer::ClearTarget(const ChqCancelToken& token) {
 }
 
 ChqStatus ChqPreviewRenderer::GetProvider(uint64_t asset_id, const ChqAssetRegistry& assets,
-                                    ChqFrameProvider*& out) {
+                                          ChqFrameProvider*& out) {
     out = nullptr;
     if (providers_ == nullptr) return ChqStatus(ChqStatusCode::kInvalidArgument);
     const ChqMediaSource* src = assets.Find(asset_id);
@@ -128,7 +128,7 @@ ChqStatus ChqPreviewRenderer::GetProvider(uint64_t asset_id, const ChqAssetRegis
 }
 
 ChqStatus ChqPreviewRenderer::RenderFrame(const ChqRationalTime& pts, TextureHandle& out_texture,
-                                    const ChqCancelToken& token, int32_t seek_policy) {
+                                          const ChqCancelToken& token, int32_t seek_policy) {
     // P142：本帧 seek 策略存成员，供同帧的 Acquire 读取（两者同在泵线程）。
     seek_policy_ = seek_policy;
     out_texture = nullptr;

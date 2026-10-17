@@ -31,16 +31,16 @@ namespace cq {
 
 // LLM 接入配置（SPEC §8）。endpoint/model 为空 → 不创建客户端，直接走降级。
 struct ChqLlmConfig {
-    std::string endpoint;       // OpenAI-compatible base，如 "https://host/v1"
-    std::string model;          // 模型名（chat/completions 的 model 字段）
-    std::string api_key_ref;    // 凭据引用（Keychain 条目名），不是明文 key
-    double temperature = 0.7;   // 统计类参数，允许浮点（红线 4 只约束时间字段）
+    std::string endpoint;      // OpenAI-compatible base，如 "https://host/v1"
+    std::string model;         // 模型名（chat/completions 的 model 字段）
+    std::string api_key_ref;   // 凭据引用（Keychain 条目名），不是明文 key
+    double temperature = 0.7;  // 统计类参数，允许浮点（红线 4 只约束时间字段）
     int32_t max_tokens = 4096;
-    int64_t timeout_ms = 60000; // 总超时 [E]（SPEC §8：连接 10s / 总 60s，连接超时归传输实现）
+    int64_t timeout_ms = 60000;  // 总超时 [E]（SPEC §8：连接 10s / 总 60s，连接超时归传输实现）
 };
 
 struct ChqLlmMessage {
-    std::string role;       // "system" | "user" | "assistant"
+    std::string role;  // "system" | "user" | "assistant"
     std::string content;
 };
 
@@ -56,8 +56,8 @@ struct ChqLlmUsage {
 };
 
 struct ChqLlmResult {
-    ChqStatus status = ChqStatus::Ok();   // Ok / kCancelled / 传输或协议错误
-    std::string text;               // 助手消息原文（应为 ChqEditPlan JSON）
+    ChqStatus status = ChqStatus::Ok();  // Ok / kCancelled / 传输或协议错误
+    std::string text;                    // 助手消息原文（应为 ChqEditPlan JSON）
     ChqLlmUsage usage{};
 };
 
@@ -74,7 +74,7 @@ public:
 // 工厂：注入传输与配置。config 非法（endpoint/model 空）→ kInvalidArgument。
 // transport 以 ChqPlatformPtr 移入（客户端独占其生命周期）。
 ChqStatus CreateLlmClient(const ChqLlmConfig& config, ChqPlatformPtr<platform::ChqINetTransport> transport,
-                       ChqPlatformPtr<ChqILlmClient>& out_client);
+                          ChqPlatformPtr<ChqILlmClient>& out_client);
 
 }  // namespace cq
 

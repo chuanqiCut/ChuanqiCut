@@ -59,40 +59,64 @@ namespace cq {
 // ---- 格式映射辅助 ----
 static uint32_t BytesPerPixel(ChqTextureFormat f) {
     switch (f) {
-        case ChqTextureFormat::kR8:        return 1;
-        case ChqTextureFormat::kRG8:       return 2;
-        case ChqTextureFormat::kRGBA8:     return 4;
-        case ChqTextureFormat::kRGBA16F:   return 8;
-        case ChqTextureFormat::kR16F:      return 2;
-        case ChqTextureFormat::kR32F:      return 4;
-        case ChqTextureFormat::kRGBA32F:   return 16;
-        default:                        return 4;
+        case ChqTextureFormat::kR8:
+            return 1;
+        case ChqTextureFormat::kRG8:
+            return 2;
+        case ChqTextureFormat::kRGBA8:
+            return 4;
+        case ChqTextureFormat::kRGBA16F:
+            return 8;
+        case ChqTextureFormat::kR16F:
+            return 2;
+        case ChqTextureFormat::kR32F:
+            return 4;
+        case ChqTextureFormat::kRGBA32F:
+            return 16;
+        default:
+            return 4;
     }
 }
 
 static MTLPixelFormat ToMTLPixelFormat(ChqTextureFormat f) {
     switch (f) {
-        case ChqTextureFormat::kR8:        return MTLPixelFormatR8Unorm;
-        case ChqTextureFormat::kRG8:       return MTLPixelFormatRG8Unorm;
-        case ChqTextureFormat::kRGBA8:     return MTLPixelFormatRGBA8Unorm;
-        case ChqTextureFormat::kRGBA16F:   return MTLPixelFormatRGBA16Float;
-        case ChqTextureFormat::kR16F:      return MTLPixelFormatR16Float;
-        case ChqTextureFormat::kR32F:      return MTLPixelFormatR32Float;
-        case ChqTextureFormat::kRGBA32F:   return MTLPixelFormatRGBA32Float;
-        default:                        return MTLPixelFormatRGBA8Unorm;
+        case ChqTextureFormat::kR8:
+            return MTLPixelFormatR8Unorm;
+        case ChqTextureFormat::kRG8:
+            return MTLPixelFormatRG8Unorm;
+        case ChqTextureFormat::kRGBA8:
+            return MTLPixelFormatRGBA8Unorm;
+        case ChqTextureFormat::kRGBA16F:
+            return MTLPixelFormatRGBA16Float;
+        case ChqTextureFormat::kR16F:
+            return MTLPixelFormatR16Float;
+        case ChqTextureFormat::kR32F:
+            return MTLPixelFormatR32Float;
+        case ChqTextureFormat::kRGBA32F:
+            return MTLPixelFormatRGBA32Float;
+        default:
+            return MTLPixelFormatRGBA8Unorm;
     }
 }
 
 static MTLVertexFormat ToMTLVertexFormat(ChqVertexFormat f) {
     switch (f) {
-        case ChqVertexFormat::kFloat32:     return MTLVertexFormatFloat;
-        case ChqVertexFormat::kFloat32x2:   return MTLVertexFormatFloat2;
-        case ChqVertexFormat::kFloat32x3:   return MTLVertexFormatFloat3;
-        case ChqVertexFormat::kFloat32x4:   return MTLVertexFormatFloat4;
-        case ChqVertexFormat::kUInt16:      return MTLVertexFormatUShortNormalized;
-        case ChqVertexFormat::kUInt16x2:    return MTLVertexFormatUShort2Normalized;
-        case ChqVertexFormat::kUInt16x4:    return MTLVertexFormatUShort4Normalized;
-        default:                         return MTLVertexFormatFloat;
+        case ChqVertexFormat::kFloat32:
+            return MTLVertexFormatFloat;
+        case ChqVertexFormat::kFloat32x2:
+            return MTLVertexFormatFloat2;
+        case ChqVertexFormat::kFloat32x3:
+            return MTLVertexFormatFloat3;
+        case ChqVertexFormat::kFloat32x4:
+            return MTLVertexFormatFloat4;
+        case ChqVertexFormat::kUInt16:
+            return MTLVertexFormatUShortNormalized;
+        case ChqVertexFormat::kUInt16x2:
+            return MTLVertexFormatUShort2Normalized;
+        case ChqVertexFormat::kUInt16x4:
+            return MTLVertexFormatUShort4Normalized;
+        default:
+            return MTLVertexFormatFloat;
     }
 }
 
@@ -234,7 +258,7 @@ public:
 
 struct CqCommandEncoder : public ChqICommandEncoder {
 public:
-    id<MTLCommandBuffer> cb_ = nil;       // 由 CqCommandBuffer 持有，encoder 不释放
+    id<MTLCommandBuffer> cb_ = nil;  // 由 CqCommandBuffer 持有，encoder 不释放
     id<MTLRenderCommandEncoder> enc_ = nil;
 
     void Destroy() override {
@@ -420,7 +444,7 @@ public:
     }
 
     ChqStatus Import(NativeImageHandle image, ChqTextureUsage usage,
-                  TextureHandle& out_texture, bool& out_cpu_fallback) override {
+                     TextureHandle& out_texture, bool& out_cpu_fallback) override {
         out_texture = nullptr;
         out_cpu_fallback = false;
         if (device_ == nil || cache_ == nullptr) return ChqStatus(ChqStatusCode::kInternal);
@@ -477,7 +501,7 @@ private:
     // 退化路径实现：锁定源基址 + replaceRegion 把 BGRA 该厂商拷进 BGRA8Unorm 纹理。
     // ⚠️ 这是**唯一发生像素拷贝**的地方。零拷贝成立时 Import 不会调用它。
     ChqStatus ImportCpu(CVPixelBufferRef pb, ChqTextureUsage usage,
-                     TextureHandle& out_texture, bool& out_cpu_fallback) {
+                        TextureHandle& out_texture, bool& out_cpu_fallback) {
         out_texture = nullptr;
         out_cpu_fallback = true;
         if (CVPixelBufferGetPixelFormatType(pb) != kCVPixelFormatType_32BGRA) {
@@ -493,9 +517,9 @@ private:
 
         MTLTextureDescriptor* td =
             [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:MTLPixelFormatBGRA8Unorm
-                                                              width:static_cast<NSUInteger>(w)
-                                                             height:static_cast<NSUInteger>(h)
-                                                          mipmapped:NO];
+                                                               width:static_cast<NSUInteger>(w)
+                                                              height:static_cast<NSUInteger>(h)
+                                                           mipmapped:NO];
         td.storageMode = kCqCpuVisibleStorageMode;  // CPU 可 replaceRegion 上传（iOS 下为 Shared）
         td.usage = MTLTextureUsageShaderRead;
         id<MTLTexture> ctex = [device_ newTextureWithDescriptor:td];
@@ -537,9 +561,9 @@ public:
 
         MTLTextureDescriptor* td =
             [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:ToMTLPixelFormat(desc.format)
-                                                                width:static_cast<NSUInteger>(desc.width)
-                                                               height:static_cast<NSUInteger>(desc.height)
-                                                            mipmapped:NO];
+                                                               width:static_cast<NSUInteger>(desc.width)
+                                                              height:static_cast<NSUInteger>(desc.height)
+                                                           mipmapped:NO];
         // 渲染目标用 Private（GPU 最优）；需要 CPU 上传（采样源）用 CPU 可见模式（macOS=Managed / iOS=Shared）。
         td.storageMode = is_rt ? MTLStorageModePrivate : kCqCpuVisibleStorageMode;
         MTLTextureUsage usage = 0;
@@ -576,9 +600,9 @@ public:
         if (device_ == nil) return ChqStatus(ChqStatusCode::kInternal);
         MTLTextureDescriptor* td =
             [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:ToMTLPixelFormat(desc.color_format)
-                                                                width:static_cast<NSUInteger>(desc.width)
-                                                               height:static_cast<NSUInteger>(desc.height)
-                                                            mipmapped:NO];
+                                                               width:static_cast<NSUInteger>(desc.width)
+                                                              height:static_cast<NSUInteger>(desc.height)
+                                                           mipmapped:NO];
         td.storageMode = MTLStorageModePrivate;
         td.usage = MTLTextureUsageRenderTarget | MTLTextureUsageShaderRead;
         id<MTLTexture> tex = [device_ newTextureWithDescriptor:td];
@@ -609,15 +633,15 @@ public:
 
         NSError* err = nil;
         id<MTLLibrary> lib = [device_ newLibraryWithSource:
-                                 [NSString stringWithUTF8String:src.c_str()]
-                                                  options:nil
-                                                    error:&err];
+                                          [NSString stringWithUTF8String:src.c_str()]
+                                                   options:nil
+                                                     error:&err];
         if (lib == nil) return ChqStatus(ChqStatusCode::kInternal);
 
         const MTLFunctionType want =
-            (desc.stage == ChqShaderStage::kFragment) ? MTLFunctionTypeFragment
+            (desc.stage == ChqShaderStage::kFragment)  ? MTLFunctionTypeFragment
             : (desc.stage == ChqShaderStage::kCompute) ? MTLFunctionTypeKernel
-                                                   : MTLFunctionTypeVertex;
+                                                       : MTLFunctionTypeVertex;
         id<MTLFunction> fn = nil;
         for (NSString* name in lib.functionNames) {
             id<MTLFunction> f = [lib newFunctionWithName:name];
@@ -663,7 +687,8 @@ public:
 
         NSError* err = nil;
         id<MTLRenderPipelineState> st =
-            [device_ newRenderPipelineStateWithDescriptor:pd error:&err];
+            [device_ newRenderPipelineStateWithDescriptor:pd
+                                                    error:&err];
         if (st == nil) return ChqStatus(ChqStatusCode::kInternal);
 
         auto* p = new CqPipeline();
@@ -717,8 +742,8 @@ public:
             return ChqStatus(ChqStatusCode::kInternal);
         }
         auto* imp = new CqNativeImageImporter();
-        imp->device_ = device_;      // ARC 自动 retain
-        imp->cache_ = cache;         // 所有权交给 imp，Destroy 时 CFRelease
+        imp->device_ = device_;  // ARC 自动 retain
+        imp->cache_ = cache;     // 所有权交给 imp，Destroy 时 CFRelease
         out = ChqPlatformPtr<ChqINativeImageImporter>(imp);
         return ChqStatus::Ok();
     }
@@ -748,8 +773,8 @@ namespace cq {
 namespace apple {
 
 ChqStatus ReadRenderTargetPixels(ChqIRenderTarget* rt,
-                              uint32_t x, uint32_t y, uint32_t w, uint32_t h,
-                              void* out_rgba8, size_t out_size) {
+                                 uint32_t x, uint32_t y, uint32_t w, uint32_t h,
+                                 void* out_rgba8, size_t out_size) {
     if (rt == nullptr || out_rgba8 == nullptr) return ChqStatus(ChqStatusCode::kInvalidArgument);
     auto* mrt = static_cast<CqRenderTarget*>(rt);
     if (mrt->device_ == nil || mrt->color_tex_ == nil) return ChqStatus(ChqStatusCode::kInternal);
@@ -759,21 +784,21 @@ ChqStatus ReadRenderTargetPixels(ChqIRenderTarget* rt,
     if (static_cast<NSUInteger>(out_size) < img_bytes) return ChqStatus(ChqStatusCode::kInvalidArgument);
 
     id<MTLBuffer> buf = [mrt->device_ newBufferWithLength:img_bytes
-                                                 options:MTLResourceStorageModeShared];
+                                                  options:MTLResourceStorageModeShared];
     if (buf == nil) return ChqStatus(ChqStatusCode::kInternal);
 
     id<MTLCommandQueue> q = [mrt->device_ newCommandQueue];
     id<MTLCommandBuffer> cb = [q commandBuffer];
     id<MTLBlitCommandEncoder> be = [cb blitCommandEncoder];
     [be copyFromTexture:mrt->color_tex_
-            sourceSlice:0
-            sourceLevel:0
-           sourceOrigin:MTLOriginMake(static_cast<NSUInteger>(x), static_cast<NSUInteger>(y), 0)
-            sourceSize:MTLSizeMake(static_cast<NSUInteger>(w), static_cast<NSUInteger>(h), 1)
-              toBuffer:buf
-     destinationOffset:0
-destinationBytesPerRow:bpr
-destinationBytesPerImage:img_bytes];
+                     sourceSlice:0
+                     sourceLevel:0
+                    sourceOrigin:MTLOriginMake(static_cast<NSUInteger>(x), static_cast<NSUInteger>(y), 0)
+                      sourceSize:MTLSizeMake(static_cast<NSUInteger>(w), static_cast<NSUInteger>(h), 1)
+                        toBuffer:buf
+               destinationOffset:0
+          destinationBytesPerRow:bpr
+        destinationBytesPerImage:img_bytes];
     [be endEncoding];
     [cb commit];
     [cb waitUntilCompleted];
@@ -794,19 +819,19 @@ ChqStatus UploadTextureData(ChqITexture* tex, const void* data, size_t bytes) {
     if (bytes < need) return ChqStatus(ChqStatusCode::kInvalidArgument);
     const NSUInteger bpr = static_cast<NSUInteger>(w) * 4u;
     [mt->tex_ replaceRegion:MTLRegionMake2D(0, 0, static_cast<NSUInteger>(w), static_cast<NSUInteger>(h))
-                 mipmapLevel:0
-                   withBytes:data
-                 bytesPerRow:bpr];
+                mipmapLevel:0
+                  withBytes:data
+                bytesPerRow:bpr];
     return ChqStatus::Ok();
 }
 
 // ---- 句柄桥接（CqXxx 继承 Ixxx，安全下行转换）----
-ShaderModuleHandle   ToShaderHandle(ChqIShaderModule* p)   { return static_cast<CqShaderModule*>(p); }
-PipelineHandle      ToPipelineHandle(ChqIPipeline* p)       { return static_cast<CqPipeline*>(p); }
-BufferHandle        ToBufferHandle(ChqIBuffer* p)           { return static_cast<CqBuffer*>(p); }
-TextureHandle       ToTextureHandle(ChqITexture* p)         { return static_cast<CqTexture*>(p); }
-SamplerHandle       ToSamplerHandle(ChqISampler* p)         { return static_cast<CqSampler*>(p); }
-RenderTargetHandle  ToRenderTargetHandle(ChqIRenderTarget* p){ return static_cast<CqRenderTarget*>(p); }
+ShaderModuleHandle ToShaderHandle(ChqIShaderModule* p) { return static_cast<CqShaderModule*>(p); }
+PipelineHandle ToPipelineHandle(ChqIPipeline* p) { return static_cast<CqPipeline*>(p); }
+BufferHandle ToBufferHandle(ChqIBuffer* p) { return static_cast<CqBuffer*>(p); }
+TextureHandle ToTextureHandle(ChqITexture* p) { return static_cast<CqTexture*>(p); }
+SamplerHandle ToSamplerHandle(ChqISampler* p) { return static_cast<CqSampler*>(p); }
+RenderTargetHandle ToRenderTargetHandle(ChqIRenderTarget* p) { return static_cast<CqRenderTarget*>(p); }
 
 // 零拷贝验证辅助：返回导入纹理背后 IOSurface 的 ID。取不到（非 IOSurface 纹理 / 平台不支持）
 // 时返回 0，调用方据以降级到替代证据（如耗时实测）。用于证明「纹理与源 CVPixelBuffer 共享
@@ -829,10 +854,10 @@ uint32_t GetImportedTextureIosurfaceId(TextureHandle tex) {
 // （cpu_handle）各 iters 次，返回各自总耗时（毫秒）。零拷贝仅建纹理视图（µs 级），CPU 退化含
 // 整帧 BGRA memcpy；二者差距即为零拷贝收益的客观证据（取不到 IOSurface 时退化为该实测）。
 ChqStatus BenchmarkNativeImageImport(ChqIGraphicsDevice* dev,
-                                 NativeImageHandle zero_handle,
-                                 NativeImageHandle cpu_handle,
-                                 int iters,
-                                 double& out_zero_ms, double& out_cpu_ms) {
+                                     NativeImageHandle zero_handle,
+                                     NativeImageHandle cpu_handle,
+                                     int iters,
+                                     double& out_zero_ms, double& out_cpu_ms) {
     out_zero_ms = 0.0;
     out_cpu_ms = 0.0;
     if (dev == nullptr || zero_handle == nullptr || cpu_handle == nullptr || iters <= 0) {

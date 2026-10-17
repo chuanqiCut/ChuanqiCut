@@ -62,14 +62,26 @@ int64_t ChqLruFrameCache::ApproxFrameBytes(const ChqMediaFrame& f) {
         int64_t bytes = 0;
         switch (f.video.pixel_format) {
             case ChqPixelFormat::kRGBA8:
-            case ChqPixelFormat::kBGRA8:            bytes = w * h * 4; break;
-            case ChqPixelFormat::kRGBA16F:          bytes = w * h * 8; break;
+            case ChqPixelFormat::kBGRA8:
+                bytes = w * h * 4;
+                break;
+            case ChqPixelFormat::kRGBA16F:
+                bytes = w * h * 8;
+                break;
             case ChqPixelFormat::kYUV420Planar:
-            case ChqPixelFormat::kYUV420SemiPlanar:  bytes = w * h + (w * h) / 2; break;  // 1.5 bpp
+            case ChqPixelFormat::kYUV420SemiPlanar:
+                bytes = w * h + (w * h) / 2;
+                break;  // 1.5 bpp
             case ChqPixelFormat::kYUV422Planar:
-            case ChqPixelFormat::kYUV422SemiPlanar:  bytes = w * h * 2; break;
-            case ChqPixelFormat::kGray8:            bytes = w * h; break;
-            default:                             bytes = w * h * 4; break;
+            case ChqPixelFormat::kYUV422SemiPlanar:
+                bytes = w * h * 2;
+                break;
+            case ChqPixelFormat::kGray8:
+                bytes = w * h;
+                break;
+            default:
+                bytes = w * h * 4;
+                break;
         }
         return bytes;
     }

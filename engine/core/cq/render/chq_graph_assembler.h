@@ -45,7 +45,7 @@ struct ChqAssembleInput {
     const ChqIClockSource* clock = nullptr;  // 可空：空 = 用 in.pts（预览现状）
     ChqRationalTime pts{0, 1};               // clock 为空时的请求时刻
     ChqFitMode fit_mode = ChqFitMode::kStretch;
-    uint32_t target_width = 0;   // 画布像素尺寸（0 = 用 timeline 的画布尺寸）
+    uint32_t target_width = 0;  // 画布像素尺寸（0 = 用 timeline 的画布尺寸）
     uint32_t target_height = 0;
     ChqGraphPurpose purpose = ChqGraphPurpose::kPreview;
 };

@@ -17,8 +17,7 @@ constexpr int64_t kNsPerSecond = 1000000000LL;
 int64_t NsToTicks(int64_t ns, int32_t timescale) {
     const int64_t sec = ns / kNsPerSecond;
     const int64_t rem = ns % kNsPerSecond;
-    return sec * static_cast<int64_t>(timescale)
-           + (rem * static_cast<int64_t>(timescale)) / kNsPerSecond;
+    return sec * static_cast<int64_t>(timescale) + (rem * static_cast<int64_t>(timescale)) / kNsPerSecond;
 }
 
 }  // namespace

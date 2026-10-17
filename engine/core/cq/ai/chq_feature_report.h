@@ -53,7 +53,7 @@ constexpr const char* kFeatureReportSchema = "cq.featurereport/1";
 // 人脸占位特征（检测计数级信息，非识别；P0 模型缺席时 has_faces=false）。
 struct ChqFeatureFace {
     int32_t count = 0;
-    double area_ratio = 0.0;    // 0~1，人脸像素占比
+    double area_ratio = 0.0;  // 0~1，人脸像素占比
     bool front_facing = false;
 };
 
@@ -61,9 +61,9 @@ struct ChqFeatureFace {
 struct ChqFeatureShot {
     ChqRationalTime start{};
     ChqRationalTime duration{};
-    double motion = 0.0;        // 0~1 运动强度（帧差均值）
-    double quality = 0.0;       // 0~1 综合质量（曝光/模糊/噪声加权）
-    bool has_faces = false;     // false = 人脸特征缺席（JSON 里 faces 为 null）
+    double motion = 0.0;     // 0~1 运动强度（帧差均值）
+    double quality = 0.0;    // 0~1 综合质量（曝光/模糊/噪声加权）
+    bool has_faces = false;  // false = 人脸特征缺席（JSON 里 faces 为 null）
     ChqFeatureFace faces{};
 };
 
@@ -71,7 +71,7 @@ struct ChqFeatureVideo {
     std::vector<ChqFeatureShot> shots;
     bool has_brightness_trend = false;  // 调性粗特征，可选
     std::vector<double> brightness_trend;
-    std::vector<std::string> dominant_colors;   // 最多 3 个（"#RRGGBB"）
+    std::vector<std::string> dominant_colors;  // 最多 3 个（"#RRGGBB"）
 };
 
 struct ChqFeatureSilence {
@@ -82,11 +82,11 @@ struct ChqFeatureSilence {
 // 音频特征（AIEDIT-003 解码扩档落地前整块缺席：has_* 全 false，JSON 里 audio=null）。
 struct ChqFeatureAudio {
     bool has_lufs = false;
-    double lufs = 0.0;          // 综合响度（BS.1770 简化实现）
+    double lufs = 0.0;  // 综合响度（BS.1770 简化实现）
     std::vector<ChqFeatureSilence> silences;
     bool has_speech_ratio = false;
-    double speech_ratio = 0.0;  // VAD 粗判 0~1
-    std::vector<double> energy_envelope;    // ~10Hz 均方根包络（卡点用）
+    double speech_ratio = 0.0;            // VAD 粗判 0~1
+    std::vector<double> energy_envelope;  // ~10Hz 均方根包络（卡点用）
 };
 
 struct ChqFeatureFps {
@@ -104,9 +104,9 @@ struct ChqFeatureAsset {
     ChqRationalTime duration{};
     ChqFeatureFps fps{};
     ChqFeatureResolution resolution{};
-    bool has_video = false;     // 纯音频素材 video 缺席
+    bool has_video = false;  // 纯音频素材 video 缺席
     ChqFeatureVideo video{};
-    bool has_audio = false;     // AIEDIT-003 之前为 false
+    bool has_audio = false;  // AIEDIT-003 之前为 false
     ChqFeatureAudio audio{};
 };
 

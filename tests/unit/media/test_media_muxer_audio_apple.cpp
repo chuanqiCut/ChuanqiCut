@@ -26,9 +26,9 @@
 
 #include "cq/base/chq_status.h"
 #include "cq/base/chq_rational_time.h"
-#include "cq/platform/chq_media.h"   // ChqIMediaMuxer / CreateMediaMuxer / ChqAudioTrackConfig / ChqPcmBuffer
+#include "cq/platform/chq_media.h"  // ChqIMediaMuxer / CreateMediaMuxer / ChqAudioTrackConfig / ChqPcmBuffer
 #include "cq/platform/chq_common.h"
-#include "media_decode.h"   // CqNativeImage（仅帧源包装，Apple TU）
+#include "media_decode.h"  // CqNativeImage（仅帧源包装，Apple TU）
 
 #ifndef CQ_SOURCE_DIR
 #define CQ_SOURCE_DIR "."
@@ -272,9 +272,9 @@ int main() {
 
     // 取所有流的 codec/rate/channels。
     std::string cmd = std::string(ffprobe_bin) +
-        " -v error -show_entries stream=index,codec_type,codec_name,sample_rate,channels"
-        " -of default=noprint_wrappers=1 " +
-        out_path;
+                      " -v error -show_entries stream=index,codec_type,codec_name,sample_rate,channels"
+                      " -of default=noprint_wrappers=1 " +
+                      out_path;
     std::string probe_out;
     bool have_ffprobe = RunCapture(cmd.c_str(), probe_out);
     std::printf("  %s\n", probe_out.c_str());
@@ -294,9 +294,9 @@ int main() {
 
         // 音频时长核对。
         std::string dcmd = std::string(ffprobe_bin) +
-            " -v error -show_entries stream=duration -select_streams a:0"
-            " -of default=noprint_wrappers=1 " +
-            out_path;
+                           " -v error -show_entries stream=duration -select_streams a:0"
+                           " -of default=noprint_wrappers=1 " +
+                           out_path;
         std::string dout;
         if (RunCapture(dcmd.c_str(), dout)) {
             std::printf("  %s", dout.c_str());

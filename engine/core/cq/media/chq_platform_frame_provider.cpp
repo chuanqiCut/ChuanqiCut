@@ -18,7 +18,7 @@ ChqStatus ChqPlatformFrameProvider::Open(const ChqMediaSource& src) {
 }
 
 ChqStatus ChqPlatformFrameProvider::Seek(const ChqRationalTime& target, ChqSeekPolicy policy,
-                              const ChqCancelToken& token) {
+                                         const ChqCancelToken& token) {
     if (!platform_) return ChqStatus(ChqStatusCode::kInvalidArgument);
     // P142：不再拒绝非 kExact 策略。此前「Platform 只承诺精确 seek，非 kExact 一律拒绝」，
     // 把 core 已实现的 kKeyframeBefore/kNearest 挡在门外 —— 但 scrub 拖动要的正是「廉价
@@ -28,7 +28,7 @@ ChqStatus ChqPlatformFrameProvider::Seek(const ChqRationalTime& target, ChqSeekP
 }
 
 ChqStatus ChqPlatformFrameProvider::AcquireFrame(const ChqFrameRequest& req, ChqMediaFrame& out_frame,
-                                      const ChqCancelToken& token) {
+                                                 const ChqCancelToken& token) {
     if (!platform_) return ChqStatus(ChqStatusCode::kInvalidArgument);
     // 同上：req.policy（由调用方决定，如预览 scrub 传 kKeyframeBefore）透传给平台后端，
     // 由底层 ChqSystemFrameProvider 按策略真正实现。丢弃 policy 会静默退化成精确解码。
@@ -46,7 +46,7 @@ ChqStatus ChqPlatformFrameProvider::GetDuration(ChqRationalTime& out) const {
 }
 
 ChqStatus ChqPlatformFrameProviderFactory::Create(const ChqMediaSource& src,
-                                       std::unique_ptr<ChqFrameProvider>& out) {
+                                                  std::unique_ptr<ChqFrameProvider>& out) {
     out.reset();
     ChqPlatformPtr<ChqIFrameProvider> platform;
     ChqStatus s = CreateFrameProvider(src, platform);

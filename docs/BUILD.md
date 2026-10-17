@@ -50,6 +50,13 @@ python  $HOME/.workbuddy/binaries/python/versions/<ver>/bin/python3
 
 1. **cmake 保持在 `build/` 根**，不迁 `build/cmake/`：缓存约 5.3G，迁移即全废 + 一次全量重编，
    且全仓 43 处 `ctest --test-dir build` 要连带改写（含 9 个 skill）。洁癖不值这个价。
+   > **订正（2026-10-17，INFRA-045/046 收尾批，活文档就地更新）**：那个 **43** 已失效 ——
+   > 实测 `git ls-files` 里含 `--test-dir build` 的是 **96 处 / 64 个文件**（本批自测时已漂到 97，
+   > 因为**引用这条命令的叙述行本身也算一处**，所以这天生是个会漂的数，带日期读）。
+   > 顺带把「为什么不拆 `build/dbg` + `build/rel`」写实（池 [25] 判定、INFRA-040 不立项）：
+   > 分档后 `core-rel` 整步 199s 里构建段只有 **≈57s**，拆树能省的就这么多 / 每个版本批一次；
+   > 而上面这条 64 文件里绝大多数是模块册历史行、任务卡、归档 HANDOFF、问卷，**按红线 5 不得改写**，
+   > 改完会永久留下"历史命令指向不存在的路径"的裂口。⇒ **本条决定继续有效，反转要走 ADR**。
 2. **禁止往 `build/` 根扔新的具名散目录**。存量在役的四个（`shell-ios` 被 `tools/qa/probe` 的真机 SOP 引用、
    `shell-mac`、`DerivedData-iOS-device` 真机联调缓存、`audio-check` 被 `.ai/modules/media.md` 门禁记录引用）
    **本轮不改名**——改名会打断写死该路径的 SOP 与历史记录；新跑的一律落 `build/xcode/`。

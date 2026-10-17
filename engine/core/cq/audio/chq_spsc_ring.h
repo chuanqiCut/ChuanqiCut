@@ -55,8 +55,8 @@ public:
 
 private:
     uint8_t* storage_ = nullptr;
-    uint64_t capacity_ = 0;   // 2 的幂
-    uint64_t mask_ = 0;       // capacity_ - 1
+    uint64_t capacity_ = 0;          // 2 的幂
+    uint64_t mask_ = 0;              // capacity_ - 1
     std::atomic<uint64_t> head_{0};  // 消费者位置（只有消费者写）
     std::atomic<uint64_t> tail_{0};  // 生产者位置（只有生产者写）
     bool initialized_ = false;

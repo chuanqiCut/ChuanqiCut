@@ -157,8 +157,8 @@ void TestTopoOrderAndPts() {
     std::printf("[2] 拓扑序正确性与 pts 穿透\n");
     // 链：Add(1) → Mul(2) → Add(0.5)。按给定的乱序节点数组装配，
     // 正确拓扑序结果 = (x+1)*2+0.5；若顺序错，结果必不同。
-    ArithNode add1(1.0f, 1.0f);   // 实际是 y = y*1 + 1
-    ArithNode mul2(2.0f, 0.0f);   // y = y*2
+    ArithNode add1(1.0f, 1.0f);  // 实际是 y = y*1 + 1
+    ArithNode mul2(2.0f, 0.0f);  // y = y*2
     ArithNode addhalf(1.0f, 0.5f);
     // 故意乱序传入：[mul2, addhalf, add1]，让拓扑排序有活干。
     std::vector<cq::ChqIAudioNode*> nodes = {&mul2, &addhalf, &add1};

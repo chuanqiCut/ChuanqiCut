@@ -280,11 +280,20 @@ fi
 if [ -x "${CF}" ]; then
     cf_bad=0
     cf_all=0
-    while IFS= read -r -d '' f; do
+    # 口径 = 全库入库 C/C++/ObjC++（五根，排除 engine/vendor）。原先只扫 engine/**（115 个），
+    # 而 INFRA-046 重排的 113 个文件里有 **34 个在 tests/** —— 那个计数看不见它们，
+    # "非零即新代码"这句话当场就是假的。基数与 TASK-INFRA-046 的复测命令必须一致（168）。
+    while IFS= read -r f; do
         cf_all=$((cf_all + 1))
         "${CF}" --dry-run --Werror "$f" >/dev/null 2>&1 || cf_bad=$((cf_bad + 1))
-    done < <(git ls-files -z 'engine/*.h' 'engine/*.cpp' 'engine/*.mm' 'engine/*.c')
-    echo "  INFO [clang-format] 违规 ${cf_bad}/${cf_all} 个文件（基线口径见 .clang-format 头部；本批不重排，重排另开卡）"
+    done < <(git ls-files -z 'engine/*.h' 'engine/*.c' 'engine/*.cpp' 'engine/*.mm' \
+                      'tests/*.h' 'tests/*.c' 'tests/*.cpp' 'tests/*.mm' \
+                      'api/*.h' 'api/*.c' 'api/*.cpp' 'api/*.mm' \
+                      'ui/*.h' 'ui/*.c' 'ui/*.cpp' 'ui/*.mm' \
+                      'apps/*.h' 'apps/*.c' 'apps/*.cpp' 'apps/*.mm' \
+                | tr '\0' '\n' | grep -v '^engine/vendor/')
+    echo "  INFO [clang-format] 违规 ${cf_bad}/${cf_all} 个文件（全库口径，engine/vendor 不计；"
+    echo "       INFRA-046 已全库重排，基线 = 0；非零即新代码未按 .clang-format 写。仍只报不判，口径见 .clang-format 头部）"
 else
     echo "  INFO [clang-format] 未找到可执行文件，跳过统计（不影响退出码）"
 fi

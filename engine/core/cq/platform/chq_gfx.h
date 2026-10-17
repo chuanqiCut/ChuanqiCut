@@ -37,9 +37,9 @@ enum class ChqVertexFormat : int32_t {
     kFloat32x2,
     kFloat32x3,
     kFloat32x4,
-    kUInt16,          // 归一化
-    kUInt16x2,        // 归一化
-    kUInt16x4,        // 归一化
+    kUInt16,    // 归一化
+    kUInt16x2,  // 归一化
+    kUInt16x4,  // 归一化
 };
 
 // ---- 描述结构（POD，无平台类型）----
@@ -63,9 +63,9 @@ struct ChqVertexAttribute {
 };
 
 struct ChqVertexLayout {
-    uint32_t stride = 0;                       // 单顶点该厂商跨度
-    uint32_t attr_count = 0;                   // 实际使用的属性数
-    ChqVertexAttribute attrs[8] = {};             // 固定上限，避免动态分配
+    uint32_t stride = 0;               // 单顶点该厂商跨度
+    uint32_t attr_count = 0;           // 实际使用的属性数
+    ChqVertexAttribute attrs[8] = {};  // 固定上限，避免动态分配
 };
 
 struct ChqRenderTargetDesc {
@@ -76,7 +76,7 @@ struct ChqRenderTargetDesc {
 
 struct ChqShaderModuleDesc {
     ChqShaderStage stage = ChqShaderStage::kVertex;
-    const void* code = nullptr;   // SPIR-V 该厂商（Portable）或平台原生源/该厂商（Platform-Native）
+    const void* code = nullptr;  // SPIR-V 该厂商（Portable）或平台原生源/该厂商（Platform-Native）
     size_t code_size = 0;
     bool is_platform_native = false;  // true=平台原生（MSL/GLSL ES 扩展），false=SPIR-V 中间表示
 };
@@ -212,7 +212,7 @@ public:
     // 导入 NativeImageHandle 为 TextureHandle。
     //   out_cpu_fallback=true 表示未能零拷贝，已退化为 CPU 拷贝路径（仍可用，性能降级）。
     virtual ChqStatus Import(NativeImageHandle image, ChqTextureUsage usage,
-                          TextureHandle& out_texture, bool& out_cpu_fallback) = 0;
+                             TextureHandle& out_texture, bool& out_cpu_fallback) = 0;
 
     // 释放 Import 产出的纹理句柄。
     // ⚠️ 这是 2026-10-02 补的**接口缺陷修复**（预览渲染器首次真实使用时暴露）：
@@ -282,7 +282,7 @@ ChqStatus CreateGraphicsDevice(const ChqGraphicsDeviceDesc& desc, ChqPlatformPtr
 // ⚠️ 由各平台用**平台原生 shader** 实现；未实现的平台会在此符号上链接失败
 //    （诚实暴露「该端暂无预览能力」，不伪造空实现）。
 ChqStatus CreateBlitPass(ChqIGraphicsDevice* device, ChqTextureFormat target_format,
-                      ChqPlatformPtr<ChqIBlitPass>& out_pass);
+                         ChqPlatformPtr<ChqIBlitPass>& out_pass);
 
 }  // namespace cq
 

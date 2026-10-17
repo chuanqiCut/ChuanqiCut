@@ -45,7 +45,9 @@ constexpr int32_t kTs = 4;
 // ---- Mock 解码器（供 provider 集成解码用）----
 class MockDecoder : public cq::ChqIFrameDecoder {
 public:
-    struct Spec { int64_t dts, pts, release; };
+    struct Spec {
+        int64_t dts, pts, release;
+    };
     explicit MockDecoder(std::vector<Spec> specs) : specs_(std::move(specs)) {
         for (const Spec& s : specs_) all_pts_.insert(s.pts);
     }
@@ -53,30 +55,46 @@ public:
     cq::ChqStatus Feed(const cq::ChqMediaPacket& pkt) override {
         last_fed_dts_ = pkt.dts.value;
         for (const Spec& s : specs_) {
-            if (s.dts == pkt.dts.value) { pending_.push_back(P{s.pts, s.release}); break; }
+            if (s.dts == pkt.dts.value) {
+                pending_.push_back(P{s.pts, s.release});
+                break;
+            }
         }
         return cq::ChqStatus::Ok();
     }
     cq::ChqStatus PopFrame(cq::ChqMediaFrame& out) override {
-        size_t best_i = pending_.size(); int64_t best_pts = 0; bool found = false;
+        size_t best_i = pending_.size();
+        int64_t best_pts = 0;
+        bool found = false;
         for (size_t i = 0; i < pending_.size(); ++i) {
             const P& fp = pending_[static_cast<size_t>(i)];
             if (fp.release > last_fed_dts_) continue;  // 参考帧未齐备
-            if (!found || fp.pts < best_pts) { found = true; best_pts = fp.pts; best_i = i; }
+            if (!found || fp.pts < best_pts) {
+                found = true;
+                best_pts = fp.pts;
+                best_i = i;
+            }
         }
         if (!found) return cq::ChqStatus{cq::ChqStatusCode::kIoNotFound};
         out = cq::ChqMediaFrame{};
         out.type = cq::ChqMediaType::kVideo;
         out.video.pts = cq::ChqRationalTime{best_pts, kTs};
         out.video.duration = cq::ChqRationalTime{1, kTs};
-        out.video.width = 64; out.video.height = 36;
+        out.video.width = 64;
+        out.video.height = 36;
         out.video.pixel_format = cq::ChqPixelFormat::kYUV420SemiPlanar;
         pending_.erase(pending_.begin() + static_cast<long>(best_i));
         return cq::ChqStatus::Ok();
     }
-    void Flush() override { pending_.clear(); last_fed_dts_ = -1; }
+    void Flush() override {
+        pending_.clear();
+        last_fed_dts_ = -1;
+    }
+
 private:
-    struct P { int64_t pts, release; };
+    struct P {
+        int64_t pts, release;
+    };
     std::vector<Spec> specs_;
     std::vector<P> pending_;
     std::set<int64_t> all_pts_;
@@ -97,34 +115,54 @@ public:
         return cq::ChqStatus::Ok();
     }
     void Destroy(cq::ChqDecoderHandle d) override { delete d; }
-    MockDecoder dec_;          // 池内所有 ChqDecoder 共享此 MockDecoder（仅测试用）
+    MockDecoder dec_;  // 池内所有 ChqDecoder 共享此 MockDecoder（仅测试用）
     int id_ = 0;
 };
 
 // ---- Mock demuxer（供 provider 集成用）----
 class MockDemuxer : public cq::ChqIMediaDemuxer {
 public:
-    struct GP { int64_t dts, pts; bool kf; };
+    struct GP {
+        int64_t dts, pts;
+        bool kf;
+    };
     explicit MockDemuxer(std::vector<GP> gop) : gop_(std::move(gop)) {}
     void Destroy() override { delete this; }
-    cq::ChqStatus Open(const cq::ChqMediaSource&) override { idx_ = 0; return cq::ChqStatus::Ok(); }
+    cq::ChqStatus Open(const cq::ChqMediaSource&) override {
+        idx_ = 0;
+        return cq::ChqStatus::Ok();
+    }
     cq::ChqStatus GetDuration(cq::ChqRationalTime& d) const override {
-        d = cq::ChqRationalTime{static_cast<int64_t>(gop_.size()), kTs}; return cq::ChqStatus::Ok();
+        d = cq::ChqRationalTime{static_cast<int64_t>(gop_.size()), kTs};
+        return cq::ChqStatus::Ok();
     }
     int32_t GetStreamCount() const override { return 1; }
     cq::ChqStatus GetStreamInfo(int32_t, cq::ChqStreamInfo& o) const override {
-        o = cq::ChqStreamInfo{}; o.type = cq::ChqMediaType::kVideo; o.codec = cq::ChqCodecId::kH264;
-        o.width = 64; o.height = 36; o.time_base = cq::ChqRationalTime{1, kTs}; return cq::ChqStatus::Ok();
+        o = cq::ChqStreamInfo{};
+        o.type = cq::ChqMediaType::kVideo;
+        o.codec = cq::ChqCodecId::kH264;
+        o.width = 64;
+        o.height = 36;
+        o.time_base = cq::ChqRationalTime{1, kTs};
+        return cq::ChqStatus::Ok();
     }
-    cq::ChqStatus Seek(const cq::ChqRationalTime&, const cq::ChqCancelToken&) override { idx_ = 0; return cq::ChqStatus::Ok(); }
+    cq::ChqStatus Seek(const cq::ChqRationalTime&, const cq::ChqCancelToken&) override {
+        idx_ = 0;
+        return cq::ChqStatus::Ok();
+    }
     cq::ChqStatus ReadPacket(cq::ChqMediaPacket& out) override {
         out = cq::ChqMediaPacket{};
         if (idx_ >= gop_.size()) return cq::ChqStatus{cq::ChqStatusCode::kIoNotFound};
         const GP& g = gop_[static_cast<size_t>(idx_++)];
-        out.pts = cq::ChqRationalTime{g.pts, kTs}; out.dts = cq::ChqRationalTime{g.dts, kTs};
-        out.codec = cq::ChqCodecId::kH264; out.is_keyframe = g.kf; out.data = buf_.data(); out.size = buf_.size();
+        out.pts = cq::ChqRationalTime{g.pts, kTs};
+        out.dts = cq::ChqRationalTime{g.dts, kTs};
+        out.codec = cq::ChqCodecId::kH264;
+        out.is_keyframe = g.kf;
+        out.data = buf_.data();
+        out.size = buf_.size();
         return cq::ChqStatus::Ok();
     }
+
 private:
     std::vector<GP> gop_;
     size_t idx_ = 0;
@@ -132,7 +170,7 @@ private:
 };
 
 std::vector<MockDemuxer::GP> MakeGop() {
-    return {{0,0,true},{1,3,false},{2,1,false},{3,2,false}};
+    return {{0, 0, true}, {1, 3, false}, {2, 1, false}, {3, 2, false}};
 }
 
 // ---------------------------------------------------------------------------
@@ -178,7 +216,9 @@ void TestOverLimitAndReuse() {
     cq::ChqDecoderHandle h6 = nullptr;
     cq::ChqStatus s6 = pool.AcquireDecoder(cq::ChqCodecId::kH264, h6);
     Check(s6.code == cq::ChqStatusCode::kResourceExhausted, "第 4 路再次超上限返回 kResourceExhausted");
-    pool.ReleaseDecoder(h3); pool.ReleaseDecoder(h4); pool.ReleaseDecoder(h5);
+    pool.ReleaseDecoder(h3);
+    pool.ReleaseDecoder(h4);
+    pool.ReleaseDecoder(h5);
 }
 
 // ---------------------------------------------------------------------------
@@ -233,7 +273,9 @@ void TestProviderIntegration() {
     Check(pool.ActiveCount() == 1, "provider1 持有期间 ActiveCount == 1");
 
     cq::ChqCancelToken no_cancel;
-    cq::ChqFrameRequest req; req.at = cq::ChqRationalTime{0, kTs}; req.policy = cq::ChqSeekPolicy::kExact;
+    cq::ChqFrameRequest req;
+    req.at = cq::ChqRationalTime{0, kTs};
+    req.policy = cq::ChqSeekPolicy::kExact;
     cq::ChqMediaFrame f{};
     cq::ChqStatus sa = provider1->AcquireFrame(req, f, no_cancel);
     Check(sa.IsOk() && f.video.pts.value == 0, "provider1 经池解码得到 pts=0");

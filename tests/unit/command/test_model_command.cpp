@@ -404,8 +404,9 @@ void TestCanvasAndCrossTrackCommands() {
 
     // ---- move-clip-to-track：跨轨 → undo 回原轨原位 → redo 回目标轨 ----
     Check(hist.Execute(
-        std::make_unique<cq::ChqMoveClipToTrackCommand>(clip_id, overlay, Ms(500)), tl).IsOk(),
-        "Execute MoveClipToTrack");
+                  std::make_unique<cq::ChqMoveClipToTrackCommand>(clip_id, overlay, Ms(500)), tl)
+              .IsOk(),
+          "Execute MoveClipToTrack");
     Check(tl.FindClipAt(overlay, Ms(1000)) != nullptr && tl.FindTrack(track_id)->clips.empty(),
           "片段上了画中画轨（id 不变）");
     const std::string fp_moved = Fingerprint(tl);
@@ -427,8 +428,9 @@ void TestCanvasAndCrossTrackCommands() {
     audio_track = tl.Tracks().back().id;
     const int depth = static_cast<int>(hist.UndoDepth());
     Check(!hist.Execute(
-        std::make_unique<cq::ChqMoveClipToTrackCommand>(clip_id, audio_track, Ms(0)), tl).IsOk(),
-        "视频片段上音频轨失败");
+                   std::make_unique<cq::ChqMoveClipToTrackCommand>(clip_id, audio_track, Ms(0)), tl)
+               .IsOk(),
+          "视频片段上音频轨失败");
     Check(static_cast<int>(hist.UndoDepth()) == depth, "失败的跨轨不入栈");
 }
 

@@ -64,11 +64,17 @@ const char* Rt(const cq::ChqRationalTime& t) {
 // ---------------------------------------------------------------------------
 class MockDemuxer : public cq::ChqIMediaDemuxer {
 public:
-    struct GP { int64_t dts, pts; bool kf; };
+    struct GP {
+        int64_t dts, pts;
+        bool kf;
+    };
     explicit MockDemuxer(std::vector<GP> gop) : gop_(std::move(gop)) {}
 
     void Destroy() override { delete this; }
-    cq::ChqStatus Open(const cq::ChqMediaSource&) override { idx_ = 0; return cq::ChqStatus::Ok(); }
+    cq::ChqStatus Open(const cq::ChqMediaSource&) override {
+        idx_ = 0;
+        return cq::ChqStatus::Ok();
+    }
     cq::ChqStatus GetDuration(cq::ChqRationalTime& d) const override {
         d = cq::ChqRationalTime{static_cast<int64_t>(gop_.size()), kTs};
         return cq::ChqStatus::Ok();
@@ -120,7 +126,9 @@ private:
 // ---------------------------------------------------------------------------
 class MockDecoder : public cq::ChqIFrameDecoder {
 public:
-    struct Spec { int64_t dts, pts, release; };
+    struct Spec {
+        int64_t dts, pts, release;
+    };
     explicit MockDecoder(std::vector<Spec> specs) : specs_(std::move(specs)) {
         for (const Spec& s : specs_) all_pts_.insert(s.pts);
     }
@@ -177,11 +185,13 @@ public:
     }
 
 private:
-    struct P { int64_t pts, release; };
+    struct P {
+        int64_t pts, release;
+    };
     std::vector<Spec> specs_;
     std::vector<P> pending_;
-    std::set<int64_t> all_pts_;   // 本 GOP 全部显示 pts（已知结构）
-    std::set<int64_t> fed_pts_;   // 已喂入的 pts（输出后保留，表示已解决）
+    std::set<int64_t> all_pts_;  // 本 GOP 全部显示 pts（已知结构）
+    std::set<int64_t> fed_pts_;  // 已喂入的 pts（输出后保留，表示已解决）
     int64_t last_fed_dts_ = -1;
 };
 
@@ -205,7 +215,7 @@ std::vector<MockDecoder::Spec> MakeSpec() {
 
 // 取一帧并打印真实数字。
 cq::ChqStatus Acquire(cq::ChqFrameProvider& fp, int64_t t_val, cq::ChqSeekPolicy policy,
-                   const cq::ChqCancelToken& token, cq::ChqMediaFrame& out) {
+                      const cq::ChqCancelToken& token, cq::ChqMediaFrame& out) {
     cq::ChqFrameRequest req;
     req.at = cq::ChqRationalTime{t_val, kTs};
     req.policy = policy;

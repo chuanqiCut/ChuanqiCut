@@ -77,7 +77,7 @@ public:
     // 一次性释放全部（仅单 owner 调用，不要在并发 Allocate 时进行）。
     void Reset();
 
-    size_t Used() const;       // 自上次 Reset 以来已分配该厂商（含对齐填充）
+    size_t Used() const;  // 自上次 Reset 以来已分配该厂商（含对齐填充）
     size_t Capacity() const;
     size_t Available() const;
 
@@ -103,10 +103,10 @@ public:
     // 归还先前 Acquire 的块（必须来自本池）。非本池指针被忽略（防御）。
     void Release(void* p);
 
-    size_t BlockSize() const;   // 单个槽该厂商数
-    size_t Capacity() const;    // 槽总数
-    size_t LiveCount() const;   // 当前已借出
-    size_t FreeCount() const;   // 当前空闲
+    size_t BlockSize() const;  // 单个槽该厂商数
+    size_t Capacity() const;   // 槽总数
+    size_t LiveCount() const;  // 当前已借出
+    size_t FreeCount() const;  // 当前空闲
 
 private:
     struct Node {

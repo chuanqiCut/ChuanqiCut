@@ -25,10 +25,10 @@ namespace cq {
 
 // 路径命名空间（区分访问语义，尤其是 Android 分区存储）。
 enum class ChqPathNamespace : int32_t {
-    kAppSpecific = 0,   // 应用私有目录（无需权限）
-    kSharedDocuments,   // 共享文档（可能需要权限）
-    kMediaStore,        // 媒体库（Android MediaStore / iOS 相册）
-    kTemp,              // 临时目录
+    kAppSpecific = 0,  // 应用私有目录（无需权限）
+    kSharedDocuments,  // 共享文档（可能需要权限）
+    kMediaStore,       // 媒体库（Android MediaStore / iOS 相册）
+    kTemp,             // 临时目录
 };
 
 // 路径抽象（UTF-8）。uri 对 MediaStore 可能是 content URI 字符串。
@@ -41,9 +41,9 @@ struct ChqPath {
 // 文件访问模式。
 enum class ChqFileAccessMode : int32_t {
     kRead = 0,
-    kWrite,        // 截断写
+    kWrite,  // 截断写
     kReadWrite,
-    kCreate,       // 不存在则创建
+    kCreate,  // 不存在则创建
 };
 
 // 文件元信息。
@@ -69,7 +69,7 @@ public:
 
     virtual ChqStatus Stat(const ChqPath& path, ChqFileStat& out_stat) = 0;
     virtual ChqStatus ListDir(const ChqPath& path, char* out_entries, size_t max_entries,
-                           size_t entry_stride, int32_t& out_count) = 0;
+                              size_t entry_stride, int32_t& out_count) = 0;
     virtual ChqStatus Delete(const ChqPath& path) = 0;
     virtual ChqStatus Rename(const ChqPath& from, const ChqPath& to) = 0;
     virtual ChqStatus CreateDir(const ChqPath& path) = 0;

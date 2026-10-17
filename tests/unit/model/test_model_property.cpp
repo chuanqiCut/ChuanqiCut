@@ -239,10 +239,11 @@ void TestTimelineEffectMethods() {
     Check(tl.FindClip(clip_id)->effects.Size() == 1, "重复被拒后仍只有 1 个效果");
 
     Check(tl.SetClipEffectParam(clip_id, "cq.effect.blur", "radius",
-                                cq::ChqPropertyValue::F(8.0f)).IsOk(),
+                                cq::ChqPropertyValue::F(8.0f))
+              .IsOk(),
           "设参数 radius=8 成功");
     Check(tl.SetClipEffectParam(clip_id, "cq.effect.blur", "", cq::ChqPropertyValue::F(1.0f))
-              .code == cq::ChqStatusCode::kInvalidArgument,
+                  .code == cq::ChqStatusCode::kInvalidArgument,
           "空 key → kInvalidArgument");
     const cq::ChqEffectBinding* e = tl.FindClip(clip_id)->effects.Find("cq.effect.blur");
     Check(e != nullptr && e->params.Size() == 1, "参数袋只有 radius 一个 key（空 key 没进来）");
@@ -269,7 +270,9 @@ void TestCommands() {
         const uint64_t clip_id = MakeOneClipTimeline(tl);
         cq::ChqCommandHistory hist;
         Check(hist.Execute(std::make_unique<cq::ChqAddClipEffectCommand>(
-                               clip_id, MakeEffect("cq.effect.a", "A")), tl).IsOk(),
+                               clip_id, MakeEffect("cq.effect.a", "A")),
+                           tl)
+                  .IsOk(),
               "Execute AddClipEffect");
         Check(tl.FindClip(clip_id)->effects.Size() == 1, "Do 后效果在位");
         Check(hist.UndoDepth() == 1, "AddClipEffect 入栈");
@@ -315,7 +318,9 @@ void TestCommands() {
 
         cq::ChqCommandHistory hist;
         Check(hist.Execute(std::make_unique<cq::ChqSetEffectParamCommand>(
-                               clip_id, "e", "opacity", cq::ChqPropertyValue::F(0.5f)), tl).IsOk(),
+                               clip_id, "e", "opacity", cq::ChqPropertyValue::F(0.5f)),
+                           tl)
+                  .IsOk(),
               "Execute SetEffectParam 1.0 → 0.5");
         float f = 0.0f;
         const cq::ChqEffectBinding* eff = tl.FindClip(clip_id)->effects.Find("e");
@@ -342,7 +347,9 @@ void TestCommands() {
 
         cq::ChqCommandHistory hist;
         Check(hist.Execute(std::make_unique<cq::ChqSetEffectParamCommand>(
-                               clip_id, "e", "radius", cq::ChqPropertyValue::F(8.0f)), tl).IsOk(),
+                               clip_id, "e", "radius", cq::ChqPropertyValue::F(8.0f)),
+                           tl)
+                  .IsOk(),
               "Execute SetEffectParam（新建 key）");
         Check(tl.FindClip(clip_id)->effects.Find("e")->params.Find("radius") != nullptr,
               "Do 后 radius 存在");
@@ -377,20 +384,24 @@ void TestCommands() {
         const uint64_t clip_id = MakeOneClipTimeline(tl);
         cq::ChqCommandHistory hist;
         Check(hist.Execute(std::make_unique<cq::ChqAddClipEffectCommand>(clip_id, MakeEffect("e", "E")),
-                           tl).IsOk(),
+                           tl)
+                  .IsOk(),
               "先挂一个效果（造 redo 分支用）");
         Check(hist.Undo(tl).IsOk(), "Undo 造出 redo 分支");
         Check(hist.CanRedo(), "有 redo 分支");
 
         const size_t depth = hist.UndoDepth();
         Check(!hist.Execute(std::make_unique<cq::ChqAddClipEffectCommand>(
-                                9999, MakeEffect("e2", "E2")), tl).IsOk(),
+                                9999, MakeEffect("e2", "E2")),
+                            tl)
+                   .IsOk(),
               "对不存在的 clip 挂效果 → 失败");
         Check(hist.UndoDepth() == depth, "失败命令不入栈");
         Check(hist.CanRedo(), "失败命令不清 redo 分支");
         Check(!hist.Execute(std::make_unique<cq::ChqSetEffectParamCommand>(
                                 clip_id, "no-such-effect", "k", cq::ChqPropertyValue::F(1.0f)),
-                            tl).IsOk(),
+                            tl)
+                   .IsOk(),
               "对不存在的效果设参数 → 失败");
         Check(hist.UndoDepth() == depth, "效果缺失的失败命令也不入栈");
     }
@@ -410,10 +421,13 @@ void TestDeepRoundTripAndDigest() {
     for (int round = 0; round < 25; ++round) {
         const float v = static_cast<float>(round) * 0.01f;
         Check(hist.Execute(std::make_unique<cq::ChqSetEffectParamCommand>(
-                               clip_id, "e", "opacity", cq::ChqPropertyValue::F(v)), tl).IsOk(),
+                               clip_id, "e", "opacity", cq::ChqPropertyValue::F(v)),
+                           tl)
+                  .IsOk(),
               "深往返：设 opacity");
         Check(hist.Execute(std::make_unique<cq::ChqSetEffectParamCommand>(
-                               clip_id, "e", "radius", cq::ChqPropertyValue::F(v * 2.0f)), tl)
+                               clip_id, "e", "radius", cq::ChqPropertyValue::F(v * 2.0f)),
+                           tl)
                   .IsOk(),
               "深往返：设 radius");
     }
@@ -452,7 +466,8 @@ void TestDeepRoundTripAndDigest() {
     Check(d1 != d0, "挂效果 → digest 变（漏字段就会出现假阴性）");
 
     Check(state.Execute(std::make_unique<cq::ChqSetEffectParamCommand>(
-                            cid, "e", "opacity", cq::ChqPropertyValue::F(0.5f))).IsOk(),
+                            cid, "e", "opacity", cq::ChqPropertyValue::F(0.5f)))
+              .IsOk(),
           "model state：设 opacity=0.5");
     const uint64_t d2 = state.Digest();
     Check(d2 != d1, "改参数值 → digest 变");
@@ -460,7 +475,8 @@ void TestDeepRoundTripAndDigest() {
     // 同值再设一次：内容没变 ⇒ digest 不变（这是内容指纹的正确语义，
     // 不是缺陷；版本号仍推进，由 Session 层负责）
     Check(state.Execute(std::make_unique<cq::ChqSetEffectParamCommand>(
-                            cid, "e", "opacity", cq::ChqPropertyValue::F(0.5f))).IsOk(),
+                            cid, "e", "opacity", cq::ChqPropertyValue::F(0.5f)))
+              .IsOk(),
           "model state：同值再设 opacity=0.5");
     Check(state.Digest() == d2, "同值 set：digest 不变（内容指纹语义：没变就是没变）");
 
@@ -494,10 +510,14 @@ void TestOrthogonalToTrackFlags() {
 
     cq::ChqCommandHistory hist;
     Check(hist.Execute(std::make_unique<cq::ChqAddClipEffectCommand>(
-                           audio_clip, MakeEffect("e", "E")), tl).IsOk(),
+                           audio_clip, MakeEffect("e", "E")),
+                       tl)
+              .IsOk(),
           "音频片段挂效果");
     Check(hist.Execute(std::make_unique<cq::ChqSetEffectParamCommand>(
-                           audio_clip, "e", "gain", cq::ChqPropertyValue::F(0.8f)), tl).IsOk(),
+                           audio_clip, "e", "gain", cq::ChqPropertyValue::F(0.8f)),
+                       tl)
+              .IsOk(),
           "音频片段设参数");
 
     // 轨级标志一个都不许被属性命令碰

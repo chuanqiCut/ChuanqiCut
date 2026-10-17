@@ -48,10 +48,10 @@ int32_t CodeOfEnum(cq::ChqStatusCode code) { return static_cast<int32_t>(code); 
 // ⚠️ CQPreview **不拥有** CQSession —— 调用方保证 session 先活后死
 //    （Swift 侧 Previewer 强持有 Session，顺序由对象图保证）。
 struct CQPreview {
-    cq::ChqIGfxDevice* gfx = nullptr;              // 拥有（CreateGfxDevice 内部 new）
-    cq::ChqPlatformPtr<cq::ChqIBlitPass> blit;             // 拥有
+    cq::ChqIGfxDevice* gfx = nullptr;           // 拥有（CreateGfxDevice 内部 new）
+    cq::ChqPlatformPtr<cq::ChqIBlitPass> blit;  // 拥有
     cq::ChqPlatformFrameProviderFactory provider_factory;
-    cq::ChqEditorSession* session = nullptr;       // 非拥有（见上）
+    cq::ChqEditorSession* session = nullptr;                           // 非拥有（见上）
     std::unique_ptr<cq::ChqIModelSnapshotProvider> snapshot_provider;  // 拥有
     std::unique_ptr<cq::ChqPreviewRenderer> renderer;
 };

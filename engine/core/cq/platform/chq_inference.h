@@ -22,10 +22,10 @@ namespace cq {
 
 // 推理后端类型（枚举仅作 factory 选择；具体后端由平台实现决定，接口不绑定 SDK）。
 enum class ChqInferenceBackendType : int32_t {
-    kAuto = 0,         // 平台自选（优先 NPU/ANE，否则 GPU/CPU）
-    kCoreML,           // Apple ANE（仅 Apple 端有效，其它端回退）
-    kTFLite,           // Android（NNAPI/GPU/XNNPACK 回退）
-    kCpuReference,     // 纯 CPU 参考实现（兜底）
+    kAuto = 0,      // 平台自选（优先 NPU/ANE，否则 GPU/CPU）
+    kCoreML,        // Apple ANE（仅 Apple 端有效，其它端回退）
+    kTFLite,        // Android（NNAPI/GPU/XNNPACK 回退）
+    kCpuReference,  // 纯 CPU 参考实现（兜底）
 };
 
 // 张量角色。
@@ -38,7 +38,7 @@ enum class ChqTensorRole : int32_t {
 struct ChqInferenceTensor {
     ChqInferenceDataType data_type = ChqInferenceDataType::kUnknown;
     int32_t dim_count = 0;
-    int64_t dims[8] = {};     // 固定上限覆盖 NCHW/NHWC；>8 维待 AI-001 实测（hypothesis）
+    int64_t dims[8] = {};  // 固定上限覆盖 NCHW/NHWC；>8 维待 AI-001 实测（hypothesis）
     void* data = nullptr;
     uint64_t data_bytes = 0;
     ChqTensorRole role = ChqTensorRole::kInput;
@@ -46,10 +46,10 @@ struct ChqInferenceTensor {
 
 // 模型资产描述。来源/许可/校验和登记在 third_party/models/manifest.toml（ADR-0005）。
 struct ChqModelAsset {
-    const char* model_id = nullptr;   // manifest 中的资产 ID
-    const char* path = nullptr;       // 本地路径（已落地资产）
+    const char* model_id = nullptr;  // manifest 中的资产 ID
+    const char* path = nullptr;      // 本地路径（已落地资产）
     size_t path_len = 0;
-    const char* checksum = nullptr;   // 可选：完整性校验（如 sha256）
+    const char* checksum = nullptr;  // 可选：完整性校验（如 sha256）
 };
 
 class ChqIInferenceBackend : public ChqIPlatformResource {
@@ -59,8 +59,8 @@ public:
     // 执行推理。inputs/outputs 由调用方填充（含 data 指针与 dims）。
     // 长任务，接受 ChqCancelToken（大图推理可取消）。
     virtual ChqStatus Run(const ChqInferenceTensor* inputs, int32_t input_count,
-                       ChqInferenceTensor* outputs, int32_t output_count,
-                       const ChqCancelToken& token) = 0;
+                          ChqInferenceTensor* outputs, int32_t output_count,
+                          const ChqCancelToken& token) = 0;
 
     // 后端自身可用性（如 ANE/NNAPI 是否存在）。不可用不影响接口，调用方据此降级。
     virtual ChqStatus QueryAvailability(ChqCapabilityValue& out) = 0;

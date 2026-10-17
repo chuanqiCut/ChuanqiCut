@@ -31,11 +31,11 @@
 #include <cstddef>
 #include <cstdint>
 
-#include "cq/base/chq_concurrency.h"  // ChqCancelToken
-#include "cq/base/chq_status.h"       // ChqStatus
-#include "cq/base/chq_rational_time.h"         // ChqRationalTime
-#include "cq/platform/chq_common.h"        // opaque 句柄、平台无关枚举
-#include "cq/platform/chq_media.h"         // Platform ChqIFrameProvider / ChqMediaSource / ChqMediaFrame（本层之下）
+#include "cq/base/chq_concurrency.h"    // ChqCancelToken
+#include "cq/base/chq_status.h"         // ChqStatus
+#include "cq/base/chq_rational_time.h"  // ChqRationalTime
+#include "cq/platform/chq_common.h"     // opaque 句柄、平台无关枚举
+#include "cq/platform/chq_media.h"      // Platform ChqIFrameProvider / ChqMediaSource / ChqMediaFrame（本层之下）
 
 namespace cq {
 
@@ -57,7 +57,7 @@ enum class ChqSeekPolicy : int32_t {
 
 // 取帧请求（编辑侧驱动 seek 的入参）。
 struct ChqFrameRequest {
-    ChqRationalTime at = {};                 // 目标时间戳（项目 timescale 网格 120000）
+    ChqRationalTime at = {};                       // 目标时间戳（项目 timescale 网格 120000）
     ChqSeekPolicy policy = ChqSeekPolicy::kExact;  // 默认精确 seek（编辑正确性优先）
     // 预留：代理/原片质量档（EDIT-006 代理工作流驱动），本任务留位不展开。
     bool proxy_quality = false;
@@ -154,12 +154,12 @@ public:
     // 精确 seek（编辑核心能力）。语义见文件头「精确 seek 语义」一节。
     //   policy 默认 kExact；长任务接受 ChqCancelToken；取消返回 kCancelled（非错误）。
     virtual ChqStatus Seek(const ChqRationalTime& target, ChqSeekPolicy policy,
-                        const ChqCancelToken& token) = 0;
+                           const ChqCancelToken& token) = 0;
 
     // 取 target 处帧（lease 模型，与 Platform 一致）：video.image / audio.pcm 由 provider
     // 内部池所有，调用方使用期间不得释放；用毕必须 ReleaseFrame 归还，供 MEDIA-011 LRU 回收。
     virtual ChqStatus AcquireFrame(const ChqFrameRequest& req, ChqMediaFrame& out_frame,
-                                const ChqCancelToken& token) = 0;
+                                   const ChqCancelToken& token) = 0;
 
     // 归还帧（image / pcm 内存回到 provider 池）。
     virtual void ReleaseFrame(ChqMediaFrame& frame) = 0;

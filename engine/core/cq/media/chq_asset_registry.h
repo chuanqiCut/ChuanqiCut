@@ -57,7 +57,7 @@ public:
 private:
     struct Entry {
         std::shared_ptr<std::string> path;  // 堆持有，地址稳定；拷贝共享
-        ChqMediaSource source;                 // source.path 指向上面的字符串
+        ChqMediaSource source;              // source.path 指向上面的字符串
     };
 
     std::unordered_map<uint64_t, Entry> assets_;

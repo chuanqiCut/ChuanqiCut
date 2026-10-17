@@ -59,7 +59,7 @@ public:
     void Destroy() override { delete this; }
 
     ChqStatus OpenOutput(uint32_t sample_rate, uint32_t channels, ChqSampleFormat fmt,
-                      uint32_t frames_per_buffer) override {
+                         uint32_t frames_per_buffer) override {
         if (fmt != ChqSampleFormat::kFloat32 || channels != 2 || sample_rate == 0 ||
             frames_per_buffer == 0) {
             // 范围见文件头：规格不匹配诚实拒绝，不静默转换。
@@ -95,8 +95,8 @@ public:
         AVAudioSourceNodeRenderBlock block =
             ^OSStatus(BOOL* isSilence, const AudioTimeStamp* timestamp,
                       AVAudioFrameCount frame_count, AudioBufferList* output_data) {
-                return self_ptr->RenderInto(isSilence, timestamp, frame_count,
-                                            output_data, fbytes);
+              return self_ptr->RenderInto(isSilence, timestamp, frame_count,
+                                          output_data, fbytes);
             };
         source_node_ = [[AVAudioSourceNode alloc] initWithFormat:output_format_
                                                      renderBlock:block];
@@ -104,7 +104,7 @@ public:
         [engine_ attachNode:source_node_];
         [engine_ connect:source_node_
                       to:engine_.mainMixerNode
-                    format:output_format_];
+                  format:output_format_];
 
         opened_ = true;
         return ChqStatus::Ok();
@@ -132,7 +132,7 @@ public:
     }
 
     ChqStatus OpenInput(uint32_t sample_rate, uint32_t channels, ChqSampleFormat fmt,
-                     uint32_t frames_per_buffer) override {
+                        uint32_t frames_per_buffer) override {
         (void)sample_rate;
         (void)channels;
         (void)fmt;
@@ -240,18 +240,18 @@ private:
                                               object:nil
                                                queue:[NSOperationQueue mainQueue]
                                           usingBlock:^(NSNotification* note) {
-            NSNumber* type = note.userInfo[AVAudioSessionInterruptionTypeKey];
-            if (type != nil &&
-                type.integerValue == AVAudioSessionInterruptionTypeEnded) {
-                self_ptr->ReactivateIfNeeded();
-            }
-        }];
+                                            NSNumber* type = note.userInfo[AVAudioSessionInterruptionTypeKey];
+                                            if (type != nil &&
+                                                type.integerValue == AVAudioSessionInterruptionTypeEnded) {
+                                                self_ptr->ReactivateIfNeeded();
+                                            }
+                                          }];
         active_token_ = [nc addObserverForName:UIApplicationDidBecomeActiveNotification
-                                       object:nil
-                                        queue:[NSOperationQueue mainQueue]
-                                   usingBlock:^(NSNotification* /* note */) {
-            self_ptr->ReactivateIfNeeded();
-        }];
+                                        object:nil
+                                         queue:[NSOperationQueue mainQueue]
+                                    usingBlock:^(NSNotification* /* note */) {
+                                      self_ptr->ReactivateIfNeeded();
+                                    }];
         observers_registered_ = true;
     }
 
@@ -329,14 +329,14 @@ private:
     bool opened_ = false;
     bool started_ = false;
 #if defined(TARGET_OS_IPHONE) && TARGET_OS_IPHONE
-    bool session_configured_ = false;  // iOS AVAudioSession category 只设一次
+    bool session_configured_ = false;    // iOS AVAudioSession category 只设一次
     bool observers_registered_ = false;  // 打断/前台观察者是否已挂（Start 幂等注册）
     id interruption_token_ = nil;        // AVAudioSessionInterruptionNotification 观察者
     id active_token_ = nil;              // UIApplicationDidBecomeActiveNotification 观察者
 #endif
     uint64_t frame_bytes_ = 0;
-    ChqSpscSampleRing ring_;              // 生产者=Write（混音线程），消费者=渲染回调
-    std::vector<uint8_t> scratch_;     // 环读暂存（OpenOutput 一次性分配）
+    ChqSpscSampleRing ring_;                // 生产者=Write（混音线程），消费者=渲染回调
+    std::vector<uint8_t> scratch_;          // 环读暂存（OpenOutput 一次性分配）
     std::atomic<uint32_t> flush_epoch_{0};  // FlushOutput 递增（混音线程）
     std::atomic<uint32_t> flush_seen_{0};   // 渲染回调已消费到的代数
     std::atomic<uint64_t> underruns_{0};    // 诊断计数（回调线程写）

@@ -90,7 +90,7 @@ void ChqEditorSession::RunChange(const char* name, const ChqMutateFn& mutate) {
 ChqSnapshot ChqEditorSession::CurrentSnapshot() const {
     // 只读 atomic，不触碰 state_（D4）。
     return ChqSnapshot{version_.load(std::memory_order_acquire),
-                    digest_.load(std::memory_order_acquire)};
+                       digest_.load(std::memory_order_acquire)};
 }
 
 // ---- 类型化模型提交（UIA-009 子步骤 1）------------------------------------
@@ -100,7 +100,7 @@ ChqSnapshot ChqEditorSession::CurrentSnapshot() const {
 ChqEditorModelState* ChqEditorSession::BuiltinModel() const { return builtin_model_.get(); }
 
 ChqStatus ChqEditorSession::SubmitRegisterAsset(const char* name, uint64_t asset_id,
-                                          const char* path) {
+                                                const char* path) {
     ChqEditorModelState* model = BuiltinModel();
     if (model == nullptr) return ChqStatus{ChqStatusCode::kInternal};
     if (path == nullptr) return ChqStatus{ChqStatusCode::kInvalidArgument};
@@ -127,7 +127,7 @@ ChqStatus ChqEditorSession::SubmitAddClip(const char* name, uint64_t track_id, c
 }
 
 ChqStatus ChqEditorSession::SubmitMoveClip(const char* name, uint64_t clip_id,
-                                     const ChqRationalTime& start) {
+                                           const ChqRationalTime& start) {
     ChqEditorModelState* model = BuiltinModel();
     if (model == nullptr) return ChqStatus{ChqStatusCode::kInternal};
     if (start.timescale <= 0) return ChqStatus{ChqStatusCode::kInvalidArgument};
@@ -137,7 +137,7 @@ ChqStatus ChqEditorSession::SubmitMoveClip(const char* name, uint64_t clip_id,
 }
 
 ChqStatus ChqEditorSession::SubmitTrimClip(const char* name, uint64_t clip_id,
-                                     const ChqRationalTime& duration) {
+                                           const ChqRationalTime& duration) {
     ChqEditorModelState* model = BuiltinModel();
     if (model == nullptr) return ChqStatus{ChqStatusCode::kInternal};
     if (duration.timescale <= 0) return ChqStatus{ChqStatusCode::kInvalidArgument};
@@ -147,7 +147,7 @@ ChqStatus ChqEditorSession::SubmitTrimClip(const char* name, uint64_t clip_id,
 }
 
 ChqStatus ChqEditorSession::SubmitSplitClip(const char* name, uint64_t clip_id,
-                                      const ChqRationalTime& at) {
+                                            const ChqRationalTime& at) {
     ChqEditorModelState* model = BuiltinModel();
     if (model == nullptr) return ChqStatus{ChqStatusCode::kInternal};
     if (at.timescale <= 0) return ChqStatus{ChqStatusCode::kInvalidArgument};
@@ -173,7 +173,7 @@ ChqStatus ChqEditorSession::SubmitRemoveTrack(const char* name, uint64_t track_i
 }
 
 ChqStatus ChqEditorSession::SubmitTrimClipIn(const char* name, uint64_t clip_id,
-                                       const ChqRationalTime& new_start) {
+                                             const ChqRationalTime& new_start) {
     ChqEditorModelState* model = BuiltinModel();
     if (model == nullptr) return ChqStatus{ChqStatusCode::kInternal};
     if (new_start.timescale <= 0) return ChqStatus{ChqStatusCode::kInvalidArgument};
@@ -183,8 +183,8 @@ ChqStatus ChqEditorSession::SubmitTrimClipIn(const char* name, uint64_t clip_id,
 }
 
 ChqStatus ChqEditorSession::SubmitMoveClipToTrack(const char* name, uint64_t clip_id,
-                                            uint64_t target_track_id,
-                                            const ChqRationalTime& new_start) {
+                                                  uint64_t target_track_id,
+                                                  const ChqRationalTime& new_start) {
     ChqEditorModelState* model = BuiltinModel();
     if (model == nullptr) return ChqStatus{ChqStatusCode::kInternal};
     if (new_start.timescale <= 0) return ChqStatus{ChqStatusCode::kInvalidArgument};

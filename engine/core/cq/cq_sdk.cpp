@@ -263,11 +263,16 @@ void CopyStrTrunc(char* dst, size_t dst_size, const std::string& src, bool& trun
 // ChqPropertyType → ABI type 码（显式映射：枚举重排不应悄悄改变 ABI 数值）。
 int32_t PropTypeToAbi(cq::ChqPropertyType t) {
     switch (t) {
-        case cq::ChqPropertyType::kInt64: return 0;
-        case cq::ChqPropertyType::kFloat: return 1;
-        case cq::ChqPropertyType::kBool: return 2;
-        case cq::ChqPropertyType::kColor: return 3;
-        case cq::ChqPropertyType::kVec2: return 4;
+        case cq::ChqPropertyType::kInt64:
+            return 0;
+        case cq::ChqPropertyType::kFloat:
+            return 1;
+        case cq::ChqPropertyType::kBool:
+            return 2;
+        case cq::ChqPropertyType::kColor:
+            return 3;
+        case cq::ChqPropertyType::kVec2:
+            return 4;
     }
     return -1;  // 枚举封闭，不可达；出现即内部不一致
 }
@@ -291,7 +296,7 @@ int32_t cq_session_add_clip_effect(CQSession* session, uint64_t clip_id,
         return CodeOfEnum(cq::ChqStatusCode::kInvalidArgument);
     }
     cq::ChqEffectBinding effect;
-    effect.effect_id = effect_id;    // 入队前拷贝：提交异步，调用方缓冲区可能先失效
+    effect.effect_id = effect_id;  // 入队前拷贝：提交异步，调用方缓冲区可能先失效
     effect.effect_name = effect_name;
     return CodeOf(session->impl.SubmitAddClipEffect("add-clip-effect", clip_id, effect));
 }

@@ -27,15 +27,15 @@ namespace cq {
 // 能如实给出 codec 名。
 struct ChqFFmpegStreamInfo {
     int32_t index = 0;
-    std::string codec_name;    // 如 "h264" / "aac"；未知流为空
-    std::string media_type;    // "video" / "audio" / "data" / ...
-    int32_t width = 0;         // 仅视频流有效
+    std::string codec_name;  // 如 "h264" / "aac"；未知流为空
+    std::string media_type;  // "video" / "audio" / "data" / ...
+    int32_t width = 0;       // 仅视频流有效
     int32_t height = 0;
 };
 
 struct ChqFFmpegProbeResult {
-    int64_t duration_us = 0;          // 容器头时长（微秒）；未知为 0
-    std::string container_name;       // 如 "mov,mp4,m4a,3gp,3g2,mj2"
+    int64_t duration_us = 0;     // 容器头时长（微秒）；未知为 0
+    std::string container_name;  // 如 "mov,mp4,m4a,3gp,3g2,mj2"
     std::vector<ChqFFmpegStreamInfo> streams;
 };
 

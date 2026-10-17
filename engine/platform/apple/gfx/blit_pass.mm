@@ -15,7 +15,7 @@
 
 #include "cq/platform/chq_gfx.h"
 #include "gfx_metal_internal.h"  // ToShaderHandle / ToPipelineHandle / ToBufferHandle / ToSamplerHandle
-#include "blit_msl.h"  // 构建期生成（build/generated/shaders/），非源码目录
+#include "blit_msl.h"            // 构建期生成（build/generated/shaders/），非源码目录
 
 namespace cq {
 namespace {
@@ -30,13 +30,26 @@ namespace {
 // 故直接对三个顶点的 uv 套同一公式即可。
 inline void RotateUv(uint16_t rot, float& u, float& v) {
     switch (rot) {
-        case 90:  { const float nu = 1.0f - v; const float nv = u; u = nu; v = nv; } break;
-        case 180: { u = 1.0f - u; v = 1.0f - v; } break;
-        case 270: { const float nu = v; const float nv = 1.0f - u; u = nu; v = nv; } break;
-        default: break;  // 0°，不变
+        case 90: {
+            const float nu = 1.0f - v;
+            const float nv = u;
+            u = nu;
+            v = nv;
+        } break;
+        case 180: {
+            u = 1.0f - u;
+            v = 1.0f - v;
+        } break;
+        case 270: {
+            const float nu = v;
+            const float nv = 1.0f - u;
+            u = nu;
+            v = nv;
+        } break;
+        default:
+            break;  // 0°，不变
     }
 }
-
 
 // 全屏三角形（比两个三角形的 quad 少一次光栅化接缝）。
 //   clip(-1,-1)=屏幕左下 → uv(0,1)；clip(-1,3)=屏幕左上之外 → uv(0,-1)
@@ -47,9 +60,18 @@ inline void RotateUv(uint16_t rot, float& u, float& v) {
 //    test_preview_renderer.cpp 的「RT 顶红 / 底蓝」与 test_gfx_device.cpp 的四角断言
 //    锁定。改了会让画面上下颠倒。
 inline constexpr float kBlitVerts[3 * 4] = {
-    -1.0f, -1.0f, 0.0f, 1.0f,
-     3.0f, -1.0f, 2.0f, 1.0f,
-    -1.0f,  3.0f, 0.0f, -1.0f,
+    -1.0f,
+    -1.0f,
+    0.0f,
+    1.0f,
+    3.0f,
+    -1.0f,
+    2.0f,
+    1.0f,
+    -1.0f,
+    3.0f,
+    0.0f,
+    -1.0f,
 };
 
 class AppleBlitPass final : public ChqIBlitPass {
@@ -58,7 +80,7 @@ public:
         : device_(device), target_format_(target_format) {}
 
     ChqStatus Encode(ChqICommandEncoder& encoder, TextureHandle src,
-                    uint32_t rotation_deg) override {
+                     uint32_t rotation_deg) override {
         if (src == nullptr) return ChqStatus(ChqStatusCode::kInvalidArgument);
         ChqStatus s = EnsureResources();
         if (!s.IsOk()) return s;
@@ -189,7 +211,7 @@ private:
 }  // namespace
 
 ChqStatus CreateBlitPass(ChqIGraphicsDevice* device, ChqTextureFormat target_format,
-                      ChqPlatformPtr<ChqIBlitPass>& out_pass) {
+                         ChqPlatformPtr<ChqIBlitPass>& out_pass) {
     if (device == nullptr) return ChqStatus(ChqStatusCode::kInvalidArgument);
     out_pass = ChqPlatformPtr<ChqIBlitPass>(new AppleBlitPass(device, target_format));
     return ChqStatus::Ok();

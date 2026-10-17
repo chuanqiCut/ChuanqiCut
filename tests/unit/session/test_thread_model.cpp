@@ -147,9 +147,10 @@ void TestSerialFifo() {
     std::atomic<int> completed{0};
     for (int i = 0; i < kCount; ++i) {
         Check(runner.Post([&order, &completed, i] {
-                  order.push_back(i);
-                  completed.fetch_add(1, std::memory_order_release);
-              }).IsOk(),
+                        order.push_back(i);
+                        completed.fetch_add(1, std::memory_order_release);
+                    })
+                  .IsOk(),
               "Post 成功");
     }
     int waited = 0;
@@ -185,13 +186,14 @@ void TestBackpressure() {
     std::atomic<bool> started{false};
     std::atomic<bool> gate{false};
     Check(runner.Post([&] {
-              started.store(true, std::memory_order_release);
-              int spins = 0;
-              while (!gate.load(std::memory_order_acquire) && spins < 5000) {
-                  SleepMs(1);
-                  ++spins;
-              }
-          }).IsOk(),
+                    started.store(true, std::memory_order_release);
+                    int spins = 0;
+                    while (!gate.load(std::memory_order_acquire) && spins < 5000) {
+                        SleepMs(1);
+                        ++spins;
+                    }
+                })
+              .IsOk(),
           "投递 A 成功");
 
     // 等 worker 取走 A（此时队列重新为空，后续投递一定滞留在队列里）。

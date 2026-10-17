@@ -56,8 +56,8 @@ enum class ChqRoundMode {
 };
 
 struct ChqRationalTime {
-    int64_t value = 0;       // 以 timescale 为单位的整数刻度数（可为负，表示偏移）
-    int32_t timescale = 1;   // 每秒刻度数，必须 > 0
+    int64_t value = 0;      // 以 timescale 为单位的整数刻度数（可为负，表示偏移）
+    int32_t timescale = 1;  // 每秒刻度数，必须 > 0
 
     constexpr ChqRationalTime() = default;
     constexpr ChqRationalTime(int64_t v, int32_t ts) : value(v), timescale(ts) {}

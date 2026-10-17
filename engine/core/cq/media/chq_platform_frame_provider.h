@@ -40,10 +40,10 @@ public:
     ChqStatus Open(const ChqMediaSource& src) override;
 
     ChqStatus Seek(const ChqRationalTime& target, ChqSeekPolicy policy,
-                const ChqCancelToken& token) override;
+                   const ChqCancelToken& token) override;
 
     ChqStatus AcquireFrame(const ChqFrameRequest& req, ChqMediaFrame& out_frame,
-                        const ChqCancelToken& token) override;
+                           const ChqCancelToken& token) override;
 
     void ReleaseFrame(ChqMediaFrame& frame) override;
 

@@ -30,7 +30,7 @@
 #include "cq/platform/chq_gfx.h"
 #include "cq/platform/chq_media.h"
 #include "cq/media/chq_system_frame_provider.h"
-#include "media_decode.h"  // cq::VideoToolboxDecoder / cq::CqNativeImage / cq::GetCvPixelBuffer
+#include "media_decode.h"        // cq::VideoToolboxDecoder / cq::CqNativeImage / cq::GetCvPixelBuffer
 #include "gfx_metal_internal.h"  // cq::apple::* 辅助（零平台类型签名，纯 C++ 可调用）
 
 #ifndef CQ_SOURCE_DIR
@@ -67,8 +67,8 @@ CVPixelBufferRef MakeTestBuffer(uint32_t w, uint32_t h, bool metal_compat,
     }
     CVPixelBufferRef pb = nullptr;
     CVReturn ret = CVPixelBufferCreate(kCFAllocatorDefault, static_cast<size_t>(w),
-                                      static_cast<size_t>(h), kCVPixelFormatType_32BGRA,
-                                      attrs, &pb);
+                                       static_cast<size_t>(h), kCVPixelFormatType_32BGRA,
+                                       attrs, &pb);
     if (attrs != nullptr) CFRelease(attrs);
     if (ret != kCVReturnSuccess || pb == nullptr) return nullptr;
 
@@ -93,9 +93,18 @@ CVPixelBufferRef MakeTestBuffer(uint32_t w, uint32_t h, bool metal_compat,
 // 全屏三角形顶点：pos.xy(clip) + uv.xy；uv.y 翻转使「uv(0,0)=图像左上（契约约定）」
 // 对齐屏幕左上（Metal NDC 的 clip(-1,+1) 为屏幕左下），避免上下颠倒。
 const float kVerts[3 * 4] = {
-    -1.0f, -1.0f, 0.0f, 1.0f,
-     3.0f, -1.0f, 2.0f, 1.0f,
-    -1.0f,  3.0f, 0.0f, -1.0f,
+    -1.0f,
+    -1.0f,
+    0.0f,
+    1.0f,
+    3.0f,
+    -1.0f,
+    2.0f,
+    1.0f,
+    -1.0f,
+    3.0f,
+    0.0f,
+    -1.0f,
 };
 
 const char* kVertMSL = R"MSL(
@@ -211,7 +220,8 @@ bool RenderImported(cq::ChqIGraphicsDevice* dev, cq::TextureHandle tex,
     if (!cb->WaitUntilCompleted().IsOk()) return false;
 
     if (!cq::apple::ReadRenderTargetPixels(rt.get(), 0, 0, kRT, kRT,
-                                           out_px.data(), out_px.size()).IsOk()) {
+                                           out_px.data(), out_px.size())
+             .IsOk()) {
         return false;
     }
     return true;
@@ -412,8 +422,9 @@ int main() {
                       "Import(真实首帧) 成功");
                 Check(texReal != nullptr, "Import(真实首帧) 产出非空纹理");
                 if (fbReal) {
-                    std::printf("  !! 真实首帧走了 CPU 退化（out_cpu_fallback=true）；"
-                                "PALA-011 设了 MetalCompatibility，预期为零拷贝，请排查。\n");
+                    std::printf(
+                        "  !! 真实首帧走了 CPU 退化（out_cpu_fallback=true）；"
+                        "PALA-011 设了 MetalCompatibility，预期为零拷贝，请排查。\n");
                 } else {
                     Check(true, "Import(真实首帧) 走零拷贝（out_cpu_fallback=false）");
                 }

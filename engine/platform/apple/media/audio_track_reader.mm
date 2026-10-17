@@ -93,10 +93,10 @@ public:
                 dispatch_semaphore_t sem = dispatch_semaphore_create(0);
                 [asset loadValuesAsynchronouslyForKeys:keys
                                      completionHandler:^{
-                                         dispatch_semaphore_signal(sem);
+                                       dispatch_semaphore_signal(sem);
                                      }];
                 const bool completed = dispatch_semaphore_wait(
-                    sem, dispatch_time(DISPATCH_TIME_NOW, kLoadTimeoutNs)) == 0;
+                                           sem, dispatch_time(DISPATCH_TIME_NOW, kLoadTimeoutNs)) == 0;
                 if (completed) {
                     loaded = YES;
                     for (NSString* key in keys) {
@@ -197,7 +197,7 @@ public:
                         static_cast<int64_t>(kProjectTimeScale) /
                         static_cast<int64_t>(spec_.sample_rate);
                     first_pts = ChqRationalTime{pending_pts_.value + offset_ticks,
-                                             kProjectTimeScale};
+                                                kProjectTimeScale};
                     have_first_pts = YES;
                 }
                 pending_consumed_ += static_cast<int64_t>(take);
@@ -250,7 +250,9 @@ private:
         }
         struct SampleHolder {  // RAII：任何提前 return 都释放 +1 的样本引用
             CMSampleBufferRef buf;
-            ~SampleHolder() { if (buf != nullptr) CFRelease(buf); }
+            ~SampleHolder() {
+                if (buf != nullptr) CFRelease(buf);
+            }
         } holder{sbuf};
 
         if (pending_.empty()) {
@@ -365,7 +367,7 @@ private:
 // ---- Platform 工厂（core/cq/audio/track_reader.h 声明）----
 namespace cq {
 ChqStatus CreateAudioTrackReader(ChqPlatformPtr<ChqIAudioTrackReader>& out,
-                              const ChqAudioGraphSpec& spec) {
+                                 const ChqAudioGraphSpec& spec) {
     if (spec.format != ChqSampleFormat::kFloat32 || spec.channels < 1 ||
         spec.sample_rate == 0 || spec.frames_per_block == 0) {
         return ChqStatus{ChqStatusCode::kInvalidArgument};

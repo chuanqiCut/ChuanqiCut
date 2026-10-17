@@ -14,7 +14,7 @@
 #ifndef CQ_CORE_PLATFORM_CHQ_LOG_H_
 #define CQ_CORE_PLATFORM_CHQ_LOG_H_
 
-#include "cq/base/chq_logging.h"    // ChqILogSink（平台后端需实现此接口）
+#include "cq/base/chq_logging.h"  // ChqILogSink（平台后端需实现此接口）
 #include "cq/base/chq_status.h"
 #include "cq/platform/chq_common.h"
 

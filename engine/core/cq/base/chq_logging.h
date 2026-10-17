@@ -70,21 +70,21 @@ enum class ChqPipelineStage : int32_t {
 //   筛一条链路：grep '\[wf:decode\]'
 //   只看某链路的告警：grep '\[wf:decode\]' | grep WARN
 enum class ChqWorkflow : int32_t {
-    kCore = 0,       // 框架：生命周期、session、C ABI 边界
-    kModel,          // 时间线模型、Command、撤销栈
-    kImport,         // 素材导入、探测、时长/封面
-    kDemux,          // 解封装、seek、读包
-    kDecode,         // 解码（VT/MediaCodec 等平台解码器）
-    kFrameCache,     // 帧缓存、复用命中、持有与释放
-    kPreview,        // 预览泵调度、取帧请求的合并与时效
-    kRender,         // 渲染、纹理上传、shader
-    kExport,         // 导出：编码与封装
-    kCamera,         // 相机采集与特效
-    kGfx,            // 图形资源、RenderGraph、设备能力
-    kPerf,           // 性能剖面、慢调用告警、Watchdog
-    kMem,            // 内存观测：footprint、队列/缓存上界
-    kAi,             // 智能成片：ChqEditPlan、特征提取
-    kCount,          // **不是可用 workflow**，仅作数量哨兵（不得用于 WorkflowBit）
+    kCore = 0,    // 框架：生命周期、session、C ABI 边界
+    kModel,       // 时间线模型、Command、撤销栈
+    kImport,      // 素材导入、探测、时长/封面
+    kDemux,       // 解封装、seek、读包
+    kDecode,      // 解码（VT/MediaCodec 等平台解码器）
+    kFrameCache,  // 帧缓存、复用命中、持有与释放
+    kPreview,     // 预览泵调度、取帧请求的合并与时效
+    kRender,      // 渲染、纹理上传、shader
+    kExport,      // 导出：编码与封装
+    kCamera,      // 相机采集与特效
+    kGfx,         // 图形资源、RenderGraph、设备能力
+    kPerf,        // 性能剖面、慢调用告警、Watchdog
+    kMem,         // 内存观测：footprint、队列/缓存上界
+    kAi,          // 智能成片：ChqEditPlan、特征提取
+    kCount,       // **不是可用 workflow**，仅作数量哨兵（不得用于 WorkflowBit）
 };
 
 using ChqWorkflowMask = uint32_t;
@@ -223,12 +223,26 @@ void LogFrameWorkflowImpl(ChqWorkflow wf, ChqPipelineStage stage, const ChqRatio
 // ⚠️ 变参部分（__VA_ARGS__）无法逐个 void 掉，这是既有 CQ_LOG_TRACE 就有的限制：
 //    若某个变量**只为 Trace 日志而计算**，Release 下它会变成未使用变量。
 //    迁移 fprintf 时逐帧日志务必走这条分支，不要临时改用 Debug 绕开。
-#define CQ_LOG_TRACE(...)   do { (void)0; } while (0)
+#define CQ_LOG_TRACE(...) \
+    do {                  \
+        (void)0;          \
+    } while (0)
 #define CQ_LOG_FRAME(stage, pts, ...) \
-    do { (void)(stage); (void)(pts); } while (0)
-#define CQ_LOG_TRACE_WF(wf, ...)  do { (void)(wf); (void)0; } while (0)
+    do {                              \
+        (void)(stage);                \
+        (void)(pts);                  \
+    } while (0)
+#define CQ_LOG_TRACE_WF(wf, ...) \
+    do {                         \
+        (void)(wf);              \
+        (void)0;                 \
+    } while (0)
 #define CQ_LOG_FRAME_WF(wf, stage, pts, ...) \
-    do { (void)(wf); (void)(stage); (void)(pts); } while (0)
+    do {                                     \
+        (void)(wf);                          \
+        (void)(stage);                       \
+        (void)(pts);                         \
+    } while (0)
 #else
 #define CQ_LOG_TRACE(...) \
     ::cq::LogImpl(::cq::ChqLogLevel::kTrace, __FILE__, __LINE__, __VA_ARGS__)

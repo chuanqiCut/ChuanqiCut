@@ -39,7 +39,7 @@ void Check(bool cond, const char* msg) {
 constexpr int32_t kTs = 4;  // 单测时间网格（与项目 120000 逻辑等价）
 
 cq::ChqMediaFrame MakeVideoFrame(int64_t pts, uint32_t w, uint32_t h,
-                              cq::ChqPixelFormat fmt) {
+                                 cq::ChqPixelFormat fmt) {
     cq::ChqMediaFrame f{};
     f.type = cq::ChqMediaType::kVideo;
     f.video.pts = cq::ChqRationalTime{pts, kTs};
@@ -154,10 +154,16 @@ void TestLeaseProtection() {
 // ---------------------------------------------------------------------------
 class MockDemuxer : public cq::ChqIMediaDemuxer {
 public:
-    struct GP { int64_t dts, pts; bool kf; };
+    struct GP {
+        int64_t dts, pts;
+        bool kf;
+    };
     explicit MockDemuxer(std::vector<GP> gop) : gop_(std::move(gop)) {}
     void Destroy() override { delete this; }
-    cq::ChqStatus Open(const cq::ChqMediaSource&) override { idx_ = 0; return cq::ChqStatus::Ok(); }
+    cq::ChqStatus Open(const cq::ChqMediaSource&) override {
+        idx_ = 0;
+        return cq::ChqStatus::Ok();
+    }
     cq::ChqStatus GetDuration(cq::ChqRationalTime& d) const override {
         d = cq::ChqRationalTime{static_cast<int64_t>(gop_.size()), kTs};
         return cq::ChqStatus::Ok();
@@ -167,12 +173,14 @@ public:
         o = cq::ChqStreamInfo{};
         o.type = cq::ChqMediaType::kVideo;
         o.codec = cq::ChqCodecId::kH264;
-        o.width = 64; o.height = 36;
+        o.width = 64;
+        o.height = 36;
         o.time_base = cq::ChqRationalTime{1, kTs};
         return cq::ChqStatus::Ok();
     }
     cq::ChqStatus Seek(const cq::ChqRationalTime&, const cq::ChqCancelToken&) override {
-        idx_ = 0; return cq::ChqStatus::Ok();
+        idx_ = 0;
+        return cq::ChqStatus::Ok();
     }
     cq::ChqStatus ReadPacket(cq::ChqMediaPacket& out) override {
         out = cq::ChqMediaPacket{};
@@ -186,6 +194,7 @@ public:
         out.size = buf_.size();
         return cq::ChqStatus::Ok();
     }
+
 private:
     std::vector<GP> gop_;
     size_t idx_ = 0;
@@ -194,7 +203,9 @@ private:
 
 class MockDecoder : public cq::ChqIFrameDecoder {
 public:
-    struct Spec { int64_t dts, pts, release; };
+    struct Spec {
+        int64_t dts, pts, release;
+    };
     explicit MockDecoder(std::vector<Spec> specs) : specs_(std::move(specs)) {
         for (const Spec& s : specs_) all_pts_.insert(s.pts);
     }
@@ -221,27 +232,42 @@ public:
             if (fp.release > last_fed_dts_) continue;
             bool blocked = false;
             for (int64_t y : all_pts_) {
-                if (y < fp.pts && fed_pts_.find(y) == fed_pts_.end()) { blocked = true; break; }
+                if (y < fp.pts && fed_pts_.find(y) == fed_pts_.end()) {
+                    blocked = true;
+                    break;
+                }
             }
             if (blocked) continue;
-            if (!found || fp.pts < best_pts) { found = true; best_pts = fp.pts; best_i = i; }
+            if (!found || fp.pts < best_pts) {
+                found = true;
+                best_pts = fp.pts;
+                best_i = i;
+            }
         }
         if (!found) return cq::ChqStatus{cq::ChqStatusCode::kIoNotFound};
         out = cq::ChqMediaFrame{};
         out.type = cq::ChqMediaType::kVideo;
         out.video.pts = cq::ChqRationalTime{best_pts, kTs};
         out.video.duration = cq::ChqRationalTime{1, kTs};
-        out.video.width = 64; out.video.height = 36;
+        out.video.width = 64;
+        out.video.height = 36;
         out.video.pixel_format = cq::ChqPixelFormat::kYUV420SemiPlanar;
         pending_.erase(pending_.begin() + static_cast<long>(best_i));
         return cq::ChqStatus::Ok();
     }
-    void Flush() override { pending_.clear(); fed_pts_.clear(); last_fed_dts_ = -1; }
+    void Flush() override {
+        pending_.clear();
+        fed_pts_.clear();
+        last_fed_dts_ = -1;
+    }
 
     int64_t feed_calls = 0;
     int64_t pop_calls = 0;
+
 private:
-    struct P { int64_t pts, release; };
+    struct P {
+        int64_t pts, release;
+    };
     std::vector<Spec> specs_;
     std::vector<P> pending_;
     std::set<int64_t> all_pts_;
@@ -250,10 +276,10 @@ private:
 };
 
 std::vector<MockDemuxer::GP> MakeGop() {
-    return {{0,0,true},{1,3,false},{2,1,false},{3,2,false}};
+    return {{0, 0, true}, {1, 3, false}, {2, 1, false}, {3, 2, false}};
 }
 std::vector<MockDecoder::Spec> MakeSpec() {
-    return {{0,0,0},{1,3,1},{2,1,1},{3,2,1}};
+    return {{0, 0, 0}, {1, 3, 1}, {2, 1, 1}, {3, 2, 1}};
 }
 
 void TestProviderIntegration() {

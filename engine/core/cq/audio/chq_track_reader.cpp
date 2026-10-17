@@ -10,8 +10,8 @@
 namespace cq {
 
 ChqStatus ChqPlatformAudioReaderFactory::Create(const ChqMediaSource& src,
-                                          const ChqAudioGraphSpec& spec,
-                                          ChqAudioReaderPtr& out) {
+                                                const ChqAudioGraphSpec& spec,
+                                                ChqAudioReaderPtr& out) {
     if (src.path == nullptr || src.path_len == 0) {
         return ChqStatus(ChqStatusCode::kInvalidArgument);
     }

@@ -106,7 +106,8 @@ int main(void) {
     /* ---- track_id 过滤查询 ---- */
     n_clips = -1;
     Check(cq_session_query_clips(s, tracks[0].track_id, clips, 8, &n_clips) == 0 &&
-              n_clips == 2, "按 track_id 过滤查询");
+              n_clips == 2,
+          "按 track_id 过滤查询");
     Check(cq_session_query_clips(s, 999, clips, 8, &n_clips) == 0 && n_clips == 0,
           "不存在的轨道返回 0 条（rc 仍为 0）");
 

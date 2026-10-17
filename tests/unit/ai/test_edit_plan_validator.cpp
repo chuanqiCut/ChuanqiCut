@@ -105,7 +105,8 @@ void TestGoldenCases() {
             if (ok) ++valid_pass;
             Check(ok, (c.filename + ": 预期合法，实际 code=" +
                        std::to_string(static_cast<int32_t>(err.code)) +
-                       " path=" + std::string(err.path)).c_str());
+                       " path=" + std::string(err.path))
+                          .c_str());
         } else {
             const bool rejected = s.IsError();
             if (rejected) {
@@ -115,7 +116,8 @@ void TestGoldenCases() {
                 if (name_match) ++invalid_pass;
                 Check(name_match,
                       (c.filename + ": 预期 " + c.expect_code_name +
-                       "，实际 " + std::string(actual_name)).c_str());
+                       "，实际 " + std::string(actual_name))
+                          .c_str());
             } else {
                 Check(false, (c.filename + ": 预期非法，实际通过").c_str());
             }

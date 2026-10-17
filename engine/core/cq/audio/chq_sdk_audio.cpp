@@ -50,11 +50,11 @@ private:
 //    指针，故 mixer 必须先于它们销毁（unique_ptr 成员按声明序**逆序**析构，
 //    把 mixer 放最后声明即可）。
 struct CQAudioPreview {
-    cq::ChqEditorSession* session = nullptr;  // 非拥有（Swift 侧强持有 Session）
-    std::unique_ptr<cq::ChqIModelSnapshotProvider> snapshot_provider;   // 拥有
-    std::unique_ptr<cq::ChqIAudioTrackReaderFactory> reader_factory;    // 拥有
-    cq::ChqPlatformPtr<cq::ChqIAudioEngine> engine;                        // 拥有
-    std::unique_ptr<cq::ChqPreviewAudioMixer> mixer;                    // 拥有（最后构造）
+    cq::ChqEditorSession* session = nullptr;                           // 非拥有（Swift 侧强持有 Session）
+    std::unique_ptr<cq::ChqIModelSnapshotProvider> snapshot_provider;  // 拥有
+    std::unique_ptr<cq::ChqIAudioTrackReaderFactory> reader_factory;   // 拥有
+    cq::ChqPlatformPtr<cq::ChqIAudioEngine> engine;                    // 拥有
+    std::unique_ptr<cq::ChqPreviewAudioMixer> mixer;                   // 拥有（最后构造）
 };
 
 CQAudioPreview* cq_audio_preview_create(CQSession* session) {
@@ -95,7 +95,8 @@ CQAudioPreview* cq_audio_preview_create(CQSession* session) {
     cfg.spec.frames_per_block = 480;  // 10ms @ 48k；块网格 ticks 必须为整
     if (!p->engine->OpenOutput(cfg.spec.sample_rate, cfg.spec.channels,
                                cfg.spec.format,
-                               cfg.spec.frames_per_block).IsOk()) {
+                               cfg.spec.frames_per_block)
+             .IsOk()) {
         CQ_LOG_WARN_WF(cq::ChqWorkflow::kPreview, "音频预览不可用：引擎 OpenOutput 失败");
         cq_audio_preview_destroy(p);
         return nullptr;

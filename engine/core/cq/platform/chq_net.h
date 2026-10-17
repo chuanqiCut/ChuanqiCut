@@ -34,20 +34,20 @@ struct ChqNetHeader {
 
 // 一次性请求描述。url/body 以调用方缓冲传入，调用方保证在调用期间有效。
 struct ChqNetRequest {
-    const char* url = nullptr;          // 完整 URL（含 scheme）
+    const char* url = nullptr;  // 完整 URL（含 scheme）
     size_t url_len = 0;
     const ChqNetHeader* headers = nullptr;
     size_t header_count = 0;
-    const char* body = nullptr;         // UTF-8（JSON）
+    const char* body = nullptr;  // UTF-8（JSON）
     size_t body_len = 0;
     const char* content_type = "application/json";
-    int64_t timeout_ms = 60000;         // 总超时 [E]；连接超时归平台实现配置
+    int64_t timeout_ms = 60000;  // 总超时 [E]；连接超时归平台实现配置
 };
 
 // 响应。body 指向传输实现持有的缓冲，**下次对本传输实例的任何调用或
 // Destroy 之后失效**；调用方需要留存必须自行拷贝。
 struct ChqNetResponse {
-    int32_t http_status = 0;    // 0 = 未收到 HTTP 响应（网络层失败，看 ChqStatus）
+    int32_t http_status = 0;  // 0 = 未收到 HTTP 响应（网络层失败，看 ChqStatus）
     const char* body = nullptr;
     size_t body_len = 0;
 };
@@ -65,20 +65,20 @@ public:
     // 阻塞 POST，响应 JSON。HTTP >= 400 **不算**传输失败：正常返回，
     // http_status 与 body 原样带回，由调用方（ChqILlmClient）判定业务错误。
     virtual ChqStatus PostJson(const ChqNetRequest& request, ChqNetResponse& out_response,
-                            const ChqCancelToken& token) = 0;
+                               const ChqCancelToken& token) = 0;
 
     // 流式 POST（SSE）。每个完整事件回调一次 OnEvent；HTTP 状态非 200 或
     // 响应头阶段失败 → 不进事件循环，直接返回错误 ChqStatus。
     virtual ChqStatus PostSse(const ChqNetRequest& request, ChqINetSseListener& listener,
-                           const ChqCancelToken& token) = 0;
+                              const ChqCancelToken& token) = 0;
 };
 
 // 后端类型（枚举仅作 factory 选择；风格对齐 platform/inference.h 的
 // ChqInferenceBackendType——枚举点平台实现不是平台类型泄漏）。
 enum class ChqNetBackendType : int32_t {
-    kAuto = 0,      // 平台自选（Apple → URLSession；Android/鸿蒙随 P1 各自落实现）
-    kUrlSession,    // Apple 原生（AIEDIT-004 落地）
-    kReference,     // 参考实现：仅测试与离线用途（P0 可不提供）
+    kAuto = 0,    // 平台自选（Apple → URLSession；Android/鸿蒙随 P1 各自落实现）
+    kUrlSession,  // Apple 原生（AIEDIT-004 落地）
+    kReference,   // 参考实现：仅测试与离线用途（P0 可不提供）
 };
 
 // 工厂（由 Platform 平台实现注册）。平台未实现所选后端 → kFormatUnsupported。

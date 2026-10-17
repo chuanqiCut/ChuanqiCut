@@ -38,11 +38,11 @@ ChqStatus ParseEditPlan(std::string_view json, ChqEditPlan& out_plan, ChqEditPla
 // 此时任何 asset 引用都判 kAiPlanAssetUnknown（断网降级路径的资产为空场景
 // 由调用方保证语义，校验器只对照传入表）。
 ChqStatus ValidateEditPlan(const ChqEditPlan& plan, const ChqEditPlanAssetTable& assets,
-                        ChqEditPlanError& out_err);
+                           ChqEditPlanError& out_err);
 
 // 便捷组合：解析 + 结构 + 语义一遍过。
 ChqStatus ValidateEditPlanJson(std::string_view json, const ChqEditPlanAssetTable& assets,
-                            ChqEditPlan& out_plan, ChqEditPlanError& out_err);
+                               ChqEditPlan& out_plan, ChqEditPlanError& out_err);
 
 }  // namespace ai
 }  // namespace cq

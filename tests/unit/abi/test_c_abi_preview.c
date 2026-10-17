@@ -68,7 +68,8 @@ int main(void) {
     Check(cq_session_query_tracks(session, tracks, 4, &n_tracks) == 0 && n_tracks == 1,
           "轨道已生效");
     Check(cq_session_add_clip(session, tracks[0].track_id, 1,
-                              0, TS, 3 * TS, TS, 0, TS) == 0, "add_clip 入队");
+                              0, TS, 3 * TS, TS, 0, TS) == 0,
+          "add_clip 入队");
     for (int i = 0; i < 5000 && cq_session_current_snapshot(session).version < 3; ++i) {
         for (volatile int j = 0; j < 20000; ++j) {
         }

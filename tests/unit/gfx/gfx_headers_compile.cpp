@@ -55,34 +55,34 @@ static_assert(std::is_same_v<ChqRationalTime, decltype(ChqFrameContext{}.pts)>,
 
 // ---- 5. 错误一律 ChqStatus（无异常路径）----
 static_assert(std::is_same_v<ChqStatus, decltype(std::declval<ChqIGfxDevice>().CreateRenderTarget(
-                  std::declval<const ChqRenderTargetDesc&>(),
-                  std::declval<ChqPlatformPtr<ChqIRenderTarget>&>()))>,
+                                            std::declval<const ChqRenderTargetDesc&>(),
+                                            std::declval<ChqPlatformPtr<ChqIRenderTarget>&>()))>,
               "All fallible GFX ops return ChqStatus");
 
 // ---- 6. 长任务接口接受 ChqCancelToken（协作取消，kCancelled 非错误）----
 static_assert(std::is_same_v<ChqStatus (ChqIGfxDevice::*)(const ChqFrameContext&, ChqIRenderTarget*,
-                  ChqIFrameEncoderClient&, const ChqCancelToken&),
-                  decltype(&ChqIGfxDevice::RenderFrame)>,
+                                                          ChqIFrameEncoderClient&, const ChqCancelToken&),
+                             decltype(&ChqIGfxDevice::RenderFrame)>,
               "RenderFrame(ChqFrameContext, target, client, ChqCancelToken) signature must match");
 
 // ---- 7. 底层 Platform 设备经 PlatformDevice() 暴露（GFX 持有 Platform 设备，不重造）----
 static_assert(std::is_same_v<ChqIGraphicsDevice* (ChqIGfxDevice::*)(),
-                  decltype(&ChqIGfxDevice::PlatformDevice)>,
+                             decltype(&ChqIGfxDevice::PlatformDevice)>,
               "PlatformDevice() must surface the underlying Platform ChqIGraphicsDevice");
 
 // ---- 8. 原生图像导入接入点委托 Platform ChqINativeImageImporter（GFX-003 位置）----
 static_assert(std::is_same_v<ChqStatus (ChqIGfxDevice::*)(ChqPlatformPtr<ChqINativeImageImporter>&),
-                  decltype(&ChqIGfxDevice::CreateNativeImageImporter)>,
+                             decltype(&ChqIGfxDevice::CreateNativeImageImporter)>,
               "CreateNativeImageImporter must delegate to Platform ChqINativeImageImporter");
 
 // ---- 9. 纹理池钩子存在（GFX-002 接入点）----
 static_assert(std::is_same_v<void (ChqIGfxDevice::*)(ChqITexturePool*),
-                  decltype(&ChqIGfxDevice::SetTexturePool)>,
+                             decltype(&ChqIGfxDevice::SetTexturePool)>,
               "SetTexturePool must accept ChqITexturePool* (GFX-002 hook)");
 
 // ---- 10. 工厂签名：用 Platform 设备构造 GFX 门面，返回跨平台 ChqIGfxDevice* ----
 static_assert(std::is_same_v<ChqStatus (*)(ChqPlatformPtr<ChqIGraphicsDevice>&, ChqIGfxDevice*&),
-                  decltype(&CreateGfxDevice)>,
+                             decltype(&CreateGfxDevice)>,
               "CreateGfxDevice(ChqPlatformPtr<ChqIGraphicsDevice>&, ChqIGfxDevice*&) signature must match");
 
 }  // namespace

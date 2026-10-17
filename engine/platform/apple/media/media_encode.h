@@ -20,10 +20,10 @@
 
 #include <cstdint>
 
-#include "cq/base/chq_concurrency.h"  // ChqCancelToken
-#include "cq/base/chq_status.h"        // ChqStatus / ChqStatusCode
-#include "cq/base/chq_rational_time.h"          // ChqRationalTime
-#include "cq/platform/chq_media.h"          // ChqAudioTrackConfig / ChqPcmBuffer（音频轨复用）
+#include "cq/base/chq_concurrency.h"    // ChqCancelToken
+#include "cq/base/chq_status.h"         // ChqStatus / ChqStatusCode
+#include "cq/base/chq_rational_time.h"  // ChqRationalTime
+#include "cq/platform/chq_media.h"      // ChqAudioTrackConfig / ChqPcmBuffer（音频轨复用）
 
 // C 类型（CoreVideo），在纯 C++ 下也合法（与 media_decode.h 的 CVPixelBufferRef 一致）。
 typedef struct __CVBuffer* CVPixelBufferRef;
@@ -34,8 +34,8 @@ namespace cq {
 struct EncodeConfig {
     uint32_t width = 0;
     uint32_t height = 0;
-    int32_t timescale = 120000;          // 写入 PTS 的网格；非整除须显式对齐（本期源已是 120000）
-    uint32_t fps_numerator = 30;         // 名义帧率（用于期望帧率/码率假设）
+    int32_t timescale = 120000;   // 写入 PTS 的网格；非整除须显式对齐（本期源已是 120000）
+    uint32_t fps_numerator = 30;  // 名义帧率（用于期望帧率/码率假设）
     uint32_t fps_denominator = 1;
     int64_t average_bitrate = 0;         // 0 = 交给 AVAssetWriter 默认值
     int32_t max_keyframe_interval = 30;  // GOP 长度；=1 表示全 I 帧（all-intra）

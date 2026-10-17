@@ -267,9 +267,9 @@ static int RunCodecAcceptance(const std::string& path, cq::ChqCodecId expect_cod
     int e2e_ok = 0;
     const cq::ChqRationalTime targets[] = {
         cq::ChqRationalTime{0, 120000},
-        cq::ChqRationalTime{120000, 120000},   // 1.0s
-        cq::ChqRationalTime{300000, 120000},   // 2.5s
-        cq::ChqRationalTime{599000, 120000},   // 4.99s
+        cq::ChqRationalTime{120000, 120000},  // 1.0s
+        cq::ChqRationalTime{300000, 120000},  // 2.5s
+        cq::ChqRationalTime{599000, 120000},  // 4.99s
     };
     cq::ChqCancelToken no_cancel;
     for (const cq::ChqRationalTime& t : targets) {

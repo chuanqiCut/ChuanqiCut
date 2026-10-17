@@ -41,7 +41,6 @@
 #define CQ_SOURCE_DIR "."
 #endif
 
-
 namespace {
 
 int g_failures = 0;
@@ -92,10 +91,10 @@ CVPixelBufferRef MakeHalfRedHalfBlue(uint32_t w, uint32_t h) {
             const bool top = (y < h / 2);
             for (uint32_t x = 0; x < w; ++x) {
                 // 该厂商序 BGRA
-                row[x * 4 + 0] = top ? 0 : 255;    // B：上半 0，下半 255 → 下半蓝
-                row[x * 4 + 1] = 0;                // G
-                row[x * 4 + 2] = top ? 255 : 0;    // R：上半 255 → 上半红
-                row[x * 4 + 3] = 255;              // A
+                row[x * 4 + 0] = top ? 0 : 255;  // B：上半 0，下半 255 → 下半蓝
+                row[x * 4 + 1] = 0;              // G
+                row[x * 4 + 2] = top ? 255 : 0;  // R：上半 255 → 上半红
+                row[x * 4 + 3] = 255;            // A
             }
         }
         CVPixelBufferUnlockBaseAddress(pb, 0);
@@ -141,7 +140,6 @@ private:
 };
 
 }  // namespace
-
 
 int main() {
     std::setvbuf(stdout, nullptr, _IONBF, 0);
@@ -201,7 +199,7 @@ int main() {
                         cq::ChqIBlitPass* blit_pass = nullptr;
                         cq::TextureHandle src = nullptr;
                         cq::ChqStatus Encode(cq::ChqIGfxEncoder& enc, const cq::ChqFrameContext&,
-                                          const cq::ChqCancelToken&) override {
+                                             const cq::ChqCancelToken&) override {
                             // ChqIBlitPass 在 Platform 层，收 Platform 的 ChqICommandEncoder。
                             cq::ChqICommandEncoder* platform_enc = enc.PlatformEncoder();
                             if (platform_enc == nullptr) return cq::ChqStatus(cq::ChqStatusCode::kInternal);
@@ -271,7 +269,7 @@ int main() {
     //    「取到 t 时刻那一帧」与「反复复用同一帧」。容差取 40ms（>1 帧 @25fps，
     //    用于吸收「展示区间归属」带来的帧内偏移）。
     {
-        const int64_t want = Ms(500).value;              // 60000 ticks
+        const int64_t want = Ms(500).value;  // 60000 ticks
         const int64_t got = renderer.LastFramePts().value;
         const int64_t diff = got > want ? got - want : want - got;
         std::printf("  请求 pts=%lld  实际帧 pts=%lld  偏差=%lld ticks\n",
@@ -453,7 +451,7 @@ int main() {
             fit_cfg.format = cq::ChqTextureFormat::kRGBA8;
             fit_cfg.fit_mode = cq::ChqFitMode::kContain;  // 构造路径
             cq::ChqPreviewRenderer fit_renderer(gfx, blit.get(), &factory, &fit_snapshots,
-                                             fit_cfg);
+                                                fit_cfg);
             fit_renderer.SetFitMode(cq::ChqFitMode::kContain);  // setter 路径同样覆盖
             Check(fit_renderer.GetFitMode() == cq::ChqFitMode::kContain, "GetFitMode 回读 contain");
 
@@ -486,7 +484,7 @@ int main() {
             fit_cfg.height = 256;
             fit_cfg.format = cq::ChqTextureFormat::kRGBA8;
             cq::ChqPreviewRenderer fit_renderer(gfx, blit.get(), &factory, &fit_snapshots,
-                                             fit_cfg);
+                                                fit_cfg);
             fit_renderer.SetFitMode(cq::ChqFitMode::kCover);
             Check(fit_renderer.GetFitMode() == cq::ChqFitMode::kCover, "GetFitMode 回读 cover");
 

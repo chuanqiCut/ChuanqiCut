@@ -28,9 +28,9 @@
 #include <list>
 #include <map>
 
-#include "cq/base/chq_status.h"            // ChqStatus
-#include "cq/base/chq_rational_time.h"              // ChqRationalTime
-#include "cq/media/chq_frame_provider.h"   // ChqIFrameCache
+#include "cq/base/chq_status.h"           // ChqStatus
+#include "cq/base/chq_rational_time.h"    // ChqRationalTime
+#include "cq/media/chq_frame_provider.h"  // ChqIFrameCache
 
 namespace cq {
 
@@ -50,8 +50,8 @@ public:
 
     // ---- 配置 / 诊断（具体类扩展，不进冻结接口）----
     int64_t MaxBytes() const;
-    void SetMaxBytes(int64_t bytes);     // 缩小时立即触发淘汰
-    int64_t Size() const;               // 当前缓存条目数（不含已借出）
+    void SetMaxBytes(int64_t bytes);                 // 缩小时立即触发淘汰
+    int64_t Size() const;                            // 当前缓存条目数（不含已借出）
     bool Contains(const ChqRationalTime& at) const;  // key 是否在缓存内（已借出不算）
 
 private:
@@ -68,8 +68,8 @@ private:
 
     int64_t max_bytes_;
     int64_t used_bytes_ = 0;
-    std::map<ChqRationalTime, Entry> map_;    // key -> 条目
-    std::list<ChqRationalTime> lru_;          // front = MRU，back = LRU
+    std::map<ChqRationalTime, Entry> map_;  // key -> 条目
+    std::list<ChqRationalTime> lru_;        // front = MRU，back = LRU
 };
 
 }  // namespace cq

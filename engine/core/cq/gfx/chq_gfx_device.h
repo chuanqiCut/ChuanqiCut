@@ -49,11 +49,11 @@
 #include <cstddef>
 #include <cstdint>
 
-#include "cq/base/chq_concurrency.h"  // ChqCancelToken
-#include "cq/base/chq_status.h"       // ChqStatus / ChqStatusCode
-#include "cq/base/chq_rational_time.h"         // ChqRationalTime
-#include "cq/platform/chq_common.h"        // opaque 句柄、ChqIPlatformResource、ChqPlatformPtr、平台无关枚举
-#include "cq/platform/chq_gfx.h"           // Platform ChqIGraphicsDevice 及其 12 概念（本层之下）
+#include "cq/base/chq_concurrency.h"    // ChqCancelToken
+#include "cq/base/chq_status.h"         // ChqStatus / ChqStatusCode
+#include "cq/base/chq_rational_time.h"  // ChqRationalTime
+#include "cq/platform/chq_common.h"     // opaque 句柄、ChqIPlatformResource、ChqPlatformPtr、平台无关枚举
+#include "cq/platform/chq_gfx.h"        // Platform ChqIGraphicsDevice 及其 12 概念（本层之下）
 
 namespace cq {
 
@@ -63,7 +63,7 @@ namespace cq {
 // RenderGraph 的节点在 evaluate 时拿到本结构，据此推导视图变换、采样窗口等，
 // 不在此耦合具体 RenderGraph 类型（避免 GFX 反向依赖 RENDER 层）。
 struct ChqFrameContext {
-    ChqRationalTime pts;  // 该帧在项目时间轴上的位置（ChqRationalTime 网格，timescale=120000）
+    ChqRationalTime pts;                  // 该帧在项目时间轴上的位置（ChqRationalTime 网格，timescale=120000）
     RenderTargetHandle target = nullptr;  // 当前 pass 输出目标（Platform 资源句柄）
 };
 
@@ -108,7 +108,7 @@ public:
     // 在给定 ctx 下把本帧命令编码进 encoder。长任务（编码期间可能触发的 GPU 等待）
     // 接受 token；取消应返回 kCancelled（非错误）。
     virtual ChqStatus Encode(ChqIGfxEncoder& encoder, const ChqFrameContext& ctx,
-                          const ChqCancelToken& token) = 0;
+                             const ChqCancelToken& token) = 0;
 };
 
 // ===========================================================================
@@ -152,7 +152,7 @@ public:
 
     // 渲染目标（复用 Platform 概念，1:1 映射表 RenderTarget）。
     virtual ChqStatus CreateRenderTarget(const ChqRenderTargetDesc& desc,
-                                      ChqPlatformPtr<ChqIRenderTarget>& out) = 0;
+                                         ChqPlatformPtr<ChqIRenderTarget>& out) = 0;
 
     // 受池管理的纹理（GFX-002 接入点）。未注入 ChqITexturePool 时直接走 Platform CreateTexture。
     virtual ChqStatus AcquireTexture(const ChqTextureDesc& desc, ChqPlatformPtr<ChqITexture>& out) = 0;
@@ -161,7 +161,7 @@ public:
     // 着色器 / 管线 / 采样器（委托 Platform）。GPU 内存该厂商数由 Platform ChqITexture::GetMemoryBytes
     // 暴露，供 ChqITexturePool 预算记账（不隐藏显存分配）。
     virtual ChqStatus CreateShaderModule(const ChqShaderModuleDesc& desc,
-                                      ChqPlatformPtr<ChqIShaderModule>& out) = 0;
+                                         ChqPlatformPtr<ChqIShaderModule>& out) = 0;
     virtual ChqStatus CreatePipeline(const ChqPipelineDesc& desc, ChqPlatformPtr<ChqIPipeline>& out) = 0;
     virtual ChqStatus CreateSampler(const ChqSamplerDesc& desc, ChqPlatformPtr<ChqISampler>& out) = 0;
 
@@ -178,7 +178,7 @@ public:
     //    它内部会触碰解码会话与原生纹理缓存，故**同一时刻只能有一个线程**在渲染，
     //    且不得与任何直接调 Platform 编码器的路径并发。
     virtual ChqStatus RenderFrame(const ChqFrameContext& ctx, ChqIRenderTarget* target,
-                               ChqIFrameEncoderClient& client, const ChqCancelToken& token) = 0;
+                                  ChqIFrameEncoderClient& client, const ChqCancelToken& token) = 0;
 
     // 本设备复用的那条命令队列的**中性句柄**（Apple 上 reinterpret 为
     // id<MTLCommandQueue>；语义见 `ChqICommandQueue::NativeHandle`）。

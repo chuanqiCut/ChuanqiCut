@@ -97,7 +97,7 @@ public:
 private:
     ChqTrackKind kind_;
     uint64_t track_id_ = 0;  // 首次 Do 后有效
-    ChqTrack snapshot_{};       // 首次 Do 后捕获（Redo 的 RestoreTrack 输入）
+    ChqTrack snapshot_{};    // 首次 Do 后捕获（Redo 的 RestoreTrack 输入）
     bool captured_ = false;
 };
 
@@ -137,8 +137,8 @@ public:
 
 private:
     uint64_t track_id_;
-    ChqClip clip_;              // 用户输入参数（id 字段无效）
-    uint64_t clip_id_ = 0;   // 首次 Do 分配的 id
+    ChqClip clip_;          // 用户输入参数（id 字段无效）
+    uint64_t clip_id_ = 0;  // 首次 Do 分配的 id
 };
 
 // ---------------------------------------------------------------------------
@@ -154,7 +154,7 @@ public:
 
 private:
     uint64_t clip_id_;
-    ChqClip snapshot_{};        // Do 时捕获
+    ChqClip snapshot_{};     // Do 时捕获
     uint64_t track_id_ = 0;  // 片段原所在轨道
     bool captured_ = false;
 };
@@ -181,13 +181,13 @@ public:
     uint64_t right_clip_id() const { return right_id_; }
 
 private:
-    uint64_t clip_id_;          // 左半（原片段）
+    uint64_t clip_id_;  // 左半（原片段）
     ChqRationalTime at_;
-    uint64_t right_id_ = 0;     // 首次 Do 分配
-    uint64_t track_id_ = 0;     // 首次 Do 定位（Redo 的 RestoreClip 输入）
-    ChqClip left_before_{};     // Do 前的左半（Undo 还原依据）
-    ChqClip left_after_{};      // Do 后的左半（Redo 的 ReplaceClip 输入）
-    ChqClip right_after_{};     // Do 后的右半（Redo 的 RestoreClip 输入）
+    uint64_t right_id_ = 0;  // 首次 Do 分配
+    uint64_t track_id_ = 0;  // 首次 Do 定位（Redo 的 RestoreClip 输入）
+    ChqClip left_before_{};  // Do 前的左半（Undo 还原依据）
+    ChqClip left_after_{};   // Do 后的左半（Redo 的 ReplaceClip 输入）
+    ChqClip right_after_{};  // Do 后的右半（Redo 的 RestoreClip 输入）
     bool captured_ = false;
 };
 
@@ -212,8 +212,8 @@ public:
 private:
     uint64_t clip_id_;
     ChqRationalTime new_start_;
-    ChqClip old_clip_{};   // 首次 Do 时捕获
-    ChqClip new_clip_{};   // 首次 Do 时推导
+    ChqClip old_clip_{};  // 首次 Do 时捕获
+    ChqClip new_clip_{};  // 首次 Do 时推导
     bool captured_ = false;
 };
 
@@ -232,7 +232,7 @@ public:
 private:
     int32_t new_width_;
     int32_t new_height_;
-    int32_t old_width_ = 0;   // 首次 Do 时捕获
+    int32_t old_width_ = 0;  // 首次 Do 时捕获
     int32_t old_height_ = 0;
 };
 
@@ -253,7 +253,7 @@ private:
     uint64_t clip_id_;
     uint64_t target_track_id_;
     ChqRationalTime new_start_;
-    uint64_t old_track_id_ = 0;         // 首次 Do 时捕获
+    uint64_t old_track_id_ = 0;  // 首次 Do 时捕获
     ChqRationalTime old_start_{0, 1};
 };
 

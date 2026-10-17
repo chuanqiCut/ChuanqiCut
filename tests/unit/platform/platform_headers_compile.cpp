@@ -75,7 +75,7 @@ static_assert(std::is_same_v<ChqStatus (ChqIMediaDemuxer::*)(ChqRationalTime&) c
 
 // ---- 5. 错误一律 ChqStatus（无异常路径）----
 static_assert(std::is_same_v<ChqStatus, decltype(std::declval<ChqIGraphicsDevice>().CreateTexture(
-                  std::declval<const ChqTextureDesc&>(), std::declval<ChqPlatformPtr<ChqITexture>&>()))>,
+                                            std::declval<const ChqTextureDesc&>(), std::declval<ChqPlatformPtr<ChqITexture>&>()))>,
               "All fallible Platform ops return ChqStatus");
 
 // ---- 6. 长任务接口接受 ChqCancelToken（协作取消，kCancelled 非错误）----

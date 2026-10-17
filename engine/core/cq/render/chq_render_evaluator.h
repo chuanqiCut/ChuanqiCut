@@ -36,8 +36,8 @@ class ChqRenderEvaluator final : public ChqIFrameEncoderClient {
 public:
     // 注入资源（全部非拥有，生命周期归调用方）。
     struct Resources {
-        ChqIBlitPass* blit = nullptr;       // Platform 全屏拷贝 pass（B0 唯一的 GPU 节点实现）
-        ChqIFrameSource* frames = nullptr;   // 取帧接缝
+        ChqIBlitPass* blit = nullptr;              // Platform 全屏拷贝 pass（B0 唯一的 GPU 节点实现）
+        ChqIFrameSource* frames = nullptr;         // 取帧接缝
         const ChqAssetRegistry* assets = nullptr;  // 当前帧素材表（转发给取帧接缝）
     };
 

@@ -1330,3 +1330,61 @@ core Debug **52/52**、Release **52/52**；6 包用例 26+52+77+16+81 = **252**�
   上一批同档 **239s** → **139s**（≈2.4×）。最慢三步：`core-dbg 86s ← hygiene 4s ← golden 4s`。
 - **全量档（L3）的推算**：`core-dbg 113s → ≈30s`（若树已暖且不需切配置）→ 全量约 **427s − 83s ≈ 344s**。
   ⚠️ **这是推算 `[E]`，本批未实测**（不跑 L3 是本卡的验收条 8）。下一个版本批跑 L3 时必须回填替换。
+  → **2026-10-17 16:14 已实测替换**（见下节「v0.1.0 版本批 L3」）：**344s 这个数作废**，
+  实测是 **513s**，且它比上一批 427s 更高是因为本趟 Release 冷编 —— **不要拿 513s 当暖态基线**。
+
+### v0.1.0 版本批 L3（2026-10-17 16:06:22 起 ~16:14:55，本机 Intel x86_64 集成机，**19 步全量**）
+
+第一趟按 ADR-0046「一个版本号一趟」跑的全量。INFRA-043 分档 + INFRA-045 加步 + INFRA-046 全库重排**同批生效**，
+所以这趟的构成和上一批（18 步、427s）不可直接比 —— 差异同时来自三处改动。
+
+**总账**：`PASS=19 / FAIL=0 / SKIP=0`，**墙钟 513s（8m33s）**，已计时合计 512s（差 1s = 记账开销）。
+报告落 `build/gate-logs/gate-summary.md`，趋势进 `gate-history.tsv`。
+
+| 步 | 秒 | 内部分解 / 判据 |
+|---|---|---|
+| deps / headers / hygiene / layer-hygiene / api-doc | 0 / 1 / 4 / 1 / 0 | hygiene **5/5**，INFO「clang-format 违规 **0**/115」；layer-hygiene 两趟 119 文件 R1 违规 0。**订正（同日 16:3x，同批）**：这 `115` 是**当时脚本的真实射程**（只扫 `engine/**`），不是口径写错 —— 本批收尾把 pathspec 扩到五根，基数变 **168**，负向反证 1/168 → 0/168。数字保留原样，因为它是那一趟的记录 |
+| ios-compile | 24 | iOS 切片 Release 只编译 |
+| **core-dbg** | **20** | 构建 **≈5s（0 TU，暖）** + ctest **15.04s / 38 例**（`-LE heavy`） |
+| **core-rel** | **199** | 构建 **≈57s（95 TU，冷** —— 被 INFRA-046 重排顶掉）+ ctest **141.99s / 52 例** |
+| apple-xcframework | 102 | 通用 xcframework |
+| apple-prepare | 0 | 拷贝 xcframework 进门面 |
+| apple-swift-bindings | 11 | Executed **26** tests, 0 failures |
+| apple-sharedui | 4 | `swift build`（该包无 `Tests/`，P177） |
+| apple-player / camera / import / editor | 1 / 3 / 6 / 22 | Executed **52 / 77 / 16 / 81** tests, 0 failures |
+| **apple-draft** | **3** | **本批新增的第 19 步**，`swift build`（零用例，只证明"能编"） |
+| apple-shells | 106 | 双 App 壳真编译（ios + mac） |
+| golden | 5 | 21 项、0 失败 |
+
+- **分档净收益（本趟口径）**：`core-dbg + core-rel` = **219s**；分档前同日同结构 **113s + 207s = 320s**
+  → 省 **≈101s**。Debug ctest **107.55s → 15.04s**（跨趟秒数不可比 = P160，但同一步内的构建/测试拆分可比）。
+- **暖态推算**：若 Release 树也暖（少掉 95 TU 重编 ≈57s、多算 ≈5s）→ **≈456s**，**仍是 `[E]`（未实测）**。
+  要拿它当基线就得跑一趟两树皆暖的全量。
+- **地板怎么算**（别拿"ctest 拆不掉"当全部）：本趟墙钟 **513s − ctest 两段 157.03s = 356s** 是非测试成本，
+  其中构建段 ≈62s（dbg 5 + rel 57）。两树皆暖时构建段 ≈10s ⇒ **非 ctest 成本 ≈299s**，
+  加 ctest **157s** ⇒ 全量地板 ≈ **456s `[E]`**。撑起地板的是
+  `apple-xcframework 102s + apple-shells 106s + ios-compile 24s + 五个 SPM 包段 ≈42s`，**不是 ctest**
+  —— 这正是池 [25] 判「挂起」的算术依据：拆树只碰得到那 ≈57s，其余都不动。
+- **成本单点**（下批想砍时间先看这两个）：`core-rel 199s`、`apple-shells 106s`，两步占墙钟 **59%**。
+
+### INFRA-046 全库 clang-format 重排（2026-10-17 15:5x~16:1x，本机 = 集成机）
+
+| 项 | 数 | 口径 |
+|---|---|---|
+| 文件基数 | **168** | `git ls-files` 的 `.h/.c/.cpp/.mm`（`engine/** tests/** api/** ui/** apps/**`）排除 vendor；vendor 命中 **0** 个（其 C/C++ 源不入库） |
+| 重排前违规 | engine **79/115**、tests **34/45**、全库 **114** 条 | 114 条里 1 条是符号链接（见 P176） |
+| 实际重排 | **113 files changed, +1684 / −1211** | engine/core 65 + engine/platform 14 + tests/unit 34（提交前复测；早先记的 −1212 与卡面 −1211 差 1 行，以 `git diff --shortstat -- engine tests api` 为准） |
+| 重排后违规 | **0 / 168** | `clang-format --dry-run --Werror`（Apple 21.0.0，两个二进制同版本） |
+| 编译 | Debug 全树重编 **92 TU**，`-Werror` 无警告 | — |
+| 单测 | `--skip-label=heavy` → **ctest 38/38**；L3 趟内该段 **15.04s** | Release **52/52**（141.99s） |
+| 事故 | `api/swift/…/include/cq_sdk.h` 符号链接被 `-i` 换成 38624 字节普通副本（`mode change 120000 => 100644`），**所有门禁照绿**；已 `ln -s` 恢复并与 HEAD 一致 | 见 P176 |
+| **门禁射程订正**（16:3x，同批） | hygiene 的 clang-format 计数 **115 → 168**；整趟 hygiene 由 ≈3.5s → **4.6s** | 原脚本只扫 `engine/**`，**34 个 tests 文件在射程外** → 订正为五根 pathspec。反证：注入违规 **1/168**，还原 **0/168**，`tests` 的 34 files/+457−241 未被探针污染 |
+| 路由 R12（`.clang-format`/`.editorconfig`） | 命中后清单 = hygiene + 全量，档位标题 `L3 全量（规则主动要求）`；`--files` 六条边界全对 | R12 必须在 R11 之后（`linkcheck_docs.py` 不在 `run_gate.sh` 的 19 步内，只在 CI）；空数组崩 + 谎报未归类 = **P178** |
+
+### ui/ChuanqiCutDraft 进门禁（INFRA-045，2026-10-17，实测）
+
+- `swift build`（首编，1 个源文件）= **Build complete! (1.54s)**、rc=0；暖跑 = **0.29~0.31s**。
+- `swift test`（反证）= **rc=1**：`error: no tests found; create a target in the 'Tests' directory`（P177）。
+- 六包 `Tests/` 目录实测：SharedUI **无**、Draft **无**、Player/Camera/Import/Editor **有**
+  → `gate_scope.sh` 的 `CQ_BUILD_ONLY_PKGS` 名单照此定，不是按包名猜的。
+- ⚠️ 该包**零 XCTest 用例**：门禁里那句 `apple-draft PASS` 只等于"能编"，**不等于被测过**。

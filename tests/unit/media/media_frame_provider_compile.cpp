@@ -41,27 +41,27 @@ static_assert(!std::is_default_constructible_v<ChqFrameProvider>,
               "ChqFrameProvider is abstract, implemented by MEDIA-020 ChqSystemFrameProvider");
 // 复用 Platform ChqMediaSource / ChqMediaFrame（lease 模型一致）。
 static_assert(std::is_same_v<ChqStatus (ChqFrameProvider::*)(const ChqMediaSource&),
-                  decltype(&ChqFrameProvider::Open)>,
+                             decltype(&ChqFrameProvider::Open)>,
               "Open(ChqMediaSource&) must reuse Platform ChqMediaSource");
 static_assert(std::is_same_v<void (ChqFrameProvider::*)(ChqMediaFrame&),
-                  decltype(&ChqFrameProvider::ReleaseFrame)>,
+                             decltype(&ChqFrameProvider::ReleaseFrame)>,
               "ReleaseFrame(ChqMediaFrame&) matches Platform lease model");
 
 // ---- 4. 精确 seek 语义签名：Seek(t, policy, token) ----
 static_assert(std::is_same_v<ChqStatus (ChqFrameProvider::*)(const ChqRationalTime&, ChqSeekPolicy,
-                  const ChqCancelToken&),
-                  decltype(&ChqFrameProvider::Seek)>,
+                                                             const ChqCancelToken&),
+                             decltype(&ChqFrameProvider::Seek)>,
               "Seek(ChqRationalTime, ChqSeekPolicy, ChqCancelToken) signature must match");
 
 // ---- 5. 取帧签名：AcquireFrame(ChqFrameRequest, ChqMediaFrame&, token) ----
 static_assert(std::is_same_v<ChqStatus (ChqFrameProvider::*)(const ChqFrameRequest&, ChqMediaFrame&,
-                  const ChqCancelToken&),
-                  decltype(&ChqFrameProvider::AcquireFrame)>,
+                                                             const ChqCancelToken&),
+                             decltype(&ChqFrameProvider::AcquireFrame)>,
               "AcquireFrame(ChqFrameRequest, ChqMediaFrame&, ChqCancelToken) signature must match");
 
 // ---- 6. 时长查询用 ChqRationalTime ----
 static_assert(std::is_same_v<ChqStatus (ChqFrameProvider::*)(ChqRationalTime&) const,
-                  decltype(&ChqFrameProvider::GetDuration)>,
+                             decltype(&ChqFrameProvider::GetDuration)>,
               "GetDuration(ChqRationalTime&) must use ChqRationalTime, not double seconds");
 
 // ---- 7. 下游钩子抽象且 ChqDecoderHandle 为 opaque 指针 ----
@@ -71,15 +71,15 @@ static_assert(!std::is_default_constructible_v<ChqIDecoderPool>,
               "ChqIDecoderPool is abstract (MEDIA-012 implements it)");
 static_assert(std::is_pointer_v<ChqDecoderHandle>, "ChqDecoderHandle must be opaque pointer");
 static_assert(std::is_same_v<ChqStatus (ChqIDecoderPool::*)(ChqCodecId, ChqDecoderHandle&),
-                  decltype(&ChqIDecoderPool::AcquireDecoder)>,
+                             decltype(&ChqIDecoderPool::AcquireDecoder)>,
               "AcquireDecoder(ChqCodecId, ChqDecoderHandle&) must use opaque decoder handle");
 
 // ---- 8. 钩子注入点存在（MEDIA-011 帧缓存 / MEDIA-012 解码器池）----
 static_assert(std::is_same_v<void (ChqFrameProvider::*)(ChqIFrameCache*),
-                  decltype(&ChqFrameProvider::SetFrameCache)>,
+                             decltype(&ChqFrameProvider::SetFrameCache)>,
               "SetFrameCache(ChqIFrameCache*) hook must exist (MEDIA-011)");
 static_assert(std::is_same_v<void (ChqFrameProvider::*)(ChqIDecoderPool*),
-                  decltype(&ChqFrameProvider::SetDecoderPool)>,
+                             decltype(&ChqFrameProvider::SetDecoderPool)>,
               "SetDecoderPool(ChqIDecoderPool*) hook must exist (MEDIA-012)");
 
 }  // namespace

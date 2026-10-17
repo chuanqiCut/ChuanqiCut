@@ -3191,3 +3191,108 @@ echo " 报告：…"
      —— 只有 `MD_LINK` 对所有文件生效（含叙述域），行内代码路径在 `docs/tasks/`、`docs/decisions/`、
      `.ai/memory/` 里是自由文本。反过来说：**别去收紧 `NARRATIVE` 豁免**（P153 的假阳代价更大），
      改写法就够了。
+
+## P175：**clang-format 违规统计连报两趟 0，而同一时刻 `cq_sdk.cpp` 单独判红 —— 假绿出在我自己的统计循环，负向反证却打在二进制上**（2026-10-17，INFRA-046 开工前测基线，部分 verified / 部分明确"未复现"）
+
+**场景**：给 `.clang-format` 写现状前要先量违规数。第一趟用
+`while read -r f; do "$CF" --style=file --dry-run "$f" || echo x; done` → 报 **engine 0/115、tests 0/45**。
+这与 `check_repo_hygiene.sh` 同一时刻打的 INFO「违规 79/115」直接矛盾。
+怀疑是 `--dry-run` 的退出码问题，于是**加上 `--Werror` 重跑**，仍然报 **0/115**；
+同时跑了一个负向反证：造一个违规文件放进 `engine/`，单独对它跑
+`"$CF" --style=file --Werror --dry-run` → **rc=1**（符合预期）。
+⇒ 那一刻我手上是"反证通过 + 统计报 0"，如果就此收手就会把"全库已合规"写进 `.clang-format` 头部。
+真正把问题暴露的不是换 flag，而是我顺手加的一句 **`head -3` 打印被计数的文件名**，
+以及拿 **hygiene 那个独立的 79/115** 去对撞 —— 两边一撞就知道有一边是假的。
+
+**已 verified 的部分**（2026-10-17 16:2x 用 `/tmp` 造违规文件复测，Apple clang-format 21.0.0）：
+1. `clang-format --dry-run bad.c` → **rc=0**（违规只写 stderr，不影响退出码）。
+   `clang-format --dry-run --Werror bad.c` → **rc=1**；`-i` 修完再跑 → rc=0。
+   ⇒ **`-W`/`--Werror` 是这条判据的命门**，任何"`--dry-run` 不报错就是合规"的读法都是错的。
+2. `clang-format --style=file bad.c`（**漏了 `--dry-run`**）→ **rc=0** 且把格式化后的源码**打到 stdout**。
+   ⇒ 同族第二个假绿口：漏 `-n` 时它不是"检查"而是"输出改写结果"，退出码永远是 0。
+3. 第一趟的 0 由 (1) 完全解释。**第二趟（已带 `--Werror`）为什么还是 0，我没有复现出来**：
+   今天用完全相同的循环形态（`for d in …; while read -r f; … done < <(git ls-files "$d" | grep …)`）
+   对 3 个已知违规文件跑 → 正确报 **3/3**。
+   ⇒ 本条**不写根因**，只写这条差异：两次跑的**文件清单来源**不同（`git ls-files engine | grep` vs
+   `git ls-files 'engine/*.h' …`）、**参数顺序**不同（`--Werror --dry-run` vs `--dry-run --Werror`），
+   今日实测**参数顺序不影响结果**（四种组合都 rc=1），所以嫌疑落在清单来源那一路，未证实。
+
+- 规则：
+  1. **统计类判据必须打印样本**（`head -3` 级别的自证）。只报一个数字的统计，数字本身不可信；
+     "0 违规"和"统计没跑起来"在输出上一模一样。
+  2. **负向反证要打在产出这个数字的同一条完整路径上** —— 同参数、同循环、同计数方式。
+     我这次反证绕过循环直接跑二进制，所以循环坏了它照样"通过"，等于没测（**这条是本坑的真正教训**）。
+  3. **有独立的第二个数就去对撞**。本仓 `check_repo_hygiene.sh` 的 INFO 计数就是现成的对撞对象；
+     两个数不一致时，先假设自己错，不要先怀疑门禁。
+  4. 引用违规数要带**口径三件套**：哪个 clang-format（Xcode / CommandLineTools，本机两者同为 21.0.0）、
+     带不带 `--style=file`、文件基数怎么来的（`git ls-files` 排除 vendor = 168）。
+
+## P176：**`clang-format -i` 把符号链接换成普通文件，113 个文件重排顺带把唯一的公共头副本"实文件化"，全部门禁照绿**（2026-10-17，INFRA-046，verified 并已恢复）
+
+**场景**：`git diff --name-only` 里 `api/swift/Sources/ChuanqiCutCore/include/cq_sdk.h` 显示 **+700/−1**。
+它本该是仓库里**唯一一个**符号链接（`→ ../../../../../engine/core/cq/cq_sdk.h`），
+重排后变成 38624 字节的**普通副本**。取证：`git diff --summary` 打
+`mode change 120000 => 100644`；`cmp` 与目标文件**逐字节相同**（`-i` 解析符号链接读原文件，
+写临时文件再 `rename` 覆盖 → 链接本身被换掉）。
+
+**后果（为什么这是最坏的一类）**：内容相同 ⇒ 编译、`-Werror`、ctest 52/52、headers 判据、
+`gen_api_reference.py --check` **全部照绿**。而红线 7 的全部价值系于"公共头只有一份真源"：
+副本一旦出现，下一个人改 `engine/core/cq/cq_sdk.h` 时 Swift 侧那份**静默不动**，
+表现为"改了 ABI 但绑定里还是旧声明"——这类漂移要到链接期或真机才炸，且没人会怀疑到格式批。
+发现它只靠一条：**`git diff --summary` 里的 mode change**。
+
+- 规则：
+  1. **任何 `clang-format -i` / `prettier --write` / `sed -i` 类"原地写回"批处理前**，先列符号链接清单
+     `git ls-files -s | awk '$1=="120000"{print $4}'`（本仓 = 1 个），把它们从待写清单里剔除或事后立即恢复。
+  2. 跑完必须 `git diff --summary | grep -i 'mode change'` ——**mode 变了就是改坏了**，
+     哪怕内容 diff 看着完全正常。同理 `+700/-1` 这种"整文件重写"的形状本身就是信号。
+  3. 恢复用 `ln -s <HEAD 里的目标串> <path>`（目标串从 `git show HEAD:<path>` 取，别手打层数），
+     判据 = `git status --porcelain <path>` **空**（与 HEAD 一致）。
+  4. 详见 [TASK-INFRA-046-全库clang-format重排.md](../../docs/tasks/TASK-INFRA-046-全库clang-format重排.md) 的实测表；
+     `.clang-format` 头部也写了这条警告（它是这类批处理的入口文件）。
+
+## P177：**SwiftPM 包没有 `Tests/` 目标时 `swift test` 是 rc=1 真失败，不是"没测试所以通过"——按包名猜 build/test 会加一步恒红的门禁**（2026-10-17，INFRA-045 收池 [21]，verified）
+
+**场景**：要给 `ui/ChuanqiCutDraft` 进门禁。它只有一个 `Sources/ChuanqiCutDraft/DraftDomain.swift`、
+`Package.swift`、podspec，**没有 `Tests/` 目录**。直觉是"没用例，那就跑 `swift test`，反正会空过"。
+实测（同 scratch-path、同包）：
+- `swift build`  → `Build complete! (1.54s)`，**rc=0**
+- `swift test`   → `Build complete! (0.29s)` 之后 **`error: no tests found; create a target in the 'Tests' directory`**，**rc=1**
+
+**后果**：写进 `run_gate.sh` 就是一部**恒红的门禁**；写进 `gate_scope.sh` 的路由则是"改这个包必然吐一条
+必挂的命令"。红门禁的下场通常是被人加 `|| true`（P145/P160 同族），于是这个包**又回到零覆盖**，
+而这次还多了一条"门禁里有它"的假记录 —— 池 [21] 原本要抓的正是这种"看起来被覆盖"的失灵。
+
+- 规则：
+  1. 判 build 还是 test **只看磁盘**：`[ -d ui/<pkg>/Tests ]`。本仓六包实测
+     SharedUI **NO** / Draft **NO** / Player·Camera·Import·Editor **YES** ——
+     与 `gate_scope.sh` 的 `CQ_BUILD_ONLY_PKGS="SharedUI ChuanqiCutDraft"` 正好一致，
+     新加包时按这条判据决定进哪个名单，别按包名、别按"听起来是不是功能包"。
+  2. **零用例的包进门禁只算"能编"，必须把这句话写进卡面和池的关闭证据**（池 [21] 已写）：
+     `swift build` 不是测试的降级替代品，用它冒充"测过了"就是假绿。
+  3. 顺带一条口径：`--scratch-path` 必须给**仓库外**（= 仓库根 `build/spm/<包名>`，绝对路径）的落点，
+     否则 SPM 默认往包目录里写 `.build`（P164 的第三次案底就是这个形状）。
+
+## P178：给路由**新增一条归类规则**后，"零命中"分支第一次被执行 —— 它当场崩，且崩前一直在说谎（2026-10-17，INFRA-046 收口给 `gate_scope.sh` 补 R12，verified）
+
+**场景**：`gate_scope.sh` 把 `.clang-format` 判成"未归类 → 升档"，脚本自己要求"把该路径加进规则里"。
+补了 R12 之后，`UNCLASSIFIED` 数组**第一次真的为空** —— 于是两件事同时暴露：
+
+1. `bash 3.2 + set -u` 下 `"${UNCLASSIFIED[@]}"` **空数组展开直接报错**
+   （`line 234: UNCLASSIFIED[@]: unbound variable`）。前面已有 `${CMDS[@]+"${CMDS[@]}"}` 的写法，
+   唯独末段这三行没防 —— 因为**这个分支从来没被走过空值**。
+2. 更要紧的：这段是**无条件**打印"⚠️ 未归类的改动 / 并把该路径加进本脚本的规则里"的。
+   R12 自己 `NEED_FULL=1` 也会落进同一句 → 脚本一边把已经归类好的文件列出来，
+   一边让人去修一个**刚刚修好的路由**。（崩修掉之后这个谎还在，且比崩更难发现。）
+
+**后果**：判不准升档这条机制本身是对的，但"升档原因"只有一个出口，两种原因（规则主动要求全量 /
+真的没归类）共用一句提示。前者让人怀疑规则，后者让人以为只需重新跑一遍 —— 两头都得不到正确行动。
+
+- 规则：
+  1. **改判据/路由脚本时，"命中 0 个"是与"命中 N 个"同等优先级的测试输入**。本仓至少三次同族：
+     P170（tsv 一整条没写仍 rc=0）、P172（`if(TEST _t)` 恒假 → 分档静默失效）、本条（空数组崩 + 谎报未归类）。
+     跑法：除正例外至少造一条 `--files <空清单/单文件>` 的边界调用，看 rc **与文案**都要对。
+  2. **一个布尔位不复用两种语义**：`NEED_FULL`（要不要全量）与 `UNCLASSIFIED_FULL`（为什么）分开，
+     文案按原因分两路；标题里的档位名跟着原因变（`L3 全量（规则主动要求）` vs `（判不准升档）`）。
+  3. `bash 3.2` 的数组展开一律 `${arr[@]+"${arr[@]}"}`；`${#arr[@]}` 不报错所以**计数判断靠不住，
+     只有真正展开时才炸** —— 写完带数组的脚本，务必让"数组为空"那一趟真的跑过。

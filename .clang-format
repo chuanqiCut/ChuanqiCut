@@ -1,10 +1,22 @@
-# ChuanqiCut C / C++ / ObjC++ 风格基线（INFRA-034，2026-10-16）
+# ChuanqiCut C / C++ / ObjC++ 风格基线（INFRA-034 立，2026-10-16；INFRA-046 重排落地，2026-10-17）
 #
-# ⚠️ 本文件**只描述现状，不做全库重排**。落地时的违规基线（本机 Xcode clang-format 21.0.0）：
-#     engine/** 的 .h/.c/.cpp 105 个 → **69 个违规**；engine/**/*.mm 10 个 → **10 个违规**；
-#     tests/** 的 .h/.c/.cpp 51 个 → **34 个违规**。数字口径与逐类拆分见 `.ai/modules/core.md`。
-#     重排另开卡分批（把 166 个文件的 cosmetic diff 塞进布局整改批会淹没真实改动）。
+# **现状：全库违规 = 0（0/168）。** INFRA-046 一次重排 **113** 个文件（engine/core 65
+#     + tests/unit 34 + engine/platform 14；口径 = `git ls-files` 里排除 vendor 的 .h/.c/.cpp/.mm）。
+#     重排后 Debug 全树重编 **92 TU**、`-Werror` 下 ctest **38/38**。
+#     ⚠️ `-i` 会把**符号链接换成普通文件**（写临时文件再 rename）：本仓唯一的符号链接
+#     `api/swift/Sources/ChuanqiCutCore/include/cq_sdk.h` 当场变成 38KB 副本，已恢复并计入 P176。
+#     批量重排前先 `git ls-files -s | awk '$1=="120000"'` 列符号链接，跑完必须 `git diff --summary` 查 mode change。
+#     统计碰不到 `engine/vendor/**`，但**不是**因为它被豁免 —— 而是 vendor 的 C/C++ 源文件**根本不入库**
+#     （`git ls-files 'engine/*.h' 'engine/*.cpp' …` 里 vendor 命中 **0**）；第三方补丁口径另见池 [23]。
+#     落地时（INFRA-034）的基线是 engine **79/115**、tests **34/45** —— 那是**历史数字**：当时故意不重排，
+#     因为 cosmetic diff 会淹没真实改动；本批没有并行的功能改动，所以把它做掉了。
+#   ⇒ 从本批起 `check_repo_hygiene.sh` 的 clang-format 计数**再非零就是新代码没按格式写**，
+#     不再是可解释的存量。仍只报不判（做成红闸只会逼出 `|| true`）。
+#     ⚠️ 计数口径本批才**真的**变成全库：脚本原先只扫 `engine/**`（115 个），而重排的 113 个文件里
+#     **34 个在 `tests/**`** —— 那 34 个进门禁看不见，"非零即新代码"当场是假话。现按五根 pathspec
+#     统计、基数 **168**（与上面的口径同一行字）。负向反证：注入一处违规 → **1/168**，还原 → 0/168。
 #   改本文件等于改全库口径 —— 属高冲突配置，只由集成机动，且改完必须重新统计违规基线。
+#     `gate_scope.sh` R12 已把本文件归类：改了它 = 建议全量（不是"判不准"，是射程本来就是全库）。
 ---
 # Google 是现有代码最接近的现成基线（成员 `xxx_` 后缀、`kCamelCase` 枚举值都是 Google 味）。
 BasedOnStyle: Google

@@ -22,42 +22,66 @@ namespace cq {
 
 const char* PipelineStageName(ChqPipelineStage stage) {
     switch (stage) {
-        case ChqPipelineStage::kDemux:  return "demux";
-        case ChqPipelineStage::kDecode:  return "decode";
-        case ChqPipelineStage::kRender:  return "render";
-        case ChqPipelineStage::kEncode:  return "encode";
+        case ChqPipelineStage::kDemux:
+            return "demux";
+        case ChqPipelineStage::kDecode:
+            return "decode";
+        case ChqPipelineStage::kRender:
+            return "render";
+        case ChqPipelineStage::kEncode:
+            return "encode";
     }
     return "?";
 }
 
 const char* LogLevelName(ChqLogLevel level) {
     switch (level) {
-        case ChqLogLevel::kTrace:  return "TRACE";
-        case ChqLogLevel::kDebug:  return "DEBUG";
-        case ChqLogLevel::kInfo:   return "INFO";
-        case ChqLogLevel::kWarn:   return "WARN";
-        case ChqLogLevel::kError:  return "ERROR";
+        case ChqLogLevel::kTrace:
+            return "TRACE";
+        case ChqLogLevel::kDebug:
+            return "DEBUG";
+        case ChqLogLevel::kInfo:
+            return "INFO";
+        case ChqLogLevel::kWarn:
+            return "WARN";
+        case ChqLogLevel::kError:
+            return "ERROR";
     }
     return "?";
 }
 
 const char* WorkflowName(ChqWorkflow wf) {
     switch (wf) {
-        case ChqWorkflow::kCore:        return "core";
-        case ChqWorkflow::kModel:       return "model";
-        case ChqWorkflow::kImport:      return "import";
-        case ChqWorkflow::kDemux:       return "demux";
-        case ChqWorkflow::kDecode:      return "decode";
-        case ChqWorkflow::kFrameCache:  return "framecache";
-        case ChqWorkflow::kPreview:     return "preview";
-        case ChqWorkflow::kRender:      return "render";
-        case ChqWorkflow::kExport:      return "export";
-        case ChqWorkflow::kCamera:      return "camera";
-        case ChqWorkflow::kGfx:         return "gfx";
-        case ChqWorkflow::kPerf:        return "perf";
-        case ChqWorkflow::kMem:         return "mem";
-        case ChqWorkflow::kAi:          return "ai";
-        case ChqWorkflow::kCount:       break;  // 哨兵，不是可用链路
+        case ChqWorkflow::kCore:
+            return "core";
+        case ChqWorkflow::kModel:
+            return "model";
+        case ChqWorkflow::kImport:
+            return "import";
+        case ChqWorkflow::kDemux:
+            return "demux";
+        case ChqWorkflow::kDecode:
+            return "decode";
+        case ChqWorkflow::kFrameCache:
+            return "framecache";
+        case ChqWorkflow::kPreview:
+            return "preview";
+        case ChqWorkflow::kRender:
+            return "render";
+        case ChqWorkflow::kExport:
+            return "export";
+        case ChqWorkflow::kCamera:
+            return "camera";
+        case ChqWorkflow::kGfx:
+            return "gfx";
+        case ChqWorkflow::kPerf:
+            return "perf";
+        case ChqWorkflow::kMem:
+            return "mem";
+        case ChqWorkflow::kAi:
+            return "ai";
+        case ChqWorkflow::kCount:
+            break;  // 哨兵，不是可用链路
     }
     return "?";
 }
@@ -80,10 +104,14 @@ static bool WorkflowFromName(const char* name, ChqWorkflow* out) {
 
 ChqWorkflow WorkflowForStage(ChqPipelineStage stage) {
     switch (stage) {
-        case ChqPipelineStage::kDemux:   return ChqWorkflow::kDemux;
-        case ChqPipelineStage::kDecode:  return ChqWorkflow::kDecode;
-        case ChqPipelineStage::kRender:  return ChqWorkflow::kRender;
-        case ChqPipelineStage::kEncode:  return ChqWorkflow::kExport;
+        case ChqPipelineStage::kDemux:
+            return ChqWorkflow::kDemux;
+        case ChqPipelineStage::kDecode:
+            return ChqWorkflow::kDecode;
+        case ChqPipelineStage::kRender:
+            return ChqWorkflow::kRender;
+        case ChqPipelineStage::kEncode:
+            return ChqWorkflow::kExport;
     }
     return ChqWorkflow::kCore;  // 兜底，不应发生（枚举扩展漏改时一眼可辨）
 }
@@ -205,12 +233,12 @@ private:
         }
     }
 
-    std::mutex mu_;                 // 保护 sink_ 指针切换 + 写入串行化
-    ChqILogSink* sink_ = nullptr;      // 不接管所有权
+    std::mutex mu_;                // 保护 sink_ 指针切换 + 写入串行化
+    ChqILogSink* sink_ = nullptr;  // 不接管所有权
     std::atomic<ChqLogLevel> min_level_;
-    std::atomic<ChqWorkflowMask> wf_mask_{kWorkflowMaskAll};  // workflow 白名单，默认全开
+    std::atomic<ChqWorkflowMask> wf_mask_{kWorkflowMaskAll};                // workflow 白名单，默认全开
     std::atomic<int32_t> wf_level_[static_cast<int>(ChqWorkflow::kCount)];  // -1 = 回落全局
-    ChqFileLogSink default_sink_;      // 默认 stderr 后端
+    ChqFileLogSink default_sink_;                                           // 默认 stderr 后端
 };
 
 // 格式化辅助：把变参格式化进定长缓冲，返回截断后的 C 串。
@@ -316,11 +344,26 @@ bool EqualsIgnoreCase(const char* a, const char* b) {
 // 静默替代会把用户的排查意图改掉）。
 bool ParseLogLevel(const char* s, ChqLogLevel* out) {
     if (s == nullptr || out == nullptr || *s == '\0') return false;
-    if (EqualsIgnoreCase(s, "trace")) { *out = ChqLogLevel::kTrace; return true; }
-    if (EqualsIgnoreCase(s, "debug")) { *out = ChqLogLevel::kDebug; return true; }
-    if (EqualsIgnoreCase(s, "info"))  { *out = ChqLogLevel::kInfo;  return true; }
-    if (EqualsIgnoreCase(s, "warn"))  { *out = ChqLogLevel::kWarn;  return true; }
-    if (EqualsIgnoreCase(s, "error")) { *out = ChqLogLevel::kError; return true; }
+    if (EqualsIgnoreCase(s, "trace")) {
+        *out = ChqLogLevel::kTrace;
+        return true;
+    }
+    if (EqualsIgnoreCase(s, "debug")) {
+        *out = ChqLogLevel::kDebug;
+        return true;
+    }
+    if (EqualsIgnoreCase(s, "info")) {
+        *out = ChqLogLevel::kInfo;
+        return true;
+    }
+    if (EqualsIgnoreCase(s, "warn")) {
+        *out = ChqLogLevel::kWarn;
+        return true;
+    }
+    if (EqualsIgnoreCase(s, "error")) {
+        *out = ChqLogLevel::kError;
+        return true;
+    }
     return false;
 }
 

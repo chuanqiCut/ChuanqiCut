@@ -55,7 +55,7 @@ const char* Rt(const cq::ChqRationalTime& t) {
 
 // ----- 真实文件 ground truth（来自 ffprobe，仓库 golden 的稳定真值）-----
 constexpr int64_t kTs = cq::kProjectTimeScale;  // 120000
-constexpr int64_t kFrameTicks = kTs / 30;        // 30fps → 4000 ticks/帧
+constexpr int64_t kFrameTicks = kTs / 30;       // 30fps → 4000 ticks/帧
 constexpr int64_t kExpectedFrames = 300;
 // 该 golden 文件真实关键帧（I）位置：0.0667/2.0667/4.0667/6.0667/8.0667 s（见上方说明的 2 帧起始偏移）。
 const int64_t kTruthKF[] = {8000, 248000, 488000, 728000, 968000};
@@ -119,7 +119,10 @@ public:
     }
 
 private:
-    struct F { int64_t pts; bool kf; };
+    struct F {
+        int64_t pts;
+        bool kf;
+    };
     static constexpr int64_t kUnset = 0x7fffffffffffffffLL;
     std::vector<F> buf_;
     std::set<int64_t> received_;
@@ -127,7 +130,10 @@ private:
     int64_t dt_;
 };
 
-struct PktInfo { int64_t pts; bool kf; };
+struct PktInfo {
+    int64_t pts;
+    bool kf;
+};
 
 // demuxer 报告的关键帧 pts 集合中是否含某 pts（用 demuxer 自己的 is_keyframe 标志）。
 // 关键帧 pts 是精确整数网格值，用「远小于一帧」的容差判定，避免与相邻 B 帧（同 GOP 内
@@ -164,7 +170,7 @@ int main() {
     // ---- PASS 1：真实 demuxer 全读一遍，收集帧数/pts 集合/is_keyframe ----
     std::vector<PktInfo> all_pkts;
     std::set<int64_t> all_pts;
-    std::vector<int64_t> demux_kf_pts;   // demuxer 自带 is_keyframe 报告的关键帧 pts
+    std::vector<int64_t> demux_kf_pts;  // demuxer 自带 is_keyframe 报告的关键帧 pts
     int64_t prev_raw_pts = -1;
     bool raw_monotonic = true;
     int total = 0;
@@ -227,7 +233,8 @@ int main() {
             bool ok = false;
             for (int i = 0; i < kTruthKFCount; ++i) {
                 if (dk >= kTruthKF[i] - kFrameTicks && dk <= kTruthKF[i] + kFrameTicks) {
-                    ok = true; break;
+                    ok = true;
+                    break;
                 }
             }
             if (ok) ++matched;
@@ -238,7 +245,8 @@ int main() {
             bool hit = false;
             for (int64_t dk : demux_kf_pts) {
                 if (dk >= kTruthKF[i] - kFrameTicks && dk <= kTruthKF[i] + kFrameTicks) {
-                    hit = true; break;
+                    hit = true;
+                    break;
                 }
             }
             if (hit) ++truth_hit;

@@ -116,7 +116,7 @@ void ChqEditorModelState::Publish() {
     // 配对拷贝：ChqTimeline 与 ChqAssetRegistry 同版本发布（读侧一次加载，无撕裂）。
     auto snap = std::make_shared<const ChqModelSnapshot>(
         ChqModelSnapshot{std::make_shared<const ChqTimeline>(timeline_),
-                      std::make_shared<const ChqAssetRegistry>(assets_)});
+                         std::make_shared<const ChqAssetRegistry>(assets_)});
     std::lock_guard<std::mutex> lk(snap_mtx_);
     published_ = std::move(snap);
 }

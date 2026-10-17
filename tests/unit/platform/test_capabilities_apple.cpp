@@ -77,14 +77,22 @@ const char* CapName(cq::ChqCapability c) {
 }
 
 const cq::ChqCapability kAllCapabilities[] = {
-    cq::ChqCapability::kHwDecodeH264,   cq::ChqCapability::kHwDecodeHevc,
-    cq::ChqCapability::kHwDecodeAv1,    cq::ChqCapability::kHwDecodeProres,
-    cq::ChqCapability::kHwEncodeH264,   cq::ChqCapability::kHwEncodeHevc,
-    cq::ChqCapability::kHwEncodeProres, cq::ChqCapability::k10BitPipeline,
-    cq::ChqCapability::kHdrDisplay,     cq::ChqCapability::kComputeShader,
-    cq::ChqCapability::kFloatTexture,   cq::ChqCapability::kExternalMemoryImport,
-    cq::ChqCapability::kNpuInference,   cq::ChqCapability::kGpuMetal,
-    cq::ChqCapability::kGpuGles,        cq::ChqCapability::kGpuVulkan,
+    cq::ChqCapability::kHwDecodeH264,
+    cq::ChqCapability::kHwDecodeHevc,
+    cq::ChqCapability::kHwDecodeAv1,
+    cq::ChqCapability::kHwDecodeProres,
+    cq::ChqCapability::kHwEncodeH264,
+    cq::ChqCapability::kHwEncodeHevc,
+    cq::ChqCapability::kHwEncodeProres,
+    cq::ChqCapability::k10BitPipeline,
+    cq::ChqCapability::kHdrDisplay,
+    cq::ChqCapability::kComputeShader,
+    cq::ChqCapability::kFloatTexture,
+    cq::ChqCapability::kExternalMemoryImport,
+    cq::ChqCapability::kNpuInference,
+    cq::ChqCapability::kGpuMetal,
+    cq::ChqCapability::kGpuGles,
+    cq::ChqCapability::kGpuVulkan,
 };
 
 void TestInstall() {

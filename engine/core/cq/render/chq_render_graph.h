@@ -58,8 +58,8 @@ struct ChqRenderNodeDesc {
     ChqRenderNodeKind kind = ChqRenderNodeKind::kSource;
 
     // ---- kSource ----
-    uint64_t asset_id = 0;            // 素材 id（查 ChqAssetRegistry）
-    uint64_t clip_id = 0;             // 命中的片段 id（属性系统与诊断用；0 = 无）
+    uint64_t asset_id = 0;              // 素材 id（查 ChqAssetRegistry）
+    uint64_t clip_id = 0;               // 命中的片段 id（属性系统与诊断用；0 = 无）
     ChqRationalTime source_time{0, 1};  // 素材内时间（= clip.source.source_in + (pts - clip.start)）
     // #21：源帧**显示朝向**旋转角（度，0/90/180/270），由解码侧经 Acquire 回填，
     // 装配时未知（与 source_width/height 同生命周期）。blit 据此做 UV 旋转还原朝向，
@@ -68,9 +68,9 @@ struct ChqRenderNodeDesc {
 
     // ---- kBlit ----
     ChqFitMode fit_mode = ChqFitMode::kStretch;
-    uint32_t target_width = 0;   // 输出目标像素尺寸（画布）
+    uint32_t target_width = 0;  // 输出目标像素尺寸（画布）
     uint32_t target_height = 0;
-    uint32_t source_width = 0;   // 源帧像素尺寸（0 = 未知，取帧后回填）
+    uint32_t source_width = 0;  // 源帧像素尺寸（0 = 未知，取帧后回填）
     uint32_t source_height = 0;
 
     // ---- 边（DAG）：inputs[i] 是本节点的输入节点索引 ----

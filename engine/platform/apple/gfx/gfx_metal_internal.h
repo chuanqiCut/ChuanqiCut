@@ -20,8 +20,8 @@ namespace apple {
 // 内部用一次 blit 把纹理拷到 Shared 缓冲再 memcpy，兼容 Private/Managed 存储。
 // 区域 (x,y,w,h) 必须在 RenderTarget 范围内。out_rgba8 由调用方提供，容量 >= out_size。
 ChqStatus ReadRenderTargetPixels(ChqIRenderTarget* rt,
-                              uint32_t x, uint32_t y, uint32_t w, uint32_t h,
-                              void* out_rgba8, size_t out_size);
+                                 uint32_t x, uint32_t y, uint32_t w, uint32_t h,
+                                 void* out_rgba8, size_t out_size);
 
 // 把 RGBA8 数据上传进一张已创建的纹理（仅测试 / 调试用）。
 // 假定纹理格式为 kRGBA8，行跨度为 width*4。用于注入「已知内容纹理」做采样验证。
@@ -32,10 +32,10 @@ ChqStatus UploadTextureData(ChqITexture* tex, const void* data, size_t bytes);
 // 这里提供安全的下行转换，使客户端（含 ctest）能拿到装配所需的句柄而无需看到平台类型。
 // 函数签名只用到 Platform 头类型，故可在纯 C++ 的测试 TU 中调用。
 ShaderModuleHandle ToShaderHandle(ChqIShaderModule* p);
-PipelineHandle    ToPipelineHandle(ChqIPipeline* p);
-BufferHandle      ToBufferHandle(ChqIBuffer* p);
-TextureHandle     ToTextureHandle(ChqITexture* p);
-SamplerHandle     ToSamplerHandle(ChqISampler* p);
+PipelineHandle ToPipelineHandle(ChqIPipeline* p);
+BufferHandle ToBufferHandle(ChqIBuffer* p);
+TextureHandle ToTextureHandle(ChqITexture* p);
+SamplerHandle ToSamplerHandle(ChqISampler* p);
 RenderTargetHandle ToRenderTargetHandle(ChqIRenderTarget* p);
 
 // 零拷贝验证辅助：返回导入纹理背后 IOSurface 的 ID；取不到（非 IOSurface 纹理 / 平台
@@ -47,9 +47,9 @@ uint32_t GetImportedTextureIosurfaceId(TextureHandle tex);
 // （cpu_handle）各 iters 次，返回各自总耗时（毫秒）。返回 ChqStatus::Ok 时 out_zero_ms /
 // out_cpu_ms 有效。签名仅用 Platform 头类型，纯 C++ 测试 TU 可调用。
 ChqStatus BenchmarkNativeImageImport(ChqIGraphicsDevice* dev,
-                                 NativeImageHandle zero_handle,
-                                 NativeImageHandle cpu_handle,
-                                 int iters, double& out_zero_ms, double& out_cpu_ms);
+                                     NativeImageHandle zero_handle,
+                                     NativeImageHandle cpu_handle,
+                                     int iters, double& out_zero_ms, double& out_cpu_ms);
 
 // 释放 importer 产出的纹理句柄：ChqINativeImageImporter::Import 返回裸 TextureHandle，
 // 而 CqTexture 在 core 为不完整类型，调用方无法直接 Destroy，故经此 Apple 辅助释放

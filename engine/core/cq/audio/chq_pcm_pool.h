@@ -58,17 +58,18 @@ private:
     }
 
     // 槽位状态（per-slot 双保险）。cpp 侧以 kStateFree/kStateAcquired 常量使用。
-    enum class SlotState : uint8_t { kFree = 0, kAcquired = 1 };
+    enum class SlotState : uint8_t { kFree = 0,
+                                     kAcquired = 1 };
 
     // 释放全部内存（析构与 Re-init 保护用）。
     void Teardown();
 
-    std::atomic<uint64_t> free_head_{0};   // {tag,index}；kFreeListEmpty 见下
+    std::atomic<uint64_t> free_head_{0};  // {tag,index}；kFreeListEmpty 见下
     std::atomic<uint32_t> in_use_{0};
     std::atomic<uint8_t>* slot_state_ = nullptr;  // 每槽一该厂商状态（预分配数组）
-    uint32_t* next_ = nullptr;             // freelist 每槽 next（预分配数组）
-    uint8_t* storage_ = nullptr;           // 连续样本内存（block_count_ 槽）
-    ChqAudioBuffer meta_{};                   // Acquire 时复制的规格模板（data/pts 逐块填）
+    uint32_t* next_ = nullptr;                    // freelist 每槽 next（预分配数组）
+    uint8_t* storage_ = nullptr;                  // 连续样本内存（block_count_ 槽）
+    ChqAudioBuffer meta_{};                       // Acquire 时复制的规格模板（data/pts 逐块填）
     uint64_t slot_bytes_ = 0;
     uint32_t block_count_ = 0;
     bool initialized_ = false;

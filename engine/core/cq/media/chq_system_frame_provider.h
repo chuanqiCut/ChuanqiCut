@@ -23,15 +23,15 @@
 
 #include <memory>
 
-#include "cq/base/chq_concurrency.h"  // ChqCancelToken
+#include "cq/base/chq_concurrency.h"      // ChqCancelToken
 #include "cq/base/chq_logging.h"          // CQ_LOG_*_WF：带 workflow 的分级日志（CORE-010）
-#include "cq/base/chq_perf.h"        // 性能埋点 + CQ_SLOW_CALL_WF（真机实测用）
-#include "cq/base/chq_status.h"       // ChqStatus / ChqStatusCode
-#include "cq/base/chq_rational_time.h"         // ChqRationalTime
+#include "cq/base/chq_perf.h"             // 性能埋点 + CQ_SLOW_CALL_WF（真机实测用）
+#include "cq/base/chq_status.h"           // ChqStatus / ChqStatusCode
+#include "cq/base/chq_rational_time.h"    // ChqRationalTime
 #include "cq/media/chq_frame_provider.h"  // ChqFrameProvider（MEDIA-010 抽象）
-#include "cq/media/chq_decoder_pool.h"   // ChqIDecoderPool / DecoderOf（MEDIA-012 接入）
-#include "cq/platform/chq_common.h"        // NativeImageHandle / ChqPlatformPtr
-#include "cq/platform/chq_media.h"         // ChqIMediaDemuxer / ChqMediaPacket / ChqMediaFrame / ChqMediaSource
+#include "cq/media/chq_decoder_pool.h"    // ChqIDecoderPool / DecoderOf（MEDIA-012 接入）
+#include "cq/platform/chq_common.h"       // NativeImageHandle / ChqPlatformPtr
+#include "cq/platform/chq_media.h"        // ChqIMediaDemuxer / ChqMediaPacket / ChqMediaFrame / ChqMediaSource
 
 namespace cq {
 
@@ -139,7 +139,7 @@ public:
     // 精确 seek（编辑核心）。先定位到 <= target 的最近关键帧（Platform 吸收平台差异），
     // 重置解码器 DPB；具体「解码到 t 帧」发生在 AcquireFrame。
     ChqStatus Seek(const ChqRationalTime& target, ChqSeekPolicy policy,
-                const ChqCancelToken& token) override {
+                   const ChqCancelToken& token) override {
         // CORE-010：统一走 base 的 ChqSlowCallAlarm —— Release 可见。Seek 一旦卡住
         // 会顺着调用链把整条预览链拖死，而这类故障恰恰不会发生在 Debug 包上。
         CQ_SLOW_CALL_WF(ChqWorkflow::kFrameCache, "provider Seek");
@@ -161,7 +161,7 @@ public:
     }
 
     ChqStatus AcquireFrame(const ChqFrameRequest& req, ChqMediaFrame& out_frame,
-                        const ChqCancelToken& token) override {
+                           const ChqCancelToken& token) override {
         // 埋点：取帧总耗时（含缓存查询 / seek / 解码）。真机实测打开埋点后，
         // 这是判断"取一帧够不够快"的主指标；pts 用于把耗时对齐到具体帧。
         // 用显式 ChqPerfScope 而非 CQ_PERF_SCOPE 宏：需要在命中分支上附加信息，
@@ -539,25 +539,25 @@ private:
     }
 
     ChqPlatformPtr<ChqIMediaDemuxer> demuxer_;
-    ChqIFrameDecoder* decoder_ = nullptr;  // 不接管（Open 时可能被子解码器池覆盖）
+    ChqIFrameDecoder* decoder_ = nullptr;              // 不接管（Open 时可能被子解码器池覆盖）
     std::unique_ptr<ChqIFrameDecoder> owned_decoder_;  // AdoptDecoder 后持有，保证同生命周期
-    ChqIFrameCache* cache_ = nullptr;      // 帧缓存钩子（MEDIA-011）
-    ChqIDecoderPool* pool_ = nullptr;      // 解码器池钩子（MEDIA-012）
-    ChqDecoderHandle pool_handle_ = nullptr;  // 本实例从池借到的路（析构/重开时归还）
-    bool loaned_ = false;              // 当前 out_frame 是否来自帧缓存（move-out）
-    ChqRationalTime loaned_key_{0, 1};    // 借出的缓存 key（ReleaseFrame 时交回）
+    ChqIFrameCache* cache_ = nullptr;                  // 帧缓存钩子（MEDIA-011）
+    ChqIDecoderPool* pool_ = nullptr;                  // 解码器池钩子（MEDIA-012）
+    ChqDecoderHandle pool_handle_ = nullptr;           // 本实例从池借到的路（析构/重开时归还）
+    bool loaned_ = false;                              // 当前 out_frame 是否来自帧缓存（move-out）
+    ChqRationalTime loaned_key_{0, 1};                 // 借出的缓存 key（ReleaseFrame 时交回）
     bool seeked_ = false;
     ChqRationalTime seek_target_{0, 1};
     ChqMediaFrame result_;  // 命中帧暂存（lease 移交前）
 
     // ---- MEDIA-021：顺序取帧增量状态（只存 pts/duration 元数据，绝不持有 image）----
-    bool has_last_ = false;           // 增量锚点是否可信（上次成功交付后未被打断）
+    bool has_last_ = false;              // 增量锚点是否可信（上次成功交付后未被打断）
     ChqRationalTime last_pts_{0, 1};     // 上次交付帧 pts
     ChqRationalTime last_end_{0, 1};     // 上次交付帧展示区间终点（pts + duration）
-    bool has_kf_ = false;             // 关键帧锚点是否有效（自上次 seek/复位后见过关键帧）
+    bool has_kf_ = false;                // 关键帧锚点是否有效（自上次 seek/复位后见过关键帧）
     ChqRationalTime last_kf_pts_{0, 1};  // 最近喂入的关键帧 pts
     ChqRationalTime proven_span_{0, 1};  // 已证实的无关键帧最大跨度（自适应阈值，实证才增长）
-    bool consumed_ = false;           // seek_target_ 是否已被一次取帧消费（防同帧重复错帧）
+    bool consumed_ = false;              // seek_target_ 是否已被一次取帧消费（防同帧重复错帧）
 };
 
 // 工厂：构造 ChqSystemFrameProvider（调用方持有 unique_ptr<ChqFrameProvider>）。

@@ -129,7 +129,7 @@ int main() {
     cfg.fps_numerator = 30;
     cfg.fps_denominator = 1;
     cfg.average_bitrate = 20000000;  // 20 Mbps，确保平坦绿区近无损
-    cfg.max_keyframe_interval = 1;    // all-intra，最大化像素还原度（仍合法 H.264）
+    cfg.max_keyframe_interval = 1;   // all-intra，最大化像素还原度（仍合法 H.264）
     cfg.allow_hardware = true;
 
     cq::AppleVideoEncoder encoder;
@@ -205,9 +205,9 @@ int main() {
     std::printf("\n[ffprobe 验证] 工具: %s\n", ffprobe_bin.c_str());
 
     std::string cmd = std::string(ffprobe_bin) +
-        " -v error -show_entries stream=codec_name,width,height,nb_read_frames"
-        " -count_frames -of default=noprint_wrappers=1 " +
-        out_path;
+                      " -v error -show_entries stream=codec_name,width,height,nb_read_frames"
+                      " -count_frames -of default=noprint_wrappers=1 " +
+                      out_path;
     std::string probe_out;
     bool have_ffprobe = RunCapture(cmd.c_str(), probe_out);
     std::printf("  %s\n", probe_out.c_str());
@@ -226,8 +226,8 @@ int main() {
 
         // 时长
         std::string dcmd = std::string(ffprobe_bin) +
-            " -v error -show_entries format=duration -of default=noprint_wrappers=1 " +
-            out_path;
+                           " -v error -show_entries format=duration -of default=noprint_wrappers=1 " +
+                           out_path;
         std::string dout;
         if (RunCapture(dcmd.c_str(), dout)) {
             std::printf("  %s", dout.c_str());

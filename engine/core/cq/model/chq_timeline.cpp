@@ -54,13 +54,16 @@ const ChqTrack* ChqTimeline::FindTrack(uint64_t track_id) const {
 ChqStatus ChqTimeline::InsertClip(uint64_t track_id, const ChqClip& clip, uint64_t& out_id) {
     ChqTrack* track = nullptr;
     for (ChqTrack& t : tracks_) {
-        if (t.id == track_id) { track = &t; break; }
+        if (t.id == track_id) {
+            track = &t;
+            break;
+        }
     }
     if (track == nullptr) return ChqStatus(ChqStatusCode::kInvalidArgument);
 
     // 轨道类型必须匹配：音频片段放视频轨会让后续混音/渲染分支到处做类型判断。
     const ChqClipKind expected = (track->kind == ChqTrackKind::kVideo) ? ChqClipKind::kVideo
-                                                                 : ChqClipKind::kAudio;
+                                                                       : ChqClipKind::kAudio;
     if (clip.kind != expected) return ChqStatus(ChqStatusCode::kInvalidArgument);
 
     // 时长必须为正（零时长片段在时间线上没有意义，且会让命中测试含糊）。
@@ -148,7 +151,7 @@ ChqStatus ChqTimeline::ReplaceClip(const ChqClip& clip) {
 
     // kind 必须匹配所在轨道（与 Insert 同规则：音频片段不能原地变成视频）。
     const ChqClipKind expected = (track->kind == ChqTrackKind::kVideo) ? ChqClipKind::kVideo
-                                                                 : ChqClipKind::kAudio;
+                                                                       : ChqClipKind::kAudio;
     if (clip.kind != expected) return ChqStatus(ChqStatusCode::kInvalidArgument);
     if (clip.duration.value <= 0 || clip.duration.timescale <= 0) {
         return ChqStatus(ChqStatusCode::kInvalidArgument);
@@ -283,13 +286,16 @@ ChqStatus ChqTimeline::MoveClipToTrack(uint64_t clip_id, uint64_t target_track_i
 
     ChqTrack* target = nullptr;
     for (ChqTrack& t : tracks_) {
-        if (t.id == target_track_id) { target = &t; break; }
+        if (t.id == target_track_id) {
+            target = &t;
+            break;
+        }
     }
     if (target == nullptr) return ChqStatus(ChqStatusCode::kInvalidArgument);
 
     // 类型匹配：音频片段不能上视频轨（与 Insert 同规则）。
     const ChqClipKind expected = (target->kind == ChqTrackKind::kVideo) ? ChqClipKind::kVideo
-                                                                  : ChqClipKind::kAudio;
+                                                                        : ChqClipKind::kAudio;
     if (clip->kind != expected) return ChqStatus(ChqStatusCode::kInvalidArgument);
 
     // 先校验后变更：同轨 = 排除自身（等价 MoveClip）；跨轨 = 片段还不在目标轨，
@@ -314,7 +320,10 @@ ChqStatus ChqTimeline::MoveClipToTrack(uint64_t clip_id, uint64_t target_track_i
     // ⚠️ 用 candidate（已带新起点），不是 *clip —— P119 同族：双变量就近取用是坑。
     ChqClip moved = candidate;
     for (auto it = source->clips.begin(); it != source->clips.end(); ++it) {
-        if (it->id == clip_id) { source->clips.erase(it); break; }
+        if (it->id == clip_id) {
+            source->clips.erase(it);
+            break;
+        }
     }
     auto pos = target->clips.begin();
     while (pos != target->clips.end() && CompareRational(pos->start, moved.start) <= 0) {
@@ -432,8 +441,8 @@ ChqStatus ChqTimeline::RestoreTrack(const ChqTrack& track) {
     for (const ChqClip& clip : track.clips) {
         if (clip.id == 0) return ChqStatus(ChqStatusCode::kInvalidArgument);
         const ChqClipKind expected = (restored.kind == ChqTrackKind::kVideo)
-                                      ? ChqClipKind::kVideo
-                                      : ChqClipKind::kAudio;
+                                         ? ChqClipKind::kVideo
+                                         : ChqClipKind::kAudio;
         if (clip.kind != expected) return ChqStatus(ChqStatusCode::kInvalidArgument);
         if (clip.duration.value <= 0 || clip.duration.timescale <= 0) {
             return ChqStatus(ChqStatusCode::kInvalidArgument);
@@ -459,13 +468,16 @@ ChqStatus ChqTimeline::RestoreTrack(const ChqTrack& track) {
 ChqStatus ChqTimeline::RestoreClip(uint64_t track_id, const ChqClip& clip) {
     ChqTrack* track = nullptr;
     for (ChqTrack& t : tracks_) {
-        if (t.id == track_id) { track = &t; break; }
+        if (t.id == track_id) {
+            track = &t;
+            break;
+        }
     }
     if (track == nullptr) return ChqStatus(ChqStatusCode::kInvalidArgument);
     if (clip.id == 0) return ChqStatus(ChqStatusCode::kInvalidArgument);
 
     const ChqClipKind expected = (track->kind == ChqTrackKind::kVideo) ? ChqClipKind::kVideo
-                                                                 : ChqClipKind::kAudio;
+                                                                       : ChqClipKind::kAudio;
     if (clip.kind != expected) return ChqStatus(ChqStatusCode::kInvalidArgument);
     if (clip.duration.value <= 0 || clip.duration.timescale <= 0) {
         return ChqStatus(ChqStatusCode::kInvalidArgument);
@@ -500,7 +512,7 @@ ChqClip* ChqTimeline::find_clip_mut(uint64_t clip_id, ChqTrack*& out_track) {
 }
 
 bool ChqTimeline::overlaps_in_track(const ChqTrack& track, const ChqClip& candidate,
-                                 const ChqClip* exclude) const {
+                                    const ChqClip* exclude) const {
     ChqRationalTime cand_start = candidate.start;
     ChqRationalTime cand_end;
     if (!candidate.End(cand_end).IsOk()) return true;  // 算不出来就当冲突，宁可不放
@@ -519,7 +531,7 @@ bool ChqTimeline::overlaps_in_track(const ChqTrack& track, const ChqClip& candid
 // 半开区间 [start, end) 的重叠判定：只有严格"相交"才算重叠，
 // 首尾相接（a_end == b_start）不算 —— 这是时间线片段的常规语义。
 bool ChqTimeline::ranges_overlap(const ChqRationalTime& a_start, const ChqRationalTime& a_end,
-                              const ChqRationalTime& b_start, const ChqRationalTime& b_end) {
+                                 const ChqRationalTime& b_start, const ChqRationalTime& b_end) {
     return CompareRational(a_start, b_end) < 0 && CompareRational(b_start, a_end) < 0;
 }
 

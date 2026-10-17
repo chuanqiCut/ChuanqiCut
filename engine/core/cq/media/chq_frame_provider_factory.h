@@ -18,7 +18,7 @@
 
 #include "cq/base/chq_status.h"
 #include "cq/media/chq_frame_provider.h"  // ChqFrameProvider（MEDIA-010 抽象）
-#include "cq/platform/chq_media.h"             // ChqMediaSource
+#include "cq/platform/chq_media.h"        // ChqMediaSource
 
 namespace cq {
 

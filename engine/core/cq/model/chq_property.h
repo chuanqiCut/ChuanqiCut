@@ -59,9 +59,9 @@ enum class ChqPropertyType : int32_t {
 // 值对象必须便宜；音频/渲染线程将来读属性时也无分配。
 struct ChqPropertyValue {
     ChqPropertyType type = ChqPropertyType::kFloat;
-    int64_t i = 0;      // kInt64
-    float v[4] = {};    // kFloat: v[0]；kColor: v[0..3]；kVec2: v[0..1]
-    bool b = false;     // kBool
+    int64_t i = 0;    // kInt64
+    float v[4] = {};  // kFloat: v[0]；kColor: v[0..3]；kVec2: v[0..1]
+    bool b = false;   // kBool
 
     // ---- 工厂（按类型构造，调用方不需要先 memset）----
     static ChqPropertyValue I64(int64_t x);

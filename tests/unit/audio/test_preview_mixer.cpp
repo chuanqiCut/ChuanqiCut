@@ -37,18 +37,18 @@ namespace {
 
 int g_failures = 0;
 
-#define CHECK(cond, msg)                                              \
-    do {                                                              \
-        if (!(cond)) {                                                \
+#define CHECK(cond, msg)                                                 \
+    do {                                                                 \
+        if (!(cond)) {                                                   \
             std::fprintf(stderr, "FAIL %s:%d: %s\n", __FILE__, __LINE__, \
-                         msg);                                          \
-            ++g_failures;                                               \
-        }                                                               \
+                         msg);                                           \
+            ++g_failures;                                                \
+        }                                                                \
     } while (0)
 
 constexpr int32_t kTs = kProjectTimeScale;  // 120000
 constexpr int64_t kRate = 48000;
-constexpr int64_t kBlockFrames = 4800;      // 100ms @ 48k → 12000 ticks（整）
+constexpr int64_t kBlockFrames = 4800;  // 100ms @ 48k → 12000 ticks（整）
 constexpr int64_t kBlockTicks = kBlockFrames * kTs / kRate;
 
 // ---------------------------------------------------------------------------
@@ -120,7 +120,7 @@ public:
         bool has_audio = true;
     };
     ChqStatus Create(const ChqMediaSource& src, const ChqAudioGraphSpec& spec,
-                  ChqAudioReaderPtr& out) override {
+                     ChqAudioReaderPtr& out) override {
         const std::string path(src.path, src.path_len);
         // 路径协议：fake://a 即查 configs_["a"]；无配置 = 默认。
         const std::string key = path.substr(std::min<size_t>(7, path.size()));
@@ -149,7 +149,7 @@ class FakeEngine final : public ChqIAudioEngine {
 public:
     void Destroy() override { delete this; }
     ChqStatus OpenOutput(uint32_t sample_rate, uint32_t channels, ChqSampleFormat fmt,
-                      uint32_t frames_per_buffer) override {
+                         uint32_t frames_per_buffer) override {
         (void)channels;
         (void)frames_per_buffer;
         rate_ = sample_rate;
@@ -413,7 +413,7 @@ int main() {
             muted.kind = ChqTrackKind::kAudio;
             muted.muted = true;
             ChqClip c;
-            c.id = 9901;  // Restore 契约：实体自带 id 且非零（timeline.cpp:210）
+            c.id = 9901;                   // Restore 契约：实体自带 id 且非零（timeline.cpp:210）
             c.kind = ChqClipKind::kAudio;  // 与轨类型匹配（RestoreTrack 校验）
             c.source.asset_id = 1;
             c.source.source_in = ChqRationalTime{0, kTs};

@@ -38,17 +38,40 @@ void Check(bool cond, const char* msg) {
 
 // 2x2 四色纹理：row0 = 红,绿；row1 = 蓝,黄
 const uint8_t kTex2x2[2 * 2 * 4] = {
-    255, 0, 0, 255,   0, 255, 0, 255,
-    0, 0, 255, 255,   255, 255, 0, 255,
+    255,
+    0,
+    0,
+    255,
+    0,
+    255,
+    0,
+    255,
+    0,
+    0,
+    255,
+    255,
+    255,
+    255,
+    0,
+    255,
 };
 
 // 全屏三角形：pos.xy + uv.xy 交错
 // ⚠️ uv.y 已翻转：约定 uv(0,0) = 图像左上，而 Metal NDC 的 clip(-1,-1) 是屏幕左下。
 //    详见 test_gfx_metal.cpp 注释（2026-09-25 实测踩到画面上下颠倒）。
 const float kVerts[3 * 4] = {
-    -1.0f, -1.0f, 0.0f, 1.0f,
-     3.0f, -1.0f, 2.0f, 1.0f,
-    -1.0f,  3.0f, 0.0f, -1.0f,
+    -1.0f,
+    -1.0f,
+    0.0f,
+    1.0f,
+    3.0f,
+    -1.0f,
+    2.0f,
+    1.0f,
+    -1.0f,
+    3.0f,
+    0.0f,
+    -1.0f,
 };
 
 const char* kVertMSL = R"MSL(
@@ -76,7 +99,7 @@ fragment float4 fs_main(VOut in [[stage_in]],
 class EmptyClient final : public cq::ChqIFrameEncoderClient {
 public:
     cq::ChqStatus Encode(cq::ChqIGfxEncoder&, const cq::ChqFrameContext&,
-                      const cq::ChqCancelToken&) override {
+                         const cq::ChqCancelToken&) override {
         ++encode_calls_;
         return cq::ChqStatus::Ok();
     }
@@ -95,11 +118,15 @@ public:
 
     // 可选视口（UIA-014 用例 C）：设置后 Encode 先 SetViewport 再 Draw。
     void UseViewport(float x, float y, float w, float h) {
-        vp_x_ = x; vp_y_ = y; vp_w_ = w; vp_h_ = h; has_vp_ = true;
+        vp_x_ = x;
+        vp_y_ = y;
+        vp_w_ = w;
+        vp_h_ = h;
+        has_vp_ = true;
     }
 
     cq::ChqStatus Encode(cq::ChqIGfxEncoder& enc, const cq::ChqFrameContext&,
-                      const cq::ChqCancelToken&) override {
+                         const cq::ChqCancelToken&) override {
         enc.SetPipeline(pipeline_);
         enc.SetVertexBuffer(vbuf_, 0);
         enc.SetTexture(tex_, 0);
@@ -248,13 +275,14 @@ int main() {
 
             std::vector<uint8_t> px(64 * 64 * 4, 0);
             Check(cq::apple::ReadRenderTargetPixels(rt.get(), 0, 0, 64, 64, px.data(),
-                                                    px.size()).IsOk(),
+                                                    px.size())
+                      .IsOk(),
                   "ReadRenderTargetPixels");
             // 采样点：左上角 = 图像左上 = 红；右上角 = 绿；左下 = 蓝；右下 = 黄
-            const uint8_t* tl = &px[(2 * 64 + 2) * 4];        // 左上
-            const uint8_t* tr = &px[(2 * 64 + 61) * 4];       // 右上
-            const uint8_t* bl = &px[(61 * 64 + 2) * 4];       // 左下
-            const uint8_t* br = &px[(61 * 64 + 61) * 4];      // 右下
+            const uint8_t* tl = &px[(2 * 64 + 2) * 4];    // 左上
+            const uint8_t* tr = &px[(2 * 64 + 61) * 4];   // 右上
+            const uint8_t* bl = &px[(61 * 64 + 2) * 4];   // 左下
+            const uint8_t* br = &px[(61 * 64 + 61) * 4];  // 右下
             std::printf("  左上=%u,%u,%u 右上=%u,%u,%u 左下=%u,%u,%u 右下=%u,%u,%u\n",
                         tl[0], tl[1], tl[2], tr[0], tr[1], tr[2],
                         bl[0], bl[1], bl[2], br[0], br[1], br[2]);
@@ -281,7 +309,8 @@ int main() {
                       "RenderFrame(视口绘制)");
                 std::vector<uint8_t> px2(64 * 64 * 4, 0);
                 Check(cq::apple::ReadRenderTargetPixels(rt.get(), 0, 0, 64, 64, px2.data(),
-                                                        px2.size()).IsOk(),
+                                                        px2.size())
+                          .IsOk(),
                       "ReadRenderTargetPixels(视口)");
                 // 视口内象限中心：左上 (24,24) → 红；右下 (40,40) → 黄
                 const uint8_t* iv_tl = &px2[(24 * 64 + 24) * 4];

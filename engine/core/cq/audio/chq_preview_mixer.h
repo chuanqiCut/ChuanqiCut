@@ -47,7 +47,7 @@ namespace cq {
 class ChqPreviewAudioMixer {
 public:
     struct Config {
-        ChqAudioGraphSpec spec{};               // 输出块规格（全链恒定）
+        ChqAudioGraphSpec spec{};            // 输出块规格（全链恒定）
         uint32_t lookahead_ms = 150;         // 预渲染窗口（引擎缓冲水位目标）
         uint32_t feed_hz = 30;               // 混音线程节拍
         uint32_t resync_threshold_ms = 120;  // 漂移护栏（超阈值即 Flush + 重锚）
@@ -63,8 +63,8 @@ public:
     // 依赖全部为**注入的非拥有指针**，生命周期由装配方持有（本类不 delete、
     // 不持有 shared_ptr）。engine 须已完成 OpenOutput（规格 = cfg.spec）。
     ChqPreviewAudioMixer(ChqIAudioTrackReaderFactory* readers,
-                      ChqIModelSnapshotProvider* snapshots,
-                      ChqIAudioEngine* engine, const Config& cfg);
+                         ChqIModelSnapshotProvider* snapshots,
+                         ChqIAudioEngine* engine, const Config& cfg);
 
     ~ChqPreviewAudioMixer();
 
@@ -94,18 +94,18 @@ private:
         uint64_t clip_id = 0;
         uint64_t asset_id = 0;
         std::string path;
-        int64_t clip_start_tick = 0;    // 时间线起点（项目网格）
-        int64_t source_in_tick = 0;     // 素材内入点（项目网格）
-        int64_t clip_end_tick = 0;      // start + duration
-        ChqAudioReaderPtr reader;          // 平台读取器（nil = 尚未创建）
-        bool has_audio = false;         // 容器无音频流（直通静音）
+        int64_t clip_start_tick = 0;  // 时间线起点（项目网格）
+        int64_t source_in_tick = 0;   // 素材内入点（项目网格）
+        int64_t clip_end_tick = 0;    // start + duration
+        ChqAudioReaderPtr reader;     // 平台读取器（nil = 尚未创建）
+        bool has_audio = false;       // 容器无音频流（直通静音）
         bool eof = false;
-        bool needs_seek = true;         // 下次消费前须 Seek
+        bool needs_seek = true;  // 下次消费前须 Seek
         // 未消费样本 FIFO（交错 float32，线程内私有）。fifo_start_tick =
         // 首样本的时间线位置；eof 后不再补充。
         std::vector<float> fifo;
         int64_t fifo_start_tick = 0;
-        int warn_count = 0;             // 读取失败的节流日志计数
+        int warn_count = 0;  // 读取失败的节流日志计数
     };
 
     void FeedLoop();
@@ -131,35 +131,35 @@ private:
     int64_t MsToTicks(int64_t ms) const;
 
     Config cfg_;
-    int64_t block_ticks_ = 0;        // frames_per_block * ts / rate（构造期校验为整）
+    int64_t block_ticks_ = 0;  // frames_per_block * ts / rate（构造期校验为整）
     int64_t lookahead_ticks_ = 0;
     int64_t resync_threshold_ticks_ = 0;
 
-    ChqIAudioTrackReaderFactory* readers_ = nullptr;      // 非拥有
-    ChqIModelSnapshotProvider* snapshots_ = nullptr;      // 非拥有
-    ChqIAudioEngine* engine_ = nullptr;                   // 非拥有
+    ChqIAudioTrackReaderFactory* readers_ = nullptr;  // 非拥有
+    ChqIModelSnapshotProvider* snapshots_ = nullptr;  // 非拥有
+    ChqIAudioEngine* engine_ = nullptr;               // 非拥有
 
     // ---- 同步状态（sync_mu_ 保护；主线程写 / 混音线程读）----
     std::mutex sync_mu_;
-    ChqRationalTime playhead_{0, 1};        // 最近一次 Sync 的播放头
+    ChqRationalTime playhead_{0, 1};  // 最近一次 Sync 的播放头
     bool playing_ = false;
     std::chrono::steady_clock::time_point sync_wall_{};
-    int64_t reanchor_to_tick_ = 0;       // 重锚目标（epoch 变化时生效）
-    uint64_t reanchor_epoch_ = 0;        // 递增即触发混音线程重锚
-    bool running_ = false;               // Start/Stop 生命周期（sync_mu_ 保护）
+    int64_t reanchor_to_tick_ = 0;  // 重锚目标（epoch 变化时生效）
+    uint64_t reanchor_epoch_ = 0;   // 递增即触发混音线程重锚
+    bool running_ = false;          // Start/Stop 生命周期（sync_mu_ 保护）
 
     // ---- 混音线程私有（除 have_buffered_ 经 sync_mu_ 交接）----
     std::thread feed_thread_;
-    bool thread_started_ = false;        // feed_thread_ 是否 joinable 过（Stop 用）
+    bool thread_started_ = false;  // feed_thread_ 是否 joinable 过（Stop 用）
     uint64_t seen_epoch_ = 0;
-    int64_t rendered_upto_tick_ = 0;     // 下一块的起始（只由混音线程写）
-    bool have_buffered_ = false;         // 本播放会话是否已有样本进入引擎
-                                         //（sync_mu_ 保护：Sync 置 false，feed 置 true）
-    uint64_t snapshot_version_seen_ = 0; // 0 = 尚未装载
-    int64_t underrun_warn_count_ = 0;    // 欠载日志节流（线程内私有）
+    int64_t rendered_upto_tick_ = 0;         // 下一块的起始（只由混音线程写）
+    bool have_buffered_ = false;             // 本播放会话是否已有样本进入引擎
+                                             //（sync_mu_ 保护：Sync 置 false，feed 置 true）
+    uint64_t snapshot_version_seen_ = 0;     // 0 = 尚未装载
+    int64_t underrun_warn_count_ = 0;        // 欠载日志节流（线程内私有）
     std::map<uint64_t, ClipEntry> entries_;  // clip_id → 状态（快照版本内有效）
-    std::vector<float> acc_;             // 块累加缓冲（预分配后复用，无逐块分配）
-    ChqCancelToken stop_token_;             // Stop 时触发，读取器 IO 提前退出
+    std::vector<float> acc_;                 // 块累加缓冲（预分配后复用，无逐块分配）
+    ChqCancelToken stop_token_;              // Stop 时触发，读取器 IO 提前退出
 
     // ---- 统计（跨线程读，原子量）----
     std::atomic<uint64_t> blocks_rendered_{0};

@@ -146,7 +146,7 @@ public:
         int32_t h = height;
         if (w > kMaxEdge || h > kMaxEdge) {
             const int32_t num = (w >= h) ? w : h;
-            w = (w * kMaxEdge + num / 2) / num;   // 四舍五入
+            w = (w * kMaxEdge + num / 2) / num;  // 四舍五入
             h = (h * kMaxEdge + num / 2) / num;
             if (w < 2) w = 2;
             if (h < 2) h = 2;
@@ -164,8 +164,8 @@ public:
 private:
     // 输出回调（C 函数，经 refCon 取回 this）。
     static void OutputCallback(void* ref_con, void* source_ref_con, OSStatus status,
-                              VTDecodeInfoFlags info_flags, CVImageBufferRef image_buffer,
-                              CMTime pts, CMTime duration);
+                               VTDecodeInfoFlags info_flags, CVImageBufferRef image_buffer,
+                               CMTime pts, CMTime duration);
 
     void Enqueue(CVPixelBufferRef pb, const ChqRationalTime& pts, const ChqRationalTime& dts);
     // 回调完成登记（成败皆调）：把该包从「已喂未完成」集合移除，解锁重排等待。
@@ -190,7 +190,7 @@ private:
     ChqCodecId bound_codec_ = ChqCodecId::kUnknown;
     uint32_t width_ = 0;
     uint32_t height_ = 0;
-    uint32_t output_width_ = 0;   // MEDIA-023：实际输出尺寸（降采样后）
+    uint32_t output_width_ = 0;  // MEDIA-023：实际输出尺寸（降采样后）
     uint32_t output_height_ = 0;
     // MEDIA-025：源色彩标签（std::string 拷贝 —— CFString 由源 fd 持有，fd 释放后
     // 原指针失效）与转换状态（供诊断与单测）。

@@ -23,12 +23,16 @@ namespace cq {
 // 把码率档位映射到本机默认码率（bps）。0 = 交给 AVAssetWriter 默认值（最高可达质量）。
 static int64_t BitrateForTier(ChqBitrateTier tier) {
     switch (tier) {
-        case ChqBitrateTier::kLow:      return 5'000'000;
-        case ChqBitrateTier::kMedium:   return 10'000'000;
-        case ChqBitrateTier::kHigh:     return 20'000'000;
+        case ChqBitrateTier::kLow:
+            return 5'000'000;
+        case ChqBitrateTier::kMedium:
+            return 10'000'000;
+        case ChqBitrateTier::kHigh:
+            return 20'000'000;
         case ChqBitrateTier::kLossless:
         case ChqBitrateTier::kUnknown:
-        default:                     return 0;  // 交平台默认
+        default:
+            return 0;  // 交平台默认
     }
 }
 
@@ -84,13 +88,13 @@ ChqStatus AppleMediaMuxer::AddAudioTrack(const ChqAudioTrackConfig& cfg) {
 }
 
 ChqStatus AppleMediaMuxer::WriteAudioFrame(const ChqPcmBuffer& pcm, const ChqRationalTime& pts,
-                                     const ChqCancelToken& token) {
+                                           const ChqCancelToken& token) {
     if (!audio_added_) return ChqStatus{ChqStatusCode::kEncodeError};
     return encoder_.WriteAudioFrame(pcm, pts, token);
 }
 
 ChqStatus AppleMediaMuxer::WriteVideoFrame(NativeImageHandle image, const ChqRationalTime& pts,
-                                       const ChqCancelToken& token) {
+                                           const ChqCancelToken& token) {
     if (!video_added_) return ChqStatus{ChqStatusCode::kEncodeError};
     CVPixelBufferRef pb = GetCvPixelBuffer(image);
     if (pb == nullptr) return ChqStatus{ChqStatusCode::kInvalidArgument};

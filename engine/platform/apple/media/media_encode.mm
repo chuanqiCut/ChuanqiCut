@@ -79,12 +79,17 @@ bool CopyPixelBuffer(CVPixelBufferRef src, CVPixelBufferRef dst) {
 // 把音频码率档位映射到本机默认 AAC 码率（bps）。0 = 交给 AVAssetWriter 默认。
 static int64_t AudioBitrateForTier(ChqBitrateTier tier) {
     switch (tier) {
-        case ChqBitrateTier::kLow:      return 64'000;
-        case ChqBitrateTier::kMedium:   return 128'000;
-        case ChqBitrateTier::kHigh:     return 192'000;
-        case ChqBitrateTier::kLossless: return 256'000;  // AAC 无真正无损，取最高可达质量
+        case ChqBitrateTier::kLow:
+            return 64'000;
+        case ChqBitrateTier::kMedium:
+            return 128'000;
+        case ChqBitrateTier::kHigh:
+            return 192'000;
+        case ChqBitrateTier::kLossless:
+            return 256'000;  // AAC 无真正无损，取最高可达质量
         case ChqBitrateTier::kUnknown:
-        default:                     return 0;  // 交平台默认
+        default:
+            return 0;  // 交平台默认
     }
 }
 
@@ -268,13 +273,13 @@ ChqStatus AppleVideoEncoder::Open(const char* output_path, const EncodeConfig& c
     {
         VTCompressionSessionRef probe = nullptr;
         CFDictionaryRef spec = (__bridge CFDictionaryRef) @{
-            (__bridge id)kVTVideoEncoderSpecification_EnableHardwareAcceleratedVideoEncoder: @YES,
+            (__bridge id)kVTVideoEncoderSpecification_EnableHardwareAcceleratedVideoEncoder : @YES,
         };
         OSStatus pst = VTCompressionSessionCreate(
             kCFAllocatorDefault, static_cast<int32_t>(cfg.width),
             static_cast<int32_t>(cfg.height),
-                                                 kCMVideoCodecType_H264, spec, nullptr, nullptr,
-                                                 nullptr, nullptr, &probe);
+            kCMVideoCodecType_H264, spec, nullptr, nullptr,
+            nullptr, nullptr, &probe);
         if (pst == noErr && probe != nullptr) {
             CFBooleanRef hw = nullptr;
             if (VTSessionCopyProperty(
@@ -297,8 +302,8 @@ ChqStatus AppleVideoEncoder::Open(const char* output_path, const EncodeConfig& c
 
     NSError* err = nil;
     AVAssetWriter* writer = [AVAssetWriter assetWriterWithURL:url
-                                                   fileType:AVFileTypeMPEG4
-                                                      error:&err];
+                                                     fileType:AVFileTypeMPEG4
+                                                        error:&err];
     if (writer == nil || err != nil) {
         if (err != nil) {
             std::printf("[AppleVideoEncoder] AVAssetWriter 创建失败: %s\n",
@@ -319,15 +324,15 @@ ChqStatus AppleVideoEncoder::Open(const char* output_path, const EncodeConfig& c
         @(static_cast<double>(cfg.fps_numerator) / static_cast<double>(cfg.fps_denominator));
 
     NSDictionary* out_settings = @{
-        AVVideoCodecKey: AVVideoCodecTypeH264,
-        AVVideoWidthKey: @(static_cast<int>(cfg.width)),
-        AVVideoHeightKey: @(static_cast<int>(cfg.height)),
-        AVVideoCompressionPropertiesKey: compression,
+        AVVideoCodecKey : AVVideoCodecTypeH264,
+        AVVideoWidthKey : @(static_cast<int>(cfg.width)),
+        AVVideoHeightKey : @(static_cast<int>(cfg.height)),
+        AVVideoCompressionPropertiesKey : compression,
     };
 
     AVAssetWriterInput* input =
         [AVAssetWriterInput assetWriterInputWithMediaType:AVMediaTypeVideo
-                                         outputSettings:out_settings];
+                                           outputSettings:out_settings];
     if (input == nil) {
         return ChqStatus{ChqStatusCode::kEncodeError};
     }
@@ -335,14 +340,14 @@ ChqStatus AppleVideoEncoder::Open(const char* output_path, const EncodeConfig& c
 
     // adaptor：声明我们 append 的 buffer 格式（BGRA；源为 BGRA 时 1:1）。
     NSDictionary* attrs = @{
-        (__bridge id)kCVPixelBufferPixelFormatTypeKey: @(kCVPixelFormatType_32BGRA),
-        (__bridge id)kCVPixelBufferWidthKey: @(static_cast<int>(cfg.width)),
-        (__bridge id)kCVPixelBufferHeightKey: @(static_cast<int>(cfg.height)),
+        (__bridge id)kCVPixelBufferPixelFormatTypeKey : @(kCVPixelFormatType_32BGRA),
+        (__bridge id)kCVPixelBufferWidthKey : @(static_cast<int>(cfg.width)),
+        (__bridge id)kCVPixelBufferHeightKey : @(static_cast<int>(cfg.height)),
     };
     AVAssetWriterInputPixelBufferAdaptor* adaptor =
         [AVAssetWriterInputPixelBufferAdaptor
             assetWriterInputPixelBufferAdaptorWithAssetWriterInput:input
-                                   sourcePixelBufferAttributes:attrs];
+                                       sourcePixelBufferAttributes:attrs];
     if (adaptor == nil) {
         return ChqStatus{ChqStatusCode::kEncodeError};
     }
@@ -362,7 +367,7 @@ ChqStatus AppleVideoEncoder::Open(const char* output_path, const EncodeConfig& c
 }
 
 ChqStatus AppleVideoEncoder::EncodeFrame(CVPixelBufferRef pb, const ChqRationalTime& pts,
-                                     const ChqCancelToken& token) {
+                                         const ChqCancelToken& token) {
     if (state_ == nullptr || state_->writer == nil || state_->input == nil ||
         state_->adaptor == nil) {
         return ChqStatus{ChqStatusCode::kEncodeError};
@@ -448,7 +453,7 @@ ChqStatus AppleVideoEncoder::Finish() {
 
     dispatch_semaphore_t sem = dispatch_semaphore_create(0);
     [state_->writer finishWritingWithCompletionHandler:^{
-        dispatch_semaphore_signal(sem);
+      dispatch_semaphore_signal(sem);
     }];
     dispatch_semaphore_wait(sem, DISPATCH_TIME_FOREVER);
 
@@ -493,7 +498,7 @@ ChqStatus AppleVideoEncoder::AddAudioTrack(const ChqAudioTrackConfig& cfg) {
 
     AVAssetWriterInput* audio_input =
         [AVAssetWriterInput assetWriterInputWithMediaType:AVMediaTypeAudio
-                                         outputSettings:audio_settings];
+                                           outputSettings:audio_settings];
     if (audio_input == nil) {
         return ChqStatus{ChqStatusCode::kEncodeError};
     }
@@ -509,7 +514,7 @@ ChqStatus AppleVideoEncoder::AddAudioTrack(const ChqAudioTrackConfig& cfg) {
 }
 
 ChqStatus AppleVideoEncoder::WriteAudioFrame(const ChqPcmBuffer& pcm, const ChqRationalTime& pts,
-                                         const ChqCancelToken& token) {
+                                             const ChqCancelToken& token) {
     if (state_ == nullptr || state_->writer == nil || state_->audio_input == nil) {
         return ChqStatus{ChqStatusCode::kEncodeError};
     }

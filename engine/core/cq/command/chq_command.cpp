@@ -264,7 +264,10 @@ ChqStatus ChqMoveClipToTrackCommand::Do(ChqTimeline& model) {
     old_track_id_ = 0;
     for (const ChqTrack& track : model.Tracks()) {
         for (const ChqClip& c : track.clips) {
-            if (c.id == clip_id_) { old_track_id_ = track.id; break; }
+            if (c.id == clip_id_) {
+                old_track_id_ = track.id;
+                break;
+            }
         }
         if (old_track_id_ != 0) break;
     }

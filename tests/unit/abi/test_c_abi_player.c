@@ -131,7 +131,7 @@ int main(void) {
     Check(cq_player_play(NULL) == 7000, "NULL player play → 7000");
     Check(cq_player_seek(p, 0, 0) == 7000, "seek timescale=0 → 7000");
     Check(cq_player_set_duration(p, 1, 0) == 7000, "set_duration timescale=0 → 7000");
-    cq_player_pause(NULL);   /* 不得崩 */
+    cq_player_pause(NULL); /* 不得崩 */
     cq_player_stop(NULL);
     cq_player_destroy(NULL);
     Check(1, "NULL 上的 void 接口不崩（幂等）");

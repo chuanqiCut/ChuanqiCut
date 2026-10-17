@@ -106,8 +106,8 @@ void TestHitTest() {
     uint64_t vt = 0;
     tl.AddTrack(cq::ChqTrackKind::kVideo, vt);
     uint64_t c1 = 0, c2 = 0;
-    tl.InsertClip(vt, MakeClip(cq::ChqClipKind::kVideo, 0, 1000), c1);    // 0–1s
-    tl.InsertClip(vt, MakeClip(cq::ChqClipKind::kVideo, 1000, 1000), c2); // 1–2s
+    tl.InsertClip(vt, MakeClip(cq::ChqClipKind::kVideo, 0, 1000), c1);     // 0–1s
+    tl.InsertClip(vt, MakeClip(cq::ChqClipKind::kVideo, 1000, 1000), c2);  // 1–2s
 
     const cq::ChqClip* hit = tl.FindClipAt(vt, Ms(500));
     Check(hit != nullptr && hit->id == c1, "0.5s 命中第一个片段");
@@ -155,8 +155,8 @@ void TestEditOperations() {
     uint64_t vt = 0;
     tl.AddTrack(cq::ChqTrackKind::kVideo, vt);
     uint64_t c1 = 0, c2 = 0;
-    tl.InsertClip(vt, MakeClip(cq::ChqClipKind::kVideo, 0, 1000), c1);    // 0–1s
-    tl.InsertClip(vt, MakeClip(cq::ChqClipKind::kVideo, 1000, 1000), c2); // 1–2s
+    tl.InsertClip(vt, MakeClip(cq::ChqClipKind::kVideo, 0, 1000), c1);     // 0–1s
+    tl.InsertClip(vt, MakeClip(cq::ChqClipKind::kVideo, 1000, 1000), c2);  // 1–2s
 
     // 移动：撞上邻居 → 拒绝
     Check(!tl.MoveClip(c1, Ms(500)).IsOk(), "移动到与邻居重叠的位置被拒绝");
@@ -252,7 +252,8 @@ void TestReplaceClip() {
     Check(tl.ReplaceClip(reclip).IsOk(), "左缘裁剪形态的替换成功");
     const cq::ChqClip* after = tl.FindClip(c1);
     Check(after->start == Ms(2000) && after->duration == Ms(3000) &&
-          after->source.source_in == Ms(1000), "三字段联动生效");
+              after->source.source_in == Ms(1000),
+          "三字段联动生效");
     Check(tl.FindTrack(vt)->clips.size() == 2, "替换不改变片段数");
 
     // 替换为与邻居重叠 → 拒绝（排除自身判定）

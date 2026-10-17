@@ -76,7 +76,7 @@ struct RunStats {
 // 组装真实链路：PALA-010 demuxer + PALA-011 硬解 + MEDIA-020 编排。
 // 每个实例独立（对照实验不能共享解码器状态）。
 std::unique_ptr<cq::ChqFrameProvider> MakeProvider(const cq::ChqMediaSource& src,
-                                                cq::VideoToolboxDecoder** out_decoder) {
+                                                   cq::VideoToolboxDecoder** out_decoder) {
     cq::ChqPlatformPtr<cq::ChqIMediaDemuxer> demuxer;
     if (!cq::CreateMediaDemuxer(src, demuxer).IsOk() || !demuxer) return nullptr;
     auto* decoder = new cq::VideoToolboxDecoder(src.path);
@@ -121,12 +121,12 @@ int main() {
     if (fast == nullptr) return 1;
     std::printf("  硬解: %s\n",
                 (fast_decoder != nullptr && fast_decoder->IsHardwareAccelerated()) ? "是"
-                                                                                    : "否（软解/回退）");
+                                                                                   : "否（软解/回退）");
 
     RunStats fast_stats;
     int64_t prev_pts = -1;
-    int monotonic_ok = 0;   // pts 严格递增次数
-    int contains_ok = 0;    // 区间归属次数
+    int monotonic_ok = 0;  // pts 严格递增次数
+    int contains_ok = 0;   // 区间归属次数
     int failed = 0;
     std::vector<int64_t> fast_pts;
     for (int i = 0; i < kFrames; ++i) {

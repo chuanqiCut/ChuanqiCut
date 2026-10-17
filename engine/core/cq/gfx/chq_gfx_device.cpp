@@ -74,7 +74,7 @@ public:
     ChqIGraphicsDevice* PlatformDevice() override { return platform_.get(); }
 
     ChqStatus CreateRenderTarget(const ChqRenderTargetDesc& desc,
-                              ChqPlatformPtr<ChqIRenderTarget>& out) override {
+                                 ChqPlatformPtr<ChqIRenderTarget>& out) override {
         return platform_->CreateRenderTarget(desc, out);
     }
 
@@ -110,7 +110,7 @@ public:
     }
 
     ChqStatus CreateShaderModule(const ChqShaderModuleDesc& desc,
-                              ChqPlatformPtr<ChqIShaderModule>& out) override {
+                                 ChqPlatformPtr<ChqIShaderModule>& out) override {
         return platform_->CreateShaderModule(desc, out);
     }
     ChqStatus CreatePipeline(const ChqPipelineDesc& desc, ChqPlatformPtr<ChqIPipeline>& out) override {
@@ -124,7 +124,7 @@ public:
     }
 
     ChqStatus RenderFrame(const ChqFrameContext& ctx, ChqIRenderTarget* target,
-                       ChqIFrameEncoderClient& client, const ChqCancelToken& token) override {
+                          ChqIFrameEncoderClient& client, const ChqCancelToken& token) override {
         if (target == nullptr) return ChqStatus(ChqStatusCode::kInvalidArgument);
 
         // queue 按设备复用（见 EnsureQueue 注释）；buffer/encoder 仍每帧新建 ——

@@ -17,8 +17,8 @@
 
 #include <cstdint>
 
-#include "cq/base/chq_concurrency.h"  // ChqCancelToken
-#include "cq/base/chq_rational_time.h"          // ChqRationalTime（time.h 已含 status.h）
+#include "cq/base/chq_concurrency.h"    // ChqCancelToken
+#include "cq/base/chq_rational_time.h"  // ChqRationalTime（time.h 已含 status.h）
 #include "cq/platform/chq_common.h"
 
 namespace cq {
@@ -28,21 +28,31 @@ namespace cq {
 struct ChqPcmBuffer {
     ChqSampleFormat format = ChqSampleFormat::kUnknown;
     uint32_t channels = 0;
-    uint32_t sample_rate = 0;   // Hz
-    uint64_t frame_count = 0;   // 单声道样本帧数（总样本数 = frame_count * channels）
-    const void* data = nullptr; // 样本内存（由提供方所有，按生命周期约定使用）
-    uint64_t data_bytes = 0;    // data 该厂商长度
-    ChqRationalTime pts;           // 首样本时间（项目有理数时间轴）
+    uint32_t sample_rate = 0;    // Hz
+    uint64_t frame_count = 0;    // 单声道样本帧数（总样本数 = frame_count * channels）
+    const void* data = nullptr;  // 样本内存（由提供方所有，按生命周期约定使用）
+    uint64_t data_bytes = 0;     // data 该厂商长度
+    ChqRationalTime pts;         // 首样本时间（项目有理数时间轴）
 
     // 单帧该厂商数（channels * 每样本该厂商）。-Wconversion 安全：显式 static_cast。
     uint64_t BytesPerFrame() const {
         uint32_t sample_bytes = 0;
         switch (format) {
-            case ChqSampleFormat::kInt16:   sample_bytes = 2u; break;
-            case ChqSampleFormat::kInt32:   sample_bytes = 4u; break;
-            case ChqSampleFormat::kFloat32: sample_bytes = 4u; break;
-            case ChqSampleFormat::kFloat64: sample_bytes = 8u; break;
-            default:                     sample_bytes = 0u; break;
+            case ChqSampleFormat::kInt16:
+                sample_bytes = 2u;
+                break;
+            case ChqSampleFormat::kInt32:
+                sample_bytes = 4u;
+                break;
+            case ChqSampleFormat::kFloat32:
+                sample_bytes = 4u;
+                break;
+            case ChqSampleFormat::kFloat64:
+                sample_bytes = 8u;
+                break;
+            default:
+                sample_bytes = 0u;
+                break;
         }
         return static_cast<uint64_t>(sample_bytes) * static_cast<uint64_t>(channels);
     }
@@ -52,7 +62,7 @@ class ChqIAudioEngine : public ChqIPlatformResource {
 public:
     // 打开播放输出流。frames_per_buffer 为单次 Write 期望的样本帧数（性能/延迟调参）。
     virtual ChqStatus OpenOutput(uint32_t sample_rate, uint32_t channels,
-                              ChqSampleFormat fmt, uint32_t frames_per_buffer) = 0;
+                                 ChqSampleFormat fmt, uint32_t frames_per_buffer) = 0;
 
     // 写入一块 PCM 播放。buf.data 必须在调用期间有效。
     // 内部缓冲已满时返回 kResourceExhausted（整块丢弃语义：调用方按块重试/丢弃）。
@@ -70,7 +80,7 @@ public:
 
     // 打开采集输入流（录音）。
     virtual ChqStatus OpenInput(uint32_t sample_rate, uint32_t channels,
-                             ChqSampleFormat fmt, uint32_t frames_per_buffer) = 0;
+                                ChqSampleFormat fmt, uint32_t frames_per_buffer) = 0;
 
     // 采集读取（阻塞直到有数据或被取消）。out 的 data 由引擎所有，生命周期见实现约定。
     virtual ChqStatus Read(ChqPcmBuffer& out, const ChqCancelToken& token) = 0;

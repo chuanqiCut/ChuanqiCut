@@ -83,13 +83,13 @@ private:
     mutable std::mutex mtx_;
 
     ChqRationalTime frame_{1001, 30000};  // 帧时长；timescale 即内部时间网格
-    int64_t frame_ticks_ = 1001;       // 帧时长（本网格下的 tick 数，用于量化）
+    int64_t frame_ticks_ = 1001;          // 帧时长（本网格下的 tick 数，用于量化）
     int64_t duration_ticks_ = INT64_MAX;  // 边界；INT64_MAX = 未设置
     bool loop_ = false;
 
     ChqPlayerState state_ = ChqPlayerState::kStopped;
-    int64_t value_ = 0;        // 锚定时刻（已量化到帧网格）
-    int64_t anchor_ns_ = 0;    // 锚定时的墙钟（steady_clock，纳秒）
+    int64_t value_ = 0;      // 锚定时刻（已量化到帧网格）
+    int64_t anchor_ns_ = 0;  // 锚定时的墙钟（steady_clock，纳秒）
 };
 
 }  // namespace cq

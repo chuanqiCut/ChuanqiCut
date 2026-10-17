@@ -76,7 +76,7 @@ public:
     int32_t last_seek_policy = -1;
 
     cq::ChqStatus RenderFrame(const cq::ChqRationalTime& pts, cq::TextureHandle& out_texture,
-                           const cq::ChqCancelToken&, int32_t seek_policy = 0) override {
+                              const cq::ChqCancelToken&, int32_t seek_policy = 0) override {
         std::this_thread::sleep_for(frame_cost);
         {
             std::lock_guard<std::mutex> lk(m);
@@ -232,7 +232,8 @@ int main() {
         WaitUntil([&] {
             const cq::ChqPreviewPump::Stats s = pump.GetStats();
             return s.requested == s.rendered + s.coalesced;
-        }, 3000);
+        },
+                  3000);
         pump.Stop();
         const cq::ChqPreviewPump::Stats s = pump.GetStats();
         std::printf("  requested=%llu rendered=%llu coalesced=%llu non_ok=%llu\n",

@@ -20,11 +20,11 @@
 #include <cstdint>
 #include <string>
 
-#include "cq/base/chq_concurrency.h"  // ChqCancelToken
-#include "cq/base/chq_status.h"        // ChqStatus / ChqStatusCode
-#include "cq/base/chq_rational_time.h"          // ChqRationalTime
-#include "cq/platform/chq_media.h"          // ChqIMediaMuxer / ChqVideoTrackConfig / ChqAudioTrackConfig
-#include "media_encode.h"          // AppleVideoEncoder（内部引擎）
+#include "cq/base/chq_concurrency.h"    // ChqCancelToken
+#include "cq/base/chq_status.h"         // ChqStatus / ChqStatusCode
+#include "cq/base/chq_rational_time.h"  // ChqRationalTime
+#include "cq/platform/chq_media.h"      // ChqIMediaMuxer / ChqVideoTrackConfig / ChqAudioTrackConfig
+#include "media_encode.h"               // AppleVideoEncoder（内部引擎）
 
 namespace cq {
 
@@ -47,9 +47,9 @@ public:
     ChqStatus AddVideoTrack(const ChqVideoTrackConfig& cfg) override;
     ChqStatus AddAudioTrack(const ChqAudioTrackConfig& cfg) override;
     ChqStatus WriteVideoFrame(NativeImageHandle image, const ChqRationalTime& pts,
-                         const ChqCancelToken& token) override;
+                              const ChqCancelToken& token) override;
     ChqStatus WriteAudioFrame(const ChqPcmBuffer& pcm, const ChqRationalTime& pts,
-                         const ChqCancelToken& token) override;
+                              const ChqCancelToken& token) override;
     ChqStatus Finish(const ChqCancelToken& token) override;
     ChqStatus Cancel() override;
     int64_t FrameCount() const override;

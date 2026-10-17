@@ -32,27 +32,27 @@ namespace cq {
 // 埋点环节。新增环节请追加在末尾（不要重排，便于跨版本对照）。
 enum class ChqPerfStage : int32_t {
     kUnknown = 0,
-    kDemux,        // 解封装（读压缩包）
-    kDecode,       // 解码（压缩包 → 像素）
-    kImport,       // 外部图像导入（零拷贝 / CPU 回退）
-    kRender,       // 渲染（含提交与等待）
-    kEncode,       // 编码
-    kMux,          // 封装写入
-    kCacheLookup,  // 帧缓存查询
-    kQueuePush,    // 入队（背压等待）
-    kQueuePop,     // 出队（等待可取）
-    kCustom = 1000 // 自定义（配合 CQ_PERF_SCOPE_NAMED 的 name 字段）
+    kDemux,         // 解封装（读压缩包）
+    kDecode,        // 解码（压缩包 → 像素）
+    kImport,        // 外部图像导入（零拷贝 / CPU 回退）
+    kRender,        // 渲染（含提交与等待）
+    kEncode,        // 编码
+    kMux,           // 封装写入
+    kCacheLookup,   // 帧缓存查询
+    kQueuePush,     // 入队（背压等待）
+    kQueuePop,      // 出队（等待可取）
+    kCustom = 1000  // 自定义（配合 CQ_PERF_SCOPE_NAMED 的 name 字段）
 };
 
 // 一条埋点记录。布局保持 POD，便于批量落盘与聚合。
 struct ChqPerfRecord {
     ChqPerfStage stage = ChqPerfStage::kUnknown;
-    const char* name = nullptr;   // kCustom 时的名字（静态字符串，不拥有）
-    ChqRationalTime pts{};           // 帧标识（无帧语义时填 {}）
-    int64_t begin_ns = 0;         // 单调时钟起点
-    int64_t duration_ns = 0;      // 耗时
-    int64_t bytes = 0;            // 附加量：该厂商数（纹理/样本）
-    int32_t queue_depth = -1;     // 附加量：队列深度（-1 = 未采集）
+    const char* name = nullptr;  // kCustom 时的名字（静态字符串，不拥有）
+    ChqRationalTime pts{};       // 帧标识（无帧语义时填 {}）
+    int64_t begin_ns = 0;        // 单调时钟起点
+    int64_t duration_ns = 0;     // 耗时
+    int64_t bytes = 0;           // 附加量：该厂商数（纹理/样本）
+    int32_t queue_depth = -1;    // 附加量：队列深度（-1 = 未采集）
     uint32_t thread_id = 0;
 };
 

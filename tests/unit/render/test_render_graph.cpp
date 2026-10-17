@@ -284,8 +284,8 @@ int main() {
     {
         cq::ChqTimeline tl;
         uint64_t tid = 0, cid = 0;
-        const cq::ChqRationalTime start{120000, 120000};   // 1.0s
-        const cq::ChqRationalTime dur{600000, 120000};     // 5.0s
+        const cq::ChqRationalTime start{120000, 120000};  // 1.0s
+        const cq::ChqRationalTime dur{600000, 120000};    // 5.0s
         Check(MakeTimeline(tl, tid, cid, 42, start, dur), "造时间线：一条视频轨 + 一个片段");
 
         cq::ChqGraphAssembler asm0;
@@ -509,9 +509,9 @@ int main() {
     // ---------- E. 时钟源 ----------
     std::printf("\n[E] 时钟源（预览=实时 / 导出=步进）\n");
     {
-        cq::ChqSteppedClock clk(cq::ChqRationalTime{0, 120000},      // start = 0
-                                cq::ChqRationalTime{4000, 120000},   // 帧时长 = 1/30 s
-                                cq::ChqRationalTime{12000, 120000}); // end = 0.1s
+        cq::ChqSteppedClock clk(cq::ChqRationalTime{0, 120000},       // start = 0
+                                cq::ChqRationalTime{4000, 120000},    // 帧时长 = 1/30 s
+                                cq::ChqRationalTime{12000, 120000});  // end = 0.1s
         Check(clk.Kind() == cq::ChqClockKind::kStepped, "步进时钟 Kind 正确");
         cq::ChqRationalTime t{0, 1};
         Check(clk.Now(t).IsOk() && cq::CompareRational(t, cq::ChqRationalTime{0, 120000}) == 0,

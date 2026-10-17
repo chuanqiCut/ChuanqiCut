@@ -87,7 +87,7 @@ int main(void) {
     /* ---- 装配：1 轨 + 2 片段（历史里 3 条命令）---- */
     Check(cq_session_register_asset(s, 1, "/tmp/a.mp4") == 0, "register_asset 入队");
     Check(cq_session_add_track(s, 0) == 0, "add_track 入队");
-    DrainAfter(s, 2);  /* register + add_track */
+    DrainAfter(s, 2); /* register + add_track */
 
     CQTrackInfo tracks[4];
     int32_t n_tracks = -1;
@@ -120,7 +120,7 @@ int main(void) {
     /* ---- move：与 B 重叠 → 拒绝 ---- */
     uint64_t ver_before = cq_session_current_snapshot(s).version;
     Check(cq_session_move_clip(s, clip_a, 7000, TS) == 0, "重叠 move 仍入队（校验在 session 线程）");
-    DrainAfter(s, 0);  /* 预期被拒：版本只推进哨兵 */
+    DrainAfter(s, 0); /* 预期被拒：版本只推进哨兵 */
     Check(cq_session_current_snapshot(s).version == ver_before + 1,
           "重叠 move 被拒：版本只推进了哨兵那一次");
     Check(QueryClips(s, clips, 8, &n_clips) == 0 && clips[0].start_value == 1000,

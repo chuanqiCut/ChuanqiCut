@@ -141,13 +141,15 @@ int main(void) {
               n_params == 5,
           "参数计数 == 5（五类各一）");
     Check(cq_session_query_clip_effect_params(s, clip_id, "cq.effect.blur", NULL, 0,
-                                              &n_params) == 0 && n_params == 5,
+                                              &n_params) == 0 &&
+              n_params == 5,
           "参数两段式：out=NULL 返回总数 5");
 
     CQEffectParamInfo params[8];
     n_params = -1;
     Check(cq_session_query_clip_effect_params(s, clip_id, "cq.effect.blur", params, 8,
-                                              &n_params) == 0 && n_params == 5,
+                                              &n_params) == 0 &&
+              n_params == 5,
           "query 参数写入 5 条");
     {
         /* map 有序 ⇒ 输出按 key 升序：hi_pass, opacity, preset, scale, tint */
@@ -233,7 +235,8 @@ int main(void) {
           "undo remove：效果回来");
     n_params = -1;
     Check(cq_session_query_clip_effect_params(s, clip_id, "cq.effect.blur", params, 8,
-                                              &n_params) == 0 && n_params == 5,
+                                              &n_params) == 0 &&
+              n_params == 5,
           "undo remove：5 个参数全部还原（整栈快照，不是空壳）");
     {
         int opacity_ok = 0;

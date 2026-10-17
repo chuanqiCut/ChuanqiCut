@@ -19,8 +19,8 @@
 
 #include <memory>
 
-#include "cq/base/chq_concurrency.h"   // ChqCancelToken
-#include "cq/base/chq_rational_time.h" // ChqRationalTime
+#include "cq/base/chq_concurrency.h"    // ChqCancelToken
+#include "cq/base/chq_rational_time.h"  // ChqRationalTime
 #include "cq/base/chq_status.h"
 #include "cq/audio/chq_audio_types.h"  // ChqAudioGraphSpec
 #include "cq/platform/chq_common.h"    // ChqPlatformPtr / ChqIPlatformResource
@@ -73,13 +73,13 @@ public:
     //（HasAudio()==false 的读取器）；打开失败（文件不存在/不可解析）返回错误。
     // 生命周期：调用方持有 ChqAudioReaderPtr；本工厂不保留引用。
     virtual ChqStatus Create(const ChqMediaSource& src, const ChqAudioGraphSpec& spec,
-                          ChqAudioReaderPtr& out) = 0;
+                             ChqAudioReaderPtr& out) = 0;
 };
 
 // 平台工厂（platform 实现，声明在此；core 经它拿能力，不引平台头——
 // 与 CreateMediaDemuxer / CreateFrameProvider 同型）。
 ChqStatus CreateAudioTrackReader(ChqPlatformPtr<ChqIAudioTrackReader>& out,
-                              const ChqAudioGraphSpec& spec);
+                                 const ChqAudioGraphSpec& spec);
 
 // core 侧默认装配工厂：CreateAudioTrackReader + Open。
 // 用途：C ABI 门面（audio/cq_sdk_audio.cpp）在不引用平台符号的前提下拿到
@@ -87,7 +87,7 @@ ChqStatus CreateAudioTrackReader(ChqPlatformPtr<ChqIAudioTrackReader>& out,
 class ChqPlatformAudioReaderFactory final : public ChqIAudioTrackReaderFactory {
 public:
     ChqStatus Create(const ChqMediaSource& src, const ChqAudioGraphSpec& spec,
-                  ChqAudioReaderPtr& out) override;
+                     ChqAudioReaderPtr& out) override;
 };
 
 }  // namespace cq

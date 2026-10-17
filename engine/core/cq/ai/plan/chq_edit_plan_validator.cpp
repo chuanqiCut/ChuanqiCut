@@ -29,16 +29,26 @@ namespace cq {
 
 const char* EditPlanOpName(ChqEditPlanOp op) {
     switch (op) {
-        case ChqEditPlanOp::kSelectIntro:       return "select_intro";
-        case ChqEditPlanOp::kSelectHighlight:   return "select_highlight";
-        case ChqEditPlanOp::kSelectOutro:       return "select_outro";
-        case ChqEditPlanOp::kPlaceClip:         return "place_clip";
-        case ChqEditPlanOp::kRemoveRange:       return "remove_range";
-        case ChqEditPlanOp::kTrimClip:          return "trim_clip";
-        case ChqEditPlanOp::kReorder:           return "reorder";
-        case ChqEditPlanOp::kSetTransition:     return "set_transition";
-        case ChqEditPlanOp::kSetBgmPlaceholder: return "set_bgm_placeholder";
-        case ChqEditPlanOp::kUnknown:           break;
+        case ChqEditPlanOp::kSelectIntro:
+            return "select_intro";
+        case ChqEditPlanOp::kSelectHighlight:
+            return "select_highlight";
+        case ChqEditPlanOp::kSelectOutro:
+            return "select_outro";
+        case ChqEditPlanOp::kPlaceClip:
+            return "place_clip";
+        case ChqEditPlanOp::kRemoveRange:
+            return "remove_range";
+        case ChqEditPlanOp::kTrimClip:
+            return "trim_clip";
+        case ChqEditPlanOp::kReorder:
+            return "reorder";
+        case ChqEditPlanOp::kSetTransition:
+            return "set_transition";
+        case ChqEditPlanOp::kSetBgmPlaceholder:
+            return "set_bgm_placeholder";
+        case ChqEditPlanOp::kUnknown:
+            break;
     }
     return nullptr;
 }
@@ -66,10 +76,14 @@ bool EditPlanOpFromName(const char* name, ChqEditPlanOp& out_op) {
 
 const char* EditPlanTransitionKindName(ChqEditPlanTransitionKind kind) {
     switch (kind) {
-        case ChqEditPlanTransitionKind::kNone:       return "none";
-        case ChqEditPlanTransitionKind::kCrossFade:  return "cross_fade";
-        case ChqEditPlanTransitionKind::kDipToBlack: return "dip_to_black";
-        case ChqEditPlanTransitionKind::kUnknown:    break;
+        case ChqEditPlanTransitionKind::kNone:
+            return "none";
+        case ChqEditPlanTransitionKind::kCrossFade:
+            return "cross_fade";
+        case ChqEditPlanTransitionKind::kDipToBlack:
+            return "dip_to_black";
+        case ChqEditPlanTransitionKind::kUnknown:
+            break;
     }
     return nullptr;
 }
@@ -108,7 +122,7 @@ void SetError(ChqEditPlanError& err, ChqStatusCode code, const std::string& path
 }
 
 ChqStatus Fail(ChqEditPlanError& err, ChqStatusCode code, const std::string& path,
-            const char* detail) {
+               const char* detail) {
     SetError(err, code, path, detail);
     return ChqStatus{code};
 }
@@ -126,7 +140,13 @@ std::string Index(const std::string& base, size_t i) {
 // 手写 JSON DOM + 解析器（RFC 8259 严格子集：转义/代理对/无尾逗号/无前导零）
 // ---------------------------------------------------------------------------
 
-enum class JType { kNull, kBool, kInt, kDouble, kString, kArray, kObject };
+enum class JType { kNull,
+                   kBool,
+                   kInt,
+                   kDouble,
+                   kString,
+                   kArray,
+                   kObject };
 
 struct JValue {
     JType type = JType::kNull;
@@ -134,7 +154,7 @@ struct JValue {
     int64_t int_value = 0;
     bool int_overflow = false;  // 整数字面量超出 int64（仍为整数记法，非浮点）
     double double_value = 0.0;
-    bool is_float = false;      // 字面量含 '.' / 'e' / 'E'
+    bool is_float = false;  // 字面量含 '.' / 'e' / 'E'
     std::string string_value;
     std::vector<JValue> items;                            // kArray
     std::vector<std::pair<std::string, JValue>> members;  // kObject
@@ -305,16 +325,34 @@ private:
         if (pos_ >= text_.size()) return FailAt("转义序列未闭合");
         const char c = text_[pos_++];
         switch (c) {
-            case '"':  out.push_back('"');  return ChqStatus::Ok();
-            case '\\': out.push_back('\\'); return ChqStatus::Ok();
-            case '/':  out.push_back('/');  return ChqStatus::Ok();
-            case 'b':  out.push_back('\b'); return ChqStatus::Ok();
-            case 'f':  out.push_back('\f'); return ChqStatus::Ok();
-            case 'n':  out.push_back('\n'); return ChqStatus::Ok();
-            case 'r':  out.push_back('\r'); return ChqStatus::Ok();
-            case 't':  out.push_back('\t'); return ChqStatus::Ok();
-            case 'u':  return ParseUnicodeEscape(out);
-            default:   return FailAt("非法转义字符");
+            case '"':
+                out.push_back('"');
+                return ChqStatus::Ok();
+            case '\\':
+                out.push_back('\\');
+                return ChqStatus::Ok();
+            case '/':
+                out.push_back('/');
+                return ChqStatus::Ok();
+            case 'b':
+                out.push_back('\b');
+                return ChqStatus::Ok();
+            case 'f':
+                out.push_back('\f');
+                return ChqStatus::Ok();
+            case 'n':
+                out.push_back('\n');
+                return ChqStatus::Ok();
+            case 'r':
+                out.push_back('\r');
+                return ChqStatus::Ok();
+            case 't':
+                out.push_back('\t');
+                return ChqStatus::Ok();
+            case 'u':
+                return ParseUnicodeEscape(out);
+            default:
+                return FailAt("非法转义字符");
         }
     }
 
@@ -459,7 +497,7 @@ private:
 // 浮点记法（'.' / 'e'）→ kAiPlanFloatTime（红线 4 的机器检查点）；
 // timescale != 120000 → kAiPlanTimescaleMismatch；其余形状错 → FieldMissing / FieldType。
 ChqStatus TimeFromJson(const JValue& v, const std::string& path, ChqEditPlanError& err,
-                    ChqRationalTime& out) {
+                       ChqRationalTime& out) {
     // 浮点秒的两种形态都在形状检查前识别（红线 4 机器检查的核心场景）：
     //   直接浮点（"timeline_start": 0.5）与对象内浮点（{"value": 0.5, ...}）。
     if (v.type == JType::kDouble) {
@@ -514,7 +552,7 @@ ChqStatus TimeFromJson(const JValue& v, const std::string& path, ChqEditPlanErro
 
 // 通用整数字段（timeline_rev / shot / order 元素）。浮点记法判类型错。
 ChqStatus IntFromJson(const JValue& v, const std::string& path, ChqEditPlanError& err,
-                   int64_t& out) {
+                      int64_t& out) {
     if (v.type == JType::kDouble) {
         return Fail(err, ChqStatusCode::kAiPlanFieldType, path, "须为整数（不接受浮点记法）");
     }
@@ -530,7 +568,7 @@ ChqStatus IntFromJson(const JValue& v, const std::string& path, ChqEditPlanError
 
 // 可选时间字段：存在则解析（错误在检测点装配），不存在置 has=false 返回 Ok。
 ChqStatus OptionalTime(const JValue& obj, const char* key, const std::string& action_path,
-                    ChqEditPlanError& err, bool& has, ChqRationalTime& out) {
+                       ChqEditPlanError& err, bool& has, ChqRationalTime& out) {
     has = false;
     const JValue* v = obj.Find(key);
     if (v == nullptr) return ChqStatus::Ok();
@@ -543,7 +581,7 @@ ChqStatus OptionalTime(const JValue& obj, const char* key, const std::string& ac
 // ---------------------------------------------------------------------------
 
 ChqStatus ParseAction(const JValue& v, const std::string& path, ChqEditPlanAction& out,
-                   ChqEditPlanError& err) {
+                      ChqEditPlanError& err) {
     if (v.type != JType::kObject) {
         return Fail(err, ChqStatusCode::kAiPlanFieldType, path, "action 元素须为对象");
     }
@@ -589,7 +627,7 @@ ChqStatus ParseAction(const JValue& v, const std::string& path, ChqEditPlanActio
     }
 
     ChqStatus s = OptionalTime(v, "timeline_start", path, err, out.has_timeline_start,
-                            out.timeline_start);
+                               out.timeline_start);
     if (!s.IsOk()) return s;
     s = OptionalTime(v, "source_in", path, err, out.has_source_in, out.source_in);
     if (!s.IsOk()) return s;
@@ -827,7 +865,7 @@ ChqStatus ParseEditPlanImpl(const JValue& root, ChqEditPlan& out_plan, ChqEditPl
 // ---------------------------------------------------------------------------
 
 const ChqEditPlanAssetInfo* FindAsset(const ChqEditPlanAssetTable& assets,
-                                   const std::string& asset_id) {
+                                      const std::string& asset_id) {
     for (const ChqEditPlanAssetInfo& info : assets) {
         if (info.asset_id == asset_id) return &info;
     }
@@ -860,7 +898,7 @@ ChqStatus ParseEditPlan(std::string_view json, ChqEditPlan& out_plan, ChqEditPla
 }
 
 ChqStatus ValidateEditPlan(const ChqEditPlan& plan, const ChqEditPlanAssetTable& assets,
-                        ChqEditPlanError& out_err) {
+                           ChqEditPlanError& out_err) {
     // based_on.assets 引用存在性。
     for (size_t i = 0; i < plan.based_on.assets.size(); ++i) {
         if (FindAsset(assets, plan.based_on.assets[i]) == nullptr) {
@@ -1008,7 +1046,7 @@ ChqStatus ValidateEditPlan(const ChqEditPlan& plan, const ChqEditPlanAssetTable&
 }
 
 ChqStatus ValidateEditPlanJson(std::string_view json, const ChqEditPlanAssetTable& assets,
-                            ChqEditPlan& out_plan, ChqEditPlanError& out_err) {
+                               ChqEditPlan& out_plan, ChqEditPlanError& out_err) {
     ChqStatus s = ParseEditPlan(json, out_plan, out_err);
     if (!s.IsOk()) return s;
     return ValidateEditPlan(out_plan, assets, out_err);

@@ -324,9 +324,9 @@ int32_t cq_session_can_redo(const CQSession* session);
 
 typedef struct CQTrackInfo {
     uint64_t track_id;
-    int32_t kind;     /* 0 = 视频，1 = 音频 */
-    int32_t enabled;  /* 0/1 */
-    int32_t muted;    /* 0/1 */
+    int32_t kind;    /* 0 = 视频，1 = 音频 */
+    int32_t enabled; /* 0/1 */
+    int32_t muted;   /* 0/1 */
 } CQTrackInfo;
 
 typedef struct CQClipInfo {
@@ -341,8 +341,8 @@ typedef struct CQClipInfo {
     int32_t source_in_timescale;
     int64_t source_duration_value;
     int32_t source_duration_timescale;
-    int32_t in_transition;   /* 0=none 1=cross_fade 2=dip_to_black */
-    int32_t out_transition;  /* 同上 */
+    int32_t in_transition;  /* 0=none 1=cross_fade 2=dip_to_black */
+    int32_t out_transition; /* 同上 */
     int64_t transition_duration_value;
     int32_t transition_duration_timescale;
 } CQClipInfo;
@@ -365,8 +365,8 @@ int32_t cq_session_query_clips(const CQSession* session, uint64_t track_id, CQCl
 
 typedef struct CQAssetInfo {
     uint64_t asset_id;
-    char path[512];            /* NUL 结尾；超长截断（path_truncated = 1） */
-    int32_t path_truncated;    /* 0/1 */
+    char path[512];         /* NUL 结尾；超长截断（path_truncated = 1） */
+    int32_t path_truncated; /* 0/1 */
 } CQAssetInfo;
 
 int32_t cq_session_asset_count(const CQSession* session, int32_t* out_count);
@@ -511,7 +511,7 @@ int32_t cq_preview_pump_request(CQPreviewPump* pump, int64_t pts_value, int32_t 
  * 取值为内核 ChqSeekPolicy 底层值。scrub 拖动用 kKeyframeBefore 取廉价定位，
  * 松手确认/播放/导出用 kExact。上面的 cq_preview_pump_request 等价于本函数传 0。 */
 int32_t cq_preview_pump_request_ex(CQPreviewPump* pump, int64_t pts_value, int32_t pts_timescale,
-                                  int32_t seek_policy);
+                                   int32_t seek_policy);
 
 /* 请求改变离屏目标尺寸（在泵线程执行 —— RT 只能由持有它的线程销毁）。 */
 int32_t cq_preview_pump_request_resize(CQPreviewPump* pump, uint32_t width, uint32_t height);

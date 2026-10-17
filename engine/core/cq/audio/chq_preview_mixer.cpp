@@ -38,8 +38,8 @@ void WarnThrottled(const char* what, int& count, const char* detail) {
 }  // namespace
 
 ChqPreviewAudioMixer::ChqPreviewAudioMixer(ChqIAudioTrackReaderFactory* readers,
-                                     ChqIModelSnapshotProvider* snapshots,
-                                     ChqIAudioEngine* engine, const Config& cfg)
+                                           ChqIModelSnapshotProvider* snapshots,
+                                           ChqIAudioEngine* engine, const Config& cfg)
     : cfg_(cfg), readers_(readers), snapshots_(snapshots), engine_(engine) {
     // 块规格合法性：ticks 必须为整（frames*ts 必须被 rate 整除），否则块网格断裂。
     const int64_t rate = static_cast<int64_t>(cfg.spec.sample_rate);
@@ -275,7 +275,7 @@ void ChqPreviewAudioMixer::FeedLoop() {
 }
 
 int64_t ChqPreviewAudioMixer::RenderWindow(int64_t from_tick, int64_t target_end_tick,
-                                        const std::shared_ptr<const ChqModelSnapshot>& snap) {
+                                           const std::shared_ptr<const ChqModelSnapshot>& snap) {
     int64_t pos = from_tick;
     while (pos < target_end_tick) {
         if (stop_token_.IsCancelled()) {
@@ -435,7 +435,7 @@ void ChqPreviewAudioMixer::FillFifo(ClipEntry& e, int64_t until_tick) {
 }
 
 void ChqPreviewAudioMixer::MixBlock(int64_t block_start_tick,
-                                 const std::shared_ptr<const ChqModelSnapshot>& snap) {
+                                    const std::shared_ptr<const ChqModelSnapshot>& snap) {
     if (snap == nullptr || snap->timeline == nullptr) {
         return;
     }
@@ -476,8 +476,9 @@ void ChqPreviewAudioMixer::MixBlock(int64_t block_start_tick,
             } else if (e->fifo_start_tick < ov_s) {
                 // FIFO 前沿早于消费起点（上一块的消费残差）：丢弃过期前缀。
                 const size_t drop_samples = static_cast<size_t>(std::min<int64_t>(
-                    TicksToFrames(ov_s - e->fifo_start_tick),
-                    static_cast<int64_t>(e->fifo.size() / ch))) * ch;
+                                                TicksToFrames(ov_s - e->fifo_start_tick),
+                                                static_cast<int64_t>(e->fifo.size() / ch))) *
+                                            ch;
                 e->fifo.erase(e->fifo.begin(),
                               e->fifo.begin() + static_cast<std::ptrdiff_t>(drop_samples));
                 e->fifo_start_tick = ov_s;

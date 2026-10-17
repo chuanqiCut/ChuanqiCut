@@ -20,9 +20,9 @@
 
 #include <cstdint>
 
-#include "cq/base/chq_concurrency.h"  // ChqCancelToken
-#include "cq/base/chq_rational_time.h"          // ChqRationalTime
-#include "cq/platform/chq_audio.h"          // ChqPcmBuffer（音频帧复用）
+#include "cq/base/chq_concurrency.h"    // ChqCancelToken
+#include "cq/base/chq_rational_time.h"  // ChqRationalTime
+#include "cq/platform/chq_audio.h"      // ChqPcmBuffer（音频帧复用）
 #include "cq/platform/chq_common.h"
 
 namespace cq {
@@ -37,13 +37,13 @@ struct ChqMediaSource {
 struct ChqStreamInfo {
     ChqMediaType type = ChqMediaType::kUnknown;
     ChqCodecId codec = ChqCodecId::kUnknown;
-    ChqRationalTime time_base;  // 该轨道时间基（有理数）
-    uint32_t width = 0;      // 视频：宽
-    uint32_t height = 0;     // 视频：高
-    uint32_t sample_rate = 0;// 音频：采样率
-    uint32_t channels = 0;   // 音频：声道数
+    ChqRationalTime time_base;                               // 该轨道时间基（有理数）
+    uint32_t width = 0;                                      // 视频：宽
+    uint32_t height = 0;                                     // 视频：高
+    uint32_t sample_rate = 0;                                // 音频：采样率
+    uint32_t channels = 0;                                   // 音频：声道数
     ChqPixelFormat pixel_format = ChqPixelFormat::kUnknown;  // 视频建议像素格式
-    ChqColorSpace color_space = ChqColorSpace::kUnknown;      // 视频色彩属性（ARCH-003 §8）
+    ChqColorSpace color_space = ChqColorSpace::kUnknown;     // 视频色彩属性（ARCH-003 §8）
 };
 
 // 压缩包（demux 产物，不含 AVPacket）。data 由 demuxer 所有，生命周期见实现约定
@@ -129,12 +129,12 @@ public:
     //   core 层（ChqSystemFrameProvider / 渲染器）收到后再 static_cast 回 ChqSeekPolicy。
     //   默认 0(kExact) 保证既有 2-arg 调用方与 override 不变。
     virtual ChqStatus Seek(const ChqRationalTime& target, const ChqCancelToken& token,
-                       int32_t seek_policy = 0) = 0;
+                           int32_t seek_policy = 0) = 0;
 
     // 取目标时间处的帧（经 provider 内部解码）。结果以 lease 形式返回（见类注释）。
     // seek_policy 语义同上（默认 kExact）。
     virtual ChqStatus AcquireFrame(const ChqRationalTime& at, ChqMediaFrame& out_frame,
-                                const ChqCancelToken& token, int32_t seek_policy = 0) = 0;
+                                   const ChqCancelToken& token, int32_t seek_policy = 0) = 0;
 
     // 归还帧（image / pcm 内存回到 provider 池）。
     virtual void ReleaseFrame(ChqMediaFrame& frame) = 0;
@@ -178,21 +178,21 @@ public:
 // 平台实现按分辨率/格式把档位映射到本机默认码率（如 kLossless → 交平台默认）。
 enum class ChqBitrateTier : int32_t {
     kUnknown = 0,
-    kLow,     // 低码率（预览/草稿导出）
-    kMedium,  // 中等（默认）
-    kHigh,    // 高码率（高质量归档）
-    kLossless, // 高保真（像素正确性敏感的导出，交平台默认最高可达质量）
+    kLow,       // 低码率（预览/草稿导出）
+    kMedium,    // 中等（默认）
+    kHigh,      // 高码率（高质量归档）
+    kLossless,  // 高保真（像素正确性敏感的导出，交平台默认最高可达质量）
 };
 
 // 视频轨配置（muxer 侧描述，对应 demux 侧 ChqStreamInfo 的「写」版本）。
 struct ChqVideoTrackConfig {
-    ChqCodecId codec = ChqCodecId::kH264;   // 编码格式（本项目枚举，与 FFmpeg 解耦）
+    ChqCodecId codec = ChqCodecId::kH264;  // 编码格式（本项目枚举，与 FFmpeg 解耦）
     uint32_t width = 0;
     uint32_t height = 0;
-    ChqRationalTime frame_rate{30, 1};   // 名义帧率（仅用于期望帧率/码率假设，非 PTS 网格）
+    ChqRationalTime frame_rate{30, 1};                 // 名义帧率（仅用于期望帧率/码率假设，非 PTS 网格）
     ChqBitrateTier bitrate = ChqBitrateTier::kMedium;  // 码率档位（非精确 bps）
-    int32_t max_keyframe_interval = 30;  // GOP 长度；=1 表示全 I 帧（all-intra）
-    bool allow_hardware = true;       // 优先硬件编码；不可用时软件回退（诚实，不伪造）
+    int32_t max_keyframe_interval = 30;                // GOP 长度；=1 表示全 I 帧（all-intra）
+    bool allow_hardware = true;                        // 优先硬件编码；不可用时软件回退（诚实，不伪造）
 };
 
 // 音频轨配置（仅预留，Apple 实现当前不产出音频轨）。
@@ -224,7 +224,7 @@ public:
     // 调用方必须按 PTS 非递减顺序喂帧（封装器要求样本按展示序）。
     // 长任务，接受 ChqCancelToken；背压等待期间若被取消返回 kCancelled（非错误）。
     virtual ChqStatus WriteVideoFrame(NativeImageHandle image, const ChqRationalTime& pts,
-                                  const ChqCancelToken& token) = 0;
+                                      const ChqCancelToken& token) = 0;
 
     // 写入一块音频（线性 PCM）。pcm 携带样本（ChqSampleFormat / channels / sample_rate /
     // frame_count / data / data_bytes），pts 为该块首样本展示时间戳（timescale 须等于
@@ -233,7 +233,7 @@ public:
     // 调用方须按 PTS 非递减顺序喂块；长任务接受 ChqCancelToken，背压等待期间若被取消
     // 返回 kCancelled（非错误）。
     virtual ChqStatus WriteAudioFrame(const ChqPcmBuffer& pcm, const ChqRationalTime& pts,
-                                  const ChqCancelToken& token) = 0;
+                                      const ChqCancelToken& token) = 0;
 
     // 正常收尾：标记输入完成并阻塞等待封装完成。返回错误若写入失败。
     virtual ChqStatus Finish(const ChqCancelToken& token) = 0;

@@ -33,8 +33,8 @@
 #include <mutex>
 #include <vector>
 
-#include "cq/base/chq_status.h"            // ChqStatus / ChqStatusCode
-#include "cq/media/chq_frame_provider.h"   // ChqIDecoderPool / ChqDecoderHandle / ChqCodecId
+#include "cq/base/chq_status.h"           // ChqStatus / ChqStatusCode
+#include "cq/media/chq_frame_provider.h"  // ChqIDecoderPool / ChqDecoderHandle / ChqCodecId
 
 namespace cq {
 
@@ -53,7 +53,7 @@ public:
 // 仅含跨平台元数据 + 真实解码器指针；不暴露任何平台类型。
 struct ChqDecoder {
     ChqIFrameDecoder* decoder = nullptr;  // 池管理的真实解码器（由工厂注入；core 不拥有其类型）
-    int32_t id = 0;                    // 诊断用稳定 id
+    int32_t id = 0;                       // 诊断用稳定 id
 };
 
 // 从池句柄取底层解码器（provider 经此把解码路由到池中的解码器）。
@@ -72,8 +72,8 @@ public:
     // 借一个解码器（按 codec）。池满且无法复用 → 返回 kResourceExhausted（不崩溃）。
     ChqStatus AcquireDecoder(ChqCodecId codec, ChqDecoderHandle& out_decoder) override;
     void ReleaseDecoder(ChqDecoderHandle decoder) override;  // 归还（置空闲，可复用，不销毁）
-    int32_t ActiveCount() const override;                // 当前在用（已借未还）路数
-    int32_t MaxHardwarePaths() const override;            // 硬解路数上限
+    int32_t ActiveCount() const override;                    // 当前在用（已借未还）路数
+    int32_t MaxHardwarePaths() const override;               // 硬解路数上限
 
     void SetMaxHardwarePaths(int32_t n);  // 允许运行时覆盖（如将来用 ChqICapabilities 查到的真值）
 
@@ -86,8 +86,8 @@ private:
 
     int32_t max_hardware_paths_;
     std::unique_ptr<ChqIDecoderFactory> factory_;
-    std::vector<Slot> slots_;        // 池（含空闲）
-    mutable std::mutex mtx_;         // 非阻塞加锁
+    std::vector<Slot> slots_;  // 池（含空闲）
+    mutable std::mutex mtx_;   // 非阻塞加锁
 };
 
 // 工厂：构造一个 ChqDecoderPool（调用方持有 unique_ptr<ChqIDecoderPool>）。

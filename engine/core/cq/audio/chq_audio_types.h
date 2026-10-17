@@ -14,7 +14,7 @@
 
 #include <cstdint>
 
-#include "cq/base/chq_rational_time.h"      // ChqRationalTime（已含 status.h）
+#include "cq/base/chq_rational_time.h"  // ChqRationalTime（已含 status.h）
 #include "cq/platform/chq_common.h"     // ChqSampleFormat
 
 namespace cq {
@@ -24,21 +24,31 @@ namespace cq {
 struct ChqAudioBuffer {
     ChqSampleFormat format = ChqSampleFormat::kUnknown;
     uint32_t channels = 0;
-    uint32_t sample_rate = 0;   // Hz
-    uint64_t frame_count = 0;   // 单声道样本帧数
-    void* data = nullptr;       // 样本内存（池所有，可变 —— 节点原位处理）
-    uint64_t data_bytes = 0;    // data 该厂商长度
-    ChqRationalTime pts;           // 首样本时间（项目有理数时间轴，timescale=60000）
+    uint32_t sample_rate = 0;  // Hz
+    uint64_t frame_count = 0;  // 单声道样本帧数
+    void* data = nullptr;      // 样本内存（池所有，可变 —— 节点原位处理）
+    uint64_t data_bytes = 0;   // data 该厂商长度
+    ChqRationalTime pts;       // 首样本时间（项目有理数时间轴，timescale=60000）
 
     // 单帧该厂商数（channels * 每样本该厂商）。-Wconversion 安全：显式 static_cast。
     uint64_t BytesPerFrame() const {
         uint32_t sample_bytes = 0;
         switch (format) {
-            case ChqSampleFormat::kInt16:   sample_bytes = 2u; break;
-            case ChqSampleFormat::kInt32:   sample_bytes = 4u; break;
-            case ChqSampleFormat::kFloat32: sample_bytes = 4u; break;
-            case ChqSampleFormat::kFloat64: sample_bytes = 8u; break;
-            default:                     sample_bytes = 0u; break;
+            case ChqSampleFormat::kInt16:
+                sample_bytes = 2u;
+                break;
+            case ChqSampleFormat::kInt32:
+                sample_bytes = 4u;
+                break;
+            case ChqSampleFormat::kFloat32:
+                sample_bytes = 4u;
+                break;
+            case ChqSampleFormat::kFloat64:
+                sample_bytes = 8u;
+                break;
+            default:
+                sample_bytes = 0u;
+                break;
         }
         return static_cast<uint64_t>(sample_bytes) * static_cast<uint64_t>(channels);
     }
@@ -50,8 +60,8 @@ struct ChqAudioBuffer {
 struct ChqAudioGraphSpec {
     ChqSampleFormat format = ChqSampleFormat::kFloat32;
     uint32_t channels = 2;
-    uint32_t sample_rate = 48000;        // Hz
-    uint32_t frames_per_block = 512;     // 定块大小（延迟/吞吐调参）
+    uint32_t sample_rate = 48000;     // Hz
+    uint32_t frames_per_block = 512;  // 定块大小（延迟/吞吐调参）
 };
 
 }  // namespace cq

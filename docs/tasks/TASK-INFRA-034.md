@@ -386,6 +386,10 @@ RESEARCH-011 §3 的 F（无 CI）、G（无 .clang-format/.editorconfig）、H�
 - **P160 只修到"本机可从零装配"，pin 级校验仍有一道口子**：`third_party/src/{glslang,SPIRV-Cross}`
   是历史会话手搓的**非 git 树**，脚本只能做版本级核对并明打"commit 级 pin 不可校验"。
   CI / 新克隆机走的是按 `pin_ref` 浅 fetch 的 git 树，那一路才有 `HEAD == pin` 的硬判据。
+  - **2026-10-17 追加（INFRA-045 收尾批）**：传哲对本条判「**本批不管，继续挂着**」。
+    所以 `ci.yml` 的状态**仍是**"本机复现绿、远端未跑"，不要有人替它改口。
+    本机 `gh` **未安装**（`command -v gh` 空），连远端 run 状态都取不到 —— 想验要么在有 `gh` 的机器上，
+    要么由人在 Actions 页面看，别把"看不见"写成"通过"。
 - **池 [22]**（append 进 `TODO-POOL-门禁真机待办池.md`）：仍有 **90** 个 tracked 文件使用生成前的旧路径
   `engine/core/cq/**`→`core/include/cq/**` 形式，`check_repo_hygiene.sh` 的 legacy-paths 判据**看不到这一类**
   （它只扫已登记的字面）。修法只能逐文件，**禁止批量替换**（P156 的案底就是这个），改完再扩 pattern 列表。
@@ -396,6 +400,9 @@ RESEARCH-011 §3 的 F（无 CI）、G（无 .clang-format/.editorconfig）、H�
   —— 本机也**始终**按 pin 做 `git checkout`（`ensure_src` 已有该路径，代价 `third_party/src/` 重取
   约 25~40s/仓），补丁随之作废。
 - clang-format 全库重排**没做**，按本卡风险条另开卡分批（166 个文件的 cosmetic diff 不能塞进布局批）。
+  → **2026-10-17 由 [TASK-INFRA-046-全库clang-format重排.md](TASK-INFRA-046-全库clang-format重排.md) 做掉**：
+  本卡那个 **166** 是"扫到的文件数"（engine 105+10 + tests 51），**违规数**是 engine **79/115** + tests **34/45**；
+  实排 **113** 个文件（166 里本来就有合规的，vendor 不入库所以碰不到）。现状全库违规 **0/168**。
 - 池 [20]（TimelineKit 在仓库外、iOS 轨道区依赖不可复现本地路径）本批判定**不收编**，
   仍留在池里待传哲拍板；池 [18]（把双壳纳入门禁）本卡只做到"iOS 切片只编译"这一半，
   壳构建（约 10min×2）仍未进门禁。

@@ -89,7 +89,7 @@ public:
     static uint64_t Fingerprint(const ChqTimeline& timeline);
 
 private:
-    void Publish();  // (timeline_, assets_) → 重建配对快照并发布（session 线程）
+    void Publish();              // (timeline_, assets_) → 重建配对快照并发布（session 线程）
     void RefreshHistoryFlags();  // history_ → can_undo_/can_redo_（session 线程）
 
     ChqTimeline timeline_;

@@ -25,13 +25,13 @@
 #include <sys/stat.h>
 #include <vector>
 
-#include "cq/base/chq_perf.h"       // CQ_SLOW_CALL_WF（CORE-010）
+#include "cq/base/chq_perf.h"           // CQ_SLOW_CALL_WF（CORE-010）
 #include "cq/base/chq_logging.h"        // 带 workflow 的分级日志
-#include "cq/base/chq_rational_time.h"        // ChqRationalTime / Rescale / ChqRoundMode / kProjectTimeScale
-#include "cq/base/chq_status.h"      // ChqStatus / ChqStatusCode
-#include "cq/base/chq_concurrency.h" // ChqCancelToken
-#include "cq/platform/chq_media.h"        // ChqIMediaDemuxer / ChqMediaPacket / ChqStreamInfo / CreateMediaDemuxer
-#include "cq/platform/chq_common.h"       // ChqCodecId / ChqMediaType / ChqPixelFormat 等枚举
+#include "cq/base/chq_rational_time.h"  // ChqRationalTime / Rescale / ChqRoundMode / kProjectTimeScale
+#include "cq/base/chq_status.h"         // ChqStatus / ChqStatusCode
+#include "cq/base/chq_concurrency.h"    // ChqCancelToken
+#include "cq/platform/chq_media.h"      // ChqIMediaDemuxer / ChqMediaPacket / ChqStreamInfo / CreateMediaDemuxer
+#include "cq/platform/chq_common.h"     // ChqCodecId / ChqMediaType / ChqPixelFormat 等枚举
 
 namespace cq {
 
@@ -105,7 +105,9 @@ ChqCodecId AudioCodecToCq(FourCharCode c) {
 
 // 码流关键帧判决（passthrough 下的可靠兜底）：解析 NAL 找 IDR(H.264)/IRAP(HEVC)。
 // 返回值：kKeyframe=判定为关键帧；kNonKey=判定为非关键帧；kUnknown=无法判定。
-enum class NalVerdict { kKeyframe = 0, kNonKey = 1, kUnknown = 2 };
+enum class NalVerdict { kKeyframe = 0,
+                        kNonKey = 1,
+                        kUnknown = 2 };
 
 // 读取 CMSampleBuffer 的连续压缩数据指针（不拷贝，零拷贝）。passthrough 下 CMBlockBuffer
 // 通常为单段连续；非连续则本兜底路径直接判定为「无法判定」（退化为保守），避免越界。
@@ -251,7 +253,7 @@ bool IsKeyframe(CMSampleBufferRef sbuf) {
     if (GetSampleData(sbuf, data, len)) {
         CMFormatDescriptionRef fmt = CMSampleBufferGetFormatDescription(sbuf);
         FourCharCode codec = (fmt != nullptr) ? CMVideoFormatDescriptionGetCodecType(fmt)
-                                             : static_cast<FourCharCode>(0);
+                                              : static_cast<FourCharCode>(0);
         NalVerdict v = DetectKeyframeByNal(data, len, codec, fmt);
         if (v == NalVerdict::kKeyframe) return true;
         if (v == NalVerdict::kNonKey) return false;
@@ -263,7 +265,7 @@ bool IsKeyframe(CMSampleBufferRef sbuf) {
 // 单条轨的输出状态（实现内部，含 ObjC 平台类型，不出现在 core 头）。
 struct TrackState {
     AVAssetReaderTrackOutput* __strong output = nullptr;  // passthrough 输出
-    CMSampleBufferRef next = nullptr;  // 预取的下一样本（+1 retained），耗尽为 nullptr
+    CMSampleBufferRef next = nullptr;                     // 预取的下一样本（+1 retained），耗尽为 nullptr
     int32_t stream_index = -1;
     ChqMediaType media_type = ChqMediaType::kUnknown;
     ChqCodecId codec = ChqCodecId::kUnknown;
@@ -354,7 +356,7 @@ public:
             dispatch_semaphore_t sem = dispatch_semaphore_create(0);
             [asset_ loadValuesAsynchronouslyForKeys:@[ @"tracks", @"duration" ]
                                   completionHandler:^{
-                                      dispatch_semaphore_signal(sem);
+                                    dispatch_semaphore_signal(sem);
                                   }];
             const bool completed =
                 dispatch_semaphore_wait(
@@ -439,10 +441,10 @@ public:
             dispatch_semaphore_t sem = dispatch_semaphore_create(0);
             [asset loadValuesAsynchronouslyForKeys:@[ @"duration" ]
                                  completionHandler:^{
-                                     dispatch_semaphore_signal(sem);
+                                   dispatch_semaphore_signal(sem);
                                  }];
             const bool completed = dispatch_semaphore_wait(
-                sem, dispatch_time(DISPATCH_TIME_NOW, kLoadTimeoutNs)) == 0;
+                                       sem, dispatch_time(DISPATCH_TIME_NOW, kLoadTimeoutNs)) == 0;
             if (completed) {
                 NSError* err = nil;
                 if ([asset statusOfValueForKey:@"duration" error:&err] ==
@@ -528,71 +530,71 @@ public:
         // MEDIA-027：同 RebuildReader —— 泵线程无 autorelease pool，逐包调用必须
         // 自带池，否则 AVFoundation 的自动释放对象整段播放期内只增不减。
         @autoreleasepool {
-        for (;;) {
-            // 找 pts 最小的可用轨。
-            int best = -1;
-            CMTime best_pts = kCMTimeInvalid;
-            for (int i = 0; i < static_cast<int>(tracks_.size()); ++i) {
-                TrackState& ts = tracks_[static_cast<size_t>(i)];
-                if (ts.next == nullptr) continue;
-                CMTime pts = CMSampleBufferGetPresentationTimeStamp(ts.next);
-                if (best < 0 || CMTimeCompare(pts, best_pts) < 0) {
-                    best = i;
-                    best_pts = pts;
+            for (;;) {
+                // 找 pts 最小的可用轨。
+                int best = -1;
+                CMTime best_pts = kCMTimeInvalid;
+                for (int i = 0; i < static_cast<int>(tracks_.size()); ++i) {
+                    TrackState& ts = tracks_[static_cast<size_t>(i)];
+                    if (ts.next == nullptr) continue;
+                    CMTime pts = CMSampleBufferGetPresentationTimeStamp(ts.next);
+                    if (best < 0 || CMTimeCompare(pts, best_pts) < 0) {
+                        best = i;
+                        best_pts = pts;
+                    }
                 }
-            }
-            if (best < 0) {
-                return ChqStatus{ChqStatusCode::kIoNotFound};  // 流末尾，非错误
-            }
+                if (best < 0) {
+                    return ChqStatus{ChqStatusCode::kIoNotFound};  // 流末尾，非错误
+                }
 
-            TrackState& ts = tracks_[static_cast<size_t>(best)];
-            CMSampleBufferRef sbuf = ts.next;
-            ts.next = nullptr;  // 该样本已被取走
+                TrackState& ts = tracks_[static_cast<size_t>(best)];
+                CMSampleBufferRef sbuf = ts.next;
+                ts.next = nullptr;  // 该样本已被取走
 
-            // 懒填充 stream 元数据：passthrough 首样本可能不带格式描述，
-            // 用实际读到的样本补一次（仅一次）。
-            if (ts.codec == ChqCodecId::kUnknown) {
-                CMFormatDescriptionRef fmt = CMSampleBufferGetFormatDescription(sbuf);
-                if (fmt != nullptr) ExtractStreamMeta(ts, fmt, ts.media_type);
-            }
+                // 懒填充 stream 元数据：passthrough 首样本可能不带格式描述，
+                // 用实际读到的样本补一次（仅一次）。
+                if (ts.codec == ChqCodecId::kUnknown) {
+                    CMFormatDescriptionRef fmt = CMSampleBufferGetFormatDescription(sbuf);
+                    if (fmt != nullptr) ExtractStreamMeta(ts, fmt, ts.media_type);
+                }
 
-            // —— 抽取压缩数据（扁平化为连续缓冲，data 由 demuxer 所有）——
-            CMBlockBufferRef block = CMSampleBufferGetDataBuffer(sbuf);
-            size_t length = 0;
-            if (block != nullptr) {
-                CMBlockBufferGetDataPointer(block, 0, nullptr, &length, nullptr);
-            }
-            if (length == 0) {
-                // 零该厂商样本（参数集 / priming / 容器层非 VCL 配置包）。
-                // 无帧数据，跳过并继续取下一包，避免污染调用方计数与 pts 单调性。
+                // —— 抽取压缩数据（扁平化为连续缓冲，data 由 demuxer 所有）——
+                CMBlockBufferRef block = CMSampleBufferGetDataBuffer(sbuf);
+                size_t length = 0;
+                if (block != nullptr) {
+                    CMBlockBufferGetDataPointer(block, 0, nullptr, &length, nullptr);
+                }
+                if (length == 0) {
+                    // 零该厂商样本（参数集 / priming / 容器层非 VCL 配置包）。
+                    // 无帧数据，跳过并继续取下一包，避免污染调用方计数与 pts 单调性。
+                    CFRelease(sbuf);
+                    ts.next = [ts.output copyNextSampleBuffer];  // 预取下一包
+                    continue;
+                }
+
+                last_data_.clear();
+                last_data_.resize(length);
+                CMBlockBufferCopyDataBytes(block, 0, length, last_data_.data());
+
+                CMTime pts = CMSampleBufferGetPresentationTimeStamp(sbuf);
+                CMTime dts = CMSampleBufferGetDecodeTimeStamp(sbuf);
+                if (CMTIME_IS_INVALID(dts)) dts = pts;
+
+                out_packet.stream_index = ts.stream_index;
+                out_packet.pts = ToRational(pts, ChqRoundMode::kRound);
+                out_packet.dts = ToRational(dts, ChqRoundMode::kRound);
+                out_packet.codec = ts.codec;
+                out_packet.data = last_data_.empty() ? nullptr : last_data_.data();
+                out_packet.size = last_data_.size();
+                out_packet.is_keyframe = IsKeyframe(sbuf);
+
+                // 预取该轨下一个样本。
+                ts.next = [ts.output copyNextSampleBuffer];  // +1 retained（可能为 nil）
+
+                // 用毕释放当前样本（我们已把数据拷出）。
                 CFRelease(sbuf);
-                ts.next = [ts.output copyNextSampleBuffer];  // 预取下一包
-                continue;
+                return ChqStatus::Ok();
             }
-
-            last_data_.clear();
-            last_data_.resize(length);
-            CMBlockBufferCopyDataBytes(block, 0, length, last_data_.data());
-
-            CMTime pts = CMSampleBufferGetPresentationTimeStamp(sbuf);
-            CMTime dts = CMSampleBufferGetDecodeTimeStamp(sbuf);
-            if (CMTIME_IS_INVALID(dts)) dts = pts;
-
-            out_packet.stream_index = ts.stream_index;
-            out_packet.pts = ToRational(pts, ChqRoundMode::kRound);
-            out_packet.dts = ToRational(dts, ChqRoundMode::kRound);
-            out_packet.codec = ts.codec;
-            out_packet.data = last_data_.empty() ? nullptr : last_data_.data();
-            out_packet.size = last_data_.size();
-            out_packet.is_keyframe = IsKeyframe(sbuf);
-
-            // 预取该轨下一个样本。
-            ts.next = [ts.output copyNextSampleBuffer];  // +1 retained（可能为 nil）
-
-            // 用毕释放当前样本（我们已把数据拷出）。
-            CFRelease(sbuf);
-            return ChqStatus::Ok();
-        }
         }  // @autoreleasepool（MEDIA-027）
     }
 
@@ -619,80 +621,81 @@ private:
         // 自动释放对象（AVAssetReader / NSError / tracks 数组等）会一直挂到线程
         // 退出才回收 —— 播放越久攒越多。显式池把生命周期压到单次调用。
         @autoreleasepool {
-        TearDownReader();
-        tracks_.clear();  // 幂等：Open 可能重复调用（如 CreateMediaDemuxer + ChqSystemFrameProvider::Open），
-                          // 不清空会累积失效（output=nil）的旧轨，导致 ScanKeyframes 读到 0 样本。
-        if (asset_ == nil) return ChqStatus{ChqStatusCode::kInvalidArgument};
-        if (token.IsCancelled()) return token.Cancelled();
-
-        NSError* err = nil;
-        reader_ = [AVAssetReader assetReaderWithAsset:asset_ error:&err];
-        if (reader_ == nil || err != nil) return ChqStatus{ChqStatusCode::kIoError};
-
-        CMTime dur = [asset_ duration];
-        CMTime start_clamped = start;
-        if (CMTIME_IS_INVALID(start_clamped)) start_clamped = kCMTimeZero;
-        if (CMTimeCompare(start_clamped, dur) > 0) start_clamped = dur;
-        CMTimeRange range = CMTimeRangeMake(start_clamped,
-                                            CMTimeSubtract(dur, start_clamped));
-        if (CMTIME_IS_INVALID(range.duration) || range.duration.value < 0) {
-            range = CMTimeRangeMake(kCMTimeZero, dur);
-        }
-        reader_.timeRange = range;
-
-        NSArray<AVAssetTrack*>* all_tracks = [asset_ tracks];
-        int32_t idx = 0;
-        // 先收集并添加所有输出（此时还不能 copyNextSampleBuffer）。
-        for (AVAssetTrack* track in all_tracks) {
-            // 注意：mediaType 是 NSString，必须用字符串比较，不能指针比较
-            // （track.mediaType 与全局常量 AVMediaTypeVideo 可能是不同实例）。
-            BOOL is_video = [track.mediaType isEqualToString:AVMediaTypeVideo];
-            BOOL is_audio = [track.mediaType isEqualToString:AVMediaTypeAudio];
-            if (!is_video && !is_audio) {
-                continue;
-            }
-            AVAssetReaderTrackOutput* out =
-                [[AVAssetReaderTrackOutput alloc] initWithTrack:track outputSettings:nil];
-            // nil outputSettings = passthrough（不解码，保留压缩数据）。
-            [reader_ addOutput:out];
-
-            TrackState ts;
-            ts.output = out;
-            ts.stream_index = idx++;
-            ts.media_type = is_video ? ChqMediaType::kVideo : ChqMediaType::kAudio;
-            ts.time_base = ChqRationalTime{kProjectTimeScale, kProjectTimeScale};  // 包统一报项目网格
-            // 从 track 的格式描述取 codec/尺寸/采样率（Open 即可得，不依赖读取样本）。
-            NSArray* fds = track.formatDescriptions;
-            if (fds.count > 0) {
-                // 用 CFBridgingRetain（函数式桥接，避免 __bridge 旧式强转触发 -Wold-style-cast），
-                // 转成 CFTypeRef 后再 static_cast 到 CMFormatDescriptionRef。
-                CFTypeRef fdRef = CFBridgingRetain(fds[0]);
-                CMFormatDescriptionRef fd =
-                    static_cast<CMFormatDescriptionRef>(fdRef);
-                ExtractStreamMeta(ts, fd, ts.media_type);
-                CFRelease(fdRef);
-            }
-            tracks_.push_back(std::move(ts));
-        }
-
-        if (![reader_ startReading]) {
-            // 某些资产（如纯音频或受限）可能 startReading 失败；把错误转成 ChqStatus。
-            NSError* rerr = [reader_ error];
-            if (rerr != nil) {
-                std::printf("[AppleDemuxer] startReading failed: %s\n",
-                            [rerr.localizedDescription UTF8String]);
-            } else {
-                std::printf("[AppleDemuxer] startReading failed (no error)\n");
-            }
             TearDownReader();
-            return ChqStatus{ChqStatusCode::kIoError};
-        }
+            tracks_.clear();  // 幂等：Open 可能重复调用（如 CreateMediaDemuxer + ChqSystemFrameProvider::Open），
+                              // 不清空会累积失效（output=nil）的旧轨，导致 ScanKeyframes 读到 0 样本。
+            if (asset_ == nil) return ChqStatus{ChqStatusCode::kInvalidArgument};
+            if (token.IsCancelled()) return token.Cancelled();
 
-        // startReading 之后才能预取首样本（copyNextSampleBuffer 要求 reader 已启动）。
-        for (auto& ts : tracks_) {
-            ts.next = [ts.output copyNextSampleBuffer];  // +1 retained（可能为 nil）
-        }
-        return ChqStatus::Ok();
+            NSError* err = nil;
+            reader_ = [AVAssetReader assetReaderWithAsset:asset_ error:&err];
+            if (reader_ == nil || err != nil) return ChqStatus{ChqStatusCode::kIoError};
+
+            CMTime dur = [asset_ duration];
+            CMTime start_clamped = start;
+            if (CMTIME_IS_INVALID(start_clamped)) start_clamped = kCMTimeZero;
+            if (CMTimeCompare(start_clamped, dur) > 0) start_clamped = dur;
+            CMTimeRange range = CMTimeRangeMake(start_clamped,
+                                                CMTimeSubtract(dur, start_clamped));
+            if (CMTIME_IS_INVALID(range.duration) || range.duration.value < 0) {
+                range = CMTimeRangeMake(kCMTimeZero, dur);
+            }
+            reader_.timeRange = range;
+
+            NSArray<AVAssetTrack*>* all_tracks = [asset_ tracks];
+            int32_t idx = 0;
+            // 先收集并添加所有输出（此时还不能 copyNextSampleBuffer）。
+            for (AVAssetTrack* track in all_tracks) {
+                // 注意：mediaType 是 NSString，必须用字符串比较，不能指针比较
+                // （track.mediaType 与全局常量 AVMediaTypeVideo 可能是不同实例）。
+                BOOL is_video = [track.mediaType isEqualToString:AVMediaTypeVideo];
+                BOOL is_audio = [track.mediaType isEqualToString:AVMediaTypeAudio];
+                if (!is_video && !is_audio) {
+                    continue;
+                }
+                AVAssetReaderTrackOutput* out =
+                    [[AVAssetReaderTrackOutput alloc] initWithTrack:track
+                                                     outputSettings:nil];
+                // nil outputSettings = passthrough（不解码，保留压缩数据）。
+                [reader_ addOutput:out];
+
+                TrackState ts;
+                ts.output = out;
+                ts.stream_index = idx++;
+                ts.media_type = is_video ? ChqMediaType::kVideo : ChqMediaType::kAudio;
+                ts.time_base = ChqRationalTime{kProjectTimeScale, kProjectTimeScale};  // 包统一报项目网格
+                // 从 track 的格式描述取 codec/尺寸/采样率（Open 即可得，不依赖读取样本）。
+                NSArray* fds = track.formatDescriptions;
+                if (fds.count > 0) {
+                    // 用 CFBridgingRetain（函数式桥接，避免 __bridge 旧式强转触发 -Wold-style-cast），
+                    // 转成 CFTypeRef 后再 static_cast 到 CMFormatDescriptionRef。
+                    CFTypeRef fdRef = CFBridgingRetain(fds[0]);
+                    CMFormatDescriptionRef fd =
+                        static_cast<CMFormatDescriptionRef>(fdRef);
+                    ExtractStreamMeta(ts, fd, ts.media_type);
+                    CFRelease(fdRef);
+                }
+                tracks_.push_back(std::move(ts));
+            }
+
+            if (![reader_ startReading]) {
+                // 某些资产（如纯音频或受限）可能 startReading 失败；把错误转成 ChqStatus。
+                NSError* rerr = [reader_ error];
+                if (rerr != nil) {
+                    std::printf("[AppleDemuxer] startReading failed: %s\n",
+                                [rerr.localizedDescription UTF8String]);
+                } else {
+                    std::printf("[AppleDemuxer] startReading failed (no error)\n");
+                }
+                TearDownReader();
+                return ChqStatus{ChqStatusCode::kIoError};
+            }
+
+            // startReading 之后才能预取首样本（copyNextSampleBuffer 要求 reader 已启动）。
+            for (auto& ts : tracks_) {
+                ts.next = [ts.output copyNextSampleBuffer];  // +1 retained（可能为 nil）
+            }
+            return ChqStatus::Ok();
         }  // @autoreleasepool（MEDIA-027）
     }
 
@@ -731,7 +734,7 @@ private:
     AVAssetReader* __strong reader_ = nil;
     std::vector<TrackState> tracks_;
     ChqRationalTime duration_{0, 1};
-    std::vector<uint8_t> last_data_;  // 最近一个包的压缩数据（ChqMediaPacket.data 指向它）
+    std::vector<uint8_t> last_data_;               // 最近一个包的压缩数据（ChqMediaPacket.data 指向它）
     std::vector<ChqRationalTime> keyframe_times_;  // 视频轨关键帧 pts 集合（Seek 吸附用）
 };
 

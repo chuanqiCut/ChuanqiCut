@@ -25,17 +25,21 @@
 
 namespace cq {
 
-enum class ChqTrackKind { kVideo, kAudio };
-enum class ChqClipKind { kVideo, kAudio };
-enum class ChqTransitionKind { kNone, kCrossFade, kDipToBlack };
+enum class ChqTrackKind { kVideo,
+                          kAudio };
+enum class ChqClipKind { kVideo,
+                         kAudio };
+enum class ChqTransitionKind { kNone,
+                               kCrossFade,
+                               kDipToBlack };
 
 // ---------------------------------------------------------------------------
 // 媒体引用：只引用，不持有媒体数据（解码与缓存在 media 层）
 // ---------------------------------------------------------------------------
 struct ChqMediaRef {
     uint64_t asset_id = 0;            // 素材 id（具体解析由上层负责）
-    ChqRationalTime source_in;           // 素材内入点
-    ChqRationalTime source_duration;     // 自入点起使用的时长
+    ChqRationalTime source_in;        // 素材内入点
+    ChqRationalTime source_duration;  // 自入点起使用的时长
 };
 
 // ---------------------------------------------------------------------------
@@ -45,8 +49,8 @@ struct ChqClip {
     uint64_t id = 0;
     ChqClipKind kind = ChqClipKind::kVideo;
     ChqMediaRef source;
-    ChqRationalTime start;      // 时间线起点
-    ChqRationalTime duration;   // 时间线占时（trim 后）
+    ChqRationalTime start;     // 时间线起点
+    ChqRationalTime duration;  // 时间线占时（trim 后）
 
     ChqTransitionKind in_transition = ChqTransitionKind::kNone;
     ChqTransitionKind out_transition = ChqTransitionKind::kNone;
@@ -165,7 +169,7 @@ private:
 
     std::vector<ChqTrack> tracks_;
     uint64_t next_id_ = 1;
-    int32_t canvas_width_ = 1080;   // 9:16 竖屏基准（对标 App 默认）
+    int32_t canvas_width_ = 1080;  // 9:16 竖屏基准（对标 App 默认）
     int32_t canvas_height_ = 1920;
 };
 

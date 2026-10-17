@@ -69,14 +69,22 @@ const char* CapName(cq::ChqCapability c) {
 // 新增 ChqCapability 枚举项时必须同步此数组。
 // （capabilities.mm 的 switch 刻意不写 default，新增项会先触发 -Wswitch 编译失败。）
 const cq::ChqCapability kAllCapabilities[] = {
-    cq::ChqCapability::kHwDecodeH264,   cq::ChqCapability::kHwDecodeHevc,
-    cq::ChqCapability::kHwDecodeAv1,    cq::ChqCapability::kHwDecodeProres,
-    cq::ChqCapability::kHwEncodeH264,   cq::ChqCapability::kHwEncodeHevc,
-    cq::ChqCapability::kHwEncodeProres, cq::ChqCapability::k10BitPipeline,
-    cq::ChqCapability::kHdrDisplay,     cq::ChqCapability::kComputeShader,
-    cq::ChqCapability::kFloatTexture,   cq::ChqCapability::kExternalMemoryImport,
-    cq::ChqCapability::kNpuInference,   cq::ChqCapability::kGpuMetal,
-    cq::ChqCapability::kGpuGles,        cq::ChqCapability::kGpuVulkan,
+    cq::ChqCapability::kHwDecodeH264,
+    cq::ChqCapability::kHwDecodeHevc,
+    cq::ChqCapability::kHwDecodeAv1,
+    cq::ChqCapability::kHwDecodeProres,
+    cq::ChqCapability::kHwEncodeH264,
+    cq::ChqCapability::kHwEncodeHevc,
+    cq::ChqCapability::kHwEncodeProres,
+    cq::ChqCapability::k10BitPipeline,
+    cq::ChqCapability::kHdrDisplay,
+    cq::ChqCapability::kComputeShader,
+    cq::ChqCapability::kFloatTexture,
+    cq::ChqCapability::kExternalMemoryImport,
+    cq::ChqCapability::kNpuInference,
+    cq::ChqCapability::kGpuMetal,
+    cq::ChqCapability::kGpuGles,
+    cq::ChqCapability::kGpuVulkan,
 };
 
 // 固定返回同一值的测试后端。

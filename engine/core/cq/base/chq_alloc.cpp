@@ -34,7 +34,7 @@ ChqStatus ChqMemoryBudget::TryAllocate(int64_t bytes) {
             return ChqStatus(ChqStatusCode::kResourceExhausted);
         }
         if (used_.compare_exchange_weak(cur, next, std::memory_order_relaxed,
-                                         std::memory_order_relaxed)) {
+                                        std::memory_order_relaxed)) {
             return ChqStatus::Ok();
         }
         // cur 已被更新为最新值，重试。

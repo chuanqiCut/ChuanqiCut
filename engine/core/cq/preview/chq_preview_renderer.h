@@ -35,24 +35,24 @@
 #include <memory>
 #include <unordered_map>
 
-#include "cq/base/chq_concurrency.h"                 // ChqCancelToken
+#include "cq/base/chq_concurrency.h"  // ChqCancelToken
 #include "cq/base/chq_status.h"
-#include "cq/base/chq_rational_time.h"                        // ChqRationalTime
-#include "cq/gfx/chq_gfx_device.h"                   // ChqIGfxDevice / ChqIGfxEncoder
-#include "cq/platform/chq_gfx.h"                          // ChqIBlitPass（Platform 层，平台原生 shader 实现）
-#include "cq/media/chq_asset_registry.h"             // ChqAssetRegistry
-#include "cq/media/chq_frame_provider.h"             // ChqFrameProvider
-#include "cq/media/chq_frame_provider_factory.h"     // ChqIFrameProviderFactory
-#include "cq/model/chq_model_snapshot.h"             // ChqModelSnapshot / ChqIModelSnapshotProvider
-#include "cq/model/chq_timeline.h"                   // ChqTimeline
-#include "cq/platform/chq_common.h"                       // TextureHandle / ChqTextureFormat / ChqPlatformPtr
-#include "cq/platform/chq_gfx.h"                          // ChqIRenderTarget / ChqINativeImageImporter
-#include "cq/preview/chq_preview_frame_source.h"      // ChqIPreviewFrameSource（预览泵的接缝）
-#include "cq/render/chq_fit_mode.h"                   // ChqFitMode（已下沉到 render 层，供 RenderGraph 共用）
-#include "cq/render/chq_frame_source.h"               // ChqIFrameSource（取帧接缝，注入给执行器）
-#include "cq/render/chq_graph_assembler.h"            // ChqGraphAssembler
-#include "cq/render/chq_render_evaluator.h"           // ChqRenderEvaluator
-#include "cq/render/chq_render_graph.h"               // ChqRenderGraph
+#include "cq/base/chq_rational_time.h"            // ChqRationalTime
+#include "cq/gfx/chq_gfx_device.h"                // ChqIGfxDevice / ChqIGfxEncoder
+#include "cq/platform/chq_gfx.h"                  // ChqIBlitPass（Platform 层，平台原生 shader 实现）
+#include "cq/media/chq_asset_registry.h"          // ChqAssetRegistry
+#include "cq/media/chq_frame_provider.h"          // ChqFrameProvider
+#include "cq/media/chq_frame_provider_factory.h"  // ChqIFrameProviderFactory
+#include "cq/model/chq_model_snapshot.h"          // ChqModelSnapshot / ChqIModelSnapshotProvider
+#include "cq/model/chq_timeline.h"                // ChqTimeline
+#include "cq/platform/chq_common.h"               // TextureHandle / ChqTextureFormat / ChqPlatformPtr
+#include "cq/platform/chq_gfx.h"                  // ChqIRenderTarget / ChqINativeImageImporter
+#include "cq/preview/chq_preview_frame_source.h"  // ChqIPreviewFrameSource（预览泵的接缝）
+#include "cq/render/chq_fit_mode.h"               // ChqFitMode（已下沉到 render 层，供 RenderGraph 共用）
+#include "cq/render/chq_frame_source.h"           // ChqIFrameSource（取帧接缝，注入给执行器）
+#include "cq/render/chq_graph_assembler.h"        // ChqGraphAssembler
+#include "cq/render/chq_render_evaluator.h"       // ChqRenderEvaluator
+#include "cq/render/chq_render_graph.h"           // ChqRenderGraph
 
 namespace cq {
 
@@ -95,7 +95,7 @@ public:
     // 与 session 线程的持续变更解耦 —— 渲染期间模型再变，本帧仍用加载到的快照
     // 完整渲染，下帧自然切到新快照（最终一致）。
     ChqPreviewRenderer(ChqIGfxDevice* gfx, ChqIBlitPass* blit, ChqIFrameProviderFactory* providers,
-                    ChqIModelSnapshotProvider* snapshot_provider, const Config& cfg);
+                       ChqIModelSnapshotProvider* snapshot_provider, const Config& cfg);
 
     ~ChqPreviewRenderer();
 
@@ -116,7 +116,7 @@ public:
     //      **只允许**在泵线程被调用 —— 主线程再调一次就是数据竞争（不是"可能出错"，
     //      是必然出错）。未挂泵时沿用旧约定：单一线程使用。
     ChqStatus RenderFrame(const ChqRationalTime& pts, TextureHandle& out_texture,
-                       const ChqCancelToken& token, int32_t seek_policy = 0) override;
+                          const ChqCancelToken& token, int32_t seek_policy = 0) override;
 
     // ---- ChqIFrameSource（取帧接缝，供 RenderGraph 执行器消费）----
     // 内部持有 provider 表与 MEDIA-024 的展示区间复用状态；**不是**每帧新建的纯函数。

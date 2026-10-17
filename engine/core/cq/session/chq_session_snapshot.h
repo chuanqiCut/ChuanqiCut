@@ -48,8 +48,8 @@ inline bool operator!=(const ChqSnapshot& a, const ChqSnapshot& b) { return !(a 
 // ---- 变更记录 --------------------------------------------------------------
 // UI 据此做增量刷新：给定"我上次看到的版本"，取之后发生的所有变更（可 diff）。
 struct ChqChangeRecord {
-    uint64_t version = 0;    // 本次变更产生的版本号
-    const char* name = "";   // 变更名，**须指向静态存储**（本结构不持有所有权）
+    uint64_t version = 0;                // 本次变更产生的版本号
+    const char* name = "";               // 变更名，**须指向静态存储**（本结构不持有所有权）
     ChqStatus status = ChqStatus::Ok();  // 该变更的执行结果；此处恒为 Ok（失败不记录）
 };
 

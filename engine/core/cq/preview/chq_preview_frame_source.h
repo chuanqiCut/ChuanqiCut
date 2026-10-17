@@ -18,8 +18,8 @@
 #include "cq/base/chq_concurrency.h"  // ChqCancelToken
 #include "cq/base/chq_status.h"
 #include "cq/base/chq_rational_time.h"  // ChqRationalTime
-#include "cq/platform/chq_common.h"  // TextureHandle
-#include "cq/platform/chq_gfx.h"  // ChqIRenderTarget
+#include "cq/platform/chq_common.h"     // TextureHandle
+#include "cq/platform/chq_gfx.h"        // ChqIRenderTarget
 
 namespace cq {
 
@@ -34,7 +34,7 @@ public:
     //   关键帧定位，松手后传 kExact 精准确认。放末位并默认，既有 3 参调用（渲染器直接调用、
     //   C ABI 同步路径）无需改动。
     virtual ChqStatus RenderFrame(const ChqRationalTime& pts, TextureHandle& out_texture,
-                              const ChqCancelToken& token, int32_t seek_policy = 0) = 0;
+                                  const ChqCancelToken& token, int32_t seek_policy = 0) = 0;
 
     // 改变离屏目标尺寸（会丢弃旧目标与其纹理句柄）。
     virtual ChqStatus Resize(uint32_t width, uint32_t height) = 0;

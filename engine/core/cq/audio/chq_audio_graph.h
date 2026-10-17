@@ -46,8 +46,8 @@ public:
     // 装配并准备。nodes 为全部节点；edges 描述连接（见 ChqAudioEdge）。
     // 失败时图保持未装配状态（NodeCount()==0）。
     ChqStatus Prepare(const std::vector<ChqIAudioNode*>& nodes,
-                   const std::vector<ChqAudioEdge>& edges,
-                   const ChqAudioGraphSpec& spec);
+                      const std::vector<ChqAudioEdge>& edges,
+                      const ChqAudioGraphSpec& spec);
 
     // 处理一块 PCM：按拓扑序逐节点原位变换。音频线程调用。
     // pts 随块穿透（节点不改块元数据），块间时序由调用方推进。

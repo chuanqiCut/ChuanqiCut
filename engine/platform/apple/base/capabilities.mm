@@ -75,7 +75,7 @@ ChqCapabilityValue DoProbeHwEncode(CMVideoCodecType codec) {
     constexpr int32_t kProbeHeight = 1080;
 
     NSDictionary* spec = @{
-        (__bridge id)kVTVideoEncoderSpecification_EnableHardwareAcceleratedVideoEncoder: @YES,
+        (__bridge id)kVTVideoEncoderSpecification_EnableHardwareAcceleratedVideoEncoder : @YES,
     };
     VTCompressionSessionRef session = nullptr;
     OSStatus st = VTCompressionSessionCreate(

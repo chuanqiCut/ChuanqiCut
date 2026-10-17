@@ -267,10 +267,10 @@ ChqStatus VideoToolboxDecoder::Open(const ChqStreamInfo& info) {
         dispatch_semaphore_t sem = dispatch_semaphore_create(0);
         __block BOOL loaded = NO;
         [asset loadValuesAsynchronouslyForKeys:@[ @"tracks" ]
-                            completionHandler:^{
-                                loaded = YES;
-                                dispatch_semaphore_signal(sem);
-                            }];
+                             completionHandler:^{
+                               loaded = YES;
+                               dispatch_semaphore_signal(sem);
+                             }];
         dispatch_semaphore_wait(sem, DISPATCH_TIME_FOREVER);
         if (!loaded) return ChqStatus{ChqStatusCode::kIoError};
 
@@ -281,10 +281,10 @@ ChqStatus VideoToolboxDecoder::Open(const ChqStreamInfo& info) {
         dispatch_semaphore_t track_sem = dispatch_semaphore_create(0);
         [asset loadTracksWithMediaType:AVMediaTypeVideo
                      completionHandler:^(NSArray<AVAssetTrack*>* t, NSError* err) {
-            tracks = (err == nil) ? t : nil;
-            (void)err;
-            dispatch_semaphore_signal(track_sem);
-        }];
+                       tracks = (err == nil) ? t : nil;
+                       (void)err;
+                       dispatch_semaphore_signal(track_sem);
+                     }];
         dispatch_semaphore_wait(track_sem, DISPATCH_TIME_FOREVER);
         if (tracks.count == 0) return ChqStatus{ChqStatusCode::kDecodeUnsupported};
         AVAssetTrack* track = tracks[0];
@@ -388,7 +388,7 @@ ChqStatus VideoToolboxDecoder::Open(const ChqStreamInfo& info) {
                                 static_cast<int>(rst));
                 return ChqStatus{ChqStatusCode::kDecodeError};
             }
-            CFRelease(fd);      // 换用重建后的格式描述（原 fd 仅为 hvcC 来源）
+            CFRelease(fd);  // 换用重建后的格式描述（原 fd 仅为 hvcC 来源）
             format_desc_ = rebuilt;
         }
     }
@@ -405,8 +405,8 @@ ChqStatus VideoToolboxDecoder::Open(const ChqStreamInfo& info) {
     output_width_ = static_cast<uint32_t>(clamped.first);
     output_height_ = static_cast<uint32_t>(clamped.second);
     NSMutableDictionary* attrs = [@{
-        (__bridge id)kCVPixelBufferPixelFormatTypeKey: @(kCVPixelFormatType_32BGRA),
-        (__bridge id)kCVPixelBufferMetalCompatibilityKey: @YES,
+        (__bridge id)kCVPixelBufferPixelFormatTypeKey : @(kCVPixelFormatType_32BGRA),
+        (__bridge id)kCVPixelBufferMetalCompatibilityKey : @YES,
     } mutableCopy];
     if (output_width_ != static_cast<uint32_t>(src_dims.width) ||
         output_height_ != static_cast<uint32_t>(src_dims.height)) {
@@ -427,7 +427,7 @@ ChqStatus VideoToolboxDecoder::Open(const ChqStreamInfo& info) {
     NSDictionary* spec = nil;
     if (@available(iOS 17.0, *)) {
         spec = @{
-            (__bridge id)kVTVideoDecoderSpecification_EnableHardwareAcceleratedVideoDecoder: @YES,
+            (__bridge id)kVTVideoDecoderSpecification_EnableHardwareAcceleratedVideoDecoder : @YES,
         };
     }
     OSStatus st = VTDecompressionSessionCreate(
@@ -473,11 +473,11 @@ ChqStatus VideoToolboxDecoder::Open(const ChqStreamInfo& info) {
     // 如实日志并保持旧行为（颜色仍不对但不阻塞解码）。
     if (hdr_source_) {
         NSDictionary* xfer = @{
-            (__bridge id)kVTPixelTransferPropertyKey_DestinationColorPrimaries:
+            (__bridge id)kVTPixelTransferPropertyKey_DestinationColorPrimaries :
                 (__bridge id)kCMFormatDescriptionColorPrimaries_ITU_R_709_2,
-            (__bridge id)kVTPixelTransferPropertyKey_DestinationTransferFunction:
+            (__bridge id)kVTPixelTransferPropertyKey_DestinationTransferFunction :
                 (__bridge id)kCMFormatDescriptionTransferFunction_ITU_R_709_2,
-            (__bridge id)kVTPixelTransferPropertyKey_DestinationYCbCrMatrix:
+            (__bridge id)kVTPixelTransferPropertyKey_DestinationYCbCrMatrix :
                 (__bridge id)kCMFormatDescriptionYCbCrMatrix_ITU_R_709_2,
         };
         const OSStatus ps = VTSessionSetProperty(
@@ -519,110 +519,110 @@ ChqStatus VideoToolboxDecoder::Open(const ChqStreamInfo& info) {
 ChqStatus VideoToolboxDecoder::Feed(const ChqMediaPacket& pkt) {
     // MEDIA-027：泵线程无 autorelease pool（同 demuxer 侧），逐包调用自带池。
     @autoreleasepool {
-    if (session_ == nullptr || format_desc_ == nullptr) {
-        return ChqStatus{ChqStatusCode::kDecodeError};
-    }
-    if (pkt.codec != bound_codec_) {
-        return ChqStatus::Ok();  // 跳过非本路（如音频）包，demuxer 可能交错吐多路
-    }
-    if (pkt.data == nullptr || pkt.size == 0) {
-        return ChqStatus::Ok();  // 跳过空包（参数集/priming，PALA-010 已在 demux 侧过滤，双保险）
-    }
-
-    // 记录前两个喂入包的 dts 差，作为首帧时长兜底（假定恒定帧率）。
-    // ⚠️ 必须用 dts 差而非 pts 差（MEDIA-021 实测暴露）：喂入是解码序，B 帧存在时
-    // 前两个包是 I 和其后的参考帧，pts 差 = (bframes+1) 帧（本 golden = 4 帧）——
-    // 首帧展示区间被报宽 4 倍，kExact 的「区间归属」会在关键帧上提前命中，
-    // 画面差 1~3 帧。CFR 下解码序相邻 dts 间隔恒为一帧，与 B 帧排布无关。
-    if (!fed_first_) {
-        first_fed_dts_ = pkt.dts;
-        fed_first_ = true;
-    } else if (!fed_second_) {
-        ChqRationalTime d{0, kProjectTimeScale};
-        if (SubRational(pkt.dts, first_fed_dts_, d).IsOk() && d.value > 0) {
-            nominal_duration_ = d;
+        if (session_ == nullptr || format_desc_ == nullptr) {
+            return ChqStatus{ChqStatusCode::kDecodeError};
         }
-        fed_second_ = true;
-    }
+        if (pkt.codec != bound_codec_) {
+            return ChqStatus::Ok();  // 跳过非本路（如音频）包，demuxer 可能交错吐多路
+        }
+        if (pkt.data == nullptr || pkt.size == 0) {
+            return ChqStatus::Ok();  // 跳过空包（参数集/priming，PALA-010 已在 demux 侧过滤，双保险）
+        }
 
-    // 拷贝压缩数据（demuxer 的 last_data_ 在下次 ReadPacket 会被覆盖，必须拷贝）。
-    CMBlockBufferRef block = nullptr;
-    OSStatus st = CMBlockBufferCreateWithMemoryBlock(kCFAllocatorDefault, nullptr, pkt.size,
-                                                    kCFAllocatorDefault, nullptr, 0, pkt.size,
-                                                    kCMBlockBufferAssureMemoryNowFlag, &block);
-    if (st != noErr || block == nullptr) return ChqStatus{ChqStatusCode::kDecodeError};
-    st = CMBlockBufferReplaceDataBytes(pkt.data, block, 0, pkt.size);
-    if (st != noErr) {
-        CFRelease(block);
-        return ChqStatus{ChqStatusCode::kDecodeError};
-    }
+        // 记录前两个喂入包的 dts 差，作为首帧时长兜底（假定恒定帧率）。
+        // ⚠️ 必须用 dts 差而非 pts 差（MEDIA-021 实测暴露）：喂入是解码序，B 帧存在时
+        // 前两个包是 I 和其后的参考帧，pts 差 = (bframes+1) 帧（本 golden = 4 帧）——
+        // 首帧展示区间被报宽 4 倍，kExact 的「区间归属」会在关键帧上提前命中，
+        // 画面差 1~3 帧。CFR 下解码序相邻 dts 间隔恒为一帧，与 B 帧排布无关。
+        if (!fed_first_) {
+            first_fed_dts_ = pkt.dts;
+            fed_first_ = true;
+        } else if (!fed_second_) {
+            ChqRationalTime d{0, kProjectTimeScale};
+            if (SubRational(pkt.dts, first_fed_dts_, d).IsOk() && d.value > 0) {
+                nominal_duration_ = d;
+            }
+            fed_second_ = true;
+        }
 
-    CMSampleTimingInfo timing;
-    timing.duration = kCMTimeInvalid;
-    timing.presentationTimeStamp = CMTimeMake(pkt.pts.value, pkt.pts.timescale);
-    timing.decodeTimeStamp = (pkt.dts.timescale > 0)
-                                 ? CMTimeMake(pkt.dts.value, pkt.dts.timescale)
-                                 : timing.presentationTimeStamp;
+        // 拷贝压缩数据（demuxer 的 last_data_ 在下次 ReadPacket 会被覆盖，必须拷贝）。
+        CMBlockBufferRef block = nullptr;
+        OSStatus st = CMBlockBufferCreateWithMemoryBlock(kCFAllocatorDefault, nullptr, pkt.size,
+                                                         kCFAllocatorDefault, nullptr, 0, pkt.size,
+                                                         kCMBlockBufferAssureMemoryNowFlag, &block);
+        if (st != noErr || block == nullptr) return ChqStatus{ChqStatusCode::kDecodeError};
+        st = CMBlockBufferReplaceDataBytes(pkt.data, block, 0, pkt.size);
+        if (st != noErr) {
+            CFRelease(block);
+            return ChqStatus{ChqStatusCode::kDecodeError};
+        }
 
-    CMSampleBufferRef sbuf = nullptr;
-    st = CMSampleBufferCreateReady(kCFAllocatorDefault, block, format_desc_, 1, 1, &timing, 0,
-                                   nullptr, &sbuf);
-    CFRelease(block);  // sbuf 已 retain block
-    if (st != noErr || sbuf == nullptr) return ChqStatus{ChqStatusCode::kDecodeError};
-    // CORE-010：Release 也要看见（旧版 ChqSlowCallAlarm 被 NDEBUG 挡住，Release 包零告警）。
-    CQ_SLOW_CALL_WF(ChqWorkflow::kDecode, "decoder Feed(VT 提交)");
+        CMSampleTimingInfo timing;
+        timing.duration = kCMTimeInvalid;
+        timing.presentationTimeStamp = CMTimeMake(pkt.pts.value, pkt.pts.timescale);
+        timing.decodeTimeStamp = (pkt.dts.timescale > 0)
+                                     ? CMTimeMake(pkt.dts.value, pkt.dts.timescale)
+                                     : timing.presentationTimeStamp;
+
+        CMSampleBufferRef sbuf = nullptr;
+        st = CMSampleBufferCreateReady(kCFAllocatorDefault, block, format_desc_, 1, 1, &timing, 0,
+                                       nullptr, &sbuf);
+        CFRelease(block);  // sbuf 已 retain block
+        if (st != noErr || sbuf == nullptr) return ChqStatus{ChqStatusCode::kDecodeError};
+        // CORE-010：Release 也要看见（旧版 ChqSlowCallAlarm 被 NDEBUG 挡住，Release 包零告警）。
+        CQ_SLOW_CALL_WF(ChqWorkflow::kDecode, "decoder Feed(VT 提交)");
 #ifndef NDEBUG
-    // 成对 enter/exit：**用于定位「进去了没出来」** —— Watchdog 只能报「当前卡在
-    // 哪」，但一次性的永久阻塞要靠这一对才能指认到函数。Release 下整段消失。
-    static std::atomic<int> feed_seq{0};
-    const int my_feed_seq = feed_seq.fetch_add(1);
-    CQ_LOG_TRACE_WF(ChqWorkflow::kDecode, "Feed enter #%d", my_feed_seq);
-    struct FeedExitLog {
-        int seq;
-        ~FeedExitLog() { CQ_LOG_TRACE_WF(ChqWorkflow::kDecode, "Feed exit #%d", seq); }
-    } feed_exit{my_feed_seq};
+        // 成对 enter/exit：**用于定位「进去了没出来」** —— Watchdog 只能报「当前卡在
+        // 哪」，但一次性的永久阻塞要靠这一对才能指认到函数。Release 下整段消失。
+        static std::atomic<int> feed_seq{0};
+        const int my_feed_seq = feed_seq.fetch_add(1);
+        CQ_LOG_TRACE_WF(ChqWorkflow::kDecode, "Feed enter #%d", my_feed_seq);
+        struct FeedExitLog {
+            int seq;
+            ~FeedExitLog() { CQ_LOG_TRACE_WF(ChqWorkflow::kDecode, "Feed exit #%d", seq); }
+        } feed_exit{my_feed_seq};
 #endif
 
-    // 登记未完成包（重排依据）——必须在 DecodeFrame **之前**：回调可能在另一线程
-    // 立即完成并 erase，若先提交后登记会产生永不清理的幽灵条目。
-    //
-    // ⚠️ P77：登记还必须在 queue_mutex_ **之下**做。这两张 map 的另一侧写入方是
-    // VT 输出回调（CoreMedia 线程，MarkDecoded 持锁 erase / Enqueue 持锁入队）。
-    // 早先这里是无锁插入，与回调的持锁 erase 构成并发读写 std::map —— 红黑树被
-    // 写坏，表现为 Feed() 内 map::operator[] → __tree_balance_after_insert 解引用
-    // 空节点 SIGSEGV（门禁 core-dbg 复现，堆栈见 .ips）。顺序对了不等于互斥对了。
-    // 锁必须在 VTDecompressionSessionDecodeFrame **之前释放**：回调要抢同一把锁，
-    // 持锁提交会自锁死。
-    {
-        std::lock_guard<std::mutex> lk(queue_mutex_);
-        pending_dts_pts_[pkt.dts.value] = pkt.pts;
-        pending_submit_nanos_[pkt.dts.value] =
-            static_cast<uint64_t>(std::chrono::steady_clock::now().time_since_epoch().count());
-    }
-
-    VTDecodeInfoFlags info = 0;
-    // sourceFrameRefCon 传 CFRetain(sbuf)：回调从中取 dts 做完成登记，并负责释放。
-    void* source_ref = const_cast<void*>(CFRetain(sbuf));
-#ifndef NDEBUG
-    const auto submit_nanos =
-        static_cast<uint64_t>(std::chrono::steady_clock::now().time_since_epoch().count());
-#endif
-    st = VTDecompressionSessionDecodeFrame(session_, sbuf,
-                                           kVTDecodeFrame_EnableAsynchronousDecompression,
-                                           source_ref, &info);
-    CFRelease(sbuf);
-#ifndef NDEBUG
-    if (st == noErr) DebugRecordSubmit(pkt.dts.value, submit_nanos);
-#endif
-    if (st != noErr) {
-        // 提交失败：回调不会发生，完成登记须在本线程补齐，否则重排会永远等待。
+        // 登记未完成包（重排依据）——必须在 DecodeFrame **之前**：回调可能在另一线程
+        // 立即完成并 erase，若先提交后登记会产生永不清理的幽灵条目。
+        //
+        // ⚠️ P77：登记还必须在 queue_mutex_ **之下**做。这两张 map 的另一侧写入方是
+        // VT 输出回调（CoreMedia 线程，MarkDecoded 持锁 erase / Enqueue 持锁入队）。
+        // 早先这里是无锁插入，与回调的持锁 erase 构成并发读写 std::map —— 红黑树被
+        // 写坏，表现为 Feed() 内 map::operator[] → __tree_balance_after_insert 解引用
+        // 空节点 SIGSEGV（门禁 core-dbg 复现，堆栈见 .ips）。顺序对了不等于互斥对了。
+        // 锁必须在 VTDecompressionSessionDecodeFrame **之前释放**：回调要抢同一把锁，
+        // 持锁提交会自锁死。
         {
             std::lock_guard<std::mutex> lk(queue_mutex_);
-            pending_dts_pts_.erase(pkt.dts.value);
+            pending_dts_pts_[pkt.dts.value] = pkt.pts;
+            pending_submit_nanos_[pkt.dts.value] =
+                static_cast<uint64_t>(std::chrono::steady_clock::now().time_since_epoch().count());
         }
-        return ChqStatus{ChqStatusCode::kDecodeError};
-    }
-    return ChqStatus::Ok();
+
+        VTDecodeInfoFlags info = 0;
+        // sourceFrameRefCon 传 CFRetain(sbuf)：回调从中取 dts 做完成登记，并负责释放。
+        void* source_ref = const_cast<void*>(CFRetain(sbuf));
+#ifndef NDEBUG
+        const auto submit_nanos =
+            static_cast<uint64_t>(std::chrono::steady_clock::now().time_since_epoch().count());
+#endif
+        st = VTDecompressionSessionDecodeFrame(session_, sbuf,
+                                               kVTDecodeFrame_EnableAsynchronousDecompression,
+                                               source_ref, &info);
+        CFRelease(sbuf);
+#ifndef NDEBUG
+        if (st == noErr) DebugRecordSubmit(pkt.dts.value, submit_nanos);
+#endif
+        if (st != noErr) {
+            // 提交失败：回调不会发生，完成登记须在本线程补齐，否则重排会永远等待。
+            {
+                std::lock_guard<std::mutex> lk(queue_mutex_);
+                pending_dts_pts_.erase(pkt.dts.value);
+            }
+            return ChqStatus{ChqStatusCode::kDecodeError};
+        }
+        return ChqStatus::Ok();
     }  // @autoreleasepool（MEDIA-027）
 }
 
@@ -825,7 +825,7 @@ ChqStatus VideoToolboxDecoder::PopFrame(ChqMediaFrame& out) {
 
         out.type = ChqMediaType::kVideo;
         out.video.image = new CqNativeImage(pb);  // refcount=1，持有 pb（构造已 CFRetain）
-        CFRelease(pb);  // 释放队列对 pb 的所有权，交由 CqNativeImage 独占
+        CFRelease(pb);                            // 释放队列对 pb 的所有权，交由 CqNativeImage 独占
         out.video.pixel_format = ChqPixelFormat::kBGRA8;
         out.video.color_space = ChqColorSpace::kRec709;
         // MEDIA-023：实际输出尺寸（降采样后，未旋转编码尺寸）—— 调用方（视口计算/

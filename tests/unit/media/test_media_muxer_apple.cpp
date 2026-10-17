@@ -24,8 +24,8 @@
 
 #include "cq/base/chq_status.h"
 #include "cq/base/chq_rational_time.h"
-#include "cq/platform/chq_media.h"     // ChqIMediaMuxer / CreateMediaMuxer（平台无关接缝）
-#include "media_decode.h"     // VideoToolboxDecoder / GetCvPixelBuffer（仅帧源，Apple TU）
+#include "cq/platform/chq_media.h"  // ChqIMediaMuxer / CreateMediaMuxer（平台无关接缝）
+#include "media_decode.h"           // VideoToolboxDecoder / GetCvPixelBuffer（仅帧源，Apple TU）
 
 #ifndef CQ_SOURCE_DIR
 #define CQ_SOURCE_DIR "."
@@ -142,8 +142,8 @@ int main() {
     vcfg.width = info.width;
     vcfg.height = info.height;
     vcfg.frame_rate = cq::ChqRationalTime{30, 1};
-    vcfg.bitrate = cq::ChqBitrateTier::kHigh;       // 20 Mbps，与原始导出一致
-    vcfg.max_keyframe_interval = 1;              // all-intra，最大化像素还原度
+    vcfg.bitrate = cq::ChqBitrateTier::kHigh;  // 20 Mbps，与原始导出一致
+    vcfg.max_keyframe_interval = 1;            // all-intra，最大化像素还原度
     vcfg.allow_hardware = true;
     s = muxer->AddVideoTrack(vcfg);
     Check(s.IsOk(), "ChqIMediaMuxer::AddVideoTrack 成功（设置 H.264 视频轨）");
@@ -217,9 +217,9 @@ int main() {
     std::printf("\n[ffprobe 验证] 工具: %s\n", ffprobe_bin.c_str());
 
     std::string cmd = std::string(ffprobe_bin) +
-        " -v error -show_entries stream=codec_name,width,height,nb_read_frames"
-        " -count_frames -of default=noprint_wrappers=1 " +
-        out_path;
+                      " -v error -show_entries stream=codec_name,width,height,nb_read_frames"
+                      " -count_frames -of default=noprint_wrappers=1 " +
+                      out_path;
     std::string probe_out;
     bool have_ffprobe = RunCapture(cmd.c_str(), probe_out);
     std::printf("  %s\n", probe_out.c_str());
@@ -236,8 +236,8 @@ int main() {
         Check(nb == N, "ffprobe: 帧数 == 写入帧数 N（编码 60 帧）");
 
         std::string dcmd = std::string(ffprobe_bin) +
-            " -v error -show_entries format=duration -of default=noprint_wrappers=1 " +
-            out_path;
+                           " -v error -show_entries format=duration -of default=noprint_wrappers=1 " +
+                           out_path;
         std::string dout;
         if (RunCapture(dcmd.c_str(), dout)) {
             std::printf("  %s", dout.c_str());
@@ -290,8 +290,8 @@ int main() {
                         std::printf("    输出首帧中心像素(R,G,B,A)=(%d,%d,%d,%d)\n", r, g, b, a);
                         const int tol = 12;
                         pix_ok = (a == 255) && (std::abs(r - 0) <= tol) &&
-                                  (std::abs(g - 188) <= tol) && (std::abs(b - 0) <= tol) &&
-                                  (g > r + 30) && (g > b + 30);
+                                 (std::abs(g - 188) <= tol) && (std::abs(b - 0) <= tol) &&
+                                 (g > r + 30) && (g > b + 30);
                     }
                     break;  // 只看首帧
                 }

@@ -7,7 +7,7 @@
 namespace cq {
 
 ChqDecoderPool::ChqDecoderPool(int32_t max_hardware_paths,
-                         std::unique_ptr<ChqIDecoderFactory> factory)
+                               std::unique_ptr<ChqIDecoderFactory> factory)
     : max_hardware_paths_(max_hardware_paths > 0 ? max_hardware_paths
                                                  : kDefaultMaxHardwarePaths),
       factory_(std::move(factory)) {}

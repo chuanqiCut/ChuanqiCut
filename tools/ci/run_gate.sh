@@ -82,6 +82,36 @@ digest() {
     return 0
 }
 
+# 每趟落两份报告，都在 gitignored 的 `build/gate-logs/` 里（不进仓库、不脏工作树）：
+#   gate-summary.md  = 本次运行的完整报告（每趟覆盖，供复制进模块册）
+#   gate-history.tsv = 每趟一行墙钟账（追加，跨趟看趋势；跑一百趟也就几十 KB）
+# ⚠️ 故意不写进 `.ai/memory/baselines.md`：门禁自写已跟踪文档 = 每跑一趟就把工作树弄脏，
+#    而且会绕过全局册单写者的人工核数字环节（P160 那类"暖缓存冒充绿"就是靠这一环挡住的）。
+write_report() {
+    local total="$1" sum="$2" tier="全量"
+    [ "${FAST}" -eq 1 ] && tier="--fast"
+    # --skip-apple 只跳 Apple 组、仍跑双配置内核与 ctest，与"全量"不是一档，
+    # 混记会让跨趟趋势看不出这趟少跑了七步。
+    [ "${FAST}" -eq 0 ] && [ "${SKIP_APPLE}" -eq 1 ] && tier="--skip-apple"
+    {
+        echo "# 门禁报告 $(date '+%Y-%m-%d %H:%M:%S')（档位=${tier}）"
+        echo ""
+        echo "- PASS=${PASS} FAIL=${FAIL} SKIP=${SKIP}｜行数=${#SUMMARY[@]}｜墙钟=${total}s｜已计时合计=${sum}s"
+        echo ""
+        printf '%s\n' '```'
+        [ "${#SUMMARY[@]}" -gt 0 ] && printf '%s\n' "${SUMMARY[@]}"
+        printf '%s\n' '```'
+    } >"${LOG_DIR}/gate-summary.md"
+    [ -f "${LOG_DIR}/gate-history.tsv" ] || \
+        printf 'date\ttime\ttier\tpass\tfail\tskip\tsteps\twall_s\ttimed_s\n' >"${LOG_DIR}/gate-history.tsv"
+    printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
+        "$(date '+%Y-%m-%d')" "$(date '+%H:%M:%S')" "${tier}" \
+        "${PASS}" "${FAIL}" "${SKIP}" "${#SUMMARY[@]}" "${total}" "${sum}" \
+        >>"${LOG_DIR}/gate-history.tsv"
+    echo " 报告：${LOG_DIR}/gate-summary.md（跨趟趋势：${LOG_DIR}/gate-history.tsv）"
+    return 0
+}
+
 print_summary() {
     echo "=============================================================="
     echo " 门禁摘要：PASS=${PASS}  FAIL=${FAIL}  SKIP=${SKIP}  （行数 ${#SUMMARY[@]}，应等于三者之和）"
@@ -91,8 +121,14 @@ print_summary() {
     # 差得多 = 有步骤没走 run_step* 计时器，改脚本时漏了。
     local total=$(( $(date +%s) - GATE_T0 ))
     local sum=0
-    [ "${#DURATIONS[@]}" -gt 0 ] && sum="$(printf '%s\n' "${DURATIONS[@]}" | awk '{s+=$1} END{print s+0}')"
+    [ "${#DURATIONS[@]}" -gt 0 ] && sum="$(printf '%s\n' "${DURATIONS[@]}" | cut -d'|' -f2 | awk '{s+=$1} END{print s+0}')"
     echo " 墙钟 ${total}s；已计时步骤合计 ${sum}s（差 $((total - sum))s = 未计时步骤/记账开销）"
+    # 成本分布每趟自己念出来（最慢三步），不用事后再去反推 mtime —— P166 的原始病灶。
+    if [ "${#DURATIONS[@]}" -gt 0 ]; then
+        echo " 最慢：$(printf '%s\n' "${DURATIONS[@]}" | sort -t'|' -k2 -rn | head -3 | \
+            awk -F'|' '{printf "%s%s %ss", s, $1, $2; s=" ← "}')"
+    fi
+    write_report "${total}" "${sum}"
     echo "=============================================================="
     return 0
 }
@@ -106,12 +142,12 @@ run_step() {
     echo "==> [${name}] $*"
     local t0; t0="$(date +%s)"
     if "$@" >"${log}" 2>&1; then
-        local d=$(( $(date +%s) - t0 )); DURATIONS+=("${d}")
+        local d=$(( $(date +%s) - t0 )); DURATIONS+=("${name}|${d}")
         echo "    PASS ${d}s（日志：${log}）"
         record PASS "${name}" "$(digest "${name}") [${d}s]"
     else
         local rc=$?
-        local d=$(( $(date +%s) - t0 )); DURATIONS+=("${d}")
+        local d=$(( $(date +%s) - t0 )); DURATIONS+=("${name}|${d}")
         echo "    FAIL（rc=${rc}）—— 最后 30 行："
         tail -30 "${log}" | sed 's/^/    /'
         record FAIL "${name}" "rc=${rc}，日志 ${log} [${d}s]"
@@ -128,12 +164,12 @@ run_step_dir() {
     echo "==> [${name}] (cd ${dir} && $*)"
     local t0; t0="$(date +%s)"
     if (cd "${dir}" && "$@") >"${log}" 2>&1; then
-        local d=$(( $(date +%s) - t0 )); DURATIONS+=("${d}")
+        local d=$(( $(date +%s) - t0 )); DURATIONS+=("${name}|${d}")
         echo "    PASS ${d}s（日志：${log}）"
         record PASS "${name}" "$(digest "${name}") [${d}s]"
     else
         local rc=$?
-        local d=$(( $(date +%s) - t0 )); DURATIONS+=("${d}")
+        local d=$(( $(date +%s) - t0 )); DURATIONS+=("${name}|${d}")
         echo "    FAIL（rc=${rc}）—— 最后 30 行："
         tail -30 "${log}" | sed 's/^/    /'
         record FAIL "${name}" "rc=${rc}，日志 ${log} [${d}s]"
@@ -204,7 +240,7 @@ for lh_root in apps/apple ui; do
     fi
     lh_total=$((lh_total + lh_n))
 done
-lh_d=$(( $(date +%s) - lh_t0 )); DURATIONS+=("${lh_d}")
+lh_d=$(( $(date +%s) - lh_t0 )); DURATIONS+=("layer-hygiene|${lh_d}")
 if [ "${lh_rc}" -eq 0 ]; then
     echo "==> [layer-hygiene] PASS ${lh_d}s（两趟合计 ${lh_total} 个文件，R1 违规 0）"
     record PASS "layer-hygiene" "两趟 ${lh_total} 个文件，R1 违规 0 [${lh_d}s]"

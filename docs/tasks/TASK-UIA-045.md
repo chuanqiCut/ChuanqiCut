@@ -1,5 +1,12 @@
 # TASK-UIA-045：轨道区接入后的四项回归修复（返回键 / 播放中操作 / 同步 seek / iPad 统一）
 
+> **状态：✅ 验收完成（2026-10-17 传哲回收，与 UIA-044 同一份合并版问卷）**。
+> 本卡的三个未决点同日裁定：**D5 点选也暂停** → 转出 TASK-UIA-046（本卡「选中不暂停」一条作废）；
+> **E1 轨道头不做假开关 → 补内核 muted ABI** → TASK-CORE-011；
+> **F3 iPad 取消常驻右栏 = 接受现状** → 本卡 `risk:` 里那条「若传哲要求保留右栏需先抽共享宿主对象」
+> **不成立，已撤**。回收口径与登记全文见 `docs/reviews/QUESTIONNAIRE-UIA-044-045-合并版-轨道区接入与四项回归统一验收.md` 末段。
+
+
 ```yaml
 id:          TASK-UIA-045
 layer:       UI
@@ -13,7 +20,7 @@ write_set:   apps/apple/packages/ChuanqiCutEditor/Sources/ChuanqiCutEditor/{AppE
              .../UIKit/EditorViewController.swift
 read_set:    /Users/zhuning/Documents/ChatGPT/zui/Sources/TimelineKit/**（只读）
 deps:        [UIA-044, UIA-040, UIA-041]
-blocked_by:  [UIA-044 问卷未回收 —— 本批为同域回归修复，与 UIA-044 同批交付]
+blocked_by:  [UIA-044 问卷未回收 —— 本批为同域回归修复，与 UIA-044 同批交付]  # ✅ 2026-10-17 已回收
 merge_note:  与 UIA-044 同域（同一批改动），不单独发号给他人
 acceptance:
   - iOS 壳构建 BUILD SUCCEEDED（generic/platform=iOS）
@@ -27,7 +34,7 @@ verification:
     `apple-shells`，TASK-INFRA-037）；手工命令仍是 P129 那两条：
   - cd apps/apple/ios && xcodebuild -workspace ChuanqiCut.xcworkspace -scheme ChuanqiCutApp -destination generic/platform=iOS build
   - cd apps/apple/mac && xcodebuild -workspace ChuanqiCut.xcworkspace -scheme ChuanqiCutMacApp -arch x86_64 ONLY_ACTIVE_ARCH=YES build
-  - 真机问卷：**合并版** `docs/reviews/QUESTIONNAIRE-UIA-044-045-合并版-…统一验收.md`（传哲实测；
+  - 真机问卷：**合并版** `docs/reviews/QUESTIONNAIRE-UIA-044-045-合并版-轨道区接入与四项回归统一验收.md`（传哲实测；
     2026-10-17 裁定与 UIA-044 合一，原单独问卷留作历史）
 risk:        iPad 取消 regular 分支后不再有常驻右栏 MediaLibraryPanel（素材库改走「媒体」抽屉，与 iPhone 同路径）——
              传哲若要求保留右栏，需先把 EditorViewController 的轨道接线抽成共享宿主对象，否则又变成两套轨道区（ADR-0014 同款坑）；
@@ -60,6 +67,9 @@ parallel:    false
 - `onScrub`：去掉 `guard !isPlaying`，改为「先 `pausePlayback()` 再 `setPlayhead`」。
 - `apply(intents:)`：含 `.commitEdit` 时先暂停；`.selectClip` 不暂停（选中是 UI 本地态，
   播放中点片段不打断播放）。判定用新增的 `TrackIntent.isEditing`。
+  ⚠️ **本条后半已于 2026-10-17 被问卷 D5 裁定推翻**：传哲要「点选片段也暂停」→
+  落 **TASK-UIA-046**（改动点 `EditorViewController.swift:584` 的 `contains(where: \.isEditing)`，
+  唯一消费处，一行）。原文保留作历史。
 
 ## ⑤ iPad 与 iPhone 统一
 
@@ -115,6 +125,9 @@ parallel:    false
   ⚠️ 本批**动了组件源码**（`/Users/zhuning/Documents/ChatGPT/zui`，3 处：
   `TimelineStyle` +1 字段 / `TimelineView.layoutTrackHeaders` 包一层 `if` /
   `applyStyle` 隐藏 headerScrollView）。调试预览页用默认值 → **仍显示轨道头**（便于对照）。
+- **2026-10-17 问卷 E1 裁定后的衔接**（归 TASK-CORE-011，不改本批）：muted 写 ABI 落地后，
+  轨道头「M」才有真语义；届时要单独判一次 `showsTrackHeader` 是否恢复 `true`
+  （锁定/排序内核仍缺写，恢复即又露出一排假开关 —— 所以默认**继续隐藏**，等 L/排序也补齐）。
 
 ## 补二：DEBUG 浮层不显示 + 轨道区滑动无惯性（2026-10-15 传哲追加，同批）
 

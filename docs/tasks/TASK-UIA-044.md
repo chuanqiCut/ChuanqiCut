@@ -1,5 +1,11 @@
 # TASK-UIA-044：轨道区接入 TimelineKit（本地 Pod）+ 适配层与真源方向落地
 
+> **状态：✅ 验收完成（2026-10-17 传哲回收，合并版问卷整卷通过）**。
+> 三项待决（D5/E1/F3）已裁定并转出：D5 → TASK-UIA-046，E1 → TASK-CORE-011（关池 [19] 的待决策态），
+> F3 → 接受现状（iPad 不保留常驻右栏）。登记全文见
+> `docs/reviews/QUESTIONNAIRE-UIA-044-045-合并版-轨道区接入与四项回归统一验收.md` 末段。
+
+
 > 模板。缺任一项不得进入编码。
 
 ```yaml
@@ -49,7 +55,7 @@ parallel:    false
 | 5 | 删除旧自绘 `EditorTimelineUIView.swift` | ✅ |
 | 6 | podspec 拆 `Core`/`TimelineKitTrack` 子 spec（P134），两端 pod install | ✅ |
 | 7 | 双壳构建 | ✅ iOS / ✅ macOS |
-| 8 | 真机问卷（移动/跨轨/裁剪/播放头/缩略图/波形/空态）+ 播放期开销实测 | 📤 **已发（合并版）**：2026-10-17 传哲裁定「合并一个问卷，统一验收」→ 与 UIA-045 合成 `docs/reviews/QUESTIONNAIRE-UIA-044-045-合并版-轨道区接入与四项回归统一验收.md`（31 项，含 3 项待你拍板）。原两份单独问卷作为历史保留、不再单独回收。**回收前不得标 ✅**（ADR-0034） |
+| 8 | 真机问卷（移动/跨轨/裁剪/播放头/缩略图/波形/空态）+ 播放期开销实测 | ✅ **已回收 2026-10-17**：传哲通读合并版全卷后判定「验收通过」，并当场定 D5/E1/F3 三条决策。**回收口径**：未逐项勾选、未回传截图、D7/G1 无新的主观/内存数据 → 28 项测试条目按整体判定入账，登记全文见 `docs/reviews/QUESTIONNAIRE-UIA-044-045-合并版-轨道区接入与四项回归统一验收.md` 末段「回收与裁定登记」 |
 
 ## 模型映射（内核 → TimelineKit）
 
@@ -58,7 +64,7 @@ parallel:    false
 | `TrackInfo.trackId: UInt64` | `TimelineTrack.id = "cq-t-<id>"` | 前缀编码，单射可判定 |
 | 首条视频轨 | `kind: .primaryVideo`, `role: .primary` | 最多一条 primary（组件校验） |
 | 其余视频轨 / 音频轨 | `.video` / `.audio`, `role: .secondary` | 名称「画中画 n」/「音频」 |
-| `TrackInfo.muted` | `isMuted`（**只读回显**） | 内核无写 ABI（池 [19]），组件侧点按会回滚 |
+| `TrackInfo.muted` | `isMuted`（**只读回显**） | 内核无写 ABI → **已裁定补内核**（TASK-CORE-011，2026-10-17 问卷 E1）；C 落地前组件侧点按仍回滚 |
 | `ClipInfo.clipId` | `TimelineClip.id = "cq-c-<id>"` | 同上 |
 | `start` / `duration` | `timelineRange`（`TimelineTime` 直搬有理数） | 不经过浮点秒 |
 | `sourceIn` / `sourceDuration` | `sourceRange` | 非正时长则不带 |

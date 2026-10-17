@@ -571,6 +571,19 @@ SPM 临时产物一律 `swift test --disable-sandbox --scratch-path "$ROOT/build
   [ ] UI：把 `buildTrackHeaders` 里的 disabled 态换成真开关（届时一行改回）
   [ ] 同期评估 `enabled`（单开关）是否也要写 —— 与其他268效果开关的关系
 - 验收回填：本池条目 + LEDGER-W42 + RESEARCH-017 §2 S2 行
+- **2026-10-17 裁定（合并版问卷 E1，传哲：「先补内核 muted ABI」）**：
+  待决策态**已解**，本条转 **TASK-CORE-011** 编码（不关条目 —— ABI 还没落地就还是欠账）。
+  两条**取证订正**（本条原文按 UIA-041/042 时期的代码状态写，布局与轨道区都变过了）：
+  ① "disabled 只读态在 `TimelineContentView.buildTrackHeaders`" 这个落点**已不存在**，该文件
+     随旧自绘轨道区在 UIA-044（`5cfcdcb`）删除；今天的落点是 `EditorTimelineKitView.swift:270`
+     的 `showsTrackHeader: false`（整条轨道头不创建）。
+  ② 组件侧**早就有**静音命令与回调（`TimelineStore` 的 `.setTrackMuted`，`TimelineView.swift:614` /
+     `TimelineClipView.swift:257`），缺的只有内核 → **CORE-011 零改仓库外的 TimelineKit**，
+     池 [20] 的资产风险不被触发。
+  ③ "同期评估 `enabled`（与其他 268 效果开关的关系）"这句把两个东西混谈了：轨道的
+     `ChqTrack::enabled` 与效果的 `ChqEffectBinding::enabled` 不是一个字段
+     （mixer 在 `chq_preview_mixer.cpp:446` 同时消费 `!enabled || muted`）。
+     轨道 `enabled` 要不要同批补，归传哲一句话，卡面已写明"一比一拓、成本极低"。
 
 ### [20] TimelineKit 在仓库外且无版本控制 —— iOS 轨道区依赖一个不可复现的本地路径（⏳ 待决策 / 资产风险）
 
@@ -707,6 +720,12 @@ SPM 临时产物一律 `swift test --disable-sandbox --scratch-path "$ROOT/build
   `--clean` 语义、`build_shader_toolchain.sh` 与 CI 的目录假设、`check_repo_hygiene.sh` 判据 5
   的 scratch 根清单要同步 —— **属构建脚本 + CI 高冲突面，不许开发机自行改**。
 - 关联：TASK-BACKLOG **INFRA-040**（候选，未立项）、P166/P167（成本口径纪律）。
+- **2026-10-17 13:2x 追加取证（推算→计数）**：同日第二趟全量门禁里
+  `core-dbg` **113s / `Building CXX` 0 个 / ctest 107.63s**，`core-rel` **207s / 95 个 TU / ctest 136.49s**。
+  → 本条"第二遍必然把第一遍产物顶掉"不再是推理，**同一趟里 0 vs 95 就是证据**；
+  拆树能省的是 `core-rel` 的构建段（≈70s，本趟口径），
+  省不掉的是两段 ctest（合计 **244s**）—— 所以下限 ≈**6min**，不是无限降。
+  见 `baselines.md`「并行化后全量门禁第二趟」。仍 ⏳ 待传哲判（高冲突面）。
 
 ### [26] `media_sequential_real` **一个用例占 ctest 一半**（⏳ 待决策，本卡按纪律未动它）
 
@@ -719,4 +738,10 @@ SPM 临时产物一律 `swift test --disable-sandbox --scratch-path "$ROOT/build
   2. 缩用例规模（如减少序列帧数），但必须在卡里写明"判据射程变小"；
   3. 给它单独一档触发频率（阶段批跑、`--fast` 不跑）—— 与 `SKIP_APPLE` 同族开关，属门禁语义变更。
 - ⚠️ 本条**只登记不实施**：INFRA-038 写集里明确不含 `tests/**`，且 ctest 全程保持串行（未加 `-j`）。
+- **2026-10-17 13:2x 追加取证**：同趟复现 **Debug 58.23s / 107.63s = 54%**、
+  Release 59.17s / 136.49s = 43%。**与上面那组数（113.88s / 58%）差一倍** ——
+  同机同树同代码，同一个用例两趟 113.88s vs 58.23s。
+  → 本条的结论要按这个读：**"占一半"是稳的，"多少秒"是不稳的**；
+  算缩样收益只能用比例（比如"少一半 ctest 时间"），**不能写"省 113s"**。
+  顺带给"地板"定个数：本趟 ctest 两段合计 244s，即**拆树也拆不下去的 ≈6min**（见池 [25] 追加段）。
 - 关联：TASK-BACKLOG **INFRA-041**（候选，未立项）、`baselines.md`「ctest 成本结构」。

@@ -1246,3 +1246,60 @@ core Debug **52/52**、Release **52/52**；6 包用例 26+52+77+16+81 = **252**�
 - ⚠️ 上一节「11:2x 的 tracked **878**」与本行 **883** 之间差了 4 个文件，**不是本批造成的**：
   `6807577`（INFRA-037 收口批）先把 036/037 两张卡与 `check_apple_shells.sh` 等入了库。
   **tracked 数每次提交后重取**，不要拿上一节的数当本批的账（P163 的同一条）。
+
+### 并行化后全量门禁第二趟 + 门禁报告产物（2026-10-17 13:23:45~13:30:5x，本机 Intel x86_64 集成机）
+
+**PASS=18 / FAIL=0 / SKIP=0，墙钟 427s = 7m07s**（外层 wrapper 独立量到 **428s**，差 1s = 进程启停）。
+档位=全量（无参数）。同脏集里比上一趟（568s）**再快 141s**，**唯一原因是缓存更暖**，不是又优化了什么。
+
+**每步实测（`gate-summary.md` 原样）**：
+
+| 步 | 秒 | 步 | 秒 |
+|---|---|---|---|
+| deps | 1 | apple-prepare | 0 |
+| headers | 1 | apple-swift-bindings | 8 |
+| hygiene | 4 | apple-sharedui | 2 |
+| layer-hygiene | 1 | apple-player | 3 |
+| api-doc | 0 | apple-camera | 3 |
+| ios-compile | 2 | apple-import | 5 |
+| **core-dbg** | **113** | apple-editor | 14 |
+| **core-rel** | **207** | apple-shells | 40 |
+| apple-xcframework | 18 | golden | 5 |
+
+- **计时自证**：末行「墙钟 **427s**；已计时步骤合计 **427s**（差 **0s**）」；
+  `最慢：core-rel 207s ← core-dbg 113s ← apple-shells 40s`。
+- **本趟新出的两个产物**（`tools/ci/run_gate.sh` 的 `write_report()`，落 `build/gate-logs/`、**不入库**）：
+  `gate-summary.md`（人读，含档位/计数/墙钟/分步原样）与 `gate-history.tsv`（机读，一行一趟，
+  用于跨趟趋势：`date time tier pass fail skip steps wall_s timed_s`）。
+- **两步的 build/ctest 拆分**（`Total Test time (real)` 与 `grep -c 'Building CXX'` 直接取证，
+  这是本轮最有价值的一条数）：
+
+  | 步 | 步墙钟 | 重编 TU 数 | ctest 段 | 推算构建段 |
+  |---|---|---|---|---|
+  | core-dbg | 113s | **0** | **107.63s** | ≈5s（纯 no-op 构建） |
+  | core-rel | 207s | **95** | **136.49s** | ≈70s（并行后仍有 95 个 TU） |
+
+  → **core-dbg 的 95% 是测试不是编译**（0 个 TU 重编却花 113s）。
+  → **池 [25] 拿到直接证据**：`build_core.sh` 的 `BUILD_DIR="build"` 不带 config，
+  Release 步在这棵树上**每次重编 95 个 TU**（把 Debug 的产物按新 flags 全量重做）。
+  这不是推算，是本趟日志里的计数。
+  → **ctest 合计 244s = 全程 427s 的 57%**，且这是**拆树也拆不掉的地板**：
+  按"构建段压到 no-op（各 ≈5s）"重算，下限 = ctest 244 + 构建 10 + 其余 16 步 107 = **≈361s ≈ 6min**。
+  要再往下只剩"减测试"这条路（池 [26]）。
+
+- **本趟 ctest 内最慢四例**（同一趟内占比可比，跨趟绝对秒数不可比，见下条）：
+
+  | 用例 | Debug 秒 | Release 秒 | 占该趟 ctest |
+  |---|---|---|---|
+  | `media_sequential_real` | **58.23** | **59.17** | **54% / 43%** |
+  | `platform_apple_encode` | 7.38 | 8.57 | 7% / 6% |
+  | `platform_apple_muxer` | 6.75 | 7.01 | 6% / 5% |
+  | `platform_apple_decode` | 5.63 | 6.22 | 5% / 5% |
+
+  ⚠️ **同一个用例两趟差一倍**：12:4x 独立实测 `media_sequential_real` = **113.88s**，本趟 = **58.23s**
+  （同代码、同树、同机）。所以**"它占 ctest 一半"这个比例是稳的，绝对秒数不稳**——
+  池 [26] 讨论缩样收益时只能用比例，不能拿 113s 当分母去算"省多少秒"。
+  这是 **P160（本机 ctest 墙钟不可当指标）在单用例层级的复现**。
+- **三趟对比（引用时必带缓存态）**：串行 **20m40s**（11:44）→ 并行首趟 **9m28s**（12:44，同脏集对照，
+  这是加速比的来源）→ 本趟 **7m07s**（同代码、更暖）。**并行后的冷态（`rm -rf build`）未实测**，
+  不编数；串行冷基线是 18m58s（INFRA-032 趟）。

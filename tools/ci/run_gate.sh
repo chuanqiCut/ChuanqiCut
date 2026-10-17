@@ -13,6 +13,8 @@
 #   2d. api-doc  公共接口参考未过期（gen_api_reference.py --check，P151：曾在 AIEDIT/AUDIO 批次里过期 4 天）
 #   2e. ios-compile iOS 切片"只编译"窄检（tools/ci/check_ios_compile.sh，P146：
 #                #if TARGET_OS_IPHONE 分支在 macOS 切片里从不参与编译）
+#   2f. commit-msg 提交信息硬线（tools/ci/check_commit_msg.py，INFRA-047：行长也是规矩，
+#                只数行数的规矩会被"合规的作文"绕过；判的是已入库区间，钩子跳不掉它）
 #   3. core-dbg  内核 Debug 构建 + 单测（-Werror）—— **跳过 LABELS=heavy 的 14 例**（ADR-0046 决定 3）
 #   4. core-rel  内核 Release 构建 + 全量单测（-Werror + LTO），**52 例全跑 = heavy 的唯一覆盖点**
 #   5. apple     XCFramework 三切片 + Swift 绑定测试 + SharedUI/功能 Pod 测试
@@ -316,6 +318,17 @@ run_step "api-doc" python3 tools/docs/gen_api_reference.py --check
 #     ios-device 4 / ios-sim 3 / macos **0**（nm -a 取证）。冷机 --prime 走 build_core_apple.sh
 #     （实测 8m20s，与后面 apple-xcframework 是同一份活，只是提前）；暖机 2~6s。
 run_step "ios-compile" tools/ci/check_ios_compile.sh --prime --config=Release
+
+# 2f. 提交信息硬线（INFRA-047，2026-10-17 传哲裁定"判据 + 钩子"、档 = 每行 ≤40 字 / 正文 ≤3 行）。
+#     由来：INFRA-042 只约束了**行数**没约束**行长**，于是那批提交逐条合规、正文却各 161~319 字。
+#     取数时还抓到更基本的一层：标题与 bullet 之间没有空行 → git 把整段视为**一个段落**，
+#     `%s` 长达 209~361 字、`%b` 为空 —— "正文 ≤5 行"这条从未被机器满足过，只是肉眼看着像。
+#     钩子（.git/hooks/commit-msg，由本脚本 --install-hook 生成）只挡本机且 `-n` 能跳；
+#     这一步判的是**已入库区间**，所以规矩落在门禁而不是落在习惯上。
+#     水位默认 8478c10（= 判据落地前最后一笔）：更早的历史有意不追溯，
+#     否则本步从落地那天恒红，下一次真违规会被恒红淹没（P163 同族）。改水位：CQ_MSG_WATERMARK=<sha>。
+run_step "commit-msg" python3 tools/ci/check_commit_msg.py \
+    "--commits=${CQ_MSG_WATERMARK:-8478c10}..HEAD"
 
 # 3. 内核 Debug + 单测（**跳 heavy**，ADR-0046 决定 3）
 #    heavy = 需要真实素材 / VideoToolbox / Metal 的 14 例，Debug 与 Release 跑的是同一套断言，

@@ -1,25 +1,43 @@
 # HANDOFF-026：infra 收尾批收口 + v0.2.0 编辑批开工前置
 
-- 日期：2026-10-17 16:4x
-- 交接人：WorkBuddy（模型，本机 = **集成机**）
+- 日期：2026-10-17 16:4x（**尾盘 17:2x 追加订正**，见 §一 的 sha 表）
+- 交接人：WorkBuddy / Qoder agent（模型，本机 = **集成机**）
 - 拍板人：传哲
 - 关联：[TASK-INFRA-045](../tasks/TASK-INFRA-045-Draft包进门禁.md)、
   [TASK-INFRA-046](../tasks/TASK-INFRA-046-全库clang-format重排.md)、
+  [TASK-INFRA-047](../tasks/TASK-INFRA-047-commitmessage硬线判据.md)、
   [ADR-0046](../decisions/ADR-0046-版本批门禁节奏与单源版本.md)、
   [TODO-POOL](../tasks/TODO-POOL-门禁真机待办池.md)、
   [VERSIONS](../reports/VERSIONS.md)、[.ai/modules/core.md](../../.ai/modules/core.md)
-- 本批新增坑号：**P175 ~ P178**（`.ai/memory/pitfalls.md`）
+- 本批新增坑号：**P175 ~ P179**（`.ai/memory/pitfalls.md`）
 - 本机前提：Intel x86_64 / macOS 26.7.1 / Xcode 26.6 / 无 Homebrew / **无 `gh`**（远端 CI 状态取不到）
 
 ---
 
 ## 一、状态：infra 这条线**已清空并提交**，工作树干净
 
-`origin/main` = **`6f5386f`**（本批两笔：`6fa4309` INFRA-045 + `6f5386f` INFRA-046），
-tracked **892**，`git status --porcelain` **0 行**。
+> ⚠️ **订正（同日 17:2x，INFRA-047）**：本节原先写 `origin/main = 6f5386f`、
+> 「本批两笔 `6fa4309` + `6f5386f`」—— 那是**这份交接自己还没提交时**的状态，
+> 且那三笔随后被**改写成短 message 重推**（传哲裁定①「改写成短 message 后强推」），
+> 旧 sha 已不存在于 `main` 上。按下表取值。
 
-- **INFRA-045 ✅**：`ui/ChuanqiCutDraft` 进门禁 = **第 19 步 `apple-draft`**（`swift build`）。收池 **[21]**。
+`origin/main` = **`2b033d0`**（本批三笔，改写后）：
+
+| 任务 | 改写前 | **改写后（现 main）** |
+|---|---|---|
+| INFRA-045 Draft 进门禁 | `6fa4309` | **`0eba735`** |
+| INFRA-046 全库 clang-format 重排 | `6f5386f` | **`2dc4e11`** |
+| 本份交接（INFRA-045/046 交接） | `ff1e9d8` | **`2b033d0`** |
+
+树**逐笔不变**（`commit-tree` 重建，`git diff --name-only ff1e9d8 2b033d0` = **0 行**），只换了 message；
+形状问题见 [TASK-INFRA-047](../tasks/TASK-INFRA-047-commitmessage硬线判据.md)（旧三笔在 git 里 `%b` 是**空的**）。
+
+- **INFRA-045 ✅**：`ui/ChuanqiCutDraft` 进门禁 = 新增 `apple-draft` 步（使门禁 **18 → 19 步**，
+  当时它在末尾第二位；**"第 19 步"是当时的编号速记，不是它在序列里的位置** —— INFRA-047 加到 20 步后
+  这个说法就漂了， hence 真源只写「步数以脚本为准」）。收池 **[21]**。
 - **INFRA-046 ✅**：全库 clang-format 存量违规 **0/168**（重排 113 个文件）。
+- **INFRA-047 ✅（同日尾盘追加）**：commit message 硬线判据 + 本机钩子 + 门禁新增 `commit-msg` 步（**2f**，总数 19 → 20）。
+  起因 = 传哲「commit message 又写了作文」；三笔旧提交按裁定①改写完重推（就是上面那张 sha 表）。
 - **v0.1.0 批的 L3 首趟 ✅**（欠账池 **[27]** 关闭）：**19 步 PASS=19 / FAIL=0 / SKIP=0，墙钟 513s**。
   旧推算 `≈344s [E]` **作废**。
 - **四条池判定**：[21] 关闭、[27] 关闭、**[25] 📌 挂起**（INFRA-040 不立项）、**[26] 📌 维持现状**。
@@ -54,16 +72,23 @@ tracked **892**，`git status --porcelain` **0 行**。
 1. **不知道该跑什么就问脚本**：`tools/ci/gate_scope.sh`（只读，吐该跑的窄检命令 + 理由；判不准自动升一档）。
    **开发会话跑 L3 本身就是违规**。动 `.clang-format` / `.editorconfig` → R12 直接判全量。
 2. **引用数字前先套四件**：档位 + 缓存态 + build/ctest 拆分 + 跨趟只用比例（P171）。
-   「暖」是状态不是数（P167）；后台任务"完成"通知不可信（P168）。现口径 **19 步 / 513s（Release 冷态）**。
+   「暖」是状态不是数（P167）；后台任务"完成"通知不可信（P168）。
+   现口径 = **20 步**；**513s 那趟是 19 步**（Release 冷态），新增的 2f 步 `commit-msg`
+   **只进过 `--fast`、没进过 L3 趟** → 别把 513s 当 20 步的数（拿不到就别拿，标 `[E]`）。
 3. **判据要能被自己判红**：反证必须打在**产出这个数字的同一条完整路径**上（P175），
    且"命中 0 个"是与"命中 N 个"同等优先级的测试输入（P178）。
    ⚠️ 批量原地写回（`clang-format -i` 等）前**先列符号链接**、跑完查 `git diff --summary` 的 mode change（P176）。
+4. **规矩里每一个维度都得是个数**（P179）：「正文 ≤5 行」只数行数 → 产出每行 47~81 字的
+   "合规的作文"；且**标题与正文没有空行时，git 里 `%b` 是空的** —— 肉眼看到的"正文"在机器里不存在。
+   取证一律用 `git log -1 --format='%s'` / `'%b'`，不用"我看到的第一行"。
+   钩子（`.git/hooks/commit-msg`）只挡本机且 `-n` 能跳，**真正的防线是门禁 2f 步判已入库区间**。
 
 ## 四、装配形状速览（动代码前对一眼）
 
-- 门禁 `tools/ci/run_gate.sh` **19 步**，顺序 = deps · headers · hygiene · layer-hygiene · api-doc ·
-  ios-compile · core-dbg · core-rel · apple-xcframework · apple-prepare · apple-swift-bindings ·
-  apple-sharedui · apple-player · apple-camera · apple-import · apple-editor · **apple-draft** · apple-shells · golden。
+- 门禁 `tools/ci/run_gate.sh` **20 步**，顺序 = deps · headers · hygiene · layer-hygiene · api-doc ·
+  ios-compile · **commit-msg** · core-dbg · core-rel · apple-xcframework · apple-prepare ·
+  apple-swift-bindings · apple-sharedui · apple-player · apple-camera · apple-import · apple-editor ·
+  **apple-draft** · apple-shells · golden。**步数以脚本为准**（真源不写死，见 INFRA-045）。
 - 版本真源 = 根 `VERSION`（`0.1.0`），根 `CMakeLists.txt` 与 `run_gate.sh` 都从它读；批账在
   [VERSIONS](../reports/VERSIONS.md)（append-only）。
 - ctest **52 例**，`LABELS "heavy"` **14** 例 = Debug 档跳过、Release 档全跑；

@@ -11,7 +11,7 @@
 2. 按 [`../../.ai/templates/task.md`](../../.ai/templates/task.md) 建卡，写集不得与其他在飞任务相交；
 3. 在 BACKLOG 对应行标注 ✅（完成后）；在本表登记一行。
 
-## 已建卡登记表（87 行，2026-10-16 补 INFRA-026~035）
+## 已建卡登记表（93 行，2026-10-17 补 INFRA-043/045/046/047 + CORE-011 + UIA-046）
 ### 基建 INFRA / DOC
 | 卡 | 标题 |
 |---|---|
@@ -37,6 +37,10 @@
 | [INFRA-034](TASK-INFRA-034.md) | 治理补齐（CI / .clang-format / .editorconfig）+ 活文档路径收口 + probe→qa |
 | [INFRA-035](TASK-INFRA-035.md) | docs/handoff 归档（在位只留最近 5 份） |
 | [DOC-001](TASK-DOC-001.md) | 文档体系统一分层与归档（ADR-0019 落地） |
+| [INFRA-043](TASK-INFRA-043-版本批节奏与门禁分档.md) | 版本批门禁节奏：`VERSION` 单源 + L0~L3 分档 + ctest heavy 标签（ADR-0046）✅ 2026-10-17 |
+| [INFRA-045](TASK-INFRA-045-Draft包进门禁.md) | `ui/ChuanqiCutDraft` 进门禁（`swift build`，收池 [21]）✅ 2026-10-17 |
+| [INFRA-046](TASK-INFRA-046-全库clang-format重排.md) | 全库 clang-format 重排，存量违规 **0/168**（P175/P176/P178）✅ 2026-10-17 |
+| [INFRA-047](TASK-INFRA-047-commitmessage硬线判据.md) | commit message 硬线判据 + `commit-msg` 钩子（P179）✅ 2026-10-17 |
 
 ### 内核 CORE / MODEL / MEDIA
 | 卡 | 标题 |
@@ -51,6 +55,7 @@
 | [MODEL-002](TASK-MODEL-002.md) | Command 模式与 CommandHistory（Undo/Redo） |
 | [MEDIA-021](TASK-MEDIA-021.md) | 顺序取帧不必每帧 seek（预览帧率的真瓶颈） |
 | [MEDIA-027](TASK-MEDIA-027.md) | 播放 5 秒后永久冻结 + 内存 3.4GB 被 jetsam（真因与修复） |
+| [CORE-011](TASK-CORE-011.md) | 内核补 `cq_session_set_track_muted` ABI（传哲裁定 E1）⏸ 待编码 |
 
 ### 音频 AUDIO（跨平台层，BACKLOG §4.2）
 | 卡 | 标题 |
@@ -90,6 +95,7 @@
 | [UIA-027](TASK-UIA-027.md) | macOS mini player（MenuBarExtra + 生命周期上移；进阶版 P2，拍板项） |
 | [UIA-032](TASK-UIA-032.md) | iOS 编辑页对标 App 式重构（**原 UIA-015，2026-10-07 撞号裁定让位改号**；SPEC-UIA-032） |
 | [UIA-033](TASK-UIA-033.md) | Theme 令牌扩展增量（**原 UIA-016，同批让位改号**） |
+| [UIA-046](TASK-UIA-046.md) | 点选也暂停：`TrackIntent.isEditing` 改名 `pausesPlayback`（裁定 D5）⏸ 待编码 |
 
 ### 相机 CAM（iOS 原生域，ADR-0014）
 | 卡 | 标题 |

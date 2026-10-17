@@ -157,7 +157,7 @@ cat docs/handoff/HANDOFF-025-*.md      # 3. 最近交接（在位只留编号最
 | [`TASK-BACKLOG.md`](tasks/TASK-BACKLOG.md) | **任务总账**：118 个任务的 DAG，按层分组，含依赖/写集/验收/并行批次/关键路径 |
 | `TASK-<ID>.md` | **任务单卡**（按 `.ai/templates/task.md` 生成），进入某任务前建卡 |
 | `PLAN-*.md` | **领域规划**：[三线并行](tasks/PLAN-三线并行.md)（双机分工+号段）· [播放器进阶](tasks/PLAN-播放器进阶.md) · [素材库草稿混排多轨](tasks/PLAN-素材库草稿混排多轨.md) · [壳工程与功能Pod](tasks/PLAN-壳工程与功能Pod.md) |
-| [`README.md`](tasks/README.md) | **已建卡登记表**（33 张）与建卡流程 |
+| [`README.md`](tasks/README.md) | **已建卡登记表**（93 行；2026-10-17 补 INFRA-043/045/046/047 + CORE-011 + UIA-046）与建卡流程 —— ⚠️ 磁盘上 **137 张**卡、表里只登记到 **91 张**，落后 **46 张**，欠账 = 池 **[28]** |
 
 **规则**：任务事实源 = BACKLOG + 单卡（BACKLOG §8）；完成判定由门禁决定，不由执行者自述。
 

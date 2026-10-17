@@ -31,8 +31,9 @@ engine/core/cq/audio/     # 跨平台音频类型与接口（零平台类型）
   给没有消费方的接口改验证框架是投机。图的多输入扩展随「图装配音频链」的卡一起做
   （裁决全文见 docs/tasks/TASK-AUDIO-004.md 范围裁决表）。
 - **未落地**：AUDIO-002 时间拉伸（backlog 号与已提交的预览音频全链撞号，见下）、
-  AUDIO-003 变声、AUDIO-010 fx、PALA-030（AVAudioEngine 后端）、
-  MEDIA-030（音画同步时钟）。AIEDIT-003（音频解码+特征）已立卡未开工。
+  AUDIO-003 变声、AUDIO-010 fx、
+  MEDIA-030（音画同步时钟）。**PALA-030 不在此列**：其主体 `audio_engine.mm` 已由 AUDIO-002（`07e6cba`，
+  2026-10-11）落地，剩余射程与两处过期陈述的订正见 [TASK-PALA-030](../../docs/tasks/TASK-PALA-030.md)。AIEDIT-003（音频解码+特征）已立卡未开工。
 - **号段实况**：BACKLOG §4.2 表里 AUDIO-002 写的是"时间拉伸节点"，但 2026-10-08
   提交的 `4ee6b8b AUDIO-002：预览音频全链` 已占用该号 —— **以提交历史为准**，
    backlog 表待集成机修订；时间拉伸实际未立项（依赖 DEPS-020 signalsmith-stretch）。

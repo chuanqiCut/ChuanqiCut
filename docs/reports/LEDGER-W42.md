@@ -1308,3 +1308,20 @@ CA 首次提交事务走到「有 view / 无 layer」的畸形状态 →
 - **坑 P182**：`--console` 与配方里的 `nohup … &` 互斥，报 CoreDeviceError 10002 / POSIX 22 EINVAL，
   连试两次都以为是 `-e` 或设备的锅；去掉 `nohup`、改用后台任务 + `--log-output` 立刻通。
   ⚠️ 顺带证伪一条旧口径：**无线配对下装/起/推文件/注入/`--console` 全可用**，"本机不能跑真机"不成立。
+
+## 补记十八 · 四张卡建齐 + 建卡时抓到三处账面不符（2026-10-17 21:0x，Qoder 集成机）
+
+- **射程四张卡落盘**：`TASK-RENDER-011.md` / `TASK-EXPORT-001.md` / `TASK-UIA-007.md` / `TASK-PALA-030.md`，
+  写集全部按内核真源 `engine/core/cq/` 重写（旧要点 `core/src/export/*`、`core/src/effect/composite.*` 已过期），
+  BACKLOG §3.3/§3.5/§3.6/§4.2 四行改为带链接的状态行。
+- **① 效果节点拆出去了**：RENDER-011 只做叠合；变换 = RENDER-010（dep SHADER-010，未落地）、转场 = RENDER-012。
+  ⇒ 连带一个**待裁问题**：MVP 只能全屏叠合 + 逐层不透明度，**画中画（可定位/缩放）要等变换 shader**。
+- **② 依赖列逐个核出漂移**：EXPORT-001 的 `MEDIA-012`（DecoderPool，2026-09-27）与 `CORE-005`
+  （并发地基，2026-09-25）**都已落地且磁盘无卡**；EXPORT-002 依赖的 `RENDER-003` 未落地且号有漂移
+  （册里记作 RENDER-004/005）→ **EXPORT-002 不进本批**。
+- **③ PALA-030 的主体早已落地**：`engine/platform/apple/media/audio_engine.mm` 首行自陈 PALA-030，
+  由 AUDIO-002 的 `07e6cba`（2026-10-11）带进仓库 → 首裁"B2 收尾（多轨剩余）"是**误记**，射程收窄为
+  导出音频落盘；连带后果 = `PLAN-播放器进阶.md:59` 的内核线立项触发条件已满足（**待传哲裁**，不代答）。
+  订正 `.ai/modules/audio.md` 的"未落地"清单；`ui-apple.md` 里 ADR-0022 那句"预览线无声"留给卡片回写。
+- **判据自己抓到我一次**：模块册新写的两条卡链接用了 `../tasks/…`（从 `.ai/modules/` 出发是错深度），
+  `linkcheck_docs.py` 直接判红 2 处 → 改 `../../docs/tasks/…` 后绿。P174 同族，但这次是**门禁赢了一局**。

@@ -182,7 +182,7 @@ parallel:    false          # 是否与同批次其他任务并行
 | RENDER-002 | 跨平台 | Pass 合并与中间纹理别名分配 | RENDER-001 | `core/src/graph/*` | 4K 下中间纹理数显著少于朴素实现 |
 | RENDER-003 | 跨平台 | LOD 机制（预览跳过昂贵节点） | RENDER-002 | `core/src/graph/*` | 预览/导出走同一图 |
 | RENDER-010 | 跨平台 | TransformNode | SHADER-010, RENDER-001 | `core/src/effect/transform.*` | golden 测试通过 |
-| RENDER-011 | 跨平台 | 多轨合成节点（Z-order blend） | RENDER-001 | `core/src/effect/composite.*` | 多轨结果正确 |
+| RENDER-011 | 跨平台 | [多轨合成节点（Z-order 叠合）](TASK-RENDER-011.md) 📌 2026-10-17 建卡 | RENDER-001, **MODEL-004** | `engine/core/cq/render/*`、`engine/{core,platform}/…/gfx/*` | 多轨命中不再只取第一条；见卡内范围裁决 |
 | RENDER-012 | 跨平台 | 转场节点（dissolve / wipe 起步） | RENDER-001 | `core/src/effect/transition.*` | golden 测试通过 |
 | COLOR-001 | 跨平台 | 色彩管道定义（working space / 输入输出转换） | RENDER-001 | `core/src/color/*` | 预览与导出色彩一致 |
 | COLOR-002 | 跨平台 | 3D LUT 节点（.cube 加载 + 强度混合） | COLOR-001, SHADER-001 | `core/src/effect/lut.*` | LUT 应用位置与顺序固定 |
@@ -209,7 +209,7 @@ parallel:    false          # 是否与同批次其他任务并行
 | UIA-004 | UI | **时间线自绘视图**（自绘，非组件堆叠） | UIA-002 | SharedUI | 数百片段拖拽不掉帧 |
 | UIA-005 | UI | 片段拖拽/裁剪交互（拖拽预览层 + 结束提交 Command） | UIA-004, MODEL-002 | SharedUI | 拖拽主线程 < 16ms |
 | UIA-006 | UI | 属性面板（变换/调色/滤镜参数） | UIA-002, MODEL-003 | SharedUI | 参数变更走 Command |
-| UIA-007 | UI | 导出界面与进度/取消 | EXPORT-001 | SharedUI | 可取消，进度准确 |
+| UIA-007 | UI | [导出界面与进度/取消](TASK-UIA-007.md) 📌 2026-10-17 建卡 | EXPORT-001 | `ui/ChuanqiCutEditor/Sources/…`、`api/swift/Sources/ChuanqiCut/Export.swift` | 可取消，进度准确；UIKit 面须双壳判红（P181） |
 | UIA-008 | UI | Undo/Redo 入口（含 Mac 快捷键） | MODEL-002 | SharedUI | iOS 摇一摇 + Mac Cmd+Z |
 | UIA-009 | UI | 素材导入流程（含 Session 级素材表收口：文件选择 → 入表 → Command 建片段 → 时间线/预览可见） | UIA-004, MODEL-002 ✅ | `SharedUI` + `cq_sdk.h` + `core/session` | 导入的片段重启前可见；素材表 Session 级共享 |
 | UIA-011 | UI | 相册素材导入（PhotosPicker → 既有 importMedia 链路，不引第三方；Spec UIA-011） | UIA-009 ✅ | `SharedUI`（PropertyPanelZone + PhotoImportTests） | 相册选视频追加进时间线；与文件导入汇入同一入口；内核/绑定零改动 |
@@ -232,7 +232,7 @@ parallel:    false          # 是否与同批次其他任务并行
 
 | ID | 层 | 任务 | 依赖 | 写集 | 验收 |
 |---|---|---|---|---|---|
-| EXPORT-001 | 跨平台 | 导出控制器：状态机 / 进度 / 取消 / 错误码 | MEDIA-012, CORE-005 | `core/src/export/*` | 取消后资源全释放、临时文件清理 |
+| EXPORT-001 | 跨平台 | [导出控制器：状态机 / 进度 / 取消 / 错误码](TASK-EXPORT-001.md) 📌 2026-10-17 建卡 | RENDER-011, MEDIA-012 ✅, CORE-005 ✅ | `engine/core/cq/export/*`、`cq_sdk.{h,cpp}` | 取消后资源全释放、临时文件清理 |
 | EXPORT-002 | 跨平台 | 导出与预览共用 RenderGraph（ARCH-001 §7） | RENDER-003, EXPORT-001 | `core/src/export/*` | 预览与导出结果 PSNR ≥ 40dB |
 | EXPORT-003 | 基建 | 导出端到端测试（1080p/4K/长片/失败恢复） | EXPORT-001, QA-003 | `tests/e2e/` | 全通过 |
 
@@ -274,7 +274,7 @@ parallel:    false          # 是否与同批次其他任务并行
 | AUDIO-002 | 跨平台 | 时间拉伸节点（signalsmith-stretch 集成） | DEPS-020 | `core/src/audio/stretch.*` | **变速后时长误差 ≤ 1 帧** |
 | AUDIO-003 | 跨平台 | 变声节点（pitch + formant） | AUDIO-002 | `core/src/audio/pitch.*` | formant 可独立控制 |
 | AUDIO-004 | 跨平台 | 多轨混音 | AUDIO-001 | `core/src/audio/mix.*` | 电平正确，无溢出 |
-| PALA-030 | 跨平台 | AVAudioEngine 后端（播放/渲染） | AUDIO-001 | `platform/apple/audio.*` | 低延迟播放 |
+| PALA-030 | 跨平台 | [AVAudioEngine 后端](TASK-PALA-030.md) ⚠️ **主体已由 AUDIO-002 落地**（`audio_engine.mm`），2026-10-17 建卡时射程收窄为导出音频 | AUDIO-001 ✅, EXPORT-001 | `engine/core/cq/export/chq_export_audio.*`、`engine/core/cq/audio/*` | 导出音频与预览同一套混音；同网格对齐 |
 | AUDIO-010 | 跨平台 | EQ/压缩/混响基础效果 | AUDIO-001 | `core/src/audio/fx.*` | 参数可测 |
 
 ### 4.3 编辑能力
@@ -615,13 +615,18 @@ PALA-030，另加池 **[28]**；同日 20:3x 追加裁定「把这些都排进�
 链变成 **CORE-011 ✅ → MODEL-004 → RENDER-011 → EXPORT-001 → UIA-007 → UIA-046 → PALA-030（七张）+ 池 [28]**。
 - 为什么排在这个位置：画面多轨的前置是**数据槽**——`ChqClip` 没有 `transform`/`layer`
   （MODEL-004，卡已立），渲染侧 `chq_graph_assembler.cpp:67-78` 只取第一条命中视频轨
-  （RENDER-011，**磁盘无卡**）。导出排在这两张之后，交付的就是"导出 = 所见"的画面，
+  （[TASK-RENDER-011](TASK-RENDER-011.md)）。导出排在这两张之后，交付的就是"导出 = 所见"的画面，
   不用回头再改一遍编码路径。
-- 建卡欠账：**EXPORT-001 / UIA-007 / PALA-030 / RENDER-011 四张磁盘无卡**，且这三行在
-  §其他处的写集要点**已过期**（`core/src/export/*`、`core/src/effect/composite.*` 都不存在，
-  内核真源 = `engine/core/cq/`；`engine/core/cq/export` **零实现**，不是"做了一半"）→ 先建卡再编码。
-  RENDER-011 建卡时要判一件事：BACKLOG §11 那行把「效果节点」也挂在它身上，
-  与多轨 blend 同张会超载 → 建议拆两张（合成 / 效果）。
+- 建卡欠账 **已清（同日 21:0x）**：[TASK-RENDER-011](TASK-RENDER-011.md) /
+  [TASK-EXPORT-001](TASK-EXPORT-001.md) / [TASK-UIA-007](TASK-UIA-007.md) /
+  [TASK-PALA-030](TASK-PALA-030.md) 四张落盘，写集按内核真源 `engine/core/cq/` 重写。建卡时核出三处账面不符：
+  ① 「效果节点」**拆出去了**（变换=RENDER-010、转场=RENDER-012，RENDER-011 只做叠合，
+  但 MVP 不含定位/缩放 —— 画中画要有变换 shader，A/B/C 三口径待传哲裁）；
+  ② EXPORT-001 声明的两个依赖（MEDIA-012 / CORE-005）**都已落地、磁盘无卡**，
+  而 EXPORT-002 依赖的 RENDER-003 未落地且号有漂移（册里记作 RENDER-004/005）→ **EXPORT-002 不进本批**；
+  ③ **PALA-030 的主体早在 2026-10-11 由 AUDIO-002 带进仓库**（`audio_engine.mm` 首行自陈 PALA-030，
+  提交 `07e6cba`）→ 首裁把它记成「B2 收尾（多轨剩余）」是错的，本卡射程收窄为「导出音频落盘」；
+  连带后果 = `PLAN-播放器进阶.md:59` 的内核线立项触发条件**已满足**，是否立项待传哲裁。
 - EXPORT-001 的依赖行（`MEDIA-012, CORE-005`）与 EXPORT-002 的依赖（`RENDER-003`）建卡时**逐个核落地态**，
   别照抄——同批已抓到两处过期路径，依赖列大概率同源过期。
 L3 全量 = 编码闭环后跑一趟、绿了随批升 `0.2.0`；真机**不等批末**——2026-10-17 20:3x 已上一次

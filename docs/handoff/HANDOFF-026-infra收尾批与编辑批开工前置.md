@@ -86,7 +86,12 @@
    合成器拿不到"第二轨画什么、画在哪"，先做 RENDER-011 只能空转。
    现状：音频**已是真多轨**（`engine/core/cq/audio/chq_preview_mixer.cpp` 遍历全轨、跳 `!enabled || muted`），
    视频**只取第一条命中的轨**（`engine/core/cq/render/chq_graph_assembler.cpp` 命中第二条即 Warn）。
-   **建卡欠账 = 四张**（EXPORT-001 / UIA-007 / PALA-030 / RENDER-011，磁盘无卡且 BACKLOG 写集过期）。
+   **四张卡已建**（同日 21:0x）：[RENDER-011](../tasks/TASK-RENDER-011.md) /
+   [EXPORT-001](../tasks/TASK-EXPORT-001.md) / [UIA-007](../tasks/TASK-UIA-007.md) /
+   [PALA-030](../tasks/TASK-PALA-030.md)，写集按内核真源重写。
+   ⚠️ 建卡时把上表那行的描述**订正**掉：PALA-030 不是"B2 收尾（多轨剩余）"——它的主体
+   （`engine/platform/apple/media/audio_engine.mm`）已由 AUDIO-002 在 2026-10-11 带进仓库，
+   剩下的只有"导出音频落盘"；连带后果 = `PLAN-播放器进阶.md:59` 的内核线立项触发条件已满足，等传哲裁。
 2. 真机 = **不等批末**（2026-10-17 20:3x 已上一次，数字见 `.ai/memory/baselines.md`「真机趟」节）。
    D5 手感题仍并入导出那张问卷，不单发。
    ⚠️ 那次只证明"能装能起能拿日志"，**没拿到多轨画面的取证** → 立为池 **[30]**；

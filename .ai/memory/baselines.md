@@ -1155,3 +1155,20 @@ core Debug **52/52**、Release **52/52**；6 包用例 26+52+77+16+81 = **252**�
   本趟更长是因为**注释改动照样把四棵 CMake 树的依赖图全打脏**——不是新增第 6 步的代价（那步只 44.5s）。
 - ⚠️ 引用门禁时长必须带**缓存状态**（P160 铁律）：`ios-compile` 2.5s 与 `apple-xcframework` 17.3s
   都是暖态数字，拿来当"这两步天生便宜"是错的。
+
+### 并行度 A/B（2026-10-17 12:0x，INFRA-038 立项依据，本机 Intel x86_64 / 12 逻辑核）
+
+同一棵 `build/`（Release）、**同一脏集**：`touch engine/core/cq/base/chq_rational_time.h`
+（被 67 个源文件直接 include，含传递则铺满 core）。
+
+| 口径 | 结果 |
+|---|---|
+| `cmake --build build`（现状，无 `--parallel`，Unix Makefiles → 单线程） | **254s**，重编 **73** 个 TU |
+| `cmake --build build --parallel 12` | **70s**，重编 **72** 个 TU |
+| **加速比** | **3.6×** |
+
+- 两次 rc 均为 0；TU 数差 1 是第二轮里有一个文件已被上一轮编到同哈希而跳过，不影响可比性。
+- **外推口径（明确标 hypothesis）**：若 `core-dbg`/`core-rel` 按同比例，18 步全量的 817s 两兄弟步
+  可降到 ~230s，全程 20m40s → 约 **10min**。这是外推，不是实测；**落地后要拿一次真实全量跑替换本行**。
+- 现状只有 `tools/build/build_shader_toolchain.sh` 传了 `-j$(hw.ncpu)`；
+  `build_core.sh:85` 与 `build_core_apple.sh:178` 都没传 —— 见 **P166**。

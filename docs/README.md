@@ -163,10 +163,13 @@ cat docs/handoff/HANDOFF-025-*.md      # 3. 最近交接（在位只留编号最
 
 ---
 
-## 六、交接（handoff/ 在位 5 份 + archive/handoff/ 23 份）
+## 六、交接（handoff/ 在位 6 份 + archive/handoff/ 23 份）
 
 **在位窗口 = 编号最新的 5 份**（2026-10-16 INFRA-035 起）。更旧的全部进
 [`archive/handoff/`](archive/README.md)（只读，不得当当前状态引用，也不回填旧路径）。
+⚠️ **当前在位 6 份是已知的窗口超载**：`HANDOFF-026` 落地即满 6，按下面的归档线，
+`HANDOFF-021` 随**下一批搬家**移入归档（不在本批单独搬 —— 搬一次要改该文件内所有 `](../` 的层数，
+属独立搬家动作，与内容批混在一起会把两件事的 diff 搅在一块）。
 
 | 文档 | 覆盖 |
 |---|---|
@@ -174,9 +177,10 @@ cat docs/handoff/HANDOFF-025-*.md      # 3. 最近交接（在位只留编号最
 | [HANDOFF-022-UIA039编辑器接命令批](handoff/HANDOFF-022-UIA039编辑器接命令批会话交接.md) | 编辑器接 Command 的 UIA-039 批 |
 | [HANDOFF-023-UIA042-SnapKit迁移与红框修复](handoff/HANDOFF-023-UIA042-SnapKit迁移与红框修复会话交接.md) | 编辑页 UIKit 布局迁移（SnapKit）+ 预览红框 |
 | [HANDOFF-024-P142scrub快速seek与21旋转收尾](handoff/HANDOFF-024-P142scrub快速seek与21旋转收尾交接.md) | 轨道 scrub 根因（P142）+ #21 旋转收尾 |
-| [HANDOFF-025-布局整改批收口](handoff/HANDOFF-025-布局整改批收口交接.md) | 仓库布局整改批（INFRA-026~035 / ADR-0044）收口：**整批未 commit**、CI 与构建期依赖（P160） |
+| [HANDOFF-025-布局整改批收口](handoff/HANDOFF-025-布局整改批收口交接.md) | 仓库布局整改批（INFRA-026~035 / ADR-0044）收口：当时**整批未 commit**、CI 与构建期依赖（P160）<br>⚠️ 该"未 commit"状态**已失效**：026~046 已全部落库，见 HANDOFF-026 |
+| [HANDOFF-026-infra收尾批与编辑批开工前置](handoff/HANDOFF-026-infra收尾批与编辑批开工前置.md) | INFRA-045/046 收口 + 19 步 L3 首趟实测 + **v0.2.0 编辑批开工前三件必须问传哲** |
 
-**规则**：新交接取下一个编号（下一份 = 026）；双线并行期间允许**同号双卡**（后缀区分主题），
+**规则**：新交接取下一个编号（下一份 = **027**）；双线并行期间允许**同号双卡**（后缀区分主题），
 引用时务必带主题（"HANDOFF-004 相机版 §x"）。状态核对必须对着 commit 历史与门禁数字，不照抄上一版（pitfalls E10）。
 归档线：在位写满 6 份时，最旧那份随下一批搬家移入 `archive/handoff/`，并把该文件里的 `](../` 链接各补一层 `../`。
 

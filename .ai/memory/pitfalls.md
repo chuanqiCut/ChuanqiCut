@@ -3005,3 +3005,46 @@ CA::Transaction::flush_as_runloop_observer → CA::Layer::perform_update_
      拿它们当"这步便宜"是错的（P160 同族）。
   4. 观测缺口顺手记下：`run_gate.sh` **不记每步时长**，只能靠日志 mtime 反推。
      要做成本优化就得先把时长记进摘要，否则每轮都在猜。
+
+## P167：**"暖缓存 = 该步 no-op" 是猜的** —— 同一版本脚本、同一棵树，暖趟仍重编 57 个 TU（2026-10-17，INFRA-038 落地趟，**未完全定位**）
+
+**场景**：给三个 `cmake --build` 调用点补 `--parallel` 后逐个量时长。
+`build_core_apple.sh --config=Release` 的"暖"值我按上一趟门禁摘要里的 **17.3s** 念了出来，
+本趟同机同树实测 = **91s**。差 5 倍，且**不是**并行与否造成的。
+
+**取证到的部分**：`grep -c 'Building CXX\|Building C '` ——
+暖趟 **57** 个 TU 重编，冷趟（`rm -rf build/apple`）150 个 TU。所以 91s 那一趟根本不是 no-op，
+是"小半棵重建"。17.3s 那一趟才是接近 no-op 的状态。
+
+**两条候选成因（都还没取证，禁止当结论引用）**：
+1. `check_ios_compile.sh` 与 `build_core_apple.sh` **共用 `build/apple/ios-device`**，
+   但前者不重跑 configure、后者每次都重跑并带 `-DCQ_ENABLE_LTO_RELEASE=` 等参数 ——
+   若两次 configure 的 flag 串不一致，整片 TU 会因编译命令变化而全部重编；
+2. 每切片都重跑 `cmake configure` 本身会刷新若干 generated 头的时间戳。
+
+- 规则：
+  1. **"暖"不是一个数，是一个状态**。引用暖值必须同时给「这一趟重编了多少个 TU」
+     （`grep -c 'Building CXX'`），否则"暖"字掩盖了两种完全不同的成本。
+  2. 跨趟比较时长前先问：**前一步动过同一棵树没有**。本趟我在 `build_core_apple.sh` 之前
+     手动跑了 `check_ios_compile.sh`（同一目录的两个消费者），串行基线那趟两者是门禁内先后跑的，
+     顺序相同但**前置状态不同**。
+  3. 成因未定位就写"未完全定位"，并把标题里的数字写成事实、把解释写成候选 ——
+     这是 P166 的同一条纪律，只是这次栽在"暖"这个我以为已经理解词上。
+
+## P168：后台任务通知"completed exit 0"，实际任务**只跑到 88%**、输出文件是空的（2026-10-17，INFRA-038 计时趟，verified）
+
+**场景**：用 `run_in_background` 跑 Debug/Release 两轮计时构建。系统推来
+`<status>completed</status> <summary>exit code 0</summary>`，我按通知去读输出文件 → **空**；
+读构建日志 → 停在 `[ 88%] Building CXX …`；`ps` → `build_core.sh` 还在跑（已 48s）。
+
+**后果（这才是要紧的）**：如果把"通知=完成"当真，会用**半截日志**去写基线数字。
+而半截日志的尾部恰好是若干 `Building CXX` 行、没有任何 `tests passed`，
+最容易写成的数字就是"没通过数、只有墙钟"的假数。
+
+- 规则：
+  1. 后台任务的**完成通知不是验收口径**，与远端 CI 绿同一档（ADR-0030 的"远端不可信"扩到本机 harness）。
+     取数字的三件套：**日志里有结束行**（`tests passed` / `done.` / `BUILD SUCCEEDED`）＋
+     **`ps` 里进程已消失** ＋ **自己写在日志末尾的计时行**（本趟用
+     `echo "PAR-CORE $cfg rc=$rc wall=…" >> 日志`，有这行才算跑完）。
+  2. 需要连续拿多个数字时，优先**前台阻塞 + 有界超时**；确实要后台就在等待端用
+     `while pgrep -f <特征> >/dev/null; do sleep 5; done` 主动收敛，而不是等通知。

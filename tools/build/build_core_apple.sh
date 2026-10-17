@@ -51,6 +51,9 @@ OUTPUT_DIR=""
 LTO="off"
 SMOKE_LINK=1
 
+# Unix Makefiles 不传 --parallel 就是单线程；三切片串行冷构建实测 8m20s（P166 同趟 A/B：并行 3.6×）。
+: "${CQ_JOBS:=$(sysctl -n hw.ncpu 2>/dev/null || echo 4)}"
+
 # ---- 解析参数 ----
 for arg in "$@"; do
     case "$arg" in
@@ -174,8 +177,8 @@ build_slice() {
 
     echo "    LTO(IPO, Release) = $IPO_VALUE"
 
-    echo "==> [$label] build (targets: cq_core cq_platform_apple)"
-    "$CMAKE_BIN" --build "$bdir" --config "$CONFIG" --target cq_core cq_platform_apple
+    echo "==> [$label] build (targets: cq_core cq_platform_apple, jobs: $CQ_JOBS)"
+    "$CMAKE_BIN" --build "$bdir" --config "$CONFIG" --parallel "${CQ_JOBS}" --target cq_core cq_platform_apple
 
     local core_a="$bdir/lib/libcq_core.a"
     local platform_a="$bdir/lib/libcq_platform_apple.a"

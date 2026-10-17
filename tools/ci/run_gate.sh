@@ -53,6 +53,10 @@ done
 
 PASS=0; FAIL=0; SKIP=0
 SUMMARY=()
+DURATIONS=()
+# 每步耗时入账（P166：串行时代只有墙钟总数，"哪一步贵"全靠 mtime 反推 → 猜错过一次）。
+# 口径：整数秒、含步骤自身的等待；SKIP 不计时（恒 0）。
+GATE_T0="$(date +%s)"
 
 # 摘要行 = 步骤的唯一出口：记一次账，念一次账。行数恒等于 PASS+FAIL+SKIP。
 record() {
@@ -83,6 +87,12 @@ print_summary() {
     echo " 门禁摘要：PASS=${PASS}  FAIL=${FAIL}  SKIP=${SKIP}  （行数 ${#SUMMARY[@]}，应等于三者之和）"
     # bash 3.2 + set -u：空数组直接展开会报 unbound，故先判长度
     [ "${#SUMMARY[@]}" -gt 0 ] && printf '%s\n' "${SUMMARY[@]}"
+    # 墙钟总数与「各步 [Ns] 之和」的差 = 门禁自身的记账开销（正常应只有个位数秒）。
+    # 差得多 = 有步骤没走 run_step* 计时器，改脚本时漏了。
+    local total=$(( $(date +%s) - GATE_T0 ))
+    local sum=0
+    [ "${#DURATIONS[@]}" -gt 0 ] && sum="$(printf '%s\n' "${DURATIONS[@]}" | awk '{s+=$1} END{print s+0}')"
+    echo " 墙钟 ${total}s；已计时步骤合计 ${sum}s（差 $((total - sum))s = 未计时步骤/记账开销）"
     echo "=============================================================="
     return 0
 }
@@ -94,14 +104,17 @@ run_step() {
     local log="${LOG_DIR}/${name}.log"
     : > "${log}"
     echo "==> [${name}] $*"
+    local t0; t0="$(date +%s)"
     if "$@" >"${log}" 2>&1; then
-        echo "    PASS（日志：${log}）"
-        record PASS "${name}" "$(digest "${name}")"
+        local d=$(( $(date +%s) - t0 )); DURATIONS+=("${d}")
+        echo "    PASS ${d}s（日志：${log}）"
+        record PASS "${name}" "$(digest "${name}") [${d}s]"
     else
         local rc=$?
+        local d=$(( $(date +%s) - t0 )); DURATIONS+=("${d}")
         echo "    FAIL（rc=${rc}）—— 最后 30 行："
         tail -30 "${log}" | sed 's/^/    /'
-        record FAIL "${name}" "rc=${rc}，日志 ${log}"
+        record FAIL "${name}" "rc=${rc}，日志 ${log} [${d}s]"
         print_summary
         exit 1
     fi
@@ -113,14 +126,17 @@ run_step_dir() {
     local log="${LOG_DIR}/${name}.log"
     : > "${log}"
     echo "==> [${name}] (cd ${dir} && $*)"
+    local t0; t0="$(date +%s)"
     if (cd "${dir}" && "$@") >"${log}" 2>&1; then
-        echo "    PASS（日志：${log}）"
-        record PASS "${name}" "$(digest "${name}")"
+        local d=$(( $(date +%s) - t0 )); DURATIONS+=("${d}")
+        echo "    PASS ${d}s（日志：${log}）"
+        record PASS "${name}" "$(digest "${name}") [${d}s]"
     else
         local rc=$?
+        local d=$(( $(date +%s) - t0 )); DURATIONS+=("${d}")
         echo "    FAIL（rc=${rc}）—— 最后 30 行："
         tail -30 "${log}" | sed 's/^/    /'
-        record FAIL "${name}" "rc=${rc}，日志 ${log}"
+        record FAIL "${name}" "rc=${rc}，日志 ${log} [${d}s]"
         print_summary
         exit 1
     fi
@@ -175,6 +191,7 @@ run_step "hygiene" tools/ci/check_repo_hygiene.sh
 #     （ADR-0044 红线 1 的复发病），故两趟都断言"扫到非零文件数"。
 lh_log="${LOG_DIR}/layer-hygiene.log"
 : > "${lh_log}"
+lh_t0="$(date +%s)"
 lh_rc=0; lh_total=0
 for lh_root in apps/apple ui; do
     echo "---- root=${lh_root}" >>"${lh_log}"
@@ -187,13 +204,14 @@ for lh_root in apps/apple ui; do
     fi
     lh_total=$((lh_total + lh_n))
 done
+lh_d=$(( $(date +%s) - lh_t0 )); DURATIONS+=("${lh_d}")
 if [ "${lh_rc}" -eq 0 ]; then
-    echo "==> [layer-hygiene] PASS（两趟合计 ${lh_total} 个文件，R1 违规 0）"
-    record PASS "layer-hygiene" "两趟 ${lh_total} 个文件，R1 违规 0"
+    echo "==> [layer-hygiene] PASS ${lh_d}s（两趟合计 ${lh_total} 个文件，R1 违规 0）"
+    record PASS "layer-hygiene" "两趟 ${lh_total} 个文件，R1 违规 0 [${lh_d}s]"
 else
     echo "    FAIL [layer-hygiene] —— 最后 30 行："
     tail -30 "${lh_log}" | sed 's/^/    /'
-    record FAIL "layer-hygiene" "日志 ${lh_log}"
+    record FAIL "layer-hygiene" "rc=${lh_rc}，日志 ${lh_log} [${lh_d}s]"
     print_summary; exit 1
 fi
 

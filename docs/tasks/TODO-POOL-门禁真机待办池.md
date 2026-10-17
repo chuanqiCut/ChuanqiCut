@@ -674,9 +674,18 @@ SPM 临时产物一律 `swift test --disable-sandbox --scratch-path "$ROOT/build
 - 触发：传哲先说「首先模拟器没必要支持」，同一轮随后改判「**模拟器先不动**」。
   本条只登记，不动 `build_core_apple.sh`、不动 `check_ios_compile.sh`、不改 xcframework 切片组成。
 - 若要下线，先解决这三件（顺序不能颠倒）：
-  1. `tools/ci/check_ios_compile.sh` 默认 `--slice=ios-simulator`，P146 的窄检**正是靠 `build/apple/ios-sim`
-     这棵树**跑的。删切片前必须先把该步改指 `ios-device`（同 `TARGET_OS_IPHONE=1`，能编到同一批分支），
-     否则等于把一条已生效的判据拆掉。
+- ⚠️ **口径更正（同轮，写这条时我没打开脚本核，核了才发现说反）**：上面第 1 件是**错的**。
+  `check_ios_compile.sh:37` 是 `SLICE="ios-device"`，**默认根本不吃 `build/apple/ios-sim`**，
+  两趟门禁日志里那一步都在编 device slice（P166 的教训又应验了一次：没核就写）。
+  于是删 sim 切片的**真实前置**只剩两条：(a) `build_core_apple.sh:199` 不再产 sim slice；
+  (b) 产物面（原第 3 件）——App 在模拟器上链接不了，池 [16] 要改判「明确不支持」。
+  原第 1 件作废，**顺序不能颠倒那句也随之作废**（实际只剩 2→3）。
+  ⚠️ 但有一条**别当成"随便删"**：`--slice` 的 case 分支里 `ios-simulator → build/apple/ios-sim`
+  与构建目录名是**两处必须同步**的映射（脚本自己注释就这么写），删切片时若只删 `build_core_apple.sh`
+  那行、留着 `check_ios_compile.sh` 的 simulator 分支，会得到一条"能选但永远配不出来"的死选项。
+  1. ~~门禁里那一步（`ios-compile`）在吃 ios-sim 切片，删之前要先改它~~ → **已作废**，理由见上面的
+     口径更正。（条目结构修复 12:5x：写更正块时把这条的行首挤掉了，现在补回并划掉，**正文内容未动**。
+     前置真数就是 (a)(b) 两条，编号从 2 起是排版残留，不代表还有第 1 件。）
   2. `tools/build/build_core_apple.sh:199` 的 sim 切片是 `arm64;x86_64` **双架构**（`build/apple/ios-sim` 32M，
      比 device 的 27M 还大）→ 省的是"每个 TU 编两遍"，不是省一棵树。冷态收益**未实测**（本条冻结，
      测量脚本跑过一次即被叫停，无数字可引）。
@@ -686,3 +695,28 @@ SPM 临时产物一律 `swift test --disable-sandbox --scratch-path "$ROOT/build
   同脏集 A/B 实测 254s → 70s（**3.6×**）。这比模拟器切片的收益大一个数量级，优先级应在本条之前。
 - 验收回填：本条保持 ⏸；解冻时需传哲明确指令，且必须给出上面三件的落地顺序。
 - 关联：TASK-BACKLOG **INFRA-039**（同题，状态=冻结）、池 [16]（模拟器壳）、P166（成本结构要实测）。
+
+### [25] `core-dbg` 与 `core-rel` **共用一棵 `build/`** —— 每趟全量门禁白做一遍全量重编（⏳ 待决策，INFRA-038 实测副产品）
+
+- 来源：本机（集成机）/ 2026-10-17 INFRA-038 落地趟
+- 事实（实测）：`build_core.sh` 的 `BUILD_DIR="build"` 不含 config，两步只换 `-DCMAKE_BUILD_TYPE`
+  → **同一棵树连编两遍不同档位**，第二遍必然把第一遍的全部产物顶掉。所以串行基线里
+  379s + 438s 都是**真·全量重编**，不是增量。并行后仍是 251s + 208s。
+- 若拆成 `build/dbg` + `build/rel`：一趟里第二遍变增量（暖态近乎 0），预计 core 段从 **459s → 100~200s**。
+  ⚠️ 这句是**推算**，未实测。代价：磁盘两棵树（本机 `build/` 当前多大需量）、
+  `--clean` 语义、`build_shader_toolchain.sh` 与 CI 的目录假设、`check_repo_hygiene.sh` 判据 5
+  的 scratch 根清单要同步 —— **属构建脚本 + CI 高冲突面，不许开发机自行改**。
+- 关联：TASK-BACKLOG **INFRA-040**（候选，未立项）、P166/P167（成本口径纪律）。
+
+### [26] `media_sequential_real` **一个用例占 ctest 一半**（⏳ 待决策，本卡按纪律未动它）
+
+- 来源：本机（集成机）/ 2026-10-17 INFRA-038 落地趟
+- 实测（同一趟内占比可比；跨趟墙钟不可比 = P160）：Debug **113.88s / 195.5s = 58%**，
+  Release **54.76s / 134.2s = 41%**；次慢的 `platform_apple_muxer` 只有 9.56s / 13.25s。
+- 并行化之后，门禁 C++ 段的成本重心已从"编译"移到"这一个用例"。要再砍时间只有三条路，
+  **都需要传哲判**（它测的是实时序播放/解码，缩样 = 削弱判据）：
+  1. 保持现状（时间换判据强度）；
+  2. 缩用例规模（如减少序列帧数），但必须在卡里写明"判据射程变小"；
+  3. 给它单独一档触发频率（阶段批跑、`--fast` 不跑）—— 与 `SKIP_APPLE` 同族开关，属门禁语义变更。
+- ⚠️ 本条**只登记不实施**：INFRA-038 写集里明确不含 `tests/**`，且 ctest 全程保持串行（未加 `-j`）。
+- 关联：TASK-BACKLOG **INFRA-041**（候选，未立项）、`baselines.md`「ctest 成本结构」。

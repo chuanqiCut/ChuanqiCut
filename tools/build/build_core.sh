@@ -29,6 +29,9 @@ RUN_TESTS=0
 CLEAN=0
 BUILD_DIR="build"
 
+# 生成器是 Unix Makefiles，**不传 --parallel 就是单线程**（本机 12 核串行/并行同脏集实测差 3.6×，P166）。
+: "${CQ_JOBS:=$(sysctl -n hw.ncpu 2>/dev/null || echo 4)}"
+
 # ---- 解析参数 ----
 for arg in "$@"; do
     case "$arg" in
@@ -69,7 +72,7 @@ cd "$ROOT_DIR"
 echo "==> ChuanqiCut core build"
 echo "    cmake : $CMAKE_BIN"
 echo "    root  : $ROOT_DIR"
-echo "    platform: $PLATFORM   config: $CONFIG   test: $RUN_TESTS"
+echo "    platform: $PLATFORM   config: $CONFIG   test: $RUN_TESTS   jobs: $CQ_JOBS"
 
 # ---- 可选清理 ----
 if [ "$CLEAN" -eq 1 ]; then
@@ -82,7 +85,7 @@ echo "==> configure (CMAKE_BUILD_TYPE=$CONFIG)"
 "$CMAKE_BIN" -S . -B "$BUILD_DIR" -DCMAKE_BUILD_TYPE="$CONFIG"
 
 echo "==> build"
-"$CMAKE_BIN" --build "$BUILD_DIR" --config "$CONFIG"
+"$CMAKE_BIN" --build "$BUILD_DIR" --config "$CONFIG" --parallel "${CQ_JOBS}"
 
 # ---- 可选单测 ----
 # ctest 与 cmake 同目录（本机也不在 PATH），从 CMAKE_BIN 推导，允许 CTEST_BIN 覆盖。

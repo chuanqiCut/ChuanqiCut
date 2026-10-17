@@ -16,12 +16,12 @@
 # 判据就一件事：**iOS 切片编得过**。
 #
 # 时长（本机 Intel x86_64 集成机实测）：
-#   冷（cache 不存在，--prime 触发三切片全量）≈ **8m20s**（exit 0）
+#   冷（cache 不存在，--prime 触发三切片全量）= **151s**（`--parallel` 后实测，exit 0）
+#     ⚠️ INFRA-038 之前是 **8m20s**（串行）——引用这个数必须说清并行前后；作废的旧数字见
+#        TASK-INFRA-034 §候选(a)，那里保留串行原值不改。
 #   暖（cache 已存在 + 只改一个 .mm）= **6.3s**（重编 1 个 TU + 重链 libcq_platform_apple.a）
 #   暖（无改动）≈ 2s（CMake 无事可做）
-#   → 卡面约束"单次窄检不得过 3 分钟"在**暖路径**满足；冷路径等价于今天门禁里已有的
-#     apple-xcframework 步骤，只是把它提前到廉价段之后、core 之前，让 iOS 编译错误
-#     在第 ~9 分钟暴露而不是第 ~13 分钟。
+#   → 卡面约束"单次窄检不得过 3 分钟"**冷暖两条路径都满足**（并行化之前只有暖路径满足）。
 #
 # 用法：
 #   tools/ci/check_ios_compile.sh [--config=Release|Debug] [--slice=ios-device|ios-simulator]
@@ -33,6 +33,8 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$ROOT_DIR"
 
 : "${CMAKE_BIN:=$(command -v cmake || echo "${HOME}/.workbuddy/binaries/cmake/CMake.app/Contents/bin/cmake")}"
+# Unix Makefiles 生成器不传 --parallel 就是单线程（P166：同脏集串行/并行实测差 3.6×）。
+: "${CQ_JOBS:=$(sysctl -n hw.ncpu 2>/dev/null || echo 4)}"
 CONFIG="Release"
 SLICE="ios-device"
 PRIME=0
@@ -58,7 +60,7 @@ if [ ! -f "${BDIR}/CMakeCache.txt" ]; then
     echo "!! [ios-compile] ${BDIR}/CMakeCache.txt 不存在（本机还没装配过 iOS 切片）"
     if [ "${PRIME}" -eq 0 ]; then
         echo "   补救：tools/build/build_core_apple.sh --config=${CONFIG}"
-        echo "   （或给本脚本加 --prime，冷构建实测约 8m20s）"
+        echo "   （或给本脚本加 --prime，三切片冷构建实测 151s）"
         exit 3
     fi
     echo "==> [ios-compile] --prime：先跑 build_core_apple.sh 装配三切片（冷构建）"
@@ -72,7 +74,7 @@ echo "    只构建 cq_core + cq_platform_apple（静态库；不 libtool / 不 
 
 # ⚠️ 先取 rc 再判：`if cmd; then …; fi` 无 else 分支时整条 if 的退出码是 0，
 #    事后 `rc=$?` 会读到 0（本次写完就撞上，负测里打印成 "FAIL（rc=0）"）。
-"${CMAKE_BIN}" --build "${BDIR}" --target cq_core cq_platform_apple
+"${CMAKE_BIN}" --build "${BDIR}" --parallel "${CQ_JOBS}" --target cq_core cq_platform_apple
 rc=$?
 if [ "${rc}" -eq 0 ]; then
     echo "    PASS：iOS 切片编译通过（覆盖 #if TARGET_OS_IPHONE 分支）"

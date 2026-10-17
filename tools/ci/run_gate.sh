@@ -13,18 +13,22 @@
 #   2d. api-doc  公共接口参考未过期（gen_api_reference.py --check，P151：曾在 AIEDIT/AUDIO 批次里过期 4 天）
 #   2e. ios-compile iOS 切片"只编译"窄检（tools/ci/check_ios_compile.sh，P146：
 #                #if TARGET_OS_IPHONE 分支在 macOS 切片里从不参与编译）
-#   3. core-dbg  内核 Debug 构建 + 全量单测（-Werror）
-#   4. core-rel  内核 Release 构建 + 全量单测（-Werror + LTO）
+#   3. core-dbg  内核 Debug 构建 + 单测（-Werror）—— **跳过 LABELS=heavy 的 14 例**（ADR-0046 决定 3）
+#   4. core-rel  内核 Release 构建 + 全量单测（-Werror + LTO），**52 例全跑 = heavy 的唯一覆盖点**
 #   5. apple     XCFramework 三切片 + Swift 绑定测试 + SharedUI/功能 Pod 测试
 #   6. apple-shells 双 App 壳构建（tools/ci/check_apple_shells.sh，INFRA-037 收池 [18]：
 #                用 App 自己的 workspace 真编一次，podspec/Pbxproj/门面接线坏了会在这里红）
 #   7. golden    golden 样本齐备性（tests/golden/verify.py）
 #
-# 用法：
-#   tools/ci/run_gate.sh                 # 全量（默认）
-#   tools/ci/run_gate.sh --fast          # 快速档：跳过 4，以及 5/6 整个 Apple 组
-#   tools/ci/run_gate.sh --skip-apple    # 跳过 5/6（XCFramework + Swift + SharedUI + 双壳）
+# 档位（ADR-0046 决定 2：全量 L3 = **一个版本号一趟**，开发会话禁止跑全量）：
+#   tools/ci/run_gate.sh                     # 全量（默认）
+#   tools/ci/run_gate.sh --fast              # 快速档：跳过 4，以及 5/6 整个 Apple 组
+#   tools/ci/run_gate.sh --skip-apple        # 跳过 5/6（XCFramework + Swift + SharedUI + 双壳）
+#   tools/ci/run_gate.sh --batch=INFRA-043   # 声明这趟属于哪个批（写进报告与 tsv 的 batch 列）
 #   PYTHON_BIN=/path/to/python3 tools/ci/run_gate.sh   # 指定 Python >= 3.11
+#
+# 版本：仓库根 `VERSION` 是唯一真源，每趟把版本写进报告头与 tsv 的 version 列；
+#   全量档若发现同一版本已经跑过全量，结尾会念出来（防"同一批空跑第二趟 7 分钟"）。
 #
 # 报告：每步日志落 build/gate-logs/<step>.log；结尾打印门禁摘要（含 ctest 数字）。
 #   ⚠️ 摘要**只来自本次运行记账**（SUMMARY 数组），不读日志文件——上一版 print_summary()
@@ -42,14 +46,29 @@ rm -f "${LOG_DIR}"/*.log
 
 FAST=0
 SKIP_APPLE=0
+BATCH=""
 for arg in "$@"; do
     case "$arg" in
-        --fast)       FAST=1; SKIP_APPLE=1 ;;
-        --skip-apple) SKIP_APPLE=1 ;;
-        -h|--help)    grep '^#' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+        --fast)        FAST=1; SKIP_APPLE=1 ;;
+        --skip-apple)  SKIP_APPLE=1 ;;
+        --batch=*)     BATCH="${arg#*=}" ;;
+        -h|--help)     grep '^#' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
         *) echo "error: unknown argument '$arg' (try --help)" >&2; exit 2 ;;
     esac
 done
+
+# ---- 版本真源（ADR-0046 决定 1）：读不到就**停下**，不静默按"无版本"跑 ----
+# 静默降级会让 tsv 里出现一堆空 version 行，等发现时批账已经无法回溯归批
+# —— 与 P145/P150 的"静默缺口"同一种病：判据看起来在跑，其实没记账。
+VERSION=""
+if [ -f "$ROOT_DIR/VERSION" ]; then
+    VERSION="$(head -1 "$ROOT_DIR/VERSION" | tr -d '[:space:]')"
+fi
+if ! printf '%s' "${VERSION}" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$'; then
+    echo "error: 仓库根 VERSION 缺失或内容非法（读到 '${VERSION}'，期望 x.y.z）。" >&2
+    echo "       版本号唯一真源 = 根 VERSION（见 docs/reports/VERSIONS.md §一）。" >&2
+    exit 2
+fi
 
 PASS=0; FAIL=0; SKIP=0
 SUMMARY=()
@@ -57,6 +76,16 @@ DURATIONS=()
 # 每步耗时入账（P166：串行时代只有墙钟总数，"哪一步贵"全靠 mtime 反推 → 猜错过一次）。
 # 口径：整数秒、含步骤自身的等待；SKIP 不计时（恒 0）。
 GATE_T0="$(date +%s)"
+
+# 档位标签：三档互斥，写进报告头与 tsv 的 tier 列。
+# --skip-apple 只跳 Apple 组、仍跑双配置内核与 ctest，与"全量"不是一档，
+# 混记会让跨趟趋势看不出这趟少跑了七步。
+tier_label() {
+    if [ "${FAST}" -eq 1 ]; then echo "--fast"
+    elif [ "${SKIP_APPLE}" -eq 1 ]; then echo "--skip-apple"
+    else echo "全量"
+    fi
+}
 
 # 摘要行 = 步骤的唯一出口：记一次账，念一次账。行数恒等于 PASS+FAIL+SKIP。
 record() {
@@ -88,13 +117,37 @@ digest() {
 # ⚠️ 故意不写进 `.ai/memory/baselines.md`：门禁自写已跟踪文档 = 每跑一趟就把工作树弄脏，
 #    而且会绕过全局册单写者的人工核数字环节（P160 那类"暖缓存冒充绿"就是靠这一环挡住的）。
 write_report() {
-    local total="$1" sum="$2" tier="全量"
-    [ "${FAST}" -eq 1 ] && tier="--fast"
-    # --skip-apple 只跳 Apple 组、仍跑双配置内核与 ctest，与"全量"不是一档，
-    # 混记会让跨趟趋势看不出这趟少跑了七步。
-    [ "${FAST}" -eq 0 ] && [ "${SKIP_APPLE}" -eq 1 ] && tier="--skip-apple"
+    local total="$1" sum="$2" tier
+    tier="$(tier_label)"
+    local tsv="${LOG_DIR}/gate-history.tsv"
+    # 表头用 printf 的 \t 生成，不在源码里塞制表符字面量（编辑器会把硬 tab 换成缩进，
+    # 一旦换掉，awk -F'\t' 数出来的列数就不是 11 —— 迁移判据恒真，每趟重写一遍 tsv）。
+    local hdr; hdr="$(printf 'date\ttime\ttier\tpass\tfail\tskip\tsteps\twall_s\ttimed_s\tversion\tbatch')"
+    # 版本列是 INFRA-043 加的。**新列只能加在行尾**：加在中间会让历史行的字段错位，
+    # 而"错位"在 TSV 里不报错，只会把 pass/fail 数字念成别的列（P145 同族）。
+    # 列数不符时把已有行**补 '-' 到列尾**（这是 gitignored 的机器账，不是 append-only 文档域；
+    # 补的是"这些趟没有版本账"这个事实，不是伪造历史值）。
+    if [ ! -f "${tsv}" ]; then
+        printf '%s\n' "${hdr}" >"${tsv}"
+    else
+        local nf; nf="$(head -1 "${tsv}" | awk -F'\t' '{print NF}')"
+        if [ "${nf}" -ne 11 ]; then
+            local mig="${tsv}.mig"
+            { printf '%s\n' "${hdr}"
+              tail -n +2 "${tsv}" | awk -F'\t' -v OFS='\t' '{for (i = NF + 1; i <= 11; i++) $i = "-"; print}'
+            } >"${mig}" && mv "${mig}" "${tsv}"
+            echo " tsv 列数 ${nf}→11（新增 version/batch 列，历史行补 '-'）"
+        fi
+    fi
+    # 同一版本已跑过几趟全量？降频之后这是唯一能挡住"同一批空跑第二趟 7 分钟"的账。
+    # 数的是**本次之前**的行，所以先查后写。
+    if [ "${tier}" = "全量" ]; then
+        local prev; prev="$(awk -F'\t' -v v="${VERSION}" '$3 == "全量" && $10 == v' "${tsv}" | wc -l | tr -d ' ')"
+        [ "${prev}" -gt 0 ] && \
+            echo " ⚠️ v${VERSION} 之前已跑过 ${prev} 趟全量。升 MINOR 才算开下一批（VERSIONS.md §一 规矩 1）。"
+    fi
     {
-        echo "# 门禁报告 $(date '+%Y-%m-%d %H:%M:%S')（档位=${tier}）"
+        echo "# 门禁报告 $(date '+%Y-%m-%d %H:%M:%S')（档位=${tier}｜版本=v${VERSION}｜批=${BATCH:--}）"
         echo ""
         echo "- PASS=${PASS} FAIL=${FAIL} SKIP=${SKIP}｜行数=${#SUMMARY[@]}｜墙钟=${total}s｜已计时合计=${sum}s"
         echo ""
@@ -102,15 +155,15 @@ write_report() {
         [ "${#SUMMARY[@]}" -gt 0 ] && printf '%s\n' "${SUMMARY[@]}"
         printf '%s\n' '```'
     } >"${LOG_DIR}/gate-summary.md"
-    [ -f "${LOG_DIR}/gate-history.tsv" ] || \
-        printf 'date\ttime\ttier\tpass\tfail\tskip\tsteps\twall_s\ttimed_s\n' >"${LOG_DIR}/gate-history.tsv"
-    printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
+    printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
         "$(date '+%Y-%m-%d')" "$(date '+%H:%M:%S')" "${tier}" \
         "${PASS}" "${FAIL}" "${SKIP}" "${#SUMMARY[@]}" "${total}" "${sum}" \
-        >>"${LOG_DIR}/gate-history.tsv"
-    echo " 报告：${LOG_DIR}/gate-summary.md（跨趟趋势：${LOG_DIR}/gate-history.tsv）"
+        "${VERSION}" "${BATCH:--}" \
+        >>"${tsv}"
+    echo " 报告：${LOG_DIR}/gate-summary.md（跨趟趋势：${tsv}）"
     return 0
 }
+
 
 print_summary() {
     echo "=============================================================="
@@ -202,6 +255,7 @@ fi
 
 echo "=============================================================="
 echo " ChuanqiCut 本机门禁 @ $(date '+%F %T')  host=$(hostname -s)"
+echo " 版本=v${VERSION}  档位=$(tier_label)  批=${BATCH:--}"
 echo "=============================================================="
 
 # 1. 依赖治理
@@ -263,10 +317,14 @@ run_step "api-doc" python3 tools/docs/gen_api_reference.py --check
 #     （实测 8m20s，与后面 apple-xcframework 是同一份活，只是提前）；暖机 2~6s。
 run_step "ios-compile" tools/ci/check_ios_compile.sh --prime --config=Release
 
-# 3. 内核 Debug + 全量单测
-run_step "core-dbg" tools/build/build_core.sh --platform=apple --config=Debug --test
+# 3. 内核 Debug + 单测（**跳 heavy**，ADR-0046 决定 3）
+#    heavy = 需要真实素材 / VideoToolbox / Metal 的 14 例，Debug 与 Release 跑的是同一套断言，
+#    两档各付一遍纯属重复（实测 Debug ctest 段 107.55s 里 94.6% 是这 14 例的前身）。
+#    判据是**语义**不是秒数；覆盖点唯一 = 下面 core-rel 的全 52 例。
+#    名单与被跳过的例由 build_core.sh 打印在日志里（"跳过名单不打印"会让漏跑看不出来）。
+run_step "core-dbg" tools/build/build_core.sh --platform=apple --config=Debug --test --skip-label=heavy
 
-# 4. 内核 Release + 全量单测
+# 4. 内核 Release + 全量单测（52 例全跑，**这里不带 --skip-label**）
 if [ "${FAST}" -eq 1 ]; then
     skip_step "core-rel" "--fast 快速档"
 else

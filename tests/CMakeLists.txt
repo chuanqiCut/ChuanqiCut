@@ -687,3 +687,46 @@ target_link_libraries(cq_tests_render_graph PRIVATE cq_core)
 cq_require_cxx20(cq_tests_render_graph)
 apply_cq_warnings(cq_tests_render_graph)
 add_test(NAME render_graph COMMAND cq_tests_render_graph)
+
+# ============================================================================
+# 用例分档（ADR-0046 决定 3）：LABELS "heavy"
+# ----------------------------------------------------------------------------
+# heavy = **需要真实素材文件或硬件 codec/Metal 链路**的用例。判据是**语义**的、不是秒数 ——
+# 秒数随机器变（P171：同一用例两趟实测差 2×），语义不会；按"跑得慢"打标会在换机器那天静默变味。
+#
+# 档间分工写死在 tools/ci/run_gate.sh：Debug 档带 `--skip-label heavy`（开发自查/L0-L1），
+# Release 档不带 → **heavy 的验收覆盖点唯一 = 集成机 Release 趟**。理由：出货产物就是 Release
+# （build_core_apple.sh --config=Release 出的 xcframework），硬件链路本来就该在出货配置里验。
+#
+# ⚠️ 两个**有意不标**的例外（加新用例时别顺手照着时长补进来）：
+#   · media_ffmpeg_probe —— 依赖第三方装配但 <1s，且它是 FFmpeg 链路的唯一功能证据，
+#     留在 Debug 才能让 CI 的 Debug 步也跑到（INFRA-034 传哲认可的那个补法）。
+#   · core_audio_preview_mixer / core_preview_pump —— 5.4s / 4.7s 是**实时等待**造成的，
+#     两者纯 CPU（无素材、无平台类型，红线 #2），按语义规则不属 heavy。
+# 改这里必须同步 ADR-0046 §决定 3 与 TASK-INFRA-043 的 14 例清单（三处不一致就是漏跑的开端）。
+set(CQ_HEAVY_TESTS
+    media_sequential_acquire
+    platform_apple_metal_render
+    platform_apple_demux
+    media_smoke_apple
+    media_bframe_real
+    platform_apple_native_image
+    preview_renderer
+    c_abi_preview
+    platform_apple_encode
+    platform_apple_muxer
+    platform_apple_muxer_audio
+    frame_provider_apple
+    media_sequential_real
+    platform_apple_decode)
+foreach(_t IN LISTS CQ_HEAVY_TESTS)
+    # ⚠️ 必须写成 `if(TEST ${_t})`。`if(TEST _t)` 问的是"有没有一个叫 `_t` 这个字面的用例"，
+    # **恒假** → 一个标签都打不上，而 `-LE heavy` 会"成功地"跑完全部 52 例：
+    # 分档看起来生效（还更快），实际一点没减（P172，本仓第一次自测就撞在这行）。
+    # 暴露它的正是 build_core.sh 里那句"把被跳过的名单打进日志"—— 名单为空当场说破。
+    # if(TEST) 需要 CMake ≥3.16，本工程 cmake_minimum_required 是 3.21。
+    # Apple 专属用例在非 Apple 配置里不存在，所以这里必须有守卫（无守卫 configure 直接报错）。
+    if(TEST ${_t})
+        set_tests_properties(${_t} PROPERTIES LABELS "heavy")
+    endif()
+endforeach()

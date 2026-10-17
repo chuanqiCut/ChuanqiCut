@@ -291,3 +291,30 @@ SPIRV-Cross CLI 要求六个 backend 全开（关任一即 FATAL_ERROR）、失�
 - **CORE-011**：`ChqTimeline::SetTrackMuted` → `ChqSetTrackMutedCommand` → `SubmitSetTrackMuted` →
   `cq_session_set_track_muted` → Swift `setTrackMuted` → 适配层 `case .setTrackMuted`（去回滚）+ 三处单测
   + `engine-api.md` 重生成（符号 103→104）。**动 `cq_sdk.h` = 集成机独占，开发机不得认领。**
+
+## 十一、状态更新（2026-10-17 15:0x~15:3x）：INFRA-043 版本批节奏落地，**门禁节奏从此改轨**
+
+**接手第一件事：不要再随手跑 `run_gate.sh`（无参数 = L3 全量）。** 从这一批起，全量是
+**一个版本号一趟**（`docs/reports/VERSIONS.md` §一），单卡自查先问路由：
+
+```bash
+tools/ci/gate_scope.sh            # 只读，读工作树 diff，吐该跑的窄检命令 + 理由
+```
+
+它**判不准会自动升档**，所以"按它说的跑"不比"全跑"更危险，而便宜 3~7 倍。
+
+- **落地的四件**：`VERSION`（版本唯一真源，根 `CMakeLists.txt` 也改为从它读，格式不符 configure 红）/
+  `run_gate.sh`（tsv 加 `version`+`batch` 列、同版本重复全量会打印提示、`core-dbg` 带 `--skip-label=heavy`、
+  `core-rel` 不带）/ `tests/CMakeLists.txt`（14 例 `LABELS "heavy"`）/ 真源 §验证分四层（L0~L3，5 份生成物已重刷）。
+- **数字**：Debug ctest **107.55s → 15.17s**（0 TU 暖态）；Release 仍全 **52/52**（151.55s / 95 TU）；
+  `--fast` **239s → 100s**。**全量 ≈344s 是推算 `[E]`，本批按自己的新规矩没跑 L3** —— 下一趟 L3 必须回填替换它。
+- **两件事要说在前面**（下一个人最容易踩）：
+  1. **别把 `--fast` 的绿当验收**：heavy 14 例（媒体/VideoToolbox/Metal 链路）在 Debug 档**根本没跑**，
+     唯一覆盖点是 `core-rel` 与 **CI 的 Debug 趟**（CI 保全 52 例是**有意与本机不同口径**，不是漏改，别去"统一"）。
+  2. **`if(TEST _t)` 是恒假的**（要 `if(TEST ${_t})`）。标签/排除类改动做完必须数三遍：
+     `-L 标签` + `-LE 标签` == 总数（本批 14+38==52）。P172 就是这么静默失效的。
+- **本批订正记录**（都写进了 ADR/VERSIONS 的订正块，不是悄悄改）：ADR-0046 初稿「CMake 不带版本」错、
+  「CI 与本机同口径」改判、产品 podspec 是 8 份不是 6 份、`ChuanqiCutFFmpeg.podspec=9.0.2` 是上游 pin。
+- **仍未关闭**（照旧）：INFRA-039 + 池 [24] ⏸、池 [16][20][21][23] 开放、池 [25]/[26] **待传哲判**
+  （[25] 的分档收益已被本批吃掉一半，剩下的就是拆树）、UIA-046 / CORE-011 **待"开工"**、
+  `Info.plist` 的 `1.0` 与真源不一致挂待办、CI 远端首跑未验。

@@ -68,20 +68,42 @@ ChuanqiCut 是**跨平台视频编辑 SDK + 各端原生 App**：
   （编译 + 相关单测；Swift 必须 `-typecheck`，`-parse` 绿不是绿）。**全量门禁与真机不由
   开发机承担**——收工把待验项登记进 `docs/tasks/TODO-POOL-门禁真机待办池.md`
   （**append-only**，格式照池文件），推送即收工。
-- **集成机（阶段批，ADR-0030 修订 ADR-0029 的日批）**：**合并快检必做**——拉远端后跑
-  `build_core.sh` + SharedUI `swift test` 窄检 + 冲突标记/旧号扫描（远端"已验证"按未验证
-  处理）；**全量门禁与真机按阶段跑**：一个 PLAN 阶段收尾 / 一批任务卡闭环 / 真机单攒齐
-  一趟 / 周度兜底，不每日空跑。池的清扫/关闭/编号改动只归集成机（pitfalls P82）。
+- **集成机（版本批，ADR-0030 修订 ADR-0029 的日批 → ADR-0046 再把"阶段"换成可判定的"版本批"）**：
+  **合并快检必做**——拉远端后跑 `build_core.sh` + SharedUI `swift test` 窄检 + 冲突标记/旧号扫描
+  （远端"已验证"按未验证处理）；**全量门禁 = 一个版本号一趟**（`VERSION` 是批次真源，
+  绿了才升 `MINOR`，见 `docs/reports/VERSIONS.md` §一），**不每日空跑、不每卡空跑**。
+  池的清扫/关闭/编号改动只归集成机（pitfalls P82）。
 - 热点文件（`cq_sdk.h`、CMakeLists、podspec、Podfile、project.yml、构建脚本、真源、CI）
   与 ABI/依赖变更**不受简化档豁免**，仍须先提案给集成机。
 
-## 验证
+## 验证分四层（ADR-0046 决定 2，2026-10-17 传哲拍板）
+
+「别写个小功能就在那跑门禁」——这句话现在是有档位的规则，不是脾气：
+
+| 层 | 谁跑 | 跑什么 | 什么时候 |
+|---|---|---|---|
+| **L0** | 改代码的人 | 单个 target 编译 + `ctest -R <本例>` | 每次编辑循环，秒级 |
+| **L1** | 每张卡闭环前 | `tools/ci/gate_scope.sh` 路由出来的窄检命令 | 编码完成时 |
+| **L2** | 集成机 | 合并快检（含**双壳真编译**，这层不许省） | 每次拉远端后 |
+| **L3** | **只有集成机** | `tools/ci/run_gate.sh` 全量 18 步 | **一个版本号一趟** |
+
+三条硬规矩：
+
+1. **开发会话跑 L3 本身就是违规**（不是"可以但别频繁"）：验收口径本来就归集成机（ADR-0029/0030），
+   开发机跑出的全量数字既不能当验收、又每次烧 7 分钟。
+2. **不知道该跑什么就问脚本，不要默认全跑**：`tools/ci/gate_scope.sh` 读工作树 diff、吐该跑的窄检
+   命令与理由；它**判不准会自动升一档**，所以"按脚本说的跑"永远不比"全跑"更危险。
+3. **窄检永不升号，升号必附一趟全量数字**：`VERSION` 只有集成机能改。
 
 完成 = 门禁通过，不是自述完成。**口径分级（ADR-0029）**：验收性完成 = 集成机全量门禁 +
 真机；开发机完成 = 编码 + 模块级自查 + 待办池登记 + 推送，验收数字一律以集成机日志为准。至少：
 
+
 ```bash
 tools/build/build_core.sh --platform=<apple|android>   # 编译，-Werror
+tools/build/build_core.sh --platform=apple --config=Debug --test --skip-label=heavy
+   # L1 自查档：38 个纯 CPU 例。**Release 不带该 flag 才是全 52 例**（heavy = 需要真实素材
+   # 或硬件 codec/Metal 的用例，判据是语义不是秒数，ADR-0046 决定 3；名单与被跳过的例都打进日志）
 ctest --test-dir build -R <相关模块>                    # 单测
 "${PYTHON_BIN:-python3}" tests/golden/verify.py --json   # golden 齐备性（渲染/导出相关）
 # ⚠️ verify.py 需要 Python ≥ 3.11（`tomllib`）。本机**系统 python3 = 3.9 会 ModuleNotFoundError**，

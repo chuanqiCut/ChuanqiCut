@@ -146,6 +146,7 @@ cat docs/handoff/HANDOFF-025-*.md      # 3. 最近交接（在位只留编号最
 | [`WEEKLY-2026-W42-03.md`](reports/WEEKLY-2026-W42-03.md) | **最新一期**（第三刊，截至 2026-10-16）：B0 渲染地基落地 + 轨道区接入 TimelineKit + scrub 廉价 seek + 图层卫生门禁化；含 Pipeline 图（Mermaid）与批次拓扑 |
 | [`../README.md`](../README.md) | 仓库根 README = **最新一期周报全文镜像** + 仓库导航（下期只改 reports/ 再同步复制） |
 | [`WEEKLY-2026-W42.md`](reports/WEEKLY-2026-W42.md) | 第二刊（截至 2026-10-12）：在固定六节外扩充**技术细节 / Pipeline / 优点与缺陷 / 优化路径 / 分工进展** |
+| [`VERSIONS.md`](reports/VERSIONS.md) | **版本批账**（2026-10-17 立，ADR-0046）：`VERSION` = 版本号唯一真源，一个版本批 = 一趟全量门禁；含 v0.MINOR.PATCH 升降语义与三条硬规矩（**窄检永不升号、开发会话禁止跑全量**） |
 
 ---
 

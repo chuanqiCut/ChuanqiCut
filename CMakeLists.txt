@@ -7,8 +7,15 @@
 
 cmake_minimum_required(VERSION 3.21)
 
+# 版本号唯一真源 = 仓库根 `VERSION`（ADR-0046）。这里从真源读而不是再写一遍字面量，
+# 是为了让「CMake 侧版本 == VERSION」成为门禁可机检的判据，而不是靠人对表。
+file(STRINGS "${CMAKE_CURRENT_SOURCE_DIR}/VERSION" CQ_VERSION LIMIT_COUNT 1)
+if(NOT CQ_VERSION MATCHES "^[0-9]+\\.[0-9]+\\.[0-9]+$")
+    message(FATAL_ERROR "VERSION 文件内容非法（期望 x.y.z）：'${CQ_VERSION}'")
+endif()
+
 project(ChuanqiCut
-    VERSION 0.1.0
+    VERSION ${CQ_VERSION}
     DESCRIPTION "Cross-platform video editing SDK + native app shells"
     # ⚠️ 必须同时启用 C —— 不是为了用 C 写内核，而是为了**校验 C ABI**：
     #    BIND-001 的 tests/unit/abi/test_c_abi.c 是真正的 C 翻译单元，

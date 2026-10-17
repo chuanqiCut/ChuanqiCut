@@ -3156,3 +3156,38 @@ echo " 报告：…"
      兜底被触发时要**把触发的文件名原样打印出来**（本次就是靠这行看见八进制串的）。
   3. 新工具的**第一次自测要用真实脏工作树跑**，不要只喂合成样本 —— 合成样本里没有中文路径、
      没有空格、没有 `R0xx` 重命名，而那三样正是本仓的常态。
+
+## P174：**基建卡的模块册归口写成不存在的 `.ai/modules/infra.md`（三处），门禁全绿拦不住**（2026-10-17，INFRA-043 提交后自查，verified）
+
+**场景**：INFRA-043 的卡面 `write_set`、卡面「回写」节、ADR-0046「影响面」各写了一条
+`.ai/modules/infra.md`。实际 `ls .ai/modules/` = **19** 份，**没有 infra.md**；本仓基建/治理卡的
+历史记录一直在 `.ai/modules/core.md`（头部归属行「集成机（内核基础 + 热点文件）」，
+其中 INFRA-034~039 与本轮 043 的门禁记录都在那，`^| 2026-…INFRA-0` 形式的行共 **10** 条）。
+本轮的门禁 `linkcheck_docs.py` ✅、`sync_context.py --check` ✅、
+`gen_api_reference.py --check` ✅ 全绿放行。
+
+**后果**：为什么三条门禁全绿还是没拦住 —— `tools/ai/linkcheck_docs.py` 对反引号路径有**两道闸**，
+本仓最常见的"回写目标"写法恰好两道都不过（已用探针文件实测，`docs/tasks/_linkcheck-probe.md` 三行分别试）：
+1. `linkcheck_docs.py:61`：**叙述域整体豁免反引号路径**（`NARRATIVE` = `docs/decisions|research|reports|handoff|
+   reviews|tasks|archive` + `.ai/memory`）。这条豁免是**对的**（P153：叙述里反引号路径是"讨论对象"不是"指路"，
+   不豁免就恒假阳），但代价是**任务卡与 ADR 里那些"将要写这个文件"的路径也一并落进豁免区**。
+2. `linkcheck_docs.py:65`：即使在受检文件里，反引号路径也**只查 `docs/` 与 `../` 开头**的，
+   `.ai/…` 开头的**一条都不查**。
+   探针结论：`.ai/modules/does-not-exist-a.md` 与 `docs/specs/does-not-exist-b.md` 两种行内写法**全放过**，
+   只有**「方括号 + 圆括号」形式的 Markdown 链接**（`[x]` 紧跟 `(相对路径)`）被 `MD_LINK`（`:59`，对所有文件生效，
+   包括叙述域）判红。⚠️ 本条自身即证据：写这段时把探针里的死链原样抄进 pitfalls，`linkcheck_docs.py`
+   当场判红 `.ai/memory/pitfalls.md: 链接断 -> …does-not-exist-c.md` —— 行内代码放过、Markdown 链接拦住，
+   **两种写法一绿一红**。
+下一步照卡执行的 agent 会去 `infra.md` 找门禁记录、找不到就**新建一份并行模块册**（全局册出现第二写者，
+违反 ADR-0030），或认为"这卡没回写"再跑一趟。错因与 INFRA-033 修掉的「skill 里引用不存在的脚本」、
+同日 ADR-0046 初稿「CMake `project()` 不带版本」同族：**按命名直觉外推，而不是先 `ls` / `git show` 核**。
+
+- 规则：
+  1. 卡面「回写」与 `write_set` 里的**每一个文件路径，落笔前先 `ls` 或 `git ls-files` 核存在**；
+     写"将要新建"的路径必须显式标「（新）」——本仓惯例如此，未标就是承诺它在磁盘上。
+  2. 基建/治理（`INFRA-*`、门禁脚本、真源、CI）卡的归口 = **`.ai/modules/core.md`**；
+     不要按卡前缀造模块册名，也不要新建 `infra.md`（新建全局册要走 ADR）。
+  3. **卡面「回写」与 `write_set` 里对磁盘有承诺的路径，用 Markdown 链接写、不用行内代码**
+     —— 只有 `MD_LINK` 对所有文件生效（含叙述域），行内代码路径在 `docs/tasks/`、`docs/decisions/`、
+     `.ai/memory/` 里是自由文本。反过来说：**别去收紧 `NARRATIVE` 豁免**（P153 的假阳代价更大），
+     改写法就够了。

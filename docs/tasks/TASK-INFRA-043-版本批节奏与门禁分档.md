@@ -17,7 +17,7 @@ output:      [VERSION, docs/reports/VERSIONS.md, tools/ci/run_gate.sh（version 
 write_set:   VERSION、docs/reports/VERSIONS.md、docs/decisions/ADR-0046-*.md、tools/ci/run_gate.sh、
              tools/ci/gate_scope.sh、tools/build/build_core.sh、tests/CMakeLists.txt、
              根 CMakeLists.txt、.github/workflows/ci.yml、.ai/source/AGENTS.root.md、AGENTS.md 等 5 份生成物、
-             docs/README.md、docs/tasks/TASK-BACKLOG.md、.ai/modules/infra.md、.ai/memory/*.md
+             docs/README.md、docs/tasks/TASK-BACKLOG.md、.ai/modules/core.md（基建卡归口，见下方订正）、.ai/memory/*.md
 read_set:    .ai/memory/baselines.md（用例秒数）、docs/decisions/ADR-0029/0030/0037/0044、
              build/gate-logs/*（本轮实测日志）
 deps:        []（与 UIA-046 / CORE-011 写集不相交，可并行）
@@ -126,4 +126,9 @@ ADR-0030 §4 早就规定"开发期只做模块级自查、全量按阶段批"�
 - 实测数字（Debug 段 107.55s → 实跑值、heavy 计数）→ `.ai/memory/baselines.md`
 - 踩到的坑 → `.ai/memory/pitfalls.md`（若本批无新坑，明确写"本批无新坑"，不留空）
 - 批账首节 → `docs/reports/VERSIONS.md`（已随本卡落盘）
-- 门禁记录 → `.ai/modules/infra.md` 模块册测试记录节
+- 门禁记录 → [.ai/modules/core.md](../../.ai/modules/core.md) 模块册测试记录节
+  （⚠️ **声明式订正**：卡面初稿三处写的是 `.ai/modules/infra.md`，**该模块册不存在**（`ls .ai/modules/` =
+  19 份，基建/治理卡的归口一直是 `core.md`，头部归属行「集成机（内核基础 + 热点文件）」）。
+  本轮三条门禁全绿却放行 —— 因为反引号路径在叙述域（`docs/tasks/`、`docs/decisions/`、`.ai/memory/` 等）
+  被 [tools/ai/linkcheck_docs.py](../../tools/ai/linkcheck_docs.py) 整体豁免，且非叙述域也只查 `docs/`/`../`
+  前缀。故本条**改用 Markdown 链接写**（链接对所有文件生效），错因与取证见 **P174**。）

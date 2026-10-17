@@ -62,6 +62,8 @@
   **SHADER 010 / RENDER 010 / MODEL 004 / CORE 011 / UIA 046 / EXPORT 001 / PALA 030 / RENDER 011~012**
   （RENDER-013「效果栈消费」仍只是建议号），HANDOFF 下一份 **027**。
 - **`origin/main` = `783c6de`**（RENDER-010；前一笔 `0f148bf` = SHADER-010），tracked **910**。
+  ⚠️ **水位笔自己也在 main 上，所以这行永远比 HEAD 少一笔**（记完就是 `4a4624e`）——
+  接手时以本地 HEAD 的 `git log` 为准（同一条命令也显示本地 sha）；本行只算写下那一刻的水位（P163 同族）。
   编辑批 v0.2.0 射程前四环 **CORE-011 ✅ → MODEL-004 ✅ → SHADER-010 ✅ → RENDER-010 ✅**，
   下一张 **#41 RENDER-011**。**L3 仍未跑**（随批末那一趟、绿了才升 `0.2.0`）、**真机未上**。
 - **INFRA-026~037 全部已推**（2026-10-17 午后，`origin/main` = 本地 `HEAD` = **`6807577`**）：

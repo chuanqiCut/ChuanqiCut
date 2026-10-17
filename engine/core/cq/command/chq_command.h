@@ -218,7 +218,7 @@ private:
 };
 
 // ---------------------------------------------------------------------------
-// 编辑类：画布比例（UIA-040）。项目级属性，只存新旧宽高（增量）。
+// 编辑类：画布比例（UIA-040）。项目级属性，存新旧宽高 + 一轮相对尺寸修正的留档。
 // ---------------------------------------------------------------------------
 class ChqSetCanvasCommand : public ChqICommand {
 public:
@@ -234,6 +234,11 @@ private:
     int32_t new_height_;
     int32_t old_width_ = 0;  // 首次 Do 时捕获
     int32_t old_height_ = 0;
+    // 改比例的连带修正（见 ChqTimeline::SetCanvas）。Undo 靠它**原样写回**而不是
+    // 反比再乘一次：relative_* 是 float，反比乘回不保证回到原值（1080×1920→720×1280→回，
+    // 1.7 实测差 1.2e-7 没回来，同路径 0.3 与 1.0 侥幸相等）。多次往返后 digest 会偏离
+    // 初始态 —— model.md 硬约束与 model_command / model_transform 单测锁的就是这条不变量。
+    ChqCanvasRelativeFix relative_before_;
 };
 
 // ---------------------------------------------------------------------------
@@ -403,6 +408,126 @@ private:
     std::string effect_id_;
     bool new_enabled_;
     bool old_enabled_ = true;  // 首次 Do 时捕获
+};
+
+// ---------------------------------------------------------------------------
+// 编辑类：片段空间变换（MODEL-004）。存新旧 ChqTransform（定长 POD，不是实体快照 ——
+// 硬约束 #2 的「增量」在这里就是这 40 字节）。
+// ---------------------------------------------------------------------------
+class ChqSetClipTransformCommand : public ChqICommand {
+public:
+    ChqSetClipTransformCommand(uint64_t clip_id, const ChqTransform& transform)
+        : clip_id_(clip_id), new_transform_(transform) {}
+
+    ChqStatus Do(ChqTimeline& model) override;
+    ChqStatus Undo(ChqTimeline& model) override;
+    const char* Name() const override { return "set-clip-transform"; }
+
+private:
+    uint64_t clip_id_;
+    ChqTransform new_transform_;
+    ChqTransform old_transform_{};  // 首次 Do 时捕获
+};
+
+// ---------------------------------------------------------------------------
+// 编辑类：片段叠放层级（MODEL-004）。叠放次序是用户可见语义，改错了必须能退回去。
+// ---------------------------------------------------------------------------
+class ChqSetClipLayerCommand : public ChqICommand {
+public:
+    ChqSetClipLayerCommand(uint64_t clip_id, int32_t layer)
+        : clip_id_(clip_id), new_layer_(layer) {}
+
+    ChqStatus Do(ChqTimeline& model) override;
+    ChqStatus Undo(ChqTimeline& model) override;
+    const char* Name() const override { return "set-clip-layer"; }
+
+private:
+    uint64_t clip_id_;
+    int32_t new_layer_;
+    int32_t old_layer_ = kLayerMin;  // 首次 Do 时捕获
+};
+
+// ---------------------------------------------------------------------------
+// 编辑类：片段变速比（MODEL-004）。只写比值，不动 duration（谁覆盖谁见 chq_transform.h）。
+// ---------------------------------------------------------------------------
+class ChqSetClipSpeedCommand : public ChqICommand {
+public:
+    ChqSetClipSpeedCommand(uint64_t clip_id, const ChqSpeed& speed)
+        : clip_id_(clip_id), new_speed_(speed) {}
+
+    ChqStatus Do(ChqTimeline& model) override;
+    ChqStatus Undo(ChqTimeline& model) override;
+    const char* Name() const override { return "set-clip-speed"; }
+
+private:
+    uint64_t clip_id_;
+    ChqSpeed new_speed_;
+    ChqSpeed old_speed_{};  // 首次 Do 时捕获
+};
+
+// ---------------------------------------------------------------------------
+// 编辑类：轨级空间变换（MODEL-004）。与片段 transform 同形，作用对象是整条轨。
+// ---------------------------------------------------------------------------
+class ChqSetTrackTransformCommand : public ChqICommand {
+public:
+    ChqSetTrackTransformCommand(uint64_t track_id, const ChqTransform& transform)
+        : track_id_(track_id), new_transform_(transform) {}
+
+    ChqStatus Do(ChqTimeline& model) override;
+    ChqStatus Undo(ChqTimeline& model) override;
+    const char* Name() const override { return "set-track-transform"; }
+
+private:
+    uint64_t track_id_;
+    ChqTransform new_transform_;
+    ChqTransform old_transform_{};  // 首次 Do 时捕获
+};
+
+// ---------------------------------------------------------------------------
+// 编辑类：写关键帧（MODEL-004）。与 ChqSetEffectParamCommand 同型：
+// "该时刻原先没有帧"（第一次打关键帧）用 had_old_ = false 表达，
+// Undo 走擦除而不是留一条空帧 —— 空帧既采不到也不能插值。
+// Redo 不复用 Do：重跑 Do 会把"当前值"再捕获一次旧值，正确性靠 LIFO 巧合而不是契约。
+// ---------------------------------------------------------------------------
+class ChqSetClipKeyframeCommand : public ChqICommand {
+public:
+    ChqSetClipKeyframeCommand(uint64_t clip_id, const ChqRationalTime& at,
+                              const ChqPropertyBag& values)
+        : clip_id_(clip_id), at_(at), new_values_(values) {}
+
+    ChqStatus Do(ChqTimeline& model) override;
+    ChqStatus Undo(ChqTimeline& model) override;
+    ChqStatus Redo(ChqTimeline& model) override;
+    const char* Name() const override { return "set-clip-keyframe"; }
+
+private:
+    uint64_t clip_id_;
+    ChqRationalTime at_;
+    ChqPropertyBag new_values_;
+    ChqPropertyBag old_values_{};  // 首次 Do 时捕获（had_old_ = false 时无意义）
+    bool had_old_ = false;
+    bool captured_ = false;
+};
+
+// ---------------------------------------------------------------------------
+// 结构类：删关键帧（MODEL-004）。Do 捕获被删帧的属性袋（单实体单帧粒度，不是快照），
+// Undo 用原时刻 + 原袋重新 Set；帧不存在时 Do 失败（不入栈、模型不动）。
+// ---------------------------------------------------------------------------
+class ChqEraseClipKeyframeCommand : public ChqICommand {
+public:
+    ChqEraseClipKeyframeCommand(uint64_t clip_id, const ChqRationalTime& at)
+        : clip_id_(clip_id), at_(at) {}
+
+    ChqStatus Do(ChqTimeline& model) override;
+    ChqStatus Undo(ChqTimeline& model) override;
+    ChqStatus Redo(ChqTimeline& model) override;
+    const char* Name() const override { return "erase-clip-keyframe"; }
+
+private:
+    uint64_t clip_id_;
+    ChqRationalTime at_;
+    ChqPropertyBag old_values_{};
+    bool captured_ = false;
 };
 
 }  // namespace cq

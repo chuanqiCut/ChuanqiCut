@@ -9,12 +9,58 @@
 
 namespace cq {
 
+namespace {
+
+// 逐实体算出 relative_* 的「修正前」与「修正后」两份值（改画布比例时用）。
+// 只计算不变更模型：任一实体修正后不可表示 → 整体失败，调用方据此保持模型不动。
+ChqStatus collect_relative(const std::vector<ChqTrack>& tracks, int32_t old_width,
+                           int32_t old_height, int32_t new_width, int32_t new_height,
+                           ChqCanvasRelativeFix& before, ChqCanvasRelativeFix& after) {
+    for (const ChqTrack& track : tracks) {
+        ChqTransform moved = track.transform;
+        ChqStatus s = moved.RescaleRelativeTo(old_width, old_height, new_width, new_height);
+        if (!s.IsOk()) return s;
+        before.entries.push_back({track.id, 0, track.transform.relative_width,
+                                  track.transform.relative_height});
+        after.entries.push_back({track.id, 0, moved.relative_width, moved.relative_height});
+        for (const ChqClip& clip : track.clips) {
+            moved = clip.transform;
+            s = moved.RescaleRelativeTo(old_width, old_height, new_width, new_height);
+            if (!s.IsOk()) return s;
+            before.entries.push_back({track.id, clip.id, clip.transform.relative_width,
+                                      clip.transform.relative_height});
+            after.entries.push_back(
+                {track.id, clip.id, moved.relative_width, moved.relative_height});
+        }
+    }
+    return ChqStatus::Ok();
+}
+
+}  // namespace
+
 // ===========================================================================
 // ChqClip
 // ===========================================================================
 
 ChqStatus ChqClip::End(ChqRationalTime& out) const {
     return AddRational(start, duration, out);
+}
+
+// ===========================================================================
+// 空间字段取值域（MODEL-004）
+// ===========================================================================
+
+ChqStatus ChqTimeline::validate_clip_spatial(const ChqClip& clip) {
+    ChqStatus s = clip.transform.Validate();
+    if (!s.IsOk()) return s;
+    if (clip.layer < kLayerMin || clip.layer > kLayerMax) {
+        return ChqStatus(ChqStatusCode::kInvalidArgument);
+    }
+    return clip.speed.Validate();
+}
+
+ChqStatus ChqTimeline::validate_track_spatial(const ChqTrack& track) {
+    return track.transform.Validate();
 }
 
 // ===========================================================================
@@ -80,6 +126,11 @@ ChqStatus ChqTimeline::InsertClip(uint64_t track_id, const ChqClip& clip, uint64
     if (clip.duration.value <= 0 || clip.duration.timescale <= 0) {
         return ChqStatus(ChqStatusCode::kInvalidArgument);
     }
+
+    // 空间字段越域（NaN 缩放、layer 越界、speed <= 0…）在插入时就拦住：
+    // 让它们进模型，等于把"什么时候才炸"推给渲染消费方（RENDER-010/011）。
+    ChqStatus spatial = validate_clip_spatial(clip);
+    if (!spatial.IsOk()) return spatial;
 
     // 同轨不允许重叠
     if (overlaps_in_track(*track, clip, nullptr)) {
@@ -170,6 +221,8 @@ ChqStatus ChqTimeline::ReplaceClip(const ChqClip& clip) {
     if (clip.source.source_in.value < 0) {
         return ChqStatus(ChqStatusCode::kInvalidArgument);
     }
+    ChqStatus spatial = validate_clip_spatial(clip);
+    if (!spatial.IsOk()) return spatial;
     if (overlaps_in_track(*track, clip, existing)) {
         return ChqStatus(ChqStatusCode::kInvalidArgument);
     }
@@ -211,6 +264,27 @@ ChqStatus ChqTimeline::SplitClip(uint64_t clip_id, const ChqRationalTime& at,
     s = SubRational(end, at, right_duration);
     if (!s.IsOk()) return s;
 
+    // 关键帧按切点分箱（时刻 = 相对片段起点，见 chq_transform.h 时间语义）：
+    //   左半保留 t <= delta；右半保留 t >= delta 并整体减去 delta 重基到右半起点。
+    // 切点那一帧两边都留 —— 曲线在切线两侧共享同一个值，分完才不跳画面。
+    // 不这么做的话两半都带走整条曲线：右半会从头重播左半的动画，左半留有采不到的尾帧。
+    ChqKeyframeList left_frames;
+    ChqKeyframeList right_frames;
+    for (const ChqKeyframe& f : clip->keyframes.Frames()) {
+        const int cmp = CompareRational(f.time, delta);
+        if (cmp <= 0) {
+            ChqStatus ks = left_frames.Set(f.time, f.values);
+            if (!ks.IsOk()) return ks;
+        }
+        if (cmp >= 0) {
+            ChqRationalTime local;
+            ChqStatus ks = SubRational(f.time, delta, local);
+            if (!ks.IsOk()) return ks;
+            ks = right_frames.Set(local, f.values);
+            if (!ks.IsOk()) return ks;
+        }
+    }
+
     // ---- 变更段：左半原位收缩，右半构造后插入 ----
     const ChqTransitionKind orig_out_transition = clip->out_transition;  // 回滚留档
     ChqClip right = *clip;
@@ -219,6 +293,7 @@ ChqStatus ChqTimeline::SplitClip(uint64_t clip_id, const ChqRationalTime& at,
     right.duration = right_duration;
     right.source.source_in = right_source_in;
     right.source.source_duration = right_source_duration;
+    right.keyframes = right_frames;
     // 分割点是媒体中段的切线：两侧的转场边界随之作废（出转场归左、入转场归右，
     // 但都不再挂在切线上）。transition_duration 不动 —— 当前 setter 只产生 kNone，
     // 引入非 kNone 转场时再补「共享 duration 的归属」语义。
@@ -242,6 +317,7 @@ ChqStatus ChqTimeline::SplitClip(uint64_t clip_id, const ChqRationalTime& at,
     while (pos != track->clips.end() && CompareRational(pos->start, right.start) <= 0) {
         ++pos;
     }
+    clip->keyframes = left_frames;  // 放在防御性回滚之后：回滚只管上面那两条字段
     track->clips.insert(pos, right);
     out_right_id = right.id;
     return ChqStatus::Ok();
@@ -275,13 +351,134 @@ const ChqClip* ChqTimeline::FindClipAt(uint64_t track_id, const ChqRationalTime&
 // 画布（UIA-040）
 // ===========================================================================
 
-ChqStatus ChqTimeline::SetCanvas(int32_t width, int32_t height) {
+ChqStatus ChqTimeline::SetCanvas(int32_t width, int32_t height, ChqCanvasRelativeFix* out_fix) {
     if (width <= 0 || width > 8192 || height <= 0 || height > 8192) {
         return ChqStatus(ChqStatusCode::kInvalidArgument);
     }
+    // 改画布必须连带修正相对尺寸（ADR-0040 §2）—— 没有"只换宽高不修子元素"的旁路，
+    // 那条路正是对标平台注释里"子元素会错乱"的成因。
+    // 先全量算完再写：任一实体的修正结果不可表示 → 整体失败、模型不动。
+    ChqCanvasRelativeFix before;
+    ChqCanvasRelativeFix after;
+    ChqStatus s = collect_relative(tracks_, canvas_width_, canvas_height_, width, height, before,
+                                   after);
+    if (!s.IsOk()) return s;
+
     canvas_width_ = width;
     canvas_height_ = height;
+    s = ApplyCanvasRelativeFix(after);
+    if (!s.IsOk()) return s;  // after 由本函数刚算出，实体必然存在；理论不可达
+    if (out_fix != nullptr) *out_fix = std::move(before);
     return ChqStatus::Ok();
+}
+
+ChqStatus ChqTimeline::ApplyCanvasRelativeFix(const ChqCanvasRelativeFix& fix) {
+    // 两段式：先全部验（每个 id 都还在、每个值都合法），再全部写。
+    // 中途失败若直接返回，模型会停在"一半实体是旧比例、一半是新比例"的错乱态，
+    // 比整体失败严重得多 —— 与 ChqTimeline 其余方法同一条「先校验后变更」纪律。
+    for (const ChqCanvasRelativeFix::Entry& e : fix.entries) {
+        ChqTransform probe;
+        probe.relative_width = e.relative_width;
+        probe.relative_height = e.relative_height;
+        if (!probe.Validate().IsOk()) return ChqStatus(ChqStatusCode::kInvalidArgument);
+
+        const ChqTrack* track = FindTrack(e.track_id);
+        if (track == nullptr) return ChqStatus(ChqStatusCode::kInvalidArgument);
+        if (e.clip_id == 0) continue;
+        // 在**这条轨**里找片段：只按全局 id 找会漏判"片段已被挪到别的轨"，
+        // 那时下面的写入循环会一路 continue，静默留下一条没还原的实体。
+        bool found = false;
+        for (const ChqClip& c : track->clips) {
+            if (c.id == e.clip_id) {
+                found = true;
+                break;
+            }
+        }
+        if (!found) return ChqStatus(ChqStatusCode::kInvalidArgument);
+    }
+
+    for (const ChqCanvasRelativeFix::Entry& e : fix.entries) {
+        for (ChqTrack& track : tracks_) {
+            if (track.id != e.track_id) continue;
+            if (e.clip_id == 0) {
+                track.transform.relative_width = e.relative_width;
+                track.transform.relative_height = e.relative_height;
+            } else {
+                for (ChqClip& clip : track.clips) {
+                    if (clip.id != e.clip_id) continue;
+                    clip.transform.relative_width = e.relative_width;
+                    clip.transform.relative_height = e.relative_height;
+                }
+            }
+            break;
+        }
+    }
+    return ChqStatus::Ok();
+}
+
+// ===========================================================================
+// 空间 / 层级 / 变速 / 关键帧写路径（MODEL-004）
+// ===========================================================================
+// 与效果栈同一条纪律：定位失败 → kInvalidArgument；取值域违规由 Validate / 范围检查
+// 拦住；两者都过了才写。这些值本卡不被渲染消费（RENDER-010/011），但**必须**在此处
+// 就被拦住 —— 让 NaN 进模型，等于把"什么时候炸"推给下一次 drawcall。
+
+ChqStatus ChqTimeline::SetClipTransform(uint64_t clip_id, const ChqTransform& transform) {
+    ChqStatus s = transform.Validate();
+    if (!s.IsOk()) return s;
+    ChqTrack* track = nullptr;
+    ChqClip* clip = find_clip_mut(clip_id, track);
+    if (clip == nullptr) return ChqStatus(ChqStatusCode::kInvalidArgument);
+    clip->transform = transform;
+    return ChqStatus::Ok();
+}
+
+ChqStatus ChqTimeline::SetClipLayer(uint64_t clip_id, int32_t layer) {
+    if (layer < kLayerMin || layer > kLayerMax) {
+        return ChqStatus(ChqStatusCode::kInvalidArgument);
+    }
+    ChqTrack* track = nullptr;
+    ChqClip* clip = find_clip_mut(clip_id, track);
+    if (clip == nullptr) return ChqStatus(ChqStatusCode::kInvalidArgument);
+    clip->layer = layer;
+    return ChqStatus::Ok();
+}
+
+ChqStatus ChqTimeline::SetClipSpeed(uint64_t clip_id, const ChqSpeed& speed) {
+    ChqStatus s = speed.Validate();
+    if (!s.IsOk()) return s;
+    ChqTrack* track = nullptr;
+    ChqClip* clip = find_clip_mut(clip_id, track);
+    if (clip == nullptr) return ChqStatus(ChqStatusCode::kInvalidArgument);
+    clip->speed = speed;
+    return ChqStatus::Ok();
+}
+
+ChqStatus ChqTimeline::SetTrackTransform(uint64_t track_id, const ChqTransform& transform) {
+    ChqStatus s = transform.Validate();
+    if (!s.IsOk()) return s;
+    for (ChqTrack& track : tracks_) {
+        if (track.id == track_id) {
+            track.transform = transform;
+            return ChqStatus::Ok();
+        }
+    }
+    return ChqStatus(ChqStatusCode::kInvalidArgument);
+}
+
+ChqStatus ChqTimeline::SetClipKeyframe(uint64_t clip_id, const ChqRationalTime& at,
+                                       const ChqPropertyBag& values) {
+    ChqTrack* track = nullptr;
+    ChqClip* clip = find_clip_mut(clip_id, track);
+    if (clip == nullptr) return ChqStatus(ChqStatusCode::kInvalidArgument);
+    return clip->keyframes.Set(at, values);
+}
+
+ChqStatus ChqTimeline::EraseClipKeyframe(uint64_t clip_id, const ChqRationalTime& at) {
+    ChqTrack* track = nullptr;
+    ChqClip* clip = find_clip_mut(clip_id, track);
+    if (clip == nullptr) return ChqStatus(ChqStatusCode::kInvalidArgument);
+    return clip->keyframes.Erase(at);  // 不存在 → kIoNotFound
 }
 
 // ===========================================================================
@@ -440,11 +637,13 @@ ChqStatus ChqTimeline::ReplaceClipEffects(uint64_t clip_id, const ChqEffectStack
 
 ChqStatus ChqTimeline::RestoreTrack(const ChqTrack& track) {
     if (track.id == 0) return ChqStatus(ChqStatusCode::kInvalidArgument);
+    ChqStatus spatial = validate_track_spatial(track);
+    if (!spatial.IsOk()) return spatial;
     for (const ChqTrack& t : tracks_) {
         if (t.id == track.id) return ChqStatus(ChqStatusCode::kInvalidArgument);
     }
-    // 轨道内片段沿用 RestoreClip 的全部校验（id 非零 / 类型匹配 / 时长正 / 同轨不重叠），
-    // 但走同一条插入路径，保证回放结果与正常编辑一致。
+    // 轨道内片段沿用 RestoreClip 的全部校验（id 非零 / 类型匹配 / 时长正 / 同轨不重叠 /
+    // 空间字段在域），但走同一条插入路径，保证回放结果与正常编辑一致。
     // 先在局部把内容装好、再一次性入列：校验失败时不留下半恢复状态。
     ChqTrack restored = track;
     restored.clips.clear();
@@ -457,6 +656,8 @@ ChqStatus ChqTimeline::RestoreTrack(const ChqTrack& track) {
         if (clip.duration.value <= 0 || clip.duration.timescale <= 0) {
             return ChqStatus(ChqStatusCode::kInvalidArgument);
         }
+        spatial = validate_clip_spatial(clip);
+        if (!spatial.IsOk()) return spatial;
         if (overlaps_in_track(restored, clip, nullptr)) {
             return ChqStatus(ChqStatusCode::kInvalidArgument);
         }
@@ -492,6 +693,8 @@ ChqStatus ChqTimeline::RestoreClip(uint64_t track_id, const ChqClip& clip) {
     if (clip.duration.value <= 0 || clip.duration.timescale <= 0) {
         return ChqStatus(ChqStatusCode::kInvalidArgument);
     }
+    ChqStatus spatial = validate_clip_spatial(clip);
+    if (!spatial.IsOk()) return spatial;
     if (overlaps_in_track(*track, clip, nullptr)) {
         return ChqStatus(ChqStatusCode::kInvalidArgument);
     }

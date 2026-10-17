@@ -21,7 +21,8 @@
 
 #include "cq/base/chq_status.h"
 #include "cq/base/chq_rational_time.h"
-#include "cq/model/chq_property.h"  // MODEL-003：效果栈（片段级属性）
+#include "cq/model/chq_property.h"   // MODEL-003：效果栈（片段级属性）
+#include "cq/model/chq_transform.h"  // MODEL-004：空间变换 / 层级 / 变速 / 关键帧
 
 namespace cq {
 
@@ -61,6 +62,22 @@ struct ChqClip {
     // B0 只立数据：渲染消费归 RENDER-011（B7），装配器如实上报 effects_dropped。
     ChqEffectStack effects;
 
+    // MODEL-004（B5.5）：空间 / 层级 / 变速 / 关键帧。默认值全是"不改画面"的恒等值，
+    // 且**本卡不被渲染消费**（RENDER-010/011 才读它）—— 语义见 chq_transform.h 文件头。
+    ChqTransform transform;
+
+    // 显式叠放层级（ADR-0040 §2：不得继续用数组顺序表达叠放）。⚠️ 消费方注意：
+    // (轨序, layer) 仍不是全序，同值时须再有确定 tiebreak（如 start），否则叠放随遍历顺序漂。
+    int32_t layer = kLayerMin;
+
+    // 变速比。**只存比值、不改 duration**：时间线占时 = speed.ApplyTo(source_duration)，
+    // 但 trim 早已让 duration 与 source_duration 解耦，谁覆盖谁必须由消费方显式决定，
+    // 内核里留一条"看起来自动"的隐式换算会让撤销与导出各算一套。
+    ChqSpeed speed;
+
+    // 关键帧 = 时刻 + 属性子集快照（不深拷贝 ChqClip，见 ADR-0040 §2）。
+    ChqKeyframeList keyframes;
+
     // 结束时刻 = start + duration（不含出转场）。
     ChqStatus End(ChqRationalTime& out) const;
 };
@@ -74,6 +91,36 @@ struct ChqTrack {
     std::vector<ChqClip> clips;  // 按 start 升序维护，同轨互不重叠
     bool enabled = true;
     bool muted = false;
+    // 轨级变换 = 该轨所有片段的父级（画中画整轨位移/缩放）。与片段 transform 的
+    // 叠加顺序归 RENDER-010 定；模型层只存两份，不在这里选边。
+    // 层级只在片段上（layer 是叠放单位），轨级不设 —— 两份层级会互相问"谁赢"。
+    ChqTransform transform;
+};
+
+// ---------------------------------------------------------------------------
+// ChqCanvasRelativeFix — 改画布比例时「相对尺寸修正前」的逐实体留档
+// ---------------------------------------------------------------------------
+// 为什么需要它而不是"Undo 时再乘一次反比"：relative_* 是 float，反比乘回**不保证**回到原值。
+// 本机实测（float32，1080×1920 → 720×1280 → 回）：1.7 → 2.55000019 → 1.70000017（差 1.2e-7，
+// 没回来），而同一路径 0.3 与 1.0 恰好回来 —— 回不回取决于值，侥幸不是契约。反比乘回会让
+// 「N 次改比例 + N 次撤销」之后 digest 偏离初始态，而 model.md 硬约束与 model_command 单测
+// 锁的正是这条不变量。所以 Do 捕获原值、Undo 原样写回（单测 model_transform 两组都锁了断言）。
+struct ChqCanvasRelativeFix {
+    // clip_id == 0 = 轨道自身的 relative（0 不是合法 id：next_id_ 从 1 起）。
+    struct Entry {
+        uint64_t track_id = 0;
+        uint64_t clip_id = 0;
+        float relative_width = 1.0f;
+        float relative_height = 1.0f;
+
+        bool operator==(const Entry&) const = default;
+    };
+    std::vector<Entry> entries;
+
+    bool operator==(const ChqCanvasRelativeFix& o) const { return entries == o.entries; }
+    bool Empty() const { return entries.empty(); }
+    size_t Size() const { return entries.size(); }
+    void Clear() { entries.clear(); }
 };
 
 // ---------------------------------------------------------------------------
@@ -122,9 +169,29 @@ public:
     // 默认 1080×1920（9:16，竖屏短视频基准）。宽高只是**比例语义**（渲染侧按
     // 适配模式把内容装进画布），不是像素承诺；上界 8192 防呆。
     // 校验：w/h ∈ (0, 8192]。失败返回 kInvalidArgument，模型不动。
+    // ⚠️ 改画布**一定**会连带修正全部实体的 relative_*（保持像素宽高不变，ADR-0040 §2
+    //    「不修正则子元素错乱」）—— 不存在"只改宽高"的旁路。out_fix 非空时输出
+    //    修正前的原值，供 ChqSetCanvasCommand::Undo 原样写回（浮点乘不保证可逆）。
     int32_t CanvasWidth() const { return canvas_width_; }
     int32_t CanvasHeight() const { return canvas_height_; }
-    ChqStatus SetCanvas(int32_t width, int32_t height);
+    ChqStatus SetCanvas(int32_t width, int32_t height, ChqCanvasRelativeFix* out_fix = nullptr);
+
+    // 按留档原样写回各实体的 relative_*（仅供 ChqSetCanvasCommand::Undo 使用）。
+    // 先全量校验（每个 id 都还在、每个值都合法）再写：任一不过 → 模型不动。
+    ChqStatus ApplyCanvasRelativeFix(const ChqCanvasRelativeFix& fix);
+
+    // ---- 空间 / 层级 / 变速 / 关键帧写路径（MODEL-004；UI 一律经 Command 提交）----
+    // 校验纪律与效果栈同基：实体不存在 → kInvalidArgument；取值域违规由
+    // ChqTransform::Validate / ChqSpeed::Validate / kLayerMax 拒绝；先校验后变更。
+    ChqStatus SetClipTransform(uint64_t clip_id, const ChqTransform& transform);
+    ChqStatus SetClipLayer(uint64_t clip_id, int32_t layer);
+    ChqStatus SetClipSpeed(uint64_t clip_id, const ChqSpeed& speed);
+    ChqStatus SetTrackTransform(uint64_t track_id, const ChqTransform& transform);
+    // 关键帧按时刻覆盖写（同刻替换，不堆 duplicate）。空袋 / 非法时刻被拒绝。
+    ChqStatus SetClipKeyframe(uint64_t clip_id, const ChqRationalTime& at,
+                              const ChqPropertyBag& values);
+    // 删关键帧。该时刻没有帧 → kIoNotFound（与效果参数同口径）。
+    ChqStatus EraseClipKeyframe(uint64_t clip_id, const ChqRationalTime& at);
 
     // ---- 跨轨移动（UIA-040 多轨操作；片段 id 不变）----
     // 把片段移到目标轨道的 new_start 处（画中画拖拽的模型语义）。
@@ -159,12 +226,16 @@ public:
     // Undo/Redo 必须把实体放回原 id 上，否则历史里后续命令的 id 引用会全部失效。
     // next_id_ 仍单调推进（max(next_id_, id+1)），保证之后新分配的 id 唯一。
     // 校验与对应 Add/Insert 一致（同 id 已存在 / 轨道缺失 / 类型不匹配 /
-    // 时长非正 / 同轨重叠 → kInvalidArgument）。
+    // 时长非正 / 同轨重叠 / 空间字段越域 → kInvalidArgument）。
     ChqStatus RestoreTrack(const ChqTrack& track);
     ChqStatus RestoreClip(uint64_t track_id, const ChqClip& clip);
 
 private:
     ChqClip* find_clip_mut(uint64_t clip_id, ChqTrack*& out_track);
+    // 空间字段取值域校验（transform / layer / speed），InsertClip / ReplaceClip /
+    // RestoreClip 三条片段插入路径共用。轨级只有 transform，单独一条。
+    static ChqStatus validate_clip_spatial(const ChqClip& clip);
+    static ChqStatus validate_track_spatial(const ChqTrack& track);
     // exclude：移动/修剪时排除自身（否则自己跟自己判重叠）
     bool overlaps_in_track(const ChqTrack& track, const ChqClip& candidate,
                            const ChqClip* exclude) const;

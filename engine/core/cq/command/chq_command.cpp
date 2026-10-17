@@ -246,11 +246,16 @@ ChqStatus ChqTrimClipInCommand::Undo(ChqTimeline& model) {
 ChqStatus ChqSetCanvasCommand::Do(ChqTimeline& model) {
     old_width_ = model.CanvasWidth();
     old_height_ = model.CanvasHeight();
-    return model.SetCanvas(new_width_, new_height_);
+    return model.SetCanvas(new_width_, new_height_, &relative_before_);
 }
 
 ChqStatus ChqSetCanvasCommand::Undo(ChqTimeline& model) {
-    return model.SetCanvas(old_width_, old_height_);
+    // 顺序是刻意的：先换回宽高（连带按反比修正一遍 relative，可能失败 → 模型不动），
+    // 再用 Do 时捕获的原值**逐条覆盖**。反过来先覆盖再换宽高，覆盖好的值会被第二次
+    // 修正重新洗掉 —— 浮点乘不保证可逆，这件事只能靠"不重算"来解，不能靠调顺序赌。
+    ChqStatus s = model.SetCanvas(old_width_, old_height_);
+    if (!s.IsOk()) return s;
+    return model.ApplyCanvasRelativeFix(relative_before_);
 }
 
 // ===========================================================================
@@ -414,6 +419,113 @@ ChqStatus ChqSetEffectEnabledCommand::Do(ChqTimeline& model) {
 
 ChqStatus ChqSetEffectEnabledCommand::Undo(ChqTimeline& model) {
     return model.SetClipEffectEnabled(clip_id_, effect_id_, old_enabled_);
+}
+
+// ===========================================================================
+// ChqSetClipTransformCommand（MODEL-004）
+// ===========================================================================
+
+ChqStatus ChqSetClipTransformCommand::Do(ChqTimeline& model) {
+    const ChqClip* clip = model.FindClip(clip_id_);
+    if (clip == nullptr) return ChqStatus(ChqStatusCode::kInvalidArgument);
+    old_transform_ = clip->transform;
+    return model.SetClipTransform(clip_id_, new_transform_);
+}
+
+ChqStatus ChqSetClipTransformCommand::Undo(ChqTimeline& model) {
+    return model.SetClipTransform(clip_id_, old_transform_);
+}
+
+// ===========================================================================
+// ChqSetClipLayerCommand（MODEL-004）
+// ===========================================================================
+
+ChqStatus ChqSetClipLayerCommand::Do(ChqTimeline& model) {
+    const ChqClip* clip = model.FindClip(clip_id_);
+    if (clip == nullptr) return ChqStatus(ChqStatusCode::kInvalidArgument);
+    old_layer_ = clip->layer;
+    return model.SetClipLayer(clip_id_, new_layer_);
+}
+
+ChqStatus ChqSetClipLayerCommand::Undo(ChqTimeline& model) {
+    return model.SetClipLayer(clip_id_, old_layer_);
+}
+
+// ===========================================================================
+// ChqSetClipSpeedCommand（MODEL-004）
+// ===========================================================================
+
+ChqStatus ChqSetClipSpeedCommand::Do(ChqTimeline& model) {
+    const ChqClip* clip = model.FindClip(clip_id_);
+    if (clip == nullptr) return ChqStatus(ChqStatusCode::kInvalidArgument);
+    old_speed_ = clip->speed;
+    return model.SetClipSpeed(clip_id_, new_speed_);
+}
+
+ChqStatus ChqSetClipSpeedCommand::Undo(ChqTimeline& model) {
+    return model.SetClipSpeed(clip_id_, old_speed_);
+}
+
+// ===========================================================================
+// ChqSetTrackTransformCommand（MODEL-004）
+// ===========================================================================
+
+ChqStatus ChqSetTrackTransformCommand::Do(ChqTimeline& model) {
+    const ChqTrack* track = model.FindTrack(track_id_);
+    if (track == nullptr) return ChqStatus(ChqStatusCode::kInvalidArgument);
+    old_transform_ = track->transform;
+    return model.SetTrackTransform(track_id_, new_transform_);
+}
+
+ChqStatus ChqSetTrackTransformCommand::Undo(ChqTimeline& model) {
+    return model.SetTrackTransform(track_id_, old_transform_);
+}
+
+// ===========================================================================
+// ChqSetClipKeyframeCommand（MODEL-004）
+// ===========================================================================
+
+ChqStatus ChqSetClipKeyframeCommand::Do(ChqTimeline& model) {
+    const ChqClip* clip = model.FindClip(clip_id_);
+    if (clip == nullptr) return ChqStatus(ChqStatusCode::kInvalidArgument);
+    const ChqKeyframe* old = clip->keyframes.Find(at_);
+    had_old_ = (old != nullptr);
+    if (old != nullptr) old_values_ = old->values;
+    captured_ = true;
+    return model.SetClipKeyframe(clip_id_, at_, new_values_);
+}
+
+ChqStatus ChqSetClipKeyframeCommand::Undo(ChqTimeline& model) {
+    if (!captured_) return ChqStatus(ChqStatusCode::kInternal);
+    if (had_old_) return model.SetClipKeyframe(clip_id_, at_, old_values_);
+    return model.EraseClipKeyframe(clip_id_, at_);  // 原先没帧：擦干净，不留空帧
+}
+
+ChqStatus ChqSetClipKeyframeCommand::Redo(ChqTimeline& model) {
+    return model.SetClipKeyframe(clip_id_, at_, new_values_);
+}
+
+// ===========================================================================
+// ChqEraseClipKeyframeCommand（MODEL-004）
+// ===========================================================================
+
+ChqStatus ChqEraseClipKeyframeCommand::Do(ChqTimeline& model) {
+    const ChqClip* clip = model.FindClip(clip_id_);
+    if (clip == nullptr) return ChqStatus(ChqStatusCode::kInvalidArgument);
+    const ChqKeyframe* old = clip->keyframes.Find(at_);
+    if (old == nullptr) return ChqStatus(ChqStatusCode::kIoNotFound);  // 没这一帧：不入栈
+    old_values_ = old->values;
+    captured_ = true;
+    return model.EraseClipKeyframe(clip_id_, at_);
+}
+
+ChqStatus ChqEraseClipKeyframeCommand::Undo(ChqTimeline& model) {
+    if (!captured_) return ChqStatus(ChqStatusCode::kInternal);
+    return model.SetClipKeyframe(clip_id_, at_, old_values_);
+}
+
+ChqStatus ChqEraseClipKeyframeCommand::Redo(ChqTimeline& model) {
+    return model.EraseClipKeyframe(clip_id_, at_);
 }
 
 }  // namespace cq

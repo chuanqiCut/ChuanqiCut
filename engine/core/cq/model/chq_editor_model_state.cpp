@@ -92,6 +92,9 @@ uint64_t ChqEditorModelState::Fingerprint(const ChqTimeline& timeline) {
         Mix(h, static_cast<uint64_t>(track.kind));
         Mix(h, track.enabled ? 1 : 0);
         Mix(h, track.muted ? 1 : 0);
+        // MODEL-004：轨级空间状态。字段全部走 Fingerprint 混合，不在这里重述字段清单 ——
+        // 两处各写一遍必然漂移（漏一个字段就是「改了但 digest 不变」的假阴性）。
+        Mix(h, track.transform.Fingerprint());
         Mix(h, track.clips.size());
         for (const ChqClip& c : track.clips) {
             Mix(h, c.id);
@@ -107,6 +110,12 @@ uint64_t ChqEditorModelState::Fingerprint(const ChqTimeline& timeline) {
             // MODEL-003：效果栈（含每个效果的启用位与全部参数）。漏了它就会出现
             // 「改了属性但 digest 不变」的假阴性 —— UI 不刷新、装配缓存不失效。
             Mix(h, c.effects.Fingerprint());
+            // MODEL-004：空间 / 层级 / 变速 / 关键帧（layer 是有符号整数，
+            // 负值转 uint64 会符号扩展 —— 值确定，指纹也确定）。
+            Mix(h, c.transform.Fingerprint());
+            Mix(h, static_cast<uint64_t>(c.layer));
+            Mix(h, c.speed.Fingerprint());
+            Mix(h, c.keyframes.Fingerprint());
         }
     }
     return h;

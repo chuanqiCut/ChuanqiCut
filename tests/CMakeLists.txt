@@ -527,6 +527,21 @@ cq_require_cxx20(cq_tests_model_property)
 apply_cq_warnings(cq_tests_model_property)
 add_test(NAME model_property COMMAND cq_tests_model_property)
 
+# ---- MODEL-004：空间与交互地基（变换/层级/变速/关键帧，B5.5）----
+# 验收：默认值恒等、取值域校验（NaN/Inf/负 scale/layer 越界）、
+# 改画布比例按约定同步修正（像素守恒 + 浮点反比不保证可逆的实测对照）、
+# speed 整数比可逆、关键帧升序不变量与片段局部时刻、SplitClip 分箱、
+# 六条命令往返（含"无幽灵空帧"）、digest 覆盖四组字段、
+# 20 轮变换+画布后 40 次 Undo 指纹回初始态。
+add_executable(cq_tests_model_transform
+    unit/model/test_model_transform.cpp)
+target_include_directories(cq_tests_model_transform PRIVATE
+    ${CMAKE_SOURCE_DIR}/engine/core)
+target_link_libraries(cq_tests_model_transform PRIVATE cq_core)
+cq_require_cxx20(cq_tests_model_transform)
+apply_cq_warnings(cq_tests_model_transform)
+add_test(NAME model_transform COMMAND cq_tests_model_transform)
+
 # ---- MODEL-003：效果属性 C ABI（真正的 C 翻译单元）----
 # 与 test_c_abi_edit.c 同性质：cq_sdk.h 混进 C++ 类型即编译失败。
 # 端到端覆盖：add/remove/enabled/五类参数 setter、两段式查询、
@@ -721,7 +736,7 @@ set(CQ_HEAVY_TESTS
     platform_apple_decode)
 foreach(_t IN LISTS CQ_HEAVY_TESTS)
     # ⚠️ 必须写成 `if(TEST ${_t})`。`if(TEST _t)` 问的是"有没有一个叫 `_t` 这个字面的用例"，
-    # **恒假** → 一个标签都打不上，而 `-LE heavy` 会"成功地"跑完全部 52 例：
+    # **恒假** → 一个标签都打不上，而 `-LE heavy` 会"成功地"跑完全部用例：
     # 分档看起来生效（还更快），实际一点没减（P172，本仓第一次自测就撞在这行）。
     # 暴露它的正是 build_core.sh 里那句"把被跳过的名单打进日志"—— 名单为空当场说破。
     # if(TEST) 需要 CMake ≥3.16，本工程 cmake_minimum_required 是 3.21。

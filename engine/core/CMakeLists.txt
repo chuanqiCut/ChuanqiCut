@@ -44,6 +44,9 @@ add_library(cq_core STATIC
     # MODEL-003：效果属性系统（属性值/属性袋/效果栈）。B0 渲染地基第二块：
     # 效果从此是数据而非硬编码分支；渲染消费归 RENDER-011，本批只立结构与撤销链。
     cq/model/chq_property.cpp
+    # MODEL-004（B5.5）：空间变换 / 层级 / 变速比 / 关键帧数据槽。挂到 ChqClip 与 ChqTrack；
+    # 渲染消费归 RENDER-010/011，插值归 B8，本批只立数据、校验与撤销链。
+    cq/model/chq_transform.cpp
     # MODEL-002：Command 模式与 ChqCommandHistory（Undo/Redo）。
     # 红线 #5 的执行点：UI 变更全部经 Command；历史在 session 线程串行使用。
     cq/command/chq_command.cpp

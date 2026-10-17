@@ -27,15 +27,22 @@ description: 新增或修改 shader 时必须跑。Portable 层保证三端一�
 - 避开 SPIRV-Cross 支持不佳的特性：几何/细分着色器、复杂子组操作、8/16-bit 存储类型
 - 禁止分支依赖的纹理采样
 - 精度限定符必须显式（`highp` / `mediump`）
-- 绑定号由反射生成，禁止手写
+- 绑定号由反射生成，禁止手写 —— ⚠️ **反射（SHADER-002）未落地**，本期实际口径是显式手写 `layout(binding=)`，
+  每加一组 shader 都要手对一次管线顶点属性；两处手写「将来必须对齐反射」已登记成明账，不假装反射有了
 
 ### 验证
 ```bash
-tools/shaders/build.sh --all        # 三端产物都能编译
-tools/shaders/lint.sh               # 禁用特性检查
-tools/qa/golden_compare.sh --case=shader_<name>
+# ⚠️ tools/shaders/build.sh / lint.sh / tools/qa/golden_compare.sh **都不存在**（SHADER-010 实测）。
+#    恒不命中的判据比没有更坏（P162）→ 可执行入口只有这些：
+tools/build/build_shader_toolchain.sh                    # glslang / SPIRV-Cross 装配入口唯一
+python3 tools/shaders/build_shaders.py --repo-root . \
+        --out-dir build/generated/shaders                # Portable → SPIRV → MSL
+tools/build/build_core.sh --platform=apple --config=Release --test   # 生成链被真实构建吃到
+tools/ci/check_apple_shells.sh                           # podspec 侧接线只有双壳能判红
 ```
-阈值：同平台回归 PSNR ≥ 40dB；跨平台 PSNR ≥ 36dB、SSIM ≥ 0.98。
+一致性阈值：同平台回归 PSNR ≥ 40dB；跨平台 PSNR ≥ 36dB、SSIM ≥ 0.98。
+⚠️ **本仓没有 PSNR/SSIM 比对器**，恒等/回归判据当前用**同帧两条编码路径读回逐像素相减**
+（范式 `tests/unit/preview/test_layer_identity.cpp`，SHADER-010 / RENDER-010 立的口径）。
 关键区域（人脸/文字/alpha 边缘）单独校验，别被全画面均值掩盖。
 
 ---
@@ -70,7 +77,7 @@ GLES 3.0 无 compute；ES 3.1 可用但部分机型有缺陷（**中端机也可
 
 ## 检查清单
 - [ ] 已明确改的是哪一层
-- [ ] Portable：遵守全部编写约束、lint 通过、三端可编译、一致性达标
+- [ ] Portable：遵守全部编写约束、上面四条真实入口跑过、一致性达标（Android/HarmonyOS 切片未验就明写「跨端未验」）
 - [ ] Native：四条硬约束全部满足，附收益数据
 - [ ] 未手改生成产物
 - [ ] 实测数据已记录（**不要写估算值**）

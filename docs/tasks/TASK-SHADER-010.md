@@ -66,7 +66,7 @@ SHADER-001 已经把链跑通一次：`engine/shaders/portable/blit.{vert,frag}`
 `transform_msl.h` = 1867 B。MSL 侧 `[[attribute(0/1/2)]]` 与 `texture(0)`/`sampler(0)` 由
 spirv-cross 生成，与管线顶点布局逐项对齐。
 
-两条偏差声明（不静默）：
+三条偏差声明（不静默）：
 
 1. **验收第 2 条换了形式**：`golden 回归 ≥40dB` 在本仓**没有可执行判据** —— `verify.py` 只校验
    夹具齐备性，`tools/qa/golden_compare.sh` 不存在（卡片 verification 里已声明）。换成同帧走
@@ -76,5 +76,9 @@ spirv-cross 生成，与管线顶点布局逐项对齐。
 2. **`--groups` 之类的选择器没加**：多组一次生成，增量由 CMake `OUTPUT` 列表决定。
    ⚠️ 新增一组要同时改 `SHADER_GROUPS` 与 CMake 的 `CQ_SHADER_MSL_HEADERS` + `DEPENDS`；
    `DEPENDS` 少写一个源文件 = 增量构建假绿（已写进 CMakeLists 注释）。
+3. **搭车改了 skill 文件**（超本卡声明写集，登记此处）：`.agents/skills/cq-shader-portability/SKILL.md`
+   的 A 节验证块原列 `tools/shaders/build.sh` / `lint.sh` / `tools/qa/golden_compare.sh` **三条空头命令**，
+   已换成本卡实测的四条真实入口，并把「绑定号由反射生成」标注为**反射未落地**、把 dB 阈值标注为
+   **本仓无比对器**。理由同 P162：这份 skill 是每个 shader 任务的强制入口，留着空头命令 = 下一张卡再踩一遍。
 
 跨端未验（risk 条照旧）：本机只有 Apple 切片。Android / HarmonyOS 侧这份 GLSL 没跑过。

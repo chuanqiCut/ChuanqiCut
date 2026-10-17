@@ -5,7 +5,7 @@ id:          TASK-UIA-046
 layer:       UI
 goal:        播放中在轨道区点选片段时先暂停播放，与"编辑类意图先暂停"合并成一条判定
 input:       [QUESTIONNAIRE-UIA-044-045-合并版 的 D5 裁定, TASK-UIA-045 ③④ 段, TrackIntent.isEditing]
-output:      [改 TrackInteraction.swift（谓词重命名 + 覆盖选中）, 改 EditorViewController.swift:584 调用点,
+output:      [改 TrackInteraction.swift（谓词重命名 + 覆盖选中）, 改 EditorViewController.swift:585 调用点,
               改 TimelineInteractionTests.swift（新增"播放中点选 → isPlaying==false"用例）,
               新的小问卷 QUESTIONNAIRE-UIA-046]
 write_set:   ui/ChuanqiCutEditor/Sources/ChuanqiCutEditor/TrackInteraction.swift、
@@ -38,9 +38,11 @@ parallel:    false
 
 ## 实现要点
 
-1. **改动点是唯一消费处**：`ui/ChuanqiCutEditor/Sources/ChuanqiCutEditor/UIKit/EditorViewController.swift:584`
+1. **改动点是唯一消费处**：`ui/ChuanqiCutEditor/Sources/ChuanqiCutEditor/UIKit/EditorViewController.swift:585`
    的 `if intents.contains(where: \.isEditing)`。`TrackIntent.isEditing` 定义在
    `TrackInteraction.swift:88`，全仓**只有这一处读它**（已核）。
+   ⚠️ **取证订正（2026-10-17 13:5x 复核）**：建卡时写的是 **:584**，复核后是 **:585**（差一行，
+   `if` 本体在 585）。本卡其余行号已逐条 `grep` 重取。
 2. **重命名而不是塞进旧名**：新谓词表达"要不要先暂停"，不表达"改不改模型"。
    `isEditing` 这个名字一旦把选中算进去就成了假话，而**全仓只有 D5 这一处读它**，
    所以直接把 `isEditing` 改成 `pausesPlayback`，并把注释同步改成 D5 口径；

@@ -68,7 +68,7 @@ parallel:    false
 - `apply(intents:)`：含 `.commitEdit` 时先暂停；`.selectClip` 不暂停（选中是 UI 本地态，
   播放中点片段不打断播放）。判定用新增的 `TrackIntent.isEditing`。
   ⚠️ **本条后半已于 2026-10-17 被问卷 D5 裁定推翻**：传哲要「点选片段也暂停」→
-  落 **TASK-UIA-046**（改动点 `EditorViewController.swift:584` 的 `contains(where: \.isEditing)`，
+  落 **TASK-UIA-046**（改动点 `EditorViewController.swift:585` 的 `contains(where: \.isEditing)`，
   唯一消费处，一行）。原文保留作历史。
 
 ## ⑤ iPad 与 iPhone 统一

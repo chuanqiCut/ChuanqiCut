@@ -125,14 +125,17 @@ D5 / E1 / F3 三条是决策项，不勾不算回收完成。
   （样本量小、且不是本轮）—— 该数字没有升级，不得当产品阈值。
 - **D5 = 「点选也暂停」**（原设计是选中不改模型、播放中点片段不打断播放）。
   → 行为变更，另开卡 **TASK-UIA-046**；改动点是唯一消费处
-  `ui/ChuanqiCutEditor/Sources/ChuanqiCutEditor/UIKit/EditorViewController.swift:584`
+  `ui/ChuanqiCutEditor/Sources/ChuanqiCutEditor/UIKit/EditorViewController.swift:585`
   的 `intents.contains(where: \.isEditing)`（`TrackIntent.isEditing` 现定义在
   `TrackInteraction.swift:88` 且注释明写「选中不算」）。
   UIA-045 卡里 ③④ 段那句「`.selectClip` 不暂停」即刻作废，跟随改为已裁定。
 - **E1 = 「先补内核 muted ABI」**（不做假开关，也不接受"回弹观感可接受"这条退路）。
   → 立 **TASK-CORE-011**（契约任务：`ChqCommand::SetTrackMuted` +
-  `cq_session_set_track_muted` 进 CommandHistory → Swift 绑定 → `buildTrackHeaders`
-  的 disabled 态换成真开关），并**关闭池 [19]** 的"待决策"状态（转为待编码）。
+  `cq_session_set_track_muted` 进 CommandHistory → Swift 绑定 → 轨道头 disabled 只读态换成真开关），
+  并**关闭池 [19]** 的"待决策"状态（转为待编码）。
+  ⚠️ **取证订正（同日 13:5x）**：本段初稿写的是「`buildTrackHeaders` 的 disabled 态」—— 该函数随旧自绘
+  轨道区已在 `5cfcdcb` 删除；现落点是 `EditorTimelineKitView.swift:270` 的 `showsTrackHeader: false`，
+  且组件侧**早已**有 `.setTrackMuted`，缺的只有内核。详情见池 [19] 的订正段与 CORE-011 卡。
   `enabled` 是否同期补写仍按池 [19] 原文列为待评估，不在 CORE-011 射程内。
 - **F3 = 「接受现状」**：iPad 不保留常驻右侧素材库面板，素材库走底栏「媒体」→ 抽屉。
   → UIA-045 的风险条目（"传哲若要求保留右栏需先抽共享宿主对象"）**不成立，撤下**；

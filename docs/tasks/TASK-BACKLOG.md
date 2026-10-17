@@ -600,7 +600,7 @@ RENDER-001/红线 #6 路线，勿把相机滤镜直接当 SDK 能力引用。
 |---|---|---|---|---|---|---|
 | UIA-044 | UI | 轨道区接入 TimelineKit（本地 Pod）+ `TimelineKitAdapter` / `EditorTimelineKitView` + 删除旧自绘 | UIA-034/039/040/041/043 | `ui/ChuanqiCutEditor/**`、双 Podfile、podspec 拆子 spec | 双壳 BUILD SUCCEEDED；内核唯一真源、翻译不了的命令一律回滚；不改调试页冒充 | ✅ 2026-10-17（合并版问卷整卷通过；回收口径=**传哲整体判定，未逐项勾选/无截图**） |
 | UIA-045 | UI | 接入后四项回归：返回键分层 / 播放中编辑先暂停 / 拖轨道同步 seek / iPad 与 iPhone 统一 | UIA-044 | `ui/ChuanqiCutEditor/**`（AppEntry/TrackInteraction/EditorLayout/UIKit）+ 组件侧 3 处 | 底栏逐层退出；播放中编辑先停；iOS 只有一条轨道区实现 | ✅ 2026-10-17（同上回收趟；卡内「`.selectClip` 不暂停」一条**被 D5 裁定推翻**，转 UIA-046） |
-| UIA-046 | UI | 播放中**点选片段也暂停**（D5 裁定的行为变更） | UIA-044/045 | `TrackInteraction.swift`、`EditorViewController.swift:584`、`TimelineInteractionTests.swift` | 点选后 `!isPlaying`；谓词改名 `isEditing`→`pausesPlayback`；81 例零回归 + 双壳 | ⏳ **待开工**（等传哲指令；一行级改动但要重命名语义 + 发一张小问卷收手感） |
+| UIA-046 | UI | 播放中**点选片段也暂停**（D5 裁定的行为变更） | UIA-044/045 | `TrackInteraction.swift`、`EditorViewController.swift:585`、`TimelineInteractionTests.swift` | 点选后 `!isPlaying`；谓词改名 `isEditing`→`pausesPlayback`；81 例零回归 + 双壳 | ⏳ **待开工**（等传哲指令；一行级改动但要重命名语义 + 发一张小问卷收手感） |
 | CORE-011 | SDK | 轨道静音写路径：`ChqTimeline::SetTrackMuted` + `ChqSetTrackMutedCommand` + `cq_session_set_track_muted` + Swift 穿透 + 适配层去回滚（E1 裁定） | 池 [19] | `cq_sdk.{h,cpp}`（**高冲突，集成机独占**）、`model/chq_timeline.*`、`command/chq_command.*`、`session/chq_editor_session.*`、`tests/unit/{command,session,abi}`、`api/swift/**`、`EditorTimelineKitView.swift`、`docs/api/engine-api.md` | 未知轨 `kInvalidArgument`；可撤销可重做；`--check` 符号 103→104；全量 18 步 + 双壳；**零改仓库外 TimelineKit** | ⏳ **待编码**（关池 [19] 的"待决策"态；`enabled` 是否同批由传哲定） |
 
 **批次**：044 → 045（同域同批交付）→ 046 ∥ 011 之外**不得并行**（011 动 `cq_sdk.h`，

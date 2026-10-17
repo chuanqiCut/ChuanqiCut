@@ -287,7 +287,7 @@ SPIRV-Cross CLI 要求六个 backend 全开（关任一即 FATAL_ERROR）、失�
 
 **C. 卡在 agent（可以直接开工，只等"开工"两个字）**
 
-- **UIA-046**：`EditorViewController.swift:584` 一处 + `isEditing`→`pausesPlayback` 改名 + 一条用例。
+- **UIA-046**：`EditorViewController.swift:585` 一处 + `isEditing`→`pausesPlayback` 改名 + 一条用例。
 - **CORE-011**：`ChqTimeline::SetTrackMuted` → `ChqSetTrackMutedCommand` → `SubmitSetTrackMuted` →
   `cq_session_set_track_muted` → Swift `setTrackMuted` → 适配层 `case .setTrackMuted`（去回滚）+ 三处单测
   + `engine-api.md` 重生成（符号 103→104）。**动 `cq_sdk.h` = 集成机独占，开发机不得认领。**

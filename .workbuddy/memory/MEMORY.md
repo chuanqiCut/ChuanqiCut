@@ -30,6 +30,9 @@
 - 机器：macOS 26.7.1 / Xcode 26.6 / Swift 6.3.3 / **Intel x86_64** / 无 Homebrew / CP 1.17.0。
   **任何构建或性能结论都要带上 Intel 这个前提**。
 - `ctest` 不在 PATH：`~/.workbuddy/binaries/cmake/CMake.app/Contents/bin/ctest --test-dir build`。
+  `clang-format` 同样不在 PATH：`/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/clang-format`；
+  `python3` 系统版 = 3.9（`tomllib` 直接 ModuleNotFoundError），门禁口径用
+  `~/.workbuddy/binaries/python/versions/3.13.12/bin/python3`（**三个都不在 PATH = 判据脚本必须先验**）。
   SharedUI 无 Tests 目标（`swift test` 恒 no tests found，非失败）；SPM 须 `--disable-sandbox`
   + `--scratch-path "$ROOT/build/spm/<包>"`；构建产物不得入库，临时编译放根 `/build/`。
 - 最近全量门禁（**2026-10-17 13:23~13:31，INFRA-038 追加趟**）：`run_gate.sh` **18 步
@@ -53,10 +56,14 @@
   ⚠️ 本机 **ctest 墙钟不可当指标**（四遍 186.74 / 172.84 / 271.32 / 83.52s，同是 51/51 全过）。
   **P160 铁律仍然生效**：上面那条 9m28s 是**暖产物根**（`build/` 与 `build/apple/` 都在）的口径；
   新克隆 / `rm -rf build` 要靠 `build_shader_toolchain.sh` 从零装配，另算。
-- 编号取号前必须 `git fetch` 核远端（并发时现取现核）。2026-10-17 午后水位：ADR 到 **0045**，
-  pitfalls 下一号 **P172**（P169~P171 已占），池下一号 **[27]**（[24] 冻结、[25]/[26] 为 INFRA-038
-  实测副产品待判），任务号：INFRA 用到 **042**、**UIA 用到 046**、**CORE 用到 011**
-  （046/011 是 13:3x 由问卷 D5/E1 裁定的新卡），HANDOFF 下一份 **026**。
+- 编号取号前必须 `git fetch` 核远端（并发时现取现核）。**2026-10-18 00:5x 水位**：ADR 下一号 **0047**
+  （0046 已被 INFRA-043 占），pitfalls 下一号 **P188**（P181~P187 已占），池下一号 **[31]**
+  （[29] UIKit 窄检覆盖、[30] 多轨真机取证均开放，[24] 冻结），任务号：INFRA 用到 **047**、
+  **SHADER 010 / RENDER 010 / MODEL 004 / CORE 011 / UIA 046 / EXPORT 001 / PALA 030 / RENDER 011~012**
+  （RENDER-013「效果栈消费」仍只是建议号），HANDOFF 下一份 **027**。
+- **`origin/main` = `783c6de`**（RENDER-010；前一笔 `0f148bf` = SHADER-010），tracked **910**。
+  编辑批 v0.2.0 射程前四环 **CORE-011 ✅ → MODEL-004 ✅ → SHADER-010 ✅ → RENDER-010 ✅**，
+  下一张 **#41 RENDER-011**。**L3 仍未跑**（随批末那一趟、绿了才升 `0.2.0`）、**真机未上**。
 - **INFRA-026~037 全部已推**（2026-10-17 午后，`origin/main` = 本地 `HEAD` = **`6807577`**）：
   搬家 `294d518` / 治理 `a7a20b8` / 活文档 `b08f78a` / P163 修复 / INFRA-036 `ae50a68` / INFRA-037 `4595865` + 收口 `6807577`。
   tracked **856 → 878**（收工口径取**提交后**复测的那一列，见 P163）。
@@ -82,7 +89,7 @@
   类型段写成可选 `^KEY(:[A-Z]+)?=` —— 裸 `-D` 落的是 `:UNINITIALIZED=`，写死 `:STRING=`
   等于一条**恒不命中**的判据（幂等守卫因此每遍误删重编）。
 
-## 判据自证铁律（P163，2026-10-17 立）
+## 判据自证铁律（P163 / P187，2026-10-17、10-18 立）
 
 - **新判据必须在"自己已被 `git add` 之后"再跑一遍**：扫描集取自 `git ls-files` 的判据，
   在脚本自身仍是 `??` 时**测不到自己**（案底：`check_repo_hygiene.sh` 的旧路径判据提交后
@@ -90,6 +97,11 @@
 - 显式决定"判据脚本自己参不参与"：不参与就写 `SELF` 排除并注释原因；参与就把会被自己命中的
   字面量拆成不可匹配的写法。**两种都不是默认**，但要写下来。
 - **提交动作本身会改变判据输入**，所以收尾必须"提交后再复跑一次"，不能拿提交前的复跑当终态。
+- **"工具没跑成"与"跑成了且违规"必须是两个状态**（P187，2026-10-18：`clang-format` 不在 PATH 时
+  我的扫描把全库 168 文件判成违规，真实只有 4 个；同一天同一判据假红两次）。判据脚本先
+  `command -v` 确认工具在，拿空串就当场退出并说破"没跑"；名单与预期差一个量级时**先验判据再施工**。
+- **循环喂文件名一律 `| while IFS= read -r f`**：本仓交互命令是 zsh（**不做词分割**）、脚本是
+  `sh`/`bash`，同一行 `for f in $multi_line` 两种行为，判据结果会整体反过来。
 
 ## 构建 scratch 落点铁律（P164，2026-10-17 立；传哲当场指出「怎么又在代码文件夹里搞 build」）
 

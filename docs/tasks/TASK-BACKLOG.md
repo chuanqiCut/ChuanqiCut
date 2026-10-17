@@ -153,7 +153,7 @@ parallel:    false          # 是否与同批次其他任务并行
 | SHADER-003 | 跨平台 | shader 规范检查（禁用扩展/显式精度等） | SHADER-001 | `tools/shaders/lint.*` | 违规 shader 构建失败 |
 | SHADER-004 | 跨平台 | **Platform-Native 层机制**：`RenderNode.specialize()` + 运行时选择 + fallback | SHADER-001, RENDER-001 | `core/src/graph/*` | 有特化用特化，无特化 fallback portable |
 | SHADER-005 | 跨平台 | 特化 vs portable 一致性对比工具 | SHADER-004 | `tools/qa/*` | 输出 PSNR/SSIM 对比报告 |
-| SHADER-010 | 跨平台 | 基础变换 shader（平移/旋转/缩放/裁剪） | SHADER-001 | `shaders/src/transform.glsl` | 三端一致性测试通过 |
+| SHADER-010 | 跨平台 | [基础变换 shader（平移/旋转/缩放/裁剪）](TASK-SHADER-010.md) 📌 2026-10-17 建卡 | SHADER-001 ✅ | ~~`shaders/src/transform.glsl`~~ → `engine/shaders/portable/transform.{vert,frag}` | 恒等变换与 blit 逐像素一致；Android/HarmonyOS 切片本机未验（明账） |
 | SHADER-110 | 跨平台 | **[Apple 优先] Metal 特化：变换/合成** | SHADER-004, PALA-001 | `platform/apple/shaders/` | 收益 ≥ 20%，与 portable 一致性达标 |
 | SHADER-111 | 跨平台 | **[Apple 优先] Metal 特化：LUT/调色** | SHADER-004, COLOR-002 | `platform/apple/shaders/` | 同上 |
 | SHADER-112 | 跨平台 | **[Apple 优先] Metal 特化：美颜磨皮** | SHADER-004, AI-020 | `platform/apple/shaders/` | 同上 |
@@ -181,7 +181,7 @@ parallel:    false          # 是否与同批次其他任务并行
 | RENDER-001 | 跨平台 | RenderGraph：节点 DAG 与拓扑排序 | GFX-001 | `core/src/graph/*` | 拓扑正确，环检测 |
 | RENDER-002 | 跨平台 | Pass 合并与中间纹理别名分配 | RENDER-001 | `core/src/graph/*` | 4K 下中间纹理数显著少于朴素实现 |
 | RENDER-003 | 跨平台 | LOD 机制（预览跳过昂贵节点） | RENDER-002 | `core/src/graph/*` | 预览/导出走同一图 |
-| RENDER-010 | 跨平台 | TransformNode | SHADER-010, RENDER-001 | `core/src/effect/transform.*` | golden 测试通过 |
+| RENDER-010 | 跨平台 | [TransformNode](TASK-RENDER-010.md) 📌 2026-10-17 建卡 | SHADER-010, MODEL-004, RENDER-001 ✅ | ~~`core/src/effect/transform.*`~~ → `engine/core/cq/render/*`、`engine/platform/apple/gfx/*` | golden 通过；节点校验与执行分支同批补齐 |
 | RENDER-011 | 跨平台 | [多轨合成节点（Z-order 叠合）](TASK-RENDER-011.md) 📌 2026-10-17 建卡 | RENDER-001, **MODEL-004** | `engine/core/cq/render/*`、`engine/{core,platform}/…/gfx/*` | 多轨命中不再只取第一条；见卡内范围裁决 |
 | RENDER-012 | 跨平台 | 转场节点（dissolve / wipe 起步） | RENDER-001 | `core/src/effect/transition.*` | golden 测试通过 |
 | COLOR-001 | 跨平台 | 色彩管道定义（working space / 输入输出转换） | RENDER-001 | `core/src/color/*` | 预览与导出色彩一致 |
@@ -610,23 +610,31 @@ RENDER-001/红线 #6 路线，勿把相机滤镜直接当 SDK 能力引用。
 **批次**：044 → 045（同域同批交付）→ 046 ∥ 011 之外**不得并行**（011 动 `cq_sdk.h`，
 且其 Swift/UI 段与 046 同写 `EditorViewController.swift` 邻域——**046 先、011 后**，或反过来，串行）。
 **关键路径**：CORE-011 → 轨道头恢复显示 →（B4 导出不含静音轨 / B5 混音 UI）。
-**v0.2.0 射程（2026-10-17 裁定两次）**：首裁「五张 + 清欠账」= CORE-011 → EXPORT-001 → UIA-007 → UIA-046 →
+**v0.2.0 射程（2026-10-17 裁定三次）**：首裁「五张 + 清欠账」= CORE-011 → EXPORT-001 → UIA-007 → UIA-046 →
 PALA-030，另加池 **[28]**；同日 20:3x 追加裁定「把这些都排进来」= **多轨画面逻辑插进本批**，
-链变成 **CORE-011 ✅ → MODEL-004 → RENDER-011 → EXPORT-001 → UIA-007 → UIA-046 → PALA-030（七张）+ 池 [28]**。
+链变成 **CORE-011 ✅ → MODEL-004 → RENDER-011 → EXPORT-001 → UIA-007 → UIA-046 → PALA-030（七张）+ 池 [28]**；
+同日 21:3x **第三裁**（建卡时把"画中画要不要"提成选择题）= 「把 RENDER-010 + SHADER-010 也拉进来」
+→ 射程 **九张**，链变成 **CORE-011 ✅ → MODEL-004 → SHADER-010 → RENDER-010 → RENDER-011 → EXPORT-001
+→ UIA-007 → UIA-046 → PALA-030**；同一次裁定另一半 = **播放器线先记账、v0.2.0 不动**。
 - 为什么排在这个位置：画面多轨的前置是**数据槽**——`ChqClip` 没有 `transform`/`layer`
   （MODEL-004，卡已立），渲染侧 `chq_graph_assembler.cpp:67-78` 只取第一条命中视频轨
-  （[TASK-RENDER-011](TASK-RENDER-011.md)）。导出排在这两张之后，交付的就是"导出 = 所见"的画面，
+  （[TASK-RENDER-011](TASK-RENDER-011.md)）。导出排在这几张之后，交付的就是"导出 = 所见"的画面，
   不用回头再改一遍编码路径。
 - 建卡欠账 **已清（同日 21:0x）**：[TASK-RENDER-011](TASK-RENDER-011.md) /
   [TASK-EXPORT-001](TASK-EXPORT-001.md) / [TASK-UIA-007](TASK-UIA-007.md) /
-  [TASK-PALA-030](TASK-PALA-030.md) 四张落盘，写集按内核真源 `engine/core/cq/` 重写。建卡时核出三处账面不符：
-  ① 「效果节点」**拆出去了**（变换=RENDER-010、转场=RENDER-012，RENDER-011 只做叠合，
-  但 MVP 不含定位/缩放 —— 画中画要有变换 shader，A/B/C 三口径待传哲裁）；
+  [TASK-PALA-030](TASK-PALA-030.md) 四张落盘，写集按内核真源 `engine/core/cq/` 重写；
+  第三裁后补 [TASK-SHADER-010](TASK-SHADER-010.md) / [TASK-RENDER-010](TASK-RENDER-010.md)，**共六张**。
+  建卡时核出三处账面不符：
+  ① 「效果节点」拆成三件事：变换 = RENDER-010、转场 = RENDER-012（未开工、不在本批）、
+  **效果栈消费根本没有号**（装配器现在只报 `effects_dropped`）→ 建议 RENDER-013，立项时现取现核；
+  ①' SHADER-010 的 BACKLOG 写集 `shaders/src/transform.glsl` 也是过期路径（INFRA-033 已并入
+  `engine/shaders/portable/`）；变换 shader 与 TransformNode 分两张，是为了让失败能二分定位。
   ② EXPORT-001 声明的两个依赖（MEDIA-012 / CORE-005）**都已落地、磁盘无卡**，
   而 EXPORT-002 依赖的 RENDER-003 未落地且号有漂移（册里记作 RENDER-004/005）→ **EXPORT-002 不进本批**；
   ③ **PALA-030 的主体早在 2026-10-11 由 AUDIO-002 带进仓库**（`audio_engine.mm` 首行自陈 PALA-030，
   提交 `07e6cba`）→ 首裁把它记成「B2 收尾（多轨剩余）」是错的，本卡射程收窄为「导出音频落盘」；
-  连带后果 = `PLAN-播放器进阶.md:59` 的内核线立项触发条件**已满足**，是否立项待传哲裁。
+  连带后果：`PLAN-播放器进阶.md:59` 的触发条件是**合取**（PALA-030 落地 **且** 产品提出成片/导出
+  画面一致或三端统一播放），只满足前一件 → **整体未触发**，传哲裁"先记账、v0.2.0 不动播放器线"。
 - EXPORT-001 的依赖行（`MEDIA-012, CORE-005`）与 EXPORT-002 的依赖（`RENDER-003`）建卡时**逐个核落地态**，
   别照抄——同批已抓到两处过期路径，依赖列大概率同源过期。
 L3 全量 = 编码闭环后跑一趟、绿了随批升 `0.2.0`；真机**不等批末**——2026-10-17 20:3x 已上一次

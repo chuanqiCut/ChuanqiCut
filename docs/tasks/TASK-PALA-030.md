@@ -37,9 +37,10 @@ parallel:    false
 2. **三处过期陈述要订正**：`.ai/modules/audio.md` 的「未落地：… PALA-030」、
    `.ai/modules/ui-apple.md` 里 UIA-015 段落引的 ADR-0022 理由「自研预览线无声（PALA-030 未实现）」、
    `docs/research/RESEARCH-010` 同句。前两条是本卡的回写项，第三条在 legacy 域之外才改。
-3. **一条连带后果要报给传哲**：`docs/tasks/PLAN-播放器进阶.md:59` 把「PALA-030 落地」定为
-   内核播放器线**立项的触发条件**（ADR-0022 反转条件）。按 1 的事实，该条件**已满足** ——
-   是否因此立项属产品线决定，不由建卡会话代答。
+3. **连带后果已核并已裁**：`docs/tasks/PLAN-播放器进阶.md:59` 的立项触发条件是**两件的合取**
+   （PALA-030 落地 **且** 产品要求"成片预览与导出画面一致"或三端统一播放行为）。
+   按 1 的事实只满足**前一件**，后一件没被提出过 → **整体未触发**。
+   传哲 2026-10-17 21:3x 裁定：**先记账，v0.2.0 不动播放器线**（不自研替换 AVPlayer）。
 
 ## 明确不做（写进代码注释，不只在对话里说）
 
@@ -52,4 +53,4 @@ parallel:    false
 ## 回写
 
 `.ai/modules/audio.md`（落地状态节 + 订正第 2 条）、`.ai/modules/media.md`（平台引擎行）、
-`docs/tasks/TASK-BACKLOG.md` §4.2 行状态、`docs/tasks/PLAN-播放器进阶.md` 触发条件行（改为"已满足，待裁定"）。
+`docs/tasks/TASK-BACKLOG.md` §4.2 行状态、`docs/tasks/PLAN-播放器进阶.md` 触发条件行（改为"前件已满足、合取未触发，v0.2.0 不动"）。

@@ -79,16 +79,20 @@
 3. 真机 = **UIA-007 导出闭环后上一次** iPhone 17 Pro；`QUESTIONNAIRE-UIA-046` 的手感题**并入那一张**，
    不单发（问卷未回收不得标记完成）。
 
-**同日 20:3x 追加裁定（覆盖上面第 1、3 条，接手以这段为准）**：
-1. 射程 = **七张**，链 **CORE-011 ✅ → MODEL-004 → RENDER-011 → EXPORT-001 → UIA-007 → UIA-046 → PALA-030**。
+**同日 20:3x / 21:3x 两次追加裁定（覆盖上面第 1、3 条，接手以这两段为准）**：
+1. 射程 = **九张**（21:3x 第三裁把变换链补全），链
+   **CORE-011 ✅ → MODEL-004 → SHADER-010 → RENDER-010 → RENDER-011 → EXPORT-001 → UIA-007 → UIA-046 → PALA-030**。
    传哲「把这些都排进来」= 把**多轨画面逻辑**（MODEL-004 轨道变换/层级 → RENDER-011 视频多轨合成）
    从 B4 之后前移到导出之前——顺序是数据依赖决定的：`ChqClip` 现在没有 `transform`/`layer`，
    合成器拿不到"第二轨画什么、画在哪"，先做 RENDER-011 只能空转。
    现状：音频**已是真多轨**（`engine/core/cq/audio/chq_preview_mixer.cpp` 遍历全轨、跳 `!enabled || muted`），
    视频**只取第一条命中的轨**（`engine/core/cq/render/chq_graph_assembler.cpp` 命中第二条即 Warn）。
-   **四张卡已建**（同日 21:0x）：[RENDER-011](../tasks/TASK-RENDER-011.md) /
-   [EXPORT-001](../tasks/TASK-EXPORT-001.md) / [UIA-007](../tasks/TASK-UIA-007.md) /
-   [PALA-030](../tasks/TASK-PALA-030.md)，写集按内核真源重写。
+   **六张卡已建**（同日 21:0x~21:4x）：[MODEL-004](../tasks/TASK-MODEL-004.md) 之外 =
+   [SHADER-010](../tasks/TASK-SHADER-010.md) / [RENDER-010](../tasks/TASK-RENDER-010.md) /
+   [RENDER-011](../tasks/TASK-RENDER-011.md) / [EXPORT-001](../tasks/TASK-EXPORT-001.md) /
+   [UIA-007](../tasks/TASK-UIA-007.md) / [PALA-030](../tasks/TASK-PALA-030.md)，写集按内核真源重写。
+   ⚠️ 编码起点仍是 **MODEL-004**（未开工）：变换 shader 与 TransformNode 都吃它的 `ChqClip` 数据槽。
+   播放器线（自研替换 AVPlayer）**先记账不动** —— 触发条件是合取，只满足"PALA-030 已落地"这一半。
    ⚠️ 建卡时把上表那行的描述**订正**掉：PALA-030 不是"B2 收尾（多轨剩余）"——它的主体
    （`engine/platform/apple/media/audio_engine.mm`）已由 AUDIO-002 在 2026-10-11 带进仓库，
    剩下的只有"导出音频落盘"；连带后果 = `PLAN-播放器进阶.md:59` 的内核线立项触发条件已满足，等传哲裁。

@@ -1325,3 +1325,22 @@ CA 首次提交事务走到「有 view / 无 layer」的畸形状态 →
   订正 `.ai/modules/audio.md` 的"未落地"清单；`ui-apple.md` 里 ADR-0022 那句"预览线无声"留给卡片回写。
 - **判据自己抓到我一次**：模块册新写的两条卡链接用了 `../tasks/…`（从 `.ai/modules/` 出发是错深度），
   `linkcheck_docs.py` 直接判红 2 处 → 改 `../../docs/tasks/…` 后绿。P174 同族，但这次是**门禁赢了一局**。
+
+## 补记十九 · 第三裁：变换链补两张前置卡，播放器线只记账（2026-10-17 21:4x，Qoder 集成机）
+
+- **两个不自答的问题按编号选择题回给传哲**，答复：画中画 →「**把 RENDER-010 + SHADER-010 也拉进来**」；
+  播放器线 →「**先记账，v0.2.0 不动**」。射程由七张变**九张**，链
+  `CORE-011 ✅ → MODEL-004 → SHADER-010 → RENDER-010 → RENDER-011 → EXPORT-001 → UIA-007 → UIA-046 → PALA-030`。
+  理由链是数据依赖：`ChqClip` 无 transform → 合成器拿不到"第二层画在哪、多大"，所以画中画要交付就得先补 shader 与节点。
+- **新建两张**：[TASK-SHADER-010](../tasks/TASK-SHADER-010.md)（Portable 变换 shader，dep SHADER-001 ✅）、
+  [TASK-RENDER-010](../tasks/TASK-RENDER-010.md)（TransformNode，dep SHADER-010 + MODEL-004）；
+  RENDER-011 的 deps 随之改 `[MODEL-004, SHADER-010, RENDER-010]` 并加"第二层按 clip transform 定位/缩放"验收。
+  本批**共六张卡**。
+- **效果栈消费根本没有号**：拆完发现"效果节点"是**三件事**——变换 = RENDER-010、转场 = RENDER-012、
+  `ChqEffectStack` 被丢弃（`effects_dropped` 那条 Warn）**无卡可挂** → 建议 RENDER-013，本批不发号、不立项，
+  只在 RENDER-011 卡面留明账（那条 Warn 照旧如实上报，不假装修掉）。
+- **订正我自己上一段说过头的一句**：`PLAN-播放器进阶.md:59` 的触发条件是**合取**（PALA-030 已落地 **且** 内核线立项已提出）。
+  只满足前件 → **整体未触发**，"已满足"是错的。三处同步改口：TASK-PALA-030、BACKLOG §16、HANDOFF-026，
+  并在 PLAN 那节加记账 blockquote（谁将来读到都能核）。
+- 落账面：BACKLOG 行 156/184 与 §16（裁定三次 / 九张 / 共六张 / ①①'②③）、VERSIONS §一、
+  HANDOFF-026 §二、`shader.md` 与 `render.md` 指针、`audio.md` 未落地清单。

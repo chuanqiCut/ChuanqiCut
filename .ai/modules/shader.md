@@ -112,3 +112,5 @@ ADR-0002（含修订记录）、ARCH-003 §4、Skill `cq-shader-portability`
 ### 调研 · 决策 · 池指针
 
 - ADR-0002/0013/0021 · cq-shader-portability skill（Portable 禁平台扩展）
+- **2026-10-17 21:3x 第三裁**把变换链拉进 v0.2.0：[TASK-SHADER-010](../../docs/tasks/TASK-SHADER-010.md)
+  （Portable 变换 shader，本册射程）→ [TASK-RENDER-010](../../docs/tasks/TASK-RENDER-010.md)（TransformNode，归 render 册）

@@ -13,20 +13,21 @@ write_set:   engine/core/cq/render/{chq_render_graph.h,chq_graph_assembler.cpp,c
              ui/ChuanqiCutEditor/Sources/ChuanqiCutEditor/AppEntry.swift（CQ_DEMO_TRACKS）
 read_set:    engine/core/cq/model/chq_timeline.h、MODEL-004 新增的 transform 头、
              engine/shaders/portable/blit.{frag,vert}、engine/core/cq/render/chq_clock_source.h
-deps:        [MODEL-004]
+deps:        [MODEL-004, SHADER-010, RENDER-010]
 acceptance:
   - 两轨同时命中时装配结果 `multi_track_ignored == false`，那条 Warn 不再出现（单测断言）
   - 图节点数 = 命中层数 + sink，且过 `kMaxGraphNodes` 上限检查；新节点种类在 Validate 与 Encode 两路都有分支
   - golden：两层叠合帧与夹具一致，新夹具登记进 tests/golden/manifest.toml
   - 静音/禁用轨不进合成，与 `engine/core/cq/audio/chq_preview_mixer.cpp` 的 `!enabled || muted` 同语义
   - 真机：`CQ_DEMO_TRACKS=2` 起 App 能同时看到两层 —— **这一条是收池 [30] 的唯一取证路径**
+  - 画中画（传哲 21:3x 裁定要交付）：第二层按 clip transform 定位/缩放，变换值只从模型读、UI 不直接改模型（红线 5）
 verification:
   - tools/build/build_core.sh --platform=apple --config=Debug --test --skip-label=heavy
   - ctest --test-dir build -R render
   - "${PYTHON_BIN:-python3}" tests/golden/verify.py --json
   - tools/ci/check_apple_shells.sh --shell=ios（gfx 改动只有双壳能判红，P181）
-risk:        逐层不透明度若走 uniform，就要动 Portable shader → 必须先跑 `cq-shader-portability`，
-             生成产物不入库（红线 6）；叠合层数与每帧 GPU 成本线性相关，但**不设拍脑袋阈值**，
+risk:        逐层不透明度与 transform 都经 SHADER-010 的 Portable 通道（先跑 `cq-shader-portability`、
+             生成产物不入库，红线 6）；叠合层数与每帧 GPU 成本线性相关，但**不设拍脑袋阈值**，
              先按 `.ai/memory/baselines.md` 的实测口径记账
 parallel:    false
 ```
@@ -38,15 +39,17 @@ parallel:    false
 传哲 2026-10-17 追加裁定把这条线插进 v0.2.0，排在导出之前 —— 目的是让导出交付的就是"所见"画面，
 而不是先导出一个"只有一层"的成品再返工。
 
-前置是 [TASK-MODEL-004](TASK-MODEL-004.md)：`ChqClip` 现在没有任何变换/层级字段
-（`engine/core/cq/model/chq_timeline.h` 只有转场与效果栈），合成器拿不到"第二层画在哪、多不透明"。
+前置有三张：[TASK-MODEL-004](TASK-MODEL-004.md) 提供数据槽（`ChqClip` 现在没有任何变换/层级字段，
+`engine/core/cq/model/chq_timeline.h` 只有转场与效果栈）、[TASK-SHADER-010](TASK-SHADER-010.md) 提供
+Portable 变换 shader、[TASK-RENDER-010](TASK-RENDER-010.md) 提供消费它的 TransformNode。合成器拿不到
+"第二层画在哪、多大、多不透明"时，本卡只能空转。
 
 ## 范围裁决（建卡时判的两件事）
 
 | 问题 | 判定 |
 |---|---|
-| BACKLOG §3.3 那行把「效果节点」也挂在 RENDER-011 上，拆不拆 | **拆**。本卡只做叠合；变换节点是 RENDER-010（dep SHADER-010）、转场是 RENDER-012，各有号不混挂 |
-| MVP 做不做到"可拖动/可缩放画中画" | 默认**不做**：本卡交付全屏叠合 + 逐层不透明度。定位/缩放要有变换 shader，属于 RENDER-010。**A/B/C 三个口径由传哲裁定**（见池 [30] 与本卡 risk），裁定前不得当作已定 |
+| BACKLOG §3.3 那行把「效果节点」也挂在 RENDER-011 上，拆不拆 | **拆**，而且拆出三件事：变换 = [TASK-RENDER-010](TASK-RENDER-010.md)、转场 = RENDER-012（未开工）、**效果栈消费**（`ChqEffectStack`，装配器现在只报 `effects_dropped`）**根本没有号** —— 它不是本卡射程，建议号 RENDER-013，立项时现取现核 |
+| MVP 做不做到"可拖动/可缩放画中画" | ✅ 已裁（2026-10-17 21:3x 传哲）：**做到**。链上补 SHADER-010 + RENDER-010 两张，本卡消费它们的产物 —— 所以本卡必须排在这两张**之后** |
 
 ## 实现要点
 

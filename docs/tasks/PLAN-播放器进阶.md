@@ -58,6 +58,9 @@ ASS 是样式子集不是完整 libass。
 
 **触发条件**（ADR-0022 反转条件）：PALA-030（AVAudioEngine 后端）落地，
 且产品要求"成片预览与导出画面一致（HDR/色彩管理）"或三端统一播放行为。
+> **2026-10-17 记账**（传哲裁定「先记账，v0.2.0 不动播放器线」）：前件**已满足** —— PALA-030 的主体由
+> AUDIO-002 的 `07e6cba`（2026-10-11）落地（`engine/platform/apple/media/audio_engine.mm`）；
+> 后件未提出 → 合取**整体未触发**，本线仍不立项。详见 [TASK-PALA-030](TASK-PALA-030.md)。
 
 触发后的立项序列（届时按 cq-spec-authoring 出 SPEC，再 cq-task-planning 拆卡）：
 

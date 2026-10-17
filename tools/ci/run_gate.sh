@@ -7,8 +7,8 @@
 # 检查项（按序执行，任一失败立即非零退出 = 一票否决）：
 #   1. deps      依赖治理 manifest 校验（需 Python >= 3.11 / tomllib）
 #   2. headers   Platform/公共头纯净性（tools/platform/check_platform_headers.py）
-#   2b. hygiene  仓库卫生（tools/ci/check_repo_hygiene.sh：忽略锚定 / 旧路径 / 产物入库 / editorconfig；
-#                P84 的"产物不得入库"内联检查已并入此处，判据只留一份）
+#   2b. hygiene  仓库卫生（tools/ci/check_repo_hygiene.sh：忽略锚定 / 旧路径 / 产物入库 / editorconfig /
+#                源码树内未忽略产物目录；P84 的"产物不得入库"内联检查已并入此处，判据只留一份）
 #   2c. layer-hygiene Apple 端 UIView 图层卫生（P131：禁清空 backing layer 的 sublayers）
 #   2d. api-doc  公共接口参考未过期（gen_api_reference.py --check，P151：曾在 AIEDIT/AUDIO 批次里过期 4 天）
 #   2e. ios-compile iOS 切片"只编译"窄检（tools/ci/check_ios_compile.sh，P146：
@@ -16,12 +16,14 @@
 #   3. core-dbg  内核 Debug 构建 + 全量单测（-Werror）
 #   4. core-rel  内核 Release 构建 + 全量单测（-Werror + LTO）
 #   5. apple     XCFramework 三切片 + Swift 绑定测试 + SharedUI/功能 Pod 测试
-#   6. golden    golden 样本齐备性（tests/golden/verify.py）
+#   6. apple-shells 双 App 壳构建（tools/ci/check_apple_shells.sh，INFRA-037 收池 [18]：
+#                用 App 自己的 workspace 真编一次，podspec/Pbxproj/门面接线坏了会在这里红）
+#   7. golden    golden 样本齐备性（tests/golden/verify.py）
 #
 # 用法：
 #   tools/ci/run_gate.sh                 # 全量（默认）
-#   tools/ci/run_gate.sh --fast          # 快速档：跳过 4/5（Release 与 Apple/Swift）
-#   tools/ci/run_gate.sh --skip-apple    # 跳过 5（XCFramework + Swift + SharedUI）
+#   tools/ci/run_gate.sh --fast          # 快速档：跳过 4，以及 5/6 整个 Apple 组
+#   tools/ci/run_gate.sh --skip-apple    # 跳过 5/6（XCFramework + Swift + SharedUI + 双壳）
 #   PYTHON_BIN=/path/to/python3 tools/ci/run_gate.sh   # 指定 Python >= 3.11
 #
 # 报告：每步日志落 build/gate-logs/<step>.log；结尾打印门禁摘要（含 ctest 数字）。
@@ -230,7 +232,8 @@ else
     # 功能 Pod 测试逐包跑（ADR-0031 分治；新增 Pod 时在此追加同款一行）
     run_step_dir "apple-player" ui/ChuanqiCutPlayer \
         swift test --disable-sandbox --scratch-path "${ROOT_DIR}/build/spm/ChuanqiCutPlayer"
-    # Camera 契约层测试（实现层 iOS 专属不进 SPM，随双壳构建验证）
+    # Camera 契约层测试（实现层 iOS 专属不进 SPM，随双壳构建验证 = 下面第 6 步 apple-shells，
+    # INFRA-037 起这句注释才真的成立；此前双壳一直在门禁外）
     run_step_dir "apple-camera" ui/ChuanqiCutCamera \
         swift test --disable-sandbox --scratch-path "${ROOT_DIR}/build/spm/ChuanqiCutCamera"
     # 导入域测试
@@ -241,7 +244,18 @@ else
         swift test --disable-sandbox --scratch-path "${ROOT_DIR}/build/spm/ChuanqiCutEditor"
 fi
 
-# 6. golden 样本齐备性
+# 6. 双 App 壳构建（INFRA-037，收池 [18]；2026-10-17 传哲批准进门禁）
+#    补的是"门禁里没有一步真把 App 编出来"这个洞：ios-compile 只编内核 iOS 切片，
+#    壳里的 podspec/Pbxproj/门面接线坏了以前只能靠人记得按 P129 手工跑。
+#    用的就是 **App 自己的 workspace**，不另立判据工程（两套同源判据必然走偏）。
+#    暖跑两端合计 39s / 冷跑 280s（本机 Intel 实测，baselines「双壳进门禁」）。
+if [ "${SKIP_APPLE}" -eq 1 ]; then
+    skip_step "apple-shells" "跳过（--fast / --skip-apple）"
+else
+    run_step "apple-shells" tools/ci/check_apple_shells.sh
+fi
+
+# 7. golden 样本齐备性
 if [ -n "${PY}" ]; then
     run_step "golden" "${PY}" tests/golden/verify.py --json
 else

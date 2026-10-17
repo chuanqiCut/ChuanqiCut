@@ -7,10 +7,13 @@
 #   2 legacy-paths      活文档里的旧仓库路径零残留（ADR-0044 搬家债的收口判据）
 #   3 tracked-artifacts 构建产物未被 git 跟踪（P84）
 #   4 editorconfig      与 .editorconfig 同口径的四条（CRLF / 行尾空白 / 末行换行 / tab）
+#   5 scratch-dirs      源码树内不得有未忽略的 build/.build/DerivedData 目录（P164，唯一走
+#                       worktree 的一条：产物目录天生不入库，ls-files 看不见它）
 #
 # ⚠️ 三条判据口径（都是踩出来的，别再改回去）：
-#   · 判定范围**只认入库文件**（`git ls-files`）。裸 `grep -r` 会命中已忽略的本机二进制
+#   · 判据 1~4 的判定范围**只认入库文件**（`git ls-files`）。裸 `grep -r` 会命中已忽略的本机二进制
 #     （`xcuserdata/*.xcuserstate`），把某条判据变成恒假 → 脚本长红 → 被人加 `|| true` 废掉（P153）。
+#     判据 5 是例外，口径见它自己那段（产物目录不入库，ls-files 射程里没有）。
 #   · 扫描一律 `-z` 分记录，不得逐行 `for f in $(git ls-files)`：`git ls-files` 会把**非 ASCII
 #     路径加引号转义**，中文文件名的行既匹配不上磁盘路径也进不了判据，于是整批静默漏检（P155）。
 #   · 判据不许"越写清单越红"：搬家批**故意**在文档里留「原 xxx」标注行（让历史可读），
@@ -123,7 +126,10 @@ import pathlib, re, subprocess
 PAT = re.compile(
     r"apps/apple/packages|engine/bindings|(^|[^a-z])bindings/swift|shaders/src"
     r"|(^|[^/a-z])shaders/generated|tools/probe"
-    r"|tests/unit/[a-z_0-9]+\.(cpp|c)")
+    r"|tests/unit/[a-z_0-9]+\.(cpp|c)"
+    # 池 [22]（ADR-0033 共置 + INFRA-022 改名）之后的三代死头路径根：CORE 骨架期的
+    # `core/include/cq/**`、`core/src/**` 与中间态 `engine/core/include/**` 都不存在了。
+    r"|core/include/cq|core/src/|engine/core/include")
 MARKER = re.compile(r"原 |已迁|自 |当时在|INFRA-0|ADR-0|更名|拆 |→|作废|旧|历史")
 # 本脚本自己的 PAT 定义行天生就是旧路径字面量，任何 MARKER 都盖不住；而且它未跟踪时
 # 不在 `git ls-files` 射程内、一提交就把自己判红（P163）→ 显式排除自己。
@@ -229,6 +235,40 @@ if [ "${ed_total:-0}" -gt 0 ]; then
         "$(printf '%s\n' "${ed_out}" | tail -n +2)"
 else
     pass editorconfig "CRLF / 行尾空白 / 末行换行 / tab 四条件全零命中"
+fi
+
+# ==== 5. 未忽略的产物目录不得出现在源码树内（P164）============================
+# 案底：双壳脚本里 `-derivedDataPath "../../build/..."` 在 `cd apps/apple/ios` 之后语义变成
+# `apps/build/`，一趟就在源码树里留下 **1.5G** derivedData。这类事故不会让编译变红，也不会让
+# 前四条变红 —— 所以要有这一条。
+#
+# 口径（两条都不能改回去）：
+#   · 只看 `git status` 报出的**未跟踪且未被忽略**的目录。不用裸 `find`：`find` 会把 .gitignore
+#     里正当登记的 scratch（`ui/*/.build/`）一起判红，越写清单越红 = 逼出 `|| true`（P153）。
+#   · 不用 `git ls-files`：产物目录天生不入库，ls-files 射程里根本没有它（P163 的同款盲区）。
+#   · `tools/build/` 是**源目录**但不会被误判：git 只对整目录未跟踪的路径折叠成 `?? dir/`，
+#     已跟踪目录里的新文件会逐条列出，永远不会以 `?? tools/build/` 出现。
+#   · 已知盲区（接受，不做修补）：目录为空、或其中文件全被 .gitignore 命中时 git 不报 ——
+#     真实产物目录不会这样（实测 `apps/build/` 装 1.5G derivedData 时报 `?? apps/build/`）。
+#     反证跑法：`mkdir -p apps/build/junk && echo hi > apps/build/junk/x.txt` 必须把本条判红；
+#     注意别用 `*.o` 之类已被忽略的文件名做反证，那样判据"绿"是假绿（P164 踩过一次）。
+stray="$(python3 - <<'PY'
+import re, subprocess
+raw = subprocess.run(["git", "status", "--porcelain", "-z"], capture_output=True).stdout.decode()
+hits = []
+for rec in raw.split("\0"):
+    if not rec or not rec.startswith("?? "):
+        continue
+    p = rec[3:].rstrip("/")          # -z 不转义非 ASCII 路径（P155），只需去掉目录尾斜杠
+    if re.search(r"(^|/)(build|\.build|DerivedData)$", p):
+        hits.append(p)
+print("\n".join(hits))
+PY
+)"
+if [ -n "${stray}" ]; then
+    fail scratch-dirs "源码树里有未忽略的产物目录 $(printf '%s\n' "${stray}" | wc -l | tr -d ' ') 个" "${stray}"
+else
+    pass scratch-dirs "产物只落仓库根 /build/，源码树内无未忽略的 build/DerivedData 目录"
 fi
 
 # ==== 参考信息：clang-format 违规数（不判红，基线非零）======================

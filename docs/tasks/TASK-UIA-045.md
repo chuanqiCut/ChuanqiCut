@@ -23,9 +23,12 @@ acceptance:
   - 播放中提交编辑 Intent（move/trim/跨轨）= 先暂停
   - iOS 不分尺寸类：iPhone 与 iPad 同一 UIKit 容器，轨道区只有 TimelineKit 一条实现
 verification:
+  - 双壳构建自 2026-10-17 起已在总门禁里（`tools/ci/check_apple_shells.sh` = `run_gate.sh` 第 6 步
+    `apple-shells`，TASK-INFRA-037）；手工命令仍是 P129 那两条：
   - cd apps/apple/ios && xcodebuild -workspace ChuanqiCut.xcworkspace -scheme ChuanqiCutApp -destination generic/platform=iOS build
   - cd apps/apple/mac && xcodebuild -workspace ChuanqiCut.xcworkspace -scheme ChuanqiCutMacApp -arch x86_64 ONLY_ACTIVE_ARCH=YES build
-  - 真机问卷 QUESTIONNAIRE-UIA-045（传哲实测）
+  - 真机问卷：**合并版** `docs/reviews/QUESTIONNAIRE-UIA-044-045-合并版-…统一验收.md`（传哲实测；
+    2026-10-17 裁定与 UIA-044 合一，原单独问卷留作历史）
 risk:        iPad 取消 regular 分支后不再有常驻右栏 MediaLibraryPanel（素材库改走「媒体」抽屉，与 iPhone 同路径）——
              传哲若要求保留右栏，需先把 EditorViewController 的轨道接线抽成共享宿主对象，否则又变成两套轨道区（ADR-0014 同款坑）；
              播放中暂停属于行为变更，需真机确认「拖一下就停」的手感是否符合预期

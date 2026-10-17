@@ -529,7 +529,7 @@ SPM 临时产物一律 `swift test --disable-sandbox --scratch-path "$ROOT/build
   [ ] 美型 warp 修destination 后真机是否出现 `warp engine INSTALLED`
 - 验收回填：baselines「真机内存」段（当前**未实测**）；LEDGER-W42
 
-### [18] 门禁不覆盖 App 壳构建 —— metallib / 壳内 Swift 改动整类漏网（⏳ 待决策）
+### [18] 门禁不覆盖 App 壳构建 —— metallib / 壳内 Swift 改动整类漏网（✅ 2026-10-17 集成机关闭 · TASK-INFRA-037 · 双壳暖 39s/冷 280s 两端 rc=0 error=0）
 
 - 来源：集成机 / 2026-10-12 真机日志纠偏批（`32895d3`）
 - 现象：`tools/ci/run_gate.sh` 的 14 步里**没有 iOS / macOS App 壳构建**（只有 XCFramework
@@ -539,11 +539,15 @@ SPM 临时产物一律 `swift test --disable-sandbox --scratch-path "$ROOT/build
   `*.metal` 由壳工程 postBuildScripts 以 `-fcikernel` 编成 metallib，SPM 包测试不碰；
   同理壳内的 `ChuanqiCutApp` 目标源码也不进包测试。CIWarpKernel 这类「只有真机加载
   才知道对不对」的改动，门禁给的是**伪绿**（P123 就是在真机日志里才暴露的）。
-- 待办：[ ] 集成机决策：把 `-workspace apps/apple/ios/ChuanqiCut.xcworkspace
-  -scheme ChuanqiCutApp -destination generic/platform=iOS` 加进门禁（约 10min，
-  与池 [16] MetalFX 模拟器红相关：真机壳不受影响）
-  [ ] 同期把 macOS 壳（带 `-arch x86_64 ONLY_ACTIVE_ARCH=YES`）一并纳入
-- 验收回填：门禁步骤清单 + LEDGER-W42
+- 待办：[x] 集成机决策：**2026-10-17 传哲批准进门禁**（原话「可以进，但是是不是可以用 APP 中的去跑」
+  —— 是，用 App 自己的 workspace，不另立判据工程）。落法见 `tools/ci/check_apple_shells.sh`
+  + `run_gate.sh` 第 6 步 `apple-shells`（TASK-INFRA-037）。
+  [x] 同期把 macOS 壳一并纳入（`-arch $(uname -m) ONLY_ACTIVE_ARCH=YES`，不带 `-destination`，P96）
+- 验收回填：**冷 280s / 暖 39s（两端合计）**，两端 rc=0、`BUILD SUCCEEDED=1`、`error:` 行 0；
+  `pod install` 两端各 rc=0、14 个 pod。数字入 baselines「双壳进门禁」。
+  ⚠️ 本池原写「约 10min」是**按冷壳手工配方估的**，实测暖跑 39s、冷跑 280s（≈4.7min），估算未采信。
+  ⚠️ 覆盖范围=**真机 device 切片 + macOS**，iOS **模拟器**仍不在门禁内（池 [16] 的 MetalFX 模拟器红
+  本步不接，那条债归模拟器专项）。
 
 ### [19] 内核缺「设置轨道静音」ABI —— 轨道头原声开关只能显示不能点（⏳ 待决策）
 
@@ -608,7 +612,7 @@ SPM 临时产物一律 `swift test --disable-sandbox --scratch-path "$ROOT/build
   [ ] 若保留，`.ai/modules/ui-apple.md` 补该包的归属与状态行
 - 验收回填：本池条目 + 加段后的 `run_gate.sh` 分段数字
 
-### [22] 活文档里仍在用**上上代**布局路径 `core/include/cq/**` —— 本批卫生门禁管不到它（⏳ 待施工）
+### [22] 活文档里仍在用**上上代**布局路径 `core/include/cq/**` —— 本批卫生门禁管不到它（✅ 2026-10-17 集成机关闭 · TASK-INFRA-036 · 判据 5/5、非豁免 0 行、豁免 64 行）
 
 - 来源：本机（集成机）/ 2026-10-17 INFRA-034 收口时顺手量的
 - 现象：`git grep -l 'core/include/cq'`（只认入库文件）命中 **90** 个 tracked 文件。其中
@@ -622,13 +626,20 @@ SPM 临时产物一律 `swift test --disable-sandbox --scratch-path "$ROOT/build
   实测 raw 命中 23 行全部带迁移标记、非豁免 0。`core/include/cq` 是**上一代**（ADR-0033）的债，
   不在本批判据射程内 —— 不是它绿，是没人判。
 - 待办：
-  [ ] 逐文件人改非叙述用法的 9 份模块册 + 1 份 spec（**禁止批量替换**，P156：
-      脚本替换会二次改写「原 」标注行，把历史说明改成反向错误）
-  [ ] 改完后把 `core/include/` 加进 `check_repo_hygiene.sh` 的旧路径模式，让判据覆盖这一代
-- 验收回填：改动的文件清单 + `git grep -c 'core/include/cq' .ai/modules docs/specs` 归零 +
-  hygiene 步新增模式的命中数
+  [x] 逐文件人改非叙述用法（**禁止批量替换**，P156）。实做范围比原估更宽：不止 `core/include/cq`，
+      还有同代的 `core/src/` 与中间态 `engine/core/include/`，以及**文件名漂移**
+      （`base/time.h`→`chq_rational_time.h`、`chq_log.h`→`chq_logging.h`、`net.h`→`chq_net.h`）。
+      改动面 50 文件 / +217 −158 行（模块册 14 份、`docs/specs` 6 份、`docs/{BUILD,COCOAPODS,CODESTYLE}.md`、
+      源码注释 20 余处）。卡片：**TASK-INFRA-036**。
+  [x] 三条死根已进 `check_repo_hygiene.sh` 旧路径模式（`core/include/cq|core/src/|engine/core/include`）
+- 验收回填：hygiene **5/5 PASS**；`legacy-paths` 非豁免 **0** 行、迁移标记豁免 33 → **64** 行（新纳入的
+  31 行历史标注）。`git grep -c 'core/include/cq' -- .ai/modules docs/specs` **raw 仍 18 行、全部带旧路径标注**。
+  ⚠️ 本条目原写的「归零」是**验收口径写错了**：红线 5 的历史不回改与"grep 归零"互斥，
+  实际口径以判据为准 = **非豁免 0**（P156/P163 同族：判据要能区分"当时的话"和"现在的话"）。
+  遗留（明确不修，登记为噪声）：`docs/specs/UIA-011/012/013/019/032/043` 里 **17 处"将要新建"的文件名**
+  —— 那是设计期意图不是磁盘承诺，展平等于伪造 Spec。
 
-### [23] 本机 SPIRV-Cross 源码树里有一处**不入库的本地补丁** —— 依赖治理口径要写实（⏳ 待决策）
+### [23] 本机 SPIRV-Cross 源码树里有一处**不入库的本地补丁** —— 依赖治理口径要写实（📌 2026-10-17 传哲裁定「具体事务具体分析」，保持开放、按案处理）
 
 - 来源：本机（集成机）/ 2026-10-17 INFRA-034 P160 修复过程
 - 补丁内容与位置：`third_party/src/SPIRV-Cross/CMakeLists.txt`（非 git 树，补丁只在**本机**存在，
@@ -643,10 +654,16 @@ SPM 临时产物一律 `swift test --disable-sandbox --scratch-path "$ROOT/build
 - 口径写实（别当成"三端一致"）：CI / 新克隆机走 pin 的 `git checkout`，拿到的是**未打补丁的
   上游树**——那时 `git describe` 在真 git 树里跑，打印的是它自己的 commit，**可信**；
   本机与非 git 树则依赖这处补丁。两条路径的版本证据来源不同，已在脚本头部写明。
+- **裁定（传哲 2026-10-17）：「具体事务具体分析」——不设统一口径。** 落到可执行含义：
+  1. 不为本条改造 `deps.py`，也不把本机树强制换成 pin 的 `git checkout`（那是"为一个横幅改依赖治理"）；
+  2. 判据仍然是**证据来源要写实**：本机日志里 `spirv-cross --help` 首行的版本号归 SPIRV-Cross 自己，
+     不得用来指认 ChuanqiCut 的 commit（反之亦然，CI 的真 git 树版本也不代表本机树）；
+  3. 以后再碰到"本机不可分发的本地补丁"，逐案判定**是否值得入库产出**（同 P160 铁律的分诊），
+     而不是预设"一律不允许"或"一律容忍"。
 - 待办：
-  [ ] 传哲判定是否接受"本机树带本地补丁"这一状态；不接受 → 改为**始终**按 pin 做 git checkout
-      （`ensure_src` 已有该路径，代价是本机 `third_party/src/` 重取 ~25-40s/仓）
-  [ ] 若接受，`tools/deps/deps.py` 的 lock/check 是否需要把"本地补丁存在"登记成一个显式字段
-- 验收回填：本池条目 ✅ + 选定路径后的 `build_shader_toolchain.sh` 首行输出对比
+  [x] 传哲判定 → **接受现状 + 按案处理**（不做统一改造，见上裁定）
+  [ ] （条件项，随下一次同类事故再判）`tools/deps/deps.py` 是否要把"本地补丁存在"登记成显式字段
+- 验收回填：本池条目**保持开放但已定调**（⏳→📌 按案处理）；`build_shader_toolchain.sh` 首行输出对比
+  在下次动 shader 工具链时补。ADR-0045 的「未决」节按红线 5 **不回改**，裁定以追加修订条的方式落 ADR。
 - 关联：本条与 P160 铁律一起写进 **ADR-0045**（`docs/decisions/ADR-0045-构建期依赖必须入库产出与门禁缓存状态口径.md`），
   该 ADR 的「明确没做 / 边界」节把这处不同源列为**未决项**——拍板结果请回填 ADR 与本池两处

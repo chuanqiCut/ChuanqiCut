@@ -49,7 +49,7 @@ parallel:    false
 | 5 | 删除旧自绘 `EditorTimelineUIView.swift` | ✅ |
 | 6 | podspec 拆 `Core`/`TimelineKitTrack` 子 spec（P134），两端 pod install | ✅ |
 | 7 | 双壳构建 | ✅ iOS / ✅ macOS |
-| 8 | 真机问卷（移动/跨轨/裁剪/播放头/缩略图/波形/空态）+ 播放期开销实测 | ⏳ 未发（门禁绿 ≠ 功能可用） |
+| 8 | 真机问卷（移动/跨轨/裁剪/播放头/缩略图/波形/空态）+ 播放期开销实测 | 📤 **已发（合并版）**：2026-10-17 传哲裁定「合并一个问卷，统一验收」→ 与 UIA-045 合成 `docs/reviews/QUESTIONNAIRE-UIA-044-045-合并版-轨道区接入与四项回归统一验收.md`（31 项，含 3 项待你拍板）。原两份单独问卷作为历史保留、不再单独回收。**回收前不得标 ✅**（ADR-0034） |
 
 ## 模型映射（内核 → TimelineKit）
 

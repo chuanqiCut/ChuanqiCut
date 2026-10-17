@@ -2932,3 +2932,76 @@ CA::Transaction::flush_as_runloop_observer → CA::Layer::perform_update_
   `if f == SELF or f.startswith(EXEMPT): continue`（注释写明"自己的 PAT 定义行盖不住 MARKER"）。
   `bash -n` OK → 复跑 **4/4 PASS**，`[legacy-paths] 零残留（迁移标记豁免 33 行）`，
   `[tracked-artifacts] tracked **878** 个文件，无构建产物`（提交前 856 + 本批新入库 22 = 878）。
+
+## P164：`cd` 之后才生效的相对路径把 1.5G derivedData 写进源码树 —— **「产物只落仓库根 build/」第三次失守**（2026-10-17，INFRA-037 双壳测量趟，verified）
+
+- 现象：新写的 `tools/ci/check_apple_shells.sh` 里 `-derivedDataPath "../../build/gate-logs/dd-ios"`，
+  意图是仓库根 `build/`；实测在 `apps/` 下长出 **1.5G** 的 `apps/build/`（`?? apps/build/`，
+  内含 `gate-logs/dd-ios`、`dd-mac`）。传哲当场指出「怎么又在代码文件夹里搞 build」。
+- 根因（一句话）：**重定向目标的语义由写入那一刻的 cwd 决定**。脚本是
+  `( cd "apps/apple/ios" && xcodebuild … -derivedDataPath "../../build/…" )`，
+  子 shell 里 `../..` 从 `apps/apple/ios` 退两级 = `apps/`，不是仓库根。
+  脚本头部 `cd "$ROOT_DIR"` 只管父 shell，**管不到子 shell 的参数**。
+- 这是同一个坑的第三次（案底链）：
+  1. `apps/` 曾堆到 5.5G（清理后 4.3M）；
+  2. SPM 靠 `--scratch-path` 钉回 `build/spm/<包>` 才收住（P84/P152）；
+  3. 本次 xcodebuild derivedData。**共同点**：都是"脚本里写了个相对路径给外部工具当输出根"。
+- 规则：
+  1. **交给外部工具当输出根的参数一律绝对**，写法固定 `"${ROOT_DIR}/…"`；
+     凡是 `cd` 进子目录再传相对路径的，默认按 bug 处理。
+  2. 光加注释拦不住下一次，所以补**三层机械防护**：
+     脚本内路径前缀断言（`case "$dd" in "${ROOT_DIR}"/build/*) ;; *) 判红 ;; esac`）、
+     跑完自查 `find apps ui api engine -maxdepth 4 -type d \( -name build -o -name .build -o -name DerivedData \)`、
+     `check_repo_hygiene.sh` 新增判据 5 `scratch-dirs`。
+  3. **反证要用未被忽略的文件**：判据 5 扫的是 `git status --porcelain -z` 的 `??` 记录，
+     空目录、或里面全是已忽略文件（如 `*.o`）时 git 不报 —— 第一次反证用 `x.o` 得到"绿"，
+     那是**假绿**；换成 `x.txt` 才判红。恒不命中的反证比没有反证更危险（接 P162）。
+  4. **不要给 `apps/build/` 加 .gitignore**：忽略它等于让它从 `git status` 里消失，
+     而"能被看见"正是这条判据的原料。宁红不隐。
+
+## P165：**拿长表格行的「行首」当编辑锚点，会把该行的尾巴嫁接到新行后面**（2026-10-17，TASK-BACKLOG 落账自查，verified）
+
+- 现象：往 `docs/tasks/TASK-BACKLOG.md` 的 INFRA 表里插两行时，`old_string` 只取了
+  `| INFRA-035 | … 无新增死链 |`（该行**前缀**），`new_string` 写成「两行新表项」。替换成功后
+  035 的**结果单元格**（`✅ 2026-10-16（5 / 22 / 27 …） |`）被留在最后一行新表项的尾部，
+  035 整行消失 —— 表看起来是 4 行，实际只有 3 行有结果、1 行结果串错位。
+- 根因：本仓的 backlog/模块册**一行就是 1~2KB**（含全部实测数字），Edit 是**精确子串替换**，
+  不是"按行替换"。锚点只覆盖行首 = 只删掉行首，剩下的部分原样跟在替换文本之后。
+- 规则：
+  1. 改长表格行要么锚点**覆盖整行**（到行尾 `|` 为止），要么锚点选**行与行之间的边界**
+     （`\n| 下一行行首`），别在行中间下刀。
+  2. 落账后**必须回读一次行号表**（`grep -n "^| INFRA-0"`）：行数与顺序对不上就是被嫁接过。
+  3. 复原口径 = `git show HEAD:<file> | grep "^| <ID> " > /tmp/a` 与工作区同法产物 `cmp` 逐字节比，
+     比"看着像"可靠（本次 681B / 681B 一致）。
+
+## P166：把"结构性推断"当成本机实测口径念出去 —— 全量门禁 66% 的成本其实在**单线程编译**（2026-10-17，INFRA-037 收口趟实测，verified）
+
+**场景**：传哲问「目前的门禁都有哪些内容，为啥比较耗时」。我按步数和切片数推断，
+回答里写「`apple-xcframework` 三切片是最贵的一组」「内核两趟次之」。
+然后同一趟门禁跑完，用日志 mtime 反推出每步真实时长：
+
+| 步 | 秒 |
+|---|---|
+| core-dbg | **379.0** |
+| core-rel | **438.4** |
+| Apple/Swift 六包合计 | 305.3 |
+| apple-xcframework | **17.3**（暖） |
+| apple-shells | 44.5（暖） |
+| 其余 9 个静态/窄检步 | 各 ≤ 5.6 |
+
+推断的那句被实测**直接推翻**：xcframework 在暖缓存下只占 17.3s，
+`core-dbg + core-rel` 两步就占全程 **817s / 66%**。
+
+**根因（这才是可优化项）**：`tools/build/build_core.sh:85` 与
+`tools/build/build_core_apple.sh:178` 调 `cmake --build` 时**都没传 `--parallel`**，
+生成器是 `Unix Makefiles` → 12 逻辑核的机器**全程单线程编 C++**。
+全仓只有 `build_shader_toolchain.sh` 传了 `-j$(hw.ncpu)`。
+
+- 规则：
+  1. 回答"为什么慢/慢在哪"只能给**同趟实测**的分布，不给结构推断；结构推断必须显式标 `hypothesis`。
+  2. 已经说出口的错误结论要在**同一轮**里按实测更正并写明"以前那句作废"，不要悄悄改掉
+     （`baselines.md` 的「18 步全量门禁实测」节就是这么落的）。
+  3. 门禁时长口径必须带**缓存状态**：`ios-compile` 2.5s 与 `apple-xcframework` 17.3s 是暖态，
+     拿它们当"这步便宜"是错的（P160 同族）。
+  4. 观测缺口顺手记下：`run_gate.sh` **不记每步时长**，只能靠日志 mtime 反推。
+     要做成本优化就得先把时长记进摘要，否则每轮都在猜。

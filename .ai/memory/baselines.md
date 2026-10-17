@@ -1115,3 +1115,43 @@ UI 重建（ADR-0024）解决不了它 → 立即立 MEDIA-023（VT 输出降采
 
 - ⚠️ 这张表的重点不是数字，是**"提交前 4/4"与"提交后 4/4"是两次不同的测量**：判据脚本自己从未跟踪
   变跟踪会改变扫描集（P163）。**收工口径一律取提交后那一列。**
+
+### 双壳进门禁（2026-10-17 11:0x~11:2x，TASK-INFRA-037，本机 Intel x86_64 集成机实测）
+
+| 口径 | 数字 | 备注 |
+|---|---|---|
+| 双壳**冷**（空 derivedData，两端合计） | **280s** rc=0 error=0 | iOS derivedData 993MB + macOS 514MB |
+| 双壳**暖**（本脚本 `build/gate-logs/dd-*`，两端合计） | **39s** rc=0 error=0 | warning 行 iOS 13 / mac 5（只留痕不判） |
+| 单 iOS 端冷（历史独立测量，10:5x） | **199s** rc=0 error=0 | 那一趟的 derivedData 落错位置（P164），数字仍可信、产物已删 |
+| `pod install` | rc=0，**14 个 pod**，两端各一次 | 完成行 `Pod installation complete!`；`grep -c Installing` 恒 0，不可当判据 |
+| `check_repo_hygiene.sh` | **5/5 PASS**（新增判据 5 `scratch-dirs`） | tracked **878** 不变；legacy 豁免行数 33 → **64**（新纳入三代死根的 31 行历史标注），非豁免仍 **0** |
+
+- **引用口径**：以后说"门禁全绿"必须带上「双壳是暖跑 39s 还是冷跑 280s」——这两数差 7 倍，
+  差别只在 `rm -rf build/gate-logs/dd-*` 做过没有（同 P160 的暖缓存纪律）。
+
+### 18 步全量门禁实测（2026-10-17 11:44:16 起，TASK-INFRA-037 收口趟，本机 Intel x86_64 集成机）
+
+`tools/ci/run_gate.sh`（无参数）：**PASS=18 / FAIL=0 / SKIP=0，exit 0，墙钟 ≈20m40s**。
+静态清点的 17→18 至此**已被实跑证实**，上面那句"还没被一次全量跑证实"作废。
+core Debug **52/52**、Release **52/52**；6 包用例 26+52+77+16+81 = **252**（SharedUI 段无数字行，照旧）。
+
+每步耗时由 `build/gate-logs/<step>.log` 的 mtime 差反推（**脚本本身不记时长**，这也是个待补的观测缺口）：
+
+| 步 | 秒 | 缓存状态 |
+|---|---|---|
+| deps / headers / api-doc / golden | 0 / 1 / 0.8 / 5.6 | 纯静态检，与缓存无关 |
+| hygiene | 4.5 | 5 条判据（含新 `scratch-dirs`） |
+| ios-compile | 2.5 | **暖**（上一趟刚编）；冷态是一整棵 `ios-sim` 树 |
+| core-dbg | **379.0** | 本批改了 `engine/core/cq/**` 头注释 → 脏集铺满 |
+| core-rel | **438.4** | 同上 + LTO |
+| apple-xcframework | 17.3 | **暖**；冷态是三切片 |
+| apple-{swift-bindings,sharedui,player,camera,import,editor} | 47.7 / 29.2 / 52.2 / 46.1 / 58.7 / 71.4 | 增量 |
+| apple-shells | 44.5 | 双壳**暖**（含 2×`pod install`） |
+
+- **成本结构结论（这条是优化立项的依据）**：`core-dbg + core-rel` = **817s，占全程 66%**，
+  是唯一有数量级可砍的两步；Apple/Swift 六包合计 305s（37%）。
+  我先前口头判断"xcframework 三切片最贵"在暖缓存下**不成立**，已按实测更正。
+- 参照：10-16 INFRA-034 那趟 17 步 **10m57s（暖）**、INFRA-032 那趟 **18m58s**。
+  本趟更长是因为**注释改动照样把四棵 CMake 树的依赖图全打脏**——不是新增第 6 步的代价（那步只 44.5s）。
+- ⚠️ 引用门禁时长必须带**缓存状态**（P160 铁律）：`ios-compile` 2.5s 与 `apple-xcframework` 17.3s
+  都是暖态数字，拿来当"这两步天生便宜"是错的。

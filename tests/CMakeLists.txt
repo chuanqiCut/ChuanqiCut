@@ -15,7 +15,7 @@ enable_testing()
 # ---- 占位 smoke 用例：断言 C++20 生效 ----
 # 不发明任何业务逻辑；仅验证工具链确实按 C++20 编译（__cplusplus >= 202002L）。
 add_executable(cq_tests_cxx20_smoke
-    unit/cxx20_smoke.cpp)
+    unit/base/cxx20_smoke.cpp)
 
 # 链接 cq_core，顺便证明内核静态库能干净编译并参与链接。
 target_link_libraries(cq_tests_cxx20_smoke PRIVATE cq_core)
@@ -30,14 +30,14 @@ add_test(NAME cq_cxx20_smoke COMMAND cq_tests_cxx20_smoke)
 # 命名：test name 以 core_ 前缀，便于 `ctest -R core_time` / `ctest -R core_status`。
 
 add_executable(cq_tests_core_time
-    unit/test_time.cpp)
+    unit/base/test_time.cpp)
 target_link_libraries(cq_tests_core_time PRIVATE cq_core)
 cq_require_cxx20(cq_tests_core_time)
 apply_cq_warnings(cq_tests_core_time)
 add_test(NAME core_time COMMAND cq_tests_core_time)
 
 add_executable(cq_tests_core_status
-    unit/test_status.cpp)
+    unit/base/test_status.cpp)
 target_link_libraries(cq_tests_core_status PRIVATE cq_core)
 cq_require_cxx20(cq_tests_core_status)
 apply_cq_warnings(cq_tests_core_status)
@@ -45,7 +45,7 @@ add_test(NAME core_status COMMAND cq_tests_core_status)
 
 # ---- 性能埋点（真机实测用；Release 下必须可用，见 test_perf.cpp 说明）----
 add_executable(cq_tests_core_perf
-    unit/test_perf.cpp)
+    unit/base/test_perf.cpp)
 target_link_libraries(cq_tests_core_perf PRIVATE cq_core)
 cq_require_cxx20(cq_tests_core_perf)
 apply_cq_warnings(cq_tests_core_perf)
@@ -53,7 +53,7 @@ add_test(NAME core_perf COMMAND cq_tests_core_perf)
 
 # ---- CORE-003：日志与帧级 trace ----
 add_executable(cq_tests_core_log
-    unit/test_log.cpp)
+    unit/base/test_log.cpp)
 target_link_libraries(cq_tests_core_log PRIVATE cq_core)
 cq_require_cxx20(cq_tests_core_log)
 apply_cq_warnings(cq_tests_core_log)
@@ -61,7 +61,7 @@ add_test(NAME core_log COMMAND cq_tests_core_log)
 
 # ---- CORE-010：日志 workflow（按链路筛选 + 环境变量提级）----
 add_executable(cq_tests_core_log_workflow
-    unit/test_log_workflow.cpp)
+    unit/base/test_log_workflow.cpp)
 target_link_libraries(cq_tests_core_log_workflow PRIVATE cq_core)
 cq_require_cxx20(cq_tests_core_log_workflow)
 apply_cq_warnings(cq_tests_core_log_workflow)
@@ -69,7 +69,7 @@ add_test(NAME core_log_workflow COMMAND cq_tests_core_log_workflow)
 
 # ---- CORE-004：内存池 / Arena / 纹理预算记账 ----
 add_executable(cq_tests_core_alloc
-    unit/test_alloc.cpp)
+    unit/base/test_alloc.cpp)
 target_link_libraries(cq_tests_core_alloc PRIVATE cq_core)
 cq_require_cxx20(cq_tests_core_alloc)
 apply_cq_warnings(cq_tests_core_alloc)
@@ -77,7 +77,7 @@ add_test(NAME core_alloc COMMAND cq_tests_core_alloc)
 
 # ---- CORE-005：并发原语 / 有界队列 / CancelToken ----
 add_executable(cq_tests_core_concurrency
-    unit/test_concurrency.cpp)
+    unit/base/test_concurrency.cpp)
 target_link_libraries(cq_tests_core_concurrency PRIVATE cq_core)
 cq_require_cxx20(cq_tests_core_concurrency)
 apply_cq_warnings(cq_tests_core_concurrency)
@@ -89,7 +89,7 @@ add_test(NAME core_concurrency COMMAND cq_tests_core_concurrency)
 #    不链接 —— CTest 一直全绿也看不出接口是断的。本用例**链接并运行**这两个函数。
 #    平台无关：用 FixedBackend 注入固定值，不依赖任何真实设备能力。
 add_executable(cq_tests_core_capabilities
-    unit/test_capabilities.cpp)
+    unit/platform/test_capabilities.cpp)
 target_include_directories(cq_tests_core_capabilities PRIVATE
     ${CMAKE_SOURCE_DIR}/engine/core)
 target_link_libraries(cq_tests_core_capabilities PRIVATE cq_core)
@@ -102,7 +102,7 @@ add_test(NAME core_capabilities COMMAND cq_tests_core_capabilities)
 # 投递 100ms 任务，实测 Post() 返回耗时须 < 16ms。
 # 另测：任务跑在 worker 线程、串行 FIFO、满队列返回 kResourceExhausted（背压）。
 add_executable(cq_tests_core_thread_model
-    unit/test_thread_model.cpp)
+    unit/session/test_thread_model.cpp)
 target_include_directories(cq_tests_core_thread_model PRIVATE
     ${CMAKE_SOURCE_DIR}/engine/core)
 target_link_libraries(cq_tests_core_thread_model PRIVATE cq_core)
@@ -116,7 +116,7 @@ add_test(NAME core_thread_model COMMAND cq_tests_core_thread_model)
 #   ChangesSince(v) 给出增量变更日志；主线程 Submit 实测 < 16ms；
 #   变更在 session 线程串行执行；观察者在 session 线程回调。
 add_executable(cq_tests_core_editor_session
-    unit/test_editor_session.cpp)
+    unit/session/test_editor_session.cpp)
 target_include_directories(cq_tests_core_editor_session PRIVATE
     ${CMAKE_SOURCE_DIR}/engine/core)
 target_link_libraries(cq_tests_core_editor_session PRIVATE cq_core)
@@ -128,7 +128,7 @@ add_test(NAME core_editor_session COMMAND cq_tests_core_editor_session)
 # 硬证据：只要公共头混进任何 C++ 类型，这个 .c 就编译失败 —— 比人眼审查可靠。
 # 底层实现是 C++，故链接器显式指定 CXX（否则 C++ 运行时符号解析不全）。
 add_executable(cq_tests_c_abi
-    unit/test_c_abi.c)
+    unit/abi/test_c_abi.c)
 set_target_properties(cq_tests_c_abi PROPERTIES LINKER_LANGUAGE CXX)
 target_include_directories(cq_tests_c_abi PRIVATE
     ${CMAKE_SOURCE_DIR}/engine/core)
@@ -140,7 +140,7 @@ add_test(NAME c_abi COMMAND cq_tests_c_abi)
 # 这是 ADR-0011 隔离规则的回归守卫之一（session TU 不碰 Platform 工厂）。
 # 异步提交语义：测试靠「轮询快照版本 + 查询」等最终一致。
 add_executable(cq_tests_c_abi_session
-    unit/test_c_abi_session.c)
+    unit/abi/test_c_abi_session.c)
 set_target_properties(cq_tests_c_abi_session PROPERTIES LINKER_LANGUAGE CXX)
 target_include_directories(cq_tests_c_abi_session PRIVATE
     ${CMAKE_SOURCE_DIR}/engine/core)
@@ -151,7 +151,7 @@ add_test(NAME c_abi_session COMMAND cq_tests_c_abi_session)
 # 同只链 cq_core。同步手法不用 sleep：提交一条必定成功的哨兵变更并等它落地
 # （session 队列 FIFO ⇒ 哨兵执行完代表前面所有提交都已执行，含被拒的那些）。
 add_executable(cq_tests_c_abi_edit
-    unit/test_c_abi_edit.c)
+    unit/abi/test_c_abi_edit.c)
 set_target_properties(cq_tests_c_abi_edit PROPERTIES LINKER_LANGUAGE CXX)
 target_include_directories(cq_tests_c_abi_edit PRIVATE
     ${CMAKE_SOURCE_DIR}/engine/core)
@@ -161,7 +161,7 @@ add_test(NAME c_abi_edit COMMAND cq_tests_c_abi_edit)
 # ---- UIA-010：播放时钟（时刻 = 墙钟的函数，非帧数累加；帧网格量化）----
 # 平台无关（只用 steady_clock + 有理数），不依赖任何 Platform / Metal。
 add_executable(cq_tests_core_player_clock
-    unit/test_player_clock.cpp)
+    unit/preview/test_player_clock.cpp)
 target_include_directories(cq_tests_core_player_clock PRIVATE
     ${CMAKE_SOURCE_DIR}/engine/core)
 target_link_libraries(cq_tests_core_player_clock PRIVATE cq_core)
@@ -173,7 +173,7 @@ add_test(NAME core_player_clock COMMAND cq_tests_core_player_clock)
 # 只链 cq_core：泵是平台无关的（std::thread + mutex + condvar），不需要 Platform 后端，
 # 故本用例在没有 Metal / 硬解后端的环境里也能跑 —— 这条是刻意的，别顺手加 cq_platform_apple。
 add_executable(cq_tests_core_preview_pump
-    unit/test_preview_pump.cpp)
+    unit/preview/test_preview_pump.cpp)
 target_include_directories(cq_tests_core_preview_pump PRIVATE
     ${CMAKE_SOURCE_DIR}/engine/core)
 target_link_libraries(cq_tests_core_preview_pump PRIVATE cq_core)
@@ -183,7 +183,7 @@ add_test(NAME core_preview_pump COMMAND cq_tests_core_preview_pump)
 
 # ---- UIA-010：播放时钟 + 时间线时长的 C ABI（真正的 C TU，只链 cq_core）----
 add_executable(cq_tests_c_abi_player
-    unit/test_c_abi_player.c)
+    unit/abi/test_c_abi_player.c)
 set_target_properties(cq_tests_c_abi_player PROPERTIES LINKER_LANGUAGE CXX)
 target_include_directories(cq_tests_c_abi_player PRIVATE
     ${CMAKE_SOURCE_DIR}/engine/core)
@@ -195,7 +195,7 @@ add_test(NAME c_abi_player COMMAND cq_tests_c_abi_player)
 # 证明：头文件自洽（include 顺序无关）、跨层资源均为 opaque 指针（零平台类型）、
 # 时间用 RationalTime、错误用 Status、长任务接受 CancelToken、资源用 PlatformPtr 生命周期。
 add_executable(cq_tests_platform_headers_compile
-    unit/platform_headers_compile.cpp)
+    unit/platform/platform_headers_compile.cpp)
 # 不链接 cq_core：本 TU 只验证 core/cq 下的接口头自洽，无需内核实现。
 # 但需指向内核头目录，使 "cq/platform/*.h" 可被找到。
 target_include_directories(cq_tests_platform_headers_compile PRIVATE
@@ -207,7 +207,7 @@ add_test(NAME platform_headers_compile COMMAND cq_tests_platform_headers_compile
 # ---- GFX-001：GFX 层头文件编译期自洽验证（零平台类型 / 分层边界 / base 类型契约）----
 # 仅包含 cq/gfx/*.h + static_assert，不链接实现（接口定义阶段无实现）。
 add_executable(cq_tests_gfx_headers_compile
-    unit/gfx_headers_compile.cpp)
+    unit/gfx/gfx_headers_compile.cpp)
 target_include_directories(cq_tests_gfx_headers_compile PRIVATE
     ${CMAKE_SOURCE_DIR}/engine/core)
 cq_require_cxx20(cq_tests_gfx_headers_compile)
@@ -217,7 +217,7 @@ add_test(NAME gfx_headers_compile COMMAND cq_tests_gfx_headers_compile)
 # ---- MEDIA-010：跨平台 FrameProvider 头文件编译期自洽验证（零平台类型 / 精确 seek / 钩子）----
 # 仅包含 cq/media/frame_provider.h + static_assert，不链接实现（接口定义阶段无实现）。
 add_executable(cq_tests_media_frame_provider_compile
-    unit/media_frame_provider_compile.cpp)
+    unit/media/media_frame_provider_compile.cpp)
 target_include_directories(cq_tests_media_frame_provider_compile PRIVATE
     ${CMAKE_SOURCE_DIR}/engine/core)
 cq_require_cxx20(cq_tests_media_frame_provider_compile)
@@ -229,7 +229,7 @@ add_test(NAME media_frame_provider_compile COMMAND cq_tests_media_frame_provider
 # （kExact 命中真正展示帧含 B 帧 / kKeyframeBefore 取关键帧 / kNearest 取最近 /
 #  取消返回 kCancelled 非错误 / 显示区间归属）。平台无关，全平台可跑。
 add_executable(cq_tests_media_system_frame_provider
-    unit/test_system_frame_provider.cpp)
+    unit/media/test_system_frame_provider.cpp)
 target_include_directories(cq_tests_media_system_frame_provider PRIVATE
     ${CMAKE_SOURCE_DIR}/engine/core)
 target_link_libraries(cq_tests_media_system_frame_provider PRIVATE cq_core)
@@ -243,7 +243,7 @@ add_test(NAME media_system_frame_provider COMMAND cq_tests_media_system_frame_pr
 # 重复 / 回退 / 超阈值跳转 / 混合序列 vs 参照实现逐帧一致 / kKeyframeBefore 不受
 # 影响 / 取消恢复 / 显式 Seek 契约。平台无关，全平台可跑。
 add_executable(cq_tests_media_sequential_acquire
-    unit/test_media_sequential_acquire.cpp)
+    unit/media/test_media_sequential_acquire.cpp)
 target_include_directories(cq_tests_media_sequential_acquire PRIVATE
     ${CMAKE_SOURCE_DIR}/engine/core)
 target_link_libraries(cq_tests_media_sequential_acquire PRIVATE cq_core)
@@ -255,7 +255,7 @@ add_test(NAME media_sequential_acquire COMMAND cq_tests_media_sequential_acquire
 # 跨平台，无平台后端。实测：插入超上界后 UsedBytes() <= 上界、LRU 淘汰最久未用、
 # 借出的帧不被淘汰（move-out）、接入 SystemFrameProvider 命中缓存跳过解码。
 add_executable(cq_tests_media_cache
-    unit/test_cache.cpp)
+    unit/media/test_cache.cpp)
 target_include_directories(cq_tests_media_cache PRIVATE
     ${CMAKE_SOURCE_DIR}/engine/core)
 target_link_libraries(cq_tests_media_cache PRIVATE cq_core)
@@ -267,7 +267,7 @@ add_test(NAME media_cache COMMAND cq_tests_media_cache)
 # 跨平台，无平台后端。实测：超路数返回 kResourceExhausted（不崩溃/不挂起）、释放后复用
 # （同一 handle）、ActiveCount/MaxHardwarePaths 符合预期、并发借/还无挂起、接入 provider。
 add_executable(cq_tests_media_decoder_pool
-    unit/test_decoder_pool.cpp)
+    unit/media/test_decoder_pool.cpp)
 target_include_directories(cq_tests_media_decoder_pool PRIVATE
     ${CMAKE_SOURCE_DIR}/engine/core)
 target_link_libraries(cq_tests_media_decoder_pool PRIVATE cq_core)
@@ -295,7 +295,7 @@ endif()
 # 接触 Metal，不污染内核头。
 if(APPLE)
     add_executable(cq_tests_platform_apple_metal
-        unit/test_gfx_metal.cpp)
+        unit/gfx/test_gfx_metal.cpp)
     target_include_directories(cq_tests_platform_apple_metal PRIVATE
         ${CMAKE_SOURCE_DIR}/engine/core
         ${CMAKE_SOURCE_DIR}/engine/platform/apple)
@@ -306,7 +306,7 @@ if(APPLE)
 
     # ---- GFX-002：IGfxDevice 直连 Platform（渲染结果读回断言，不只查返回值）----
     add_executable(cq_tests_gfx_device
-        unit/test_gfx_device.cpp)
+        unit/gfx/test_gfx_device.cpp)
     target_include_directories(cq_tests_gfx_device PRIVATE
         ${CMAKE_SOURCE_DIR}/engine/core
         ${CMAKE_SOURCE_DIR}/engine/platform/apple)
@@ -317,7 +317,7 @@ if(APPLE)
 
     # ---- PALA-010：Apple 解封装后端真实文件验证 ----
     add_executable(cq_tests_platform_apple_demux
-        unit/test_media_demux_apple.cpp)
+        unit/media/test_media_demux_apple.cpp)
     target_include_directories(cq_tests_platform_apple_demux PRIVATE
         ${CMAKE_SOURCE_DIR}/engine/core)
     target_compile_definitions(cq_tests_platform_apple_demux PRIVATE
@@ -337,7 +337,7 @@ if(APPLE)
     # 半程打通：demux 真实通；解码后端（PALA-011）未实现，AcquireFrame 如实返回
     # kDecodeUnsupported，绝不 mock 伪造。仅 Apple 平台（需 PALA-010 后端）。
     add_executable(cq_tests_media_smoke_apple
-        unit/test_media_smoke_apple.cpp)
+        unit/media/test_media_smoke_apple.cpp)
     target_include_directories(cq_tests_media_smoke_apple PRIVATE
         ${CMAKE_SOURCE_DIR}/engine/core)
     target_compile_definitions(cq_tests_media_smoke_apple PRIVATE
@@ -353,7 +353,7 @@ if(APPLE)
     # 经「仅按 pts 网格重排」的 MockDecoder 驱动 SystemFrameProvider，验证 kExact 能在
     # 真实「解码序≠显示序」分离下正确取到 t 处的展示帧（B 帧），而非关键帧/未重建包。
     add_executable(cq_tests_media_bframe_real
-        unit/test_media_bframe_real_apple.cpp)
+        unit/media/test_media_bframe_real_apple.cpp)
     target_include_directories(cq_tests_media_bframe_real PRIVATE
         ${CMAKE_SOURCE_DIR}/engine/core)
     target_compile_definitions(cq_tests_media_bframe_real PRIVATE
@@ -371,7 +371,7 @@ if(APPLE)
     find_library(COREVIDEO_T2_LIB CoreVideo REQUIRED)
     find_library(IOSURFACE_T2_LIB IOSurface REQUIRED)
     add_executable(cq_tests_platform_apple_native_image
-        unit/test_native_image_importer_apple.cpp)
+        unit/media/test_native_image_importer_apple.cpp)
     target_include_directories(cq_tests_platform_apple_native_image PRIVATE
         ${CMAKE_SOURCE_DIR}/engine/core
         ${CMAKE_SOURCE_DIR}/engine/platform/apple)
@@ -391,7 +391,7 @@ if(APPLE)
     #   空隙 kIoNotFound + 素材未注册 kInvalidArgument + 连续多帧导入/释放 + Resize。
     find_library(COREVIDEO_T6_LIB CoreVideo REQUIRED)
     add_executable(cq_tests_preview_renderer
-        unit/test_preview_renderer.cpp)
+        unit/preview/test_preview_renderer.cpp)
     target_include_directories(cq_tests_preview_renderer PRIVATE
         ${CMAKE_SOURCE_DIR}/engine/core
         ${CMAKE_SOURCE_DIR}/engine/platform/apple)
@@ -409,7 +409,7 @@ if(APPLE)
     # 分工：本用例验证 C ABI 契约（句柄/状态码/诊断量）；像素正确性由
     # preview_renderer（C++）用例覆盖——读回像素要用 Apple 内部辅助，C 侧做不到。
     add_executable(cq_tests_c_abi_preview
-        unit/test_c_abi_preview.c)
+        unit/abi/test_c_abi_preview.c)
     set_target_properties(cq_tests_c_abi_preview PROPERTIES LINKER_LANGUAGE CXX)
     target_include_directories(cq_tests_c_abi_preview PRIVATE
         ${CMAKE_SOURCE_DIR}/engine/core)
@@ -427,7 +427,7 @@ if(APPLE)
     # 测试 TU 直接调用 CoreVideo C API 读像素，需显式链接 CoreVideo（经 cq_platform_apple PUBLIC 传递）。
     find_library(COREVIDEO_T3_LIB CoreVideo REQUIRED)
     add_executable(cq_tests_platform_apple_encode
-        unit/test_media_encode_apple.cpp)
+        unit/media/test_media_encode_apple.cpp)
     target_include_directories(cq_tests_platform_apple_encode PRIVATE
         ${CMAKE_SOURCE_DIR}/engine/core
         ${CMAKE_SOURCE_DIR}/engine/platform/apple)
@@ -445,7 +445,7 @@ if(APPLE)
     # 证明导出能力可被上层平台无关调用；ffprobe 验证 codec/分辨率/帧数/时长 + 首帧像素。
     find_library(COREVIDEO_T4_LIB CoreVideo REQUIRED)
     add_executable(cq_tests_platform_apple_muxer
-        unit/test_media_muxer_apple.cpp)
+        unit/media/test_media_muxer_apple.cpp)
     target_include_directories(cq_tests_platform_apple_muxer PRIVATE
         ${CMAKE_SOURCE_DIR}/engine/core
         ${CMAKE_SOURCE_DIR}/engine/platform/apple)
@@ -463,7 +463,7 @@ if(APPLE)
     # 且 codec=aac / 采样率 / 声道与 AudioTrackConfig 一致。仅 Apple 平台。
     find_library(COREVIDEO_T5_LIB CoreVideo REQUIRED)
     add_executable(cq_tests_platform_apple_muxer_audio
-        unit/test_media_muxer_audio_apple.cpp)
+        unit/media/test_media_muxer_audio_apple.cpp)
     target_include_directories(cq_tests_platform_apple_muxer_audio PRIVATE
         ${CMAKE_SOURCE_DIR}/engine/core
         ${CMAKE_SOURCE_DIR}/engine/platform/apple)
@@ -480,7 +480,7 @@ if(APPLE)
     # 验证后端真的被装上、每项返回值合法，并打印全部结果供真机核对。
     # ⚠️ 本机 Intel Mac 无 ANE / 无 ProRes 硬编，本机结果不代表 iPhone 17 Pro。
     add_executable(cq_tests_platform_apple_capabilities
-        unit/test_capabilities_apple.cpp)
+        unit/platform/test_capabilities_apple.cpp)
     target_include_directories(cq_tests_platform_apple_capabilities PRIVATE
         ${CMAKE_SOURCE_DIR}/engine/core
         ${CMAKE_SOURCE_DIR}/engine/platform/apple)
@@ -493,7 +493,7 @@ endif()
 # 先于 UIA-003 落地：没有它，预览就不知道"播放头在哪、该显示哪个片段"。
 # 验收：多轨共存、跨轨重叠允许、同轨重叠拒绝、转场计入总时长。
 add_executable(cq_tests_model_timeline
-    unit/test_model_timeline.cpp)
+    unit/model/test_model_timeline.cpp)
 target_include_directories(cq_tests_model_timeline PRIVATE
     ${CMAKE_SOURCE_DIR}/engine/core)
 target_link_libraries(cq_tests_model_timeline PRIVATE cq_core)
@@ -505,7 +505,7 @@ add_test(NAME model_timeline COMMAND cq_tests_model_timeline)
 # 验收（BACKLOG）：100 次 undo 后回到初始态；另覆盖 6 类命令往返、
 # 原 id 恢复、失败不入历史、失败不清 redo、排序不变量。
 add_executable(cq_tests_model_command
-    unit/test_model_command.cpp)
+    unit/command/test_model_command.cpp)
 target_include_directories(cq_tests_model_command PRIVATE
     ${CMAKE_SOURCE_DIR}/engine/core)
 target_link_libraries(cq_tests_model_command PRIVATE cq_core)
@@ -519,7 +519,7 @@ add_test(NAME model_command COMMAND cq_tests_model_command)
 # digest 真断言（同值 set 只推进版本不变 digest）、与轨级标志正交。
 # 只链 cq_core：属性是纯模型层能力，不牵出任何 Platform 依赖。
 add_executable(cq_tests_model_property
-    unit/test_model_property.cpp)
+    unit/model/test_model_property.cpp)
 target_include_directories(cq_tests_model_property PRIVATE
     ${CMAKE_SOURCE_DIR}/engine/core)
 target_link_libraries(cq_tests_model_property PRIVATE cq_core)
@@ -532,7 +532,7 @@ add_test(NAME model_property COMMAND cq_tests_model_property)
 # 端到端覆盖：add/remove/enabled/五类参数 setter、两段式查询、
 # undo 整栈还原、digest 端到端变化、失败语义与同步参数校验。
 add_executable(cq_tests_c_abi_property
-    unit/test_c_abi_property.c)
+    unit/abi/test_c_abi_property.c)
 set_target_properties(cq_tests_c_abi_property PROPERTIES LINKER_LANGUAGE CXX)
 target_include_directories(cq_tests_c_abi_property PRIVATE
     ${CMAKE_SOURCE_DIR}/engine/core)
@@ -542,7 +542,7 @@ add_test(NAME c_abi_property COMMAND cq_tests_c_abi_property)
 # ---- BIND-003 子步骤 1：素材表（asset_id → MediaSource）----
 # 重点：验证 unordered_map 重哈希后 MediaSource.path 裸指针仍然有效（SSO 陷阱）。
 add_executable(cq_tests_asset_registry
-    unit/test_asset_registry.cpp)
+    unit/media/test_asset_registry.cpp)
 target_include_directories(cq_tests_asset_registry PRIVATE
     ${CMAKE_SOURCE_DIR}/engine/core)
 target_link_libraries(cq_tests_asset_registry PRIVATE cq_core)
@@ -555,7 +555,7 @@ add_test(NAME asset_registry COMMAND cq_tests_asset_registry)
 # 并断言不同时刻 pts 不同（暴露"假 seek"：反复返回同一帧）。
 if(APPLE)
     add_executable(cq_tests_frame_provider_apple
-        unit/test_frame_provider_apple.cpp)
+        unit/media/test_frame_provider_apple.cpp)
     target_include_directories(cq_tests_frame_provider_apple PRIVATE
         ${CMAKE_SOURCE_DIR}/engine/core
         ${CMAKE_SOURCE_DIR}/engine/platform/apple)
@@ -571,7 +571,7 @@ if(APPLE)
     # 区间归属 + 与「每帧显式 seek」对照实例逐帧一致；输出两段 acquire 均值/最大值
     # （写回 .ai/memory/baselines.md）。性能断言宽松（fast < slow），倍数不写死。
     add_executable(cq_tests_media_sequential_real
-        unit/test_media_sequential_real_apple.cpp)
+        unit/media/test_media_sequential_real_apple.cpp)
     target_include_directories(cq_tests_media_sequential_real PRIVATE
         ${CMAKE_SOURCE_DIR}/engine/core
         ${CMAKE_SOURCE_DIR}/engine/platform/apple)
@@ -589,7 +589,7 @@ endif()
 #    此处补齐注册，让它真正跑起来。
 if(APPLE)
     add_executable(cq_tests_platform_apple_decode
-        unit/test_media_decode_apple.cpp)
+        unit/media/test_media_decode_apple.cpp)
     target_include_directories(cq_tests_platform_apple_decode PRIVATE
         ${CMAKE_SOURCE_DIR}/engine/core
         ${CMAKE_SOURCE_DIR}/engine/platform/apple)
@@ -606,7 +606,7 @@ endif()
 # test_audio_graph 在 kAudio 标记线程上以全局 operator new 计数实测增量为 0。
 # 另覆盖：池耗尽/重复归还防护、SPSC 跨线程 20 万序号压测、拓扑成环/断链拒绝。
 add_executable(cq_tests_core_audio_pcm
-    unit/test_audio_pcm.cpp)
+    unit/audio/test_audio_pcm.cpp)
 target_include_directories(cq_tests_core_audio_pcm PRIVATE
     ${CMAKE_SOURCE_DIR}/engine/core)
 target_link_libraries(cq_tests_core_audio_pcm PRIVATE cq_core)
@@ -615,7 +615,7 @@ apply_cq_warnings(cq_tests_core_audio_pcm)
 add_test(NAME core_audio_pcm COMMAND cq_tests_core_audio_pcm)
 
 add_executable(cq_tests_core_audio_graph
-    unit/test_audio_graph.cpp)
+    unit/audio/test_audio_graph.cpp)
 target_include_directories(cq_tests_core_audio_graph PRIVATE
     ${CMAKE_SOURCE_DIR}/engine/core)
 target_link_libraries(cq_tests_core_audio_graph PRIVATE cq_core)
@@ -627,7 +627,7 @@ add_test(NAME core_audio_graph COMMAND cq_tests_core_audio_graph)
 # 全 core 确定性用例（假引擎/假读取器/假快照）：块网格连续、命中与混音、
 # source_in 映射、EOF 诚实静音、暂停 Flush / 恢复重锚、muted 轨。
 add_executable(cq_tests_core_audio_preview_mixer
-    unit/test_preview_mixer.cpp)
+    unit/audio/test_preview_mixer.cpp)
 target_include_directories(cq_tests_core_audio_preview_mixer PRIVATE
     ${CMAKE_SOURCE_DIR}/engine/core)
 target_link_libraries(cq_tests_core_audio_preview_mixer PRIVATE cq_core)
@@ -640,7 +640,7 @@ add_test(NAME core_audio_preview_mixer COMMAND cq_tests_core_audio_preview_mixer
 # 分码纪律（拒绝即不写内存，哨兵比对）、部分区间帧偏移、
 # 音频线程零分配实测（operator new 增量 = 0）。
 add_executable(cq_tests_core_audio_mix
-    unit/test_audio_mix.cpp)
+    unit/audio/test_audio_mix.cpp)
 target_include_directories(cq_tests_core_audio_mix PRIVATE
     ${CMAKE_SOURCE_DIR}/engine/core)
 target_link_libraries(cq_tests_core_audio_mix PRIVATE cq_core)
@@ -652,13 +652,13 @@ add_test(NAME core_audio_mix COMMAND cq_tests_core_audio_mix)
 # 手写 JSON 解析 + 结构/语义校验；红线 4 时间浮点机器检查。
 # golden 目录通过编译宏注入（测试二进制运行时读取 JSON 夹具）。
 add_executable(cq_tests_ai_edit_plan
-    unit/test_edit_plan_validator.cpp)
+    unit/ai/test_edit_plan_validator.cpp)
 # 私有头 edit_plan_validator.h 在 core/src 下（cq_core 的 PRIVATE include 不传播）。
 target_include_directories(cq_tests_ai_edit_plan PRIVATE
     ${CMAKE_SOURCE_DIR}/engine/core
     ${CMAKE_SOURCE_DIR}/engine/core/cq)
 target_compile_definitions(cq_tests_ai_edit_plan PRIVATE
-    CQ_EDIT_PLAN_GOLDEN_DIR="${CMAKE_SOURCE_DIR}/engine/core/cq/ai/plan/edit_plan_golden")
+    CQ_EDIT_PLAN_GOLDEN_DIR="${CMAKE_SOURCE_DIR}/tests/golden/edit_plan")
 target_link_libraries(cq_tests_ai_edit_plan PRIVATE cq_core)
 cq_require_cxx20(cq_tests_ai_edit_plan)
 apply_cq_warnings(cq_tests_ai_edit_plan)
@@ -669,7 +669,7 @@ add_test(NAME ai_edit_plan COMMAND cq_tests_ai_edit_plan)
 # CMakeLists.txt 定义（binary/source 双集成，同 target）。素材路径编译期注入，
 # 元数据见 tests/golden/manifest.toml [[sample]] gf_1080p_h264。
 add_executable(cq_tests_media_ffmpeg_probe
-    unit/test_ffmpeg_probe.cpp)
+    unit/media/test_ffmpeg_probe.cpp)
 target_compile_definitions(cq_tests_media_ffmpeg_probe PRIVATE
     CQ_TEST_GOLDEN_H264="${CMAKE_SOURCE_DIR}/tests/golden/frames/gf_1080p_h264.mp4")
 target_link_libraries(cq_tests_media_ffmpeg_probe PRIVATE cq_core cq_ffmpeg)
@@ -682,7 +682,7 @@ add_test(NAME media_ffmpeg_probe COMMAND cq_tests_media_ffmpeg_probe)
 # 覆盖图结构校验（含环检测）、指纹、装配器三用途、执行器两阶段与视口决策、时钟源。
 # 真机/真 GPU 的像素一致性由 preview_renderer 用例守（跑完整链路）。
 add_executable(cq_tests_render_graph
-    unit/test_render_graph.cpp)
+    unit/render/test_render_graph.cpp)
 target_link_libraries(cq_tests_render_graph PRIVATE cq_core)
 cq_require_cxx20(cq_tests_render_graph)
 apply_cq_warnings(cq_tests_render_graph)

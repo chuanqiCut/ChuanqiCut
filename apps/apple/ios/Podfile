@@ -8,7 +8,7 @@
 # 分工（详见 docs/COCOAPODS.md）：SDK 层 + SharedUI 都走 pod，App 不使用 SPM。
 # 同一库不要既引 pod 又引 SPM（会重复符号）。
 #
-# Engine 拆为两层（ADR-0033）：CChuanqiCut = C/C++20 + Apple Platform；
+# Engine 拆为两层（ADR-0033）：ChuanqiCutCore（原 CChuanqiCut，ADR-0038 更名）= C/C++20 + Apple Platform；
 # ChuanqiCutEngine = Swift adapter。两个本地 spec 必须都显式给 :path。
 source 'https://cdn.cocoapods.org'
 
@@ -20,17 +20,27 @@ use_modular_headers!
 target 'ChuanqiCutApp' do
   pod 'ChuanqiCutCore', :path => '../../../engine'
   pod 'ChuanqiCutFFmpeg', :path => '../../../engine'
-  pod 'ChuanqiCutEngine', :path => '../../../engine'
-  pod 'SharedUI', :path => '../packages/SharedUI'
+  pod 'ChuanqiCutEngine', :path => '../../../api/swift'
+  pod 'SharedUI', :path => '../../../ui/SharedUI'
   # 功能 Pod（ADR-0031 分治，2026-10-07 全域完成）：Player/Camera(仅iOS)/Import/Editor
-  pod 'ChuanqiCutPlayer', :path => '../packages/ChuanqiCutPlayer'
+  pod 'ChuanqiCutPlayer', :path => '../../../ui/ChuanqiCutPlayer'
   # Camera 阶段 4 提前（2026-10-07，传哲指定）：iOS 专属，mac Podfile 不引
-  pod 'ChuanqiCutCamera', :path => '../packages/ChuanqiCutCamera'
-  pod 'ChuanqiCutImport', :path => '../packages/ChuanqiCutImport'
+  pod 'ChuanqiCutCamera', :path => '../../../ui/ChuanqiCutCamera'
+  pod 'ChuanqiCutImport', :path => '../../../ui/ChuanqiCutImport'
   # 轨道区接 TimelineKit（UIKit-only 本地 Pod）→ 必须引 iOS 专属子 spec；
   # macOS 端 Podfile 引的是默认子 spec `Core`（见 ChuanqiCutEditor.podspec 头注释）。
-  pod 'ChuanqiCutEditor/TimelineKitTrack', :path => '../packages/ChuanqiCutEditor'
+  pod 'ChuanqiCutEditor/TimelineKitTrack', :path => '../../../ui/ChuanqiCutEditor'
   # TimelineKit 本地开发 Pod（独立 Swift/UIKit 时间线组件）
+  # ⚠️ 仓库外的本机路径，**故意不收编**（ADR-0044 决策 ①：将来落 ui/TimelineKit）。
+  #    CocoaPods 缺目录时只报 "No podspec found for `TimelineKit`"，不给出这是外部组件的线索，
+  #    换机/新会话极易误判成本仓搬家坏了 —— 故在此显式守卫（INFRA-031）。
+  timelinekit_dir = File.expand_path('../../../../ChatGPT/zui', __dir__)
+  unless File.exist?(File.join(timelinekit_dir, 'TimelineKit.podspec'))
+    raise "TimelineKit 是仓库外的独立组件，本机未准备好：#{timelinekit_dir}\n" \
+          "        该目录须含 TimelineKit.podspec（决策 ①：本轮不并入 ui/，收编另开卡）。" \
+          "        换机器时把 :path 指向你自己的 TimelineKit checkout 即可。\n" \
+          "        风险与收编计划见 docs/tasks/TODO-POOL-门禁真机待办池.md 条目 [20]。"
+  end
   pod 'TimelineKit', :path => '../../../../ChatGPT/zui'
   pod 'SnapKit', '~> 5.7.0'
   pod 'Kingfisher'

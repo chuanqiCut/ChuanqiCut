@@ -1,4 +1,4 @@
-# CChuanqiCut.podspec — Engine C/C++20 内核与 Apple Platform
+# ChuanqiCutCore.podspec — Engine C/C++20 内核与 Apple Platform（原 CChuanqiCut，ADR-0038 更名）
 #
 # 目录与发布边界（ADR-0033）：
 # - core/cq/<功能>：内部 C++ 头与实现共置；

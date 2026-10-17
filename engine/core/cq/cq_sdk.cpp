@@ -4,7 +4,7 @@
 // 能力查询 / 线程角色）包装成纯 C 函数。
 //
 // ⚠️ 唯一的 C++ 出现在**本 .cpp 内**；公共头 cq_sdk.h 保持零 C++ 类型，
-//    由 tests/unit/test_c_abi.c（真正的 C 翻译单元）机器校验。
+//    由 tests/unit/abi/test_c_abi.c（真正的 C 翻译单元）机器校验。
 //
 // 内核禁用异常（ARCH-001）：分配一律用 `new (std::nothrow)`，
 // 失败返回 NULL / 错误码，不抛不捕。

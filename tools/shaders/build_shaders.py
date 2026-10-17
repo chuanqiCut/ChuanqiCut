@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # ChuanqiCut — Portable shader 编译链（SHADER-001）
 #
-# 链路：shaders/src/blit.{vert,frag}（Portable，Vulkan GLSL 450）
+# 链路：engine/shaders/portable/blit.{vert,frag}（Portable，Vulkan GLSL 450）
 #         -- glslang -V -->  *.spv  -- spirv-cross --msl -->  *.metal
 #         -- 本脚本拼装 -->  <out-dir>/blit_msl.h（raw string 常量，供 .mm include）
 #
@@ -14,7 +14,7 @@
 #   * 一次只写一个 .h，天然幂等，配合 add_custom_command 的 OUTPUT 即增量正确。
 #
 # 产物全部落在 build/ 下（--out-dir），**不入库**（AGENTS：禁止提交 shader 生成产物）。
-# 入库的只有本脚本与 shaders/src/*.glsl。
+# 入库的只有本脚本与 engine/shaders/portable/*.glsl。
 #
 # 用法：
 #   python3 tools/shaders/build_shaders.py --repo-root . --out-dir build/generated/shaders
@@ -39,9 +39,9 @@ STAGES = (
 
 RAW_DELIM = "MSL"
 
-HEADER_BANNER = """// 自动生成文件 —— 请勿编辑，改 shaders/src/*.glsl 后重新构建。
+HEADER_BANNER = """// 自动生成文件 —— 请勿编辑，改 engine/shaders/portable/*.glsl 后重新构建。
 //
-// 来源：shaders/src/blit.vert / blit.frag（Portable，Vulkan GLSL 450）
+// 来源：engine/shaders/portable/blit.vert / blit.frag（Portable，Vulkan GLSL 450）
 //       → glslang(SPIR-V) → spirv-cross(MSL)
 // 生成者：tools/shaders/build_shaders.py
 //
@@ -101,7 +101,7 @@ def main() -> int:
 
     repo_root = args.repo_root.resolve()
     out_dir = args.out_dir if args.out_dir.is_absolute() else (Path.cwd() / args.out_dir)
-    src_dir = repo_root / "shaders" / "src"
+    src_dir = repo_root / "engine" / "shaders" / "portable"
     spv_dir = out_dir / "spv"
     msl_dir = out_dir / "msl"
     spv_dir.mkdir(parents=True, exist_ok=True)

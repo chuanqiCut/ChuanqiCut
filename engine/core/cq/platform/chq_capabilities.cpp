@@ -5,7 +5,7 @@
 //
 // 为什么需要单独一个文件：CORE-006 只冻结了头文件，`SetCapabilitiesBackend` /
 // `QueryCapability` 一直只有声明、没有定义。全仓库唯一引用是
-// tests/unit/platform_headers_compile.cpp 里的 static_assert —— 那是编译期检查、不链接，
+// tests/unit/platform/platform_headers_compile.cpp 里的 static_assert —— 那是编译期检查、不链接，
 // 所以 CTest 一直全绿也看不出「接口其实是断的」。这与 CORE-006 当时的教训同型
 // （见 HANDOFF-002 §8）：**编译通过 ≠ 接口可用**。
 

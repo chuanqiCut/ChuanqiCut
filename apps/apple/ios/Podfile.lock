@@ -31,17 +31,17 @@ PODS:
 
 DEPENDENCIES:
   - Alamofire
-  - ChuanqiCutCamera (from `../packages/ChuanqiCutCamera`)
+  - ChuanqiCutCamera (from `../../../ui/ChuanqiCutCamera`)
   - ChuanqiCutCore (from `../../../engine`)
-  - ChuanqiCutEditor/TimelineKitTrack (from `../packages/ChuanqiCutEditor`)
-  - ChuanqiCutEngine (from `../../../engine`)
+  - ChuanqiCutEditor/TimelineKitTrack (from `../../../ui/ChuanqiCutEditor`)
+  - ChuanqiCutEngine (from `../../../api/swift`)
   - ChuanqiCutFFmpeg (from `../../../engine`)
-  - ChuanqiCutImport (from `../packages/ChuanqiCutImport`)
-  - ChuanqiCutPlayer (from `../packages/ChuanqiCutPlayer`)
+  - ChuanqiCutImport (from `../../../ui/ChuanqiCutImport`)
+  - ChuanqiCutPlayer (from `../../../ui/ChuanqiCutPlayer`)
   - Kingfisher
   - RxSwift
   - SDWebImage
-  - SharedUI (from `../packages/SharedUI`)
+  - SharedUI (from `../../../ui/SharedUI`)
   - SnapKit (~> 5.7.0)
   - TimelineKit (from `../../../../ChatGPT/zui`)
 
@@ -55,21 +55,21 @@ SPEC REPOS:
 
 EXTERNAL SOURCES:
   ChuanqiCutCamera:
-    :path: "../packages/ChuanqiCutCamera"
+    :path: "../../../ui/ChuanqiCutCamera"
   ChuanqiCutCore:
     :path: "../../../engine"
   ChuanqiCutEditor:
-    :path: "../packages/ChuanqiCutEditor"
+    :path: "../../../ui/ChuanqiCutEditor"
   ChuanqiCutEngine:
-    :path: "../../../engine"
+    :path: "../../../api/swift"
   ChuanqiCutFFmpeg:
     :path: "../../../engine"
   ChuanqiCutImport:
-    :path: "../packages/ChuanqiCutImport"
+    :path: "../../../ui/ChuanqiCutImport"
   ChuanqiCutPlayer:
-    :path: "../packages/ChuanqiCutPlayer"
+    :path: "../../../ui/ChuanqiCutPlayer"
   SharedUI:
-    :path: "../packages/SharedUI"
+    :path: "../../../ui/SharedUI"
   TimelineKit:
     :path: "../../../../ChatGPT/zui"
 
@@ -78,7 +78,7 @@ SPEC CHECKSUMS:
   ChuanqiCutCamera: 403ac93215cff8efb9a5677526333edaa655a038
   ChuanqiCutCore: 30753bb8f243f0490b84dde15ecd2a66f4e841f1
   ChuanqiCutEditor: 4b1b805a3cbe6ea773b00be2529b67ed511c12c9
-  ChuanqiCutEngine: 7692ae8be611b339495de80552be86d821c768b8
+  ChuanqiCutEngine: 5998247e5cb268d8dadd6b307ad631ac2e9f3546
   ChuanqiCutFFmpeg: 240ee4baca309e91d0a1ae12acf1d75945464012
   ChuanqiCutImport: aa33c8eb24b733c0cdf8cf8b64df7a2e38cab8e3
   ChuanqiCutPlayer: f0dd0794e4b67626604e5764e35a7456f3593001
@@ -89,6 +89,6 @@ SPEC CHECKSUMS:
   SnapKit: d612e99e678a2d3b95bf60b0705ed0a35c03484a
   TimelineKit: fb59dcc2cabbf10387aeda5b65c0d5c7961a5d1b
 
-PODFILE CHECKSUM: 51bc497906bca21a25b94c26f106300109bdf22d
+PODFILE CHECKSUM: 5304fd3b6bcbae973c11a207a991801ca03bd644
 
 COCOAPODS: 1.17.0

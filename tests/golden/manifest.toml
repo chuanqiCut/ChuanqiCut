@@ -42,8 +42,7 @@ commit_policy = "fixtures registered here are committed with the repo; keep tota
 # 只准用于【生成测试夹具】，绝对不能：
 #   1) 链接进任何发布产物 / SDK 构建；
 #   2) 当作 FFmpeg 体积或符号基线的数据源（那是 DEPS-013 用自研 demux 档位构建测的）。
-# 脚本中通过环境变量 CQ_FFMPEG_BIN / CQ_FFPROBE_BIN 覆盖路径，默认指向
-# /Users/zhuning/.workbuddy/binaries/ffmpeg/bin/。
+# 脚本中的解析顺序：环境变量 CQ_FFMPEG_BIN / CQ_FFPROBE_BIN > PATH > ~/.workbuddy/binaries/ffmpeg/bin。
 
 # ---- 目标验收维度（本库要覆盖的） ----
 target_dimensions = [

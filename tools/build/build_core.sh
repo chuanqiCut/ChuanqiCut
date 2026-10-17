@@ -5,8 +5,8 @@
 # CI 复用同一脚本（禁止在 CI 里另写一套编译命令，见 ARCH-001 §9 / TASK-INFRA-002）。
 #
 # 设计要点：
-#   - cmake 不在本机 PATH 里，故 CMAKE_BIN 默认回退到绝对路径，
-#     允许通过环境变量 CMAKE_BIN 覆盖（例如 CI 里用系统 cmake）。
+#   - cmake 不一定在 PATH 里：脚本先试 PATH，再回退到 $HOME 下的托管安装位置；
+#     任何时候都可用 CMAKE_BIN 覆盖（CI 里用系统 cmake：CMAKE_BIN=cmake）。
 #   - 默认构建类型 Debug；可通过 --config 切到 Release（开 LTO）。
 #   - 默认只做编译（-Werror 门禁）；加 --test 会额外跑 ctest。
 #
@@ -18,8 +18,9 @@
 
 set -euo pipefail
 
-# ---- cmake 二进制：默认绝对路径，允许环境变量覆盖 ----
-: "${CMAKE_BIN:=/Users/zhuning/.workbuddy/binaries/cmake/CMake.app/Contents/bin/cmake}"
+# ---- cmake 二进制：优先 PATH，回退到本机托管安装位置（用 $HOME 展开，不写死用户名）----
+# 覆盖方式：CMAKE_BIN=cmake（CI 用系统 cmake）或 CMAKE_BIN=<任意路径>。
+: "${CMAKE_BIN:=$(command -v cmake || echo "$HOME/.workbuddy/binaries/cmake/CMake.app/Contents/bin/cmake")}"
 
 # ---- 默认值 ----
 PLATFORM="apple"

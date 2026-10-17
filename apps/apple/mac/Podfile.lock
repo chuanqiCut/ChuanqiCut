@@ -18,38 +18,38 @@ PODS:
 
 DEPENDENCIES:
   - ChuanqiCutCore (from `../../../engine`)
-  - ChuanqiCutEditor (from `../packages/ChuanqiCutEditor`)
-  - ChuanqiCutEngine (from `../../../engine`)
+  - ChuanqiCutEditor (from `../../../ui/ChuanqiCutEditor`)
+  - ChuanqiCutEngine (from `../../../api/swift`)
   - ChuanqiCutFFmpeg (from `../../../engine`)
-  - ChuanqiCutImport (from `../packages/ChuanqiCutImport`)
-  - ChuanqiCutPlayer (from `../packages/ChuanqiCutPlayer`)
-  - SharedUI (from `../packages/SharedUI`)
+  - ChuanqiCutImport (from `../../../ui/ChuanqiCutImport`)
+  - ChuanqiCutPlayer (from `../../../ui/ChuanqiCutPlayer`)
+  - SharedUI (from `../../../ui/SharedUI`)
 
 EXTERNAL SOURCES:
   ChuanqiCutCore:
     :path: "../../../engine"
   ChuanqiCutEditor:
-    :path: "../packages/ChuanqiCutEditor"
+    :path: "../../../ui/ChuanqiCutEditor"
   ChuanqiCutEngine:
-    :path: "../../../engine"
+    :path: "../../../api/swift"
   ChuanqiCutFFmpeg:
     :path: "../../../engine"
   ChuanqiCutImport:
-    :path: "../packages/ChuanqiCutImport"
+    :path: "../../../ui/ChuanqiCutImport"
   ChuanqiCutPlayer:
-    :path: "../packages/ChuanqiCutPlayer"
+    :path: "../../../ui/ChuanqiCutPlayer"
   SharedUI:
-    :path: "../packages/SharedUI"
+    :path: "../../../ui/SharedUI"
 
 SPEC CHECKSUMS:
   ChuanqiCutCore: 30753bb8f243f0490b84dde15ecd2a66f4e841f1
   ChuanqiCutEditor: 4b1b805a3cbe6ea773b00be2529b67ed511c12c9
-  ChuanqiCutEngine: 7692ae8be611b339495de80552be86d821c768b8
+  ChuanqiCutEngine: 5998247e5cb268d8dadd6b307ad631ac2e9f3546
   ChuanqiCutFFmpeg: 240ee4baca309e91d0a1ae12acf1d75945464012
   ChuanqiCutImport: aa33c8eb24b733c0cdf8cf8b64df7a2e38cab8e3
   ChuanqiCutPlayer: f0dd0794e4b67626604e5764e35a7456f3593001
   SharedUI: 7e3bf5c24640690f7ac2459fd6c7c6f3d043fa62
 
-PODFILE CHECKSUM: a56ca1909e1e5657e16e29b5c9f14c9706184cbf
+PODFILE CHECKSUM: bcda993f4541ac578cb163118d2b9fe6c299845b
 
 COCOAPODS: 1.17.0

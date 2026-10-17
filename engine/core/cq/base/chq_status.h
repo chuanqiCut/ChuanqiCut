@@ -86,7 +86,7 @@ enum class ChqStatusCode : int32_t {
 
     // ---- AI 决策 / ChqEditPlan 校验（9500..9549，AIEDIT-001，CQ_AI_PLAN_* 语义段）----
     // 校验器是 LLM 输出的唯一权威校验方（ADR-0020 决策 3）；
-    // 码值同时是 golden 样例集的断言目标（tests/unit/test_edit_plan_validator.cpp），
+    // 码值同时是 golden 样例集的断言目标（tests/unit/ai/test_edit_plan_validator.cpp），
     // 供管线（AIEDIT-005）按码分类回传 LLM 自动修复。
     kAiPlanJsonMalformed = 9500,        // JSON 语法非法（RFC 8259）
     kAiPlanSchemaUnknown = 9501,        // schema 版本不认识（拒绝并降级，绝不猜测解析）

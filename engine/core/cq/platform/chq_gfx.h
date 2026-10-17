@@ -8,7 +8,7 @@
 //   1. 不抽象同步语义的细粒度差异：只提供 wait/signal(fence)。
 //   2. 不隐藏显存分配：TexturePool 在 core 层做统一池化与预算（CORE-004 的
 //      ChqTextureBudget），后端只负责真实分配；ChqITexture::GetMemoryBytes() 暴露该厂商数供记账。
-//   3. 平台特化只存在于 Platform-Native shader 层（platform/<platform>/shaders/），
+//   3. 平台特化只存在于 Platform-Native shader 层（engine/shaders/native/<platform>/），
 //      不泄漏到 core。ShaderModule 既可来自 Portable 层 SPIR-V，也可来自平台原生源。
 //
 // 红线：零平台类型（句柄均为 common.h 的 opaque 指针）、零 FFmpeg 类型。
@@ -231,9 +231,10 @@ public:
 //   只允许出现在 platform/<platform>/。GFX 层在 Platform 之上，若在此定义抽象、再由 Platform 实现，
 //   就会出现 Platform 反向 include GFX 头，破坏分层。故放在 Platform 层，GFX/预览层持有即可。
 //
-// ⚠️ SPIR-V 链（Portable 层 shaders/src/*.glsl）尚未落地，MSL 是**唯一可用路径**。
-//    这属「能力缺失降级」（无 Portable 可用 → 走平台原生），不是「平台特化优化」
-//    ——后者必须先有 Portable 实现且收益 ≥ 20% 才允许合入。
+// ⚠️ Apple 侧只消费 **MSL**：Portable 层（engine/shaders/portable/*.glsl）经 SPIR-V 转译成 MSL，
+//    以生成头形式编进 Platform，运行时不吃 SPIR-V —— 「MSL 是唯一可用路径」指的是**平台输入格式**，
+//    不是能力缺失降级（Portable 链已落地，见 SHADER-001 与 blit_pass.mm 头部说明）。
+//    若将来要做 Metal 特化：那才属「平台特化优化」，须先有 Portable 实现且实测收益 ≥ 20% 才允许合入。
 //
 // uv 约定（不得上下颠倒）：uv(0,0) = 图像左上，uv(1,1) = 图像右下。
 // 该约定由 test_preview_renderer.cpp 的「RT 顶红 / 底蓝」两项断言锁定。

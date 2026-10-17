@@ -222,10 +222,10 @@ def gen_frame(spec, frame_idx, total_frames) -> bytes:
 # 本 ffmpeg 二进制（evermeet.cx tessus 静态构建 6.1.1）**仅用于生成测试夹具**，
 # 绝对不能链接进发布产物，也不能当作 FFmpeg 体积/符号基线的数据源
 # （那是 DEPS-013 用我们自己的 demux 档位构建来测的）。
-FFMPEG_BIN = os.environ.get(
-    "CQ_FFMPEG_BIN", "/Users/zhuning/.workbuddy/binaries/ffmpeg/bin/ffmpeg")
-FFPROBE_BIN = os.environ.get(
-    "CQ_FFPROBE_BIN", "/Users/zhuning/.workbuddy/binaries/ffmpeg/bin/ffprobe")
+FFMPEG_BIN = (os.environ.get("CQ_FFMPEG_BIN") or shutil.which("ffmpeg")
+              or os.path.expanduser("~/.workbuddy/binaries/ffmpeg/bin/ffmpeg"))
+FFPROBE_BIN = (os.environ.get("CQ_FFPROBE_BIN") or shutil.which("ffprobe")
+               or os.path.expanduser("~/.workbuddy/binaries/ffmpeg/bin/ffprobe"))
 
 
 def _run(cmd):

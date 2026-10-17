@@ -13,7 +13,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")" && pwd)"        # tools/qa/beauty_harness
 REPO="$(cd "$ROOT/../../.." && pwd)"         # 仓库根
 EFFECTS="$REPO/apps/apple/ios/iOSApp/Camera/Effects"
-SHAREDUI_CAM="$REPO/apps/apple/packages/SharedUI/Sources/SharedUI/Camera"
+SHAREDUI_CAM="$REPO/ui/SharedUI/Sources/SharedUI/Camera"
 WORK="$(mktemp -d /tmp/cq_beauty_harness.XXXXXX)"
 trap 'rm -rf "$WORK"' EXIT
 

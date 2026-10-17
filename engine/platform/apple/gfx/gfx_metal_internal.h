@@ -7,7 +7,7 @@
 // 门禁脚本 tools/platform/check_platform_headers.py 只扫 core/include/cq/**；此处允许平台类型，
 // 但为了不污染纯 C++ 测试 TU，本头**刻意不 import 任何 Metal 头**——读回/上传函数
 // 的签名只使用 Platform 的 opaque 句柄（ChqIRenderTarget* / ChqITexture*）与 void*，
-// 平台实现藏在 gfx_metal.mm 内。这样 tests/unit/test_gfx_metal.cpp 可以是纯 .cpp。
+// 平台实现藏在 gfx_metal.mm 内。这样 tests/unit/gfx/test_gfx_metal.cpp 可以是纯 .cpp。
 
 #pragma once
 

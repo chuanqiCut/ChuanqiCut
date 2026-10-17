@@ -39,7 +39,7 @@ struct ChqFFmpegProbeResult {
     std::vector<ChqFFmpegStreamInfo> streams;
 };
 
-// 打开媒体文件读容器头与流信息。仅 demux（avformat_open_input + 
+// 打开媒体文件读容器头与流信息。仅 demux（avformat_open_input +
 // avformat_find_stream_info），不触碰任何 decoder。
 // 错误码：kInvalidArgument（空参数）/ kIoNotFound（打不开）/
 //         kFormatUnsupported（容器可识别但流信息探不全）/ kDecodeError（流信息不一致）。

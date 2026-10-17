@@ -1,6 +1,6 @@
 # ChuanqiCut — Vendored 第三方组件许可声明
 
-本目录（CChuanqiCut Pod）包含以下第三方代码的预编译产物。本文件随 Pod 分发，
+本目录（ChuanqiCutCore Pod，原 CChuanqiCut）包含以下第三方代码的预编译产物。本文件随 Pod 分发，
 发布时**不得删除**（LGPL 义务，见 ADR-0036 / ARCH-002 §5.1）。
 
 ## FFmpeg 9.0.2（demux 档）

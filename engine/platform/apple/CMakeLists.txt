@@ -42,7 +42,7 @@ target_include_directories(cq_platform_apple PUBLIC
 target_link_libraries(cq_platform_apple PUBLIC cq_core)
 
 # ===========================================================================
-# SHADER-001：Portable shader（shaders/src/*.glsl）→ MSL 生成链
+# SHADER-001：Portable shader（engine/shaders/portable/*.glsl）→ MSL 生成链
 #
 # 红线 #6：Portable 层是跨平台基线，平台特化只能来自转译或 platform/ 下的**可选**覆盖。
 # 故这里在**构建期**跑 glslang → SPIR-V → spirv-cross → MSL，把产物写成 build/ 下的
@@ -66,10 +66,10 @@ add_custom_command(
             --repo-root "${CMAKE_SOURCE_DIR}"
             --out-dir "${CQ_GENERATED_SHADER_DIR}"
     DEPENDS "${CMAKE_SOURCE_DIR}/tools/shaders/build_shaders.py"
-            "${CMAKE_SOURCE_DIR}/shaders/src/blit.vert"
-            "${CMAKE_SOURCE_DIR}/shaders/src/blit.frag"
+            "${CMAKE_SOURCE_DIR}/engine/shaders/portable/blit.vert"
+            "${CMAKE_SOURCE_DIR}/engine/shaders/portable/blit.frag"
     COMMENT "SHADER-001: glslang → SPIR-V → spirv-cross → MSL (blit)"
-    其编辑器组件)
+    VERBATIM)
 
 # 用中间 target 承接依赖：直接 add_dependencies 到一个 custom command 的 OUTPUT 文件
 # 在部分 CMake 版本上不生效，target 形态则是明确支持的。

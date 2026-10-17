@@ -8,7 +8,7 @@
 # 分工（详见 docs/COCOAPODS.md）：SDK 层 + SharedUI 都走 pod，App 不使用 SPM。
 # 同一库不要既引 pod 又引 SPM（会重复符号）。
 #
-# Engine 拆为两层（ADR-0033）：CChuanqiCut = C/C++20 + Apple Platform；
+# Engine 拆为两层（ADR-0033）：ChuanqiCutCore（原 CChuanqiCut，ADR-0038 更名）= C/C++20 + Apple Platform；
 # ChuanqiCutEngine = Swift adapter。两个本地 spec 必须都显式给 :path。
 
 platform :osx, '15.4'
@@ -19,12 +19,12 @@ use_modular_headers!
 target 'ChuanqiCutMacApp' do
   pod 'ChuanqiCutCore', :path => '../../../engine'
   pod 'ChuanqiCutFFmpeg', :path => '../../../engine'
-  pod 'ChuanqiCutEngine', :path => '../../../engine'
-  pod 'SharedUI', :path => '../packages/SharedUI'
+  pod 'ChuanqiCutEngine', :path => '../../../api/swift'
+  pod 'SharedUI', :path => '../../../ui/SharedUI'
   # 功能 Pod（ADR-0031 分治，2026-10-07 全域完成）：Player/Camera(仅iOS)/Import/Editor
-  pod 'ChuanqiCutPlayer', :path => '../packages/ChuanqiCutPlayer'
-  pod 'ChuanqiCutImport', :path => '../packages/ChuanqiCutImport'
-  pod 'ChuanqiCutEditor', :path => '../packages/ChuanqiCutEditor'
+  pod 'ChuanqiCutPlayer', :path => '../../../ui/ChuanqiCutPlayer'
+  pod 'ChuanqiCutImport', :path => '../../../ui/ChuanqiCutImport'
+  pod 'ChuanqiCutEditor', :path => '../../../ui/ChuanqiCutEditor'
 end
 
 post_install do |installer|

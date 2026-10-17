@@ -3,7 +3,7 @@
 // 实现 Platform 契约 `cq::CreateBlitPass`（core/include/cq/platform/gfx.h）。
 //
 // shader 来源（红线 #6 / SHADER-001）：作者写的是 **Portable 层**
-// shaders/src/blit.{vert,frag}（Vulkan GLSL 450），构建期经 glslang → SPIR-V →
+// engine/shaders/portable/blit.{vert,frag}（Vulkan GLSL 450），构建期经 glslang → SPIR-V →
 // spirv-cross 转译成 MSL，产物落在 build/generated/shaders/blit_msl.h。
 // 本文件 include 的是**那份生成物**，不再内联手写 MSL——Portable 是唯一事实来源，
 // 平台侧只保留「MSL 是 Metal 能吃的格式」这一层事实。

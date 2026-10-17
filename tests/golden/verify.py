@@ -23,6 +23,7 @@ import glob
 import json
 import struct
 import math
+import shutil
 import subprocess
 import tomllib
 
@@ -61,8 +62,8 @@ def human_size(n: int) -> str:
 # ----------------------------------------------------------------------
 # ffprobe 集成（编码类样本的真实参数核对，等价 ffprobe）
 # ----------------------------------------------------------------------
-FFPROBE_BIN = os.environ.get(
-    "CQ_FFPROBE_BIN", "/Users/zhuning/.workbuddy/binaries/ffmpeg/bin/ffprobe")
+FFPROBE_BIN = (os.environ.get("CQ_FFPROBE_BIN") or shutil.which("ffprobe")
+               or os.path.expanduser("~/.workbuddy/binaries/ffmpeg/bin/ffprobe"))
 # 注意：该 ffmpeg/ffprobe 仅用于校验测试夹具，绝不参与发布构建。
 
 

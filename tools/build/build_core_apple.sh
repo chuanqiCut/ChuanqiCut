@@ -38,8 +38,9 @@
 
 set -euo pipefail
 
-# ---- cmake 二进制：默认绝对路径，允许环境变量覆盖 ----
-: "${CMAKE_BIN:=/Users/zhuning/.workbuddy/binaries/cmake/CMake.app/Contents/bin/cmake}"
+# ---- cmake 二进制：优先 PATH，回退到本机托管安装位置（用 $HOME 展开，不写死用户名）----
+# 覆盖方式：CMAKE_BIN=cmake（CI 用系统 cmake）或 CMAKE_BIN=<任意路径>。
+: "${CMAKE_BIN:=$(command -v cmake || echo "$HOME/.workbuddy/binaries/cmake/CMake.app/Contents/bin/cmake")}"
 # 用 xcrun 取当前 Xcode 的 xcodebuild / libtool / lipo（保证工具链与本机 Xcode 一致）。
 XCRUN_BIN="${XCRUN_BIN:-xcrun}"
 
@@ -274,7 +275,7 @@ echo "---- Info.plist (AvailableLibraries) ----"
 #    2026-09-30 实测：加了之后 SwiftPM 解析该 xcframework 时报
 #    “unexpected binary framework”，并进一步导致库搜索路径失效
 #    （ld: library 'ChuanqiCut' not found）。
-#    Swift 侧的 module 由 bindings/swift 的 C target 提供，不依赖这里。
+#    Swift 侧的 module 由 api/swift 的 C target 提供，不依赖这里。
 
 # ---- 消费者侧链接冒烟：证明「打得出来」也「能被消费」-----------------------
 # xcodebuild 成功只说明 .a 是合法 Mach-O；App 能不能真的 link 起来并跑通，必须试一次。

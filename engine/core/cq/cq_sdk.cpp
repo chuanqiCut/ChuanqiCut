@@ -247,6 +247,11 @@ int32_t cq_session_get_canvas(const CQSession* session, int32_t* out_width, int3
     return CodeOfEnum(cq::ChqStatusCode::kOk);
 }
 
+int32_t cq_session_set_track_muted(CQSession* session, uint64_t track_id, int32_t muted) {
+    if (session == nullptr) return CodeOfEnum(cq::ChqStatusCode::kInvalidArgument);
+    return CodeOf(session->impl.SubmitSetTrackMuted("set-track-muted", track_id, muted != 0));
+}
+
 // ---- 片段效果属性（MODEL-003）------------------------------------------------
 
 namespace {

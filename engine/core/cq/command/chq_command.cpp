@@ -254,6 +254,21 @@ ChqStatus ChqSetCanvasCommand::Undo(ChqTimeline& model) {
 }
 
 // ===========================================================================
+// ChqSetTrackMutedCommand
+// ===========================================================================
+
+ChqStatus ChqSetTrackMutedCommand::Do(ChqTimeline& model) {
+    const ChqTrack* track = model.FindTrack(track_id_);
+    if (track == nullptr) return ChqStatus(ChqStatusCode::kInvalidArgument);
+    old_muted_ = track->muted;
+    return model.SetTrackMuted(track_id_, new_muted_);
+}
+
+ChqStatus ChqSetTrackMutedCommand::Undo(ChqTimeline& model) {
+    return model.SetTrackMuted(track_id_, old_muted_);
+}
+
+// ===========================================================================
 // ChqMoveClipToTrackCommand
 // ===========================================================================
 

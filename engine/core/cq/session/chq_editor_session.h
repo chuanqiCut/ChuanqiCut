@@ -110,6 +110,9 @@ public:
                                     const ChqRationalTime& new_start);
     // 画布比例（UIA-040）：项目级属性，可撤销。
     ChqStatus SubmitSetCanvas(const char* name, int32_t width, int32_t height);
+    // 轨道静音（CORE-011）：可撤销写路径；未知 track_id 在 session 线程校验失败
+    // （版本不推进 + 观察者不回调，与其它提交同一语义）。
+    ChqStatus SubmitSetTrackMuted(const char* name, uint64_t track_id, bool muted);
     // ---- 效果属性（MODEL-003；异步提交，经 ChqCommandHistory 可撤销）----
     // 校验（片段存在 / 效果存在 / 同 id 不重复）在 session 线程执行，
     // 失败表现为版本不推进 + 观察者不回调（与既有提交同一语义）。

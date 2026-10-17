@@ -3346,3 +3346,27 @@ echo " 报告：…"
      两者不通用，**跨壳脚本别依赖它**（本仓脚本一律 `#!/bin/sh`/`#!/bin/bash`，交互命令才是 zsh）。
   3. **凡"发布类"动作（push / 上传 / 部署）的成败，以远端回读为准**：`git ls-remote --heads origin`、
      门禁报告文件、服务端 API。本地 rc 只是辅证（与 P168「通知不可信」同族，扩到"管道状态也不可信"）。
+
+## P181：改 UIKit 文件时**窄检档判不红**——SPM 全绿和 `check_ios_compile` 都不编那几个文件，唯一判红点是双壳（2026-10-17，CORE-011，verified）
+
+**场景**：CORE-011 往 `EditorTimelineKitView.swift` / `TimelineKitAdapter.swift`（都在
+`Sources/ChuanqiCutEditor/UIKit/`）加了 `.setTrackMuted` 的 case。按 `gate_scope.sh` 路由跑完
+L1：`swift test` 编辑器包 **81/81 全绿**、`check_ios_compile.sh --prime` **rc=0**。
+但这两个文件**一行都没被编译**——① 包里的 UIKit 代码整段在 `#if os(iOS)` 内，macOS 上 `swift test`
+直接排除（**P129 同族**）；② `check_ios_compile.sh` 只 `cmake --build` 两个 **C++ 静态库 target**
+（`cq_core` + `cq_platform_apple`），跟 Swift 无关。真正会红的只有 `check_apple_shells.sh`
+（门禁步 `apple-shells`，`--fast` 档**不跑**）。这一趟手动补跑：两端 `BUILD SUCCEEDED`、`error:` 0。
+
+**后果**：开发机按简化档自查（编译 + 模块级单测）交上来的 UIKit 改动，**绿色不代表编得过**。
+如果它不巧同时是这批**唯一**碰 UIKit 的卡，而集成机那趟只跑 `--fast`，那么一个 `case` 拼错、
+或组件侧枚举没这个 case，会一路绿到下一次全量或下一次真机。
+
+- 规则：
+  1. **写集里有 `Sources/ChuanqiCutEditor/UIKit/**` 时，窄检必须包含 `tools/ci/check_apple_shells.sh`**，
+     不许用 `swift test` 的绿代替。路由缺口已登记池 **[29]**（`gate_scope.sh` R4 尚未吐这条）。
+  2. 报"UI 侧验证过"时要说清**验证的是哪一层**：SPM 全绿 = 非 UIKit 部分 + 逻辑层；
+     双壳真编译 = UIKit 部分；两者都不是真机手感（那是另一层，见池 [16]/[24]）。
+  3. **同族重犯记录**：`api/swift` 的 `swift test` 第一次报 `Undefined symbols: _cq_session_set_track_muted`
+     ——SPM 用 `.binaryTarget` 链接**拷贝进仓库的 XCFramework**，新加 C ABI 符号后必须先
+     `build_core_apple.sh --config=Release` 再 `api/swift/prepare.sh`。这是 **P70 第 3 条**的
+     SPM 包变体（原条目只写了 App 壳的 podspec vendored 路径）。

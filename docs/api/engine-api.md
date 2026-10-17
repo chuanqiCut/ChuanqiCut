@@ -150,6 +150,12 @@ int32_t cq_session_set_canvas(CQSession* session, int32_t width, int32_t height)
 int32_t cq_session_get_canvas(const CQSession* session, int32_t* out_width, int32_t* out_height);
 ```
 
+### 轨道静音（CORE-011；问卷 E1 裁定「先补内核 muted ABI」）
+
+```c
+int32_t cq_session_set_track_muted(CQSession* session, uint64_t track_id, int32_t muted);
+```
+
 ### 片段效果属性（MODEL-003；异步提交，经 ChqCommandHistory 可撤销）
 
 ```text

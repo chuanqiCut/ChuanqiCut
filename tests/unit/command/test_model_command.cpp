@@ -432,6 +432,17 @@ void TestCanvasAndCrossTrackCommands() {
                .IsOk(),
           "视频片段上音频轨失败");
     Check(static_cast<int>(hist.UndoDepth()) == depth, "失败的跨轨不入栈");
+
+    // ---- set-track-muted（CORE-011）：写 → 撤 → 重做 → 未知轨失败不入栈 ----
+    Check(hist.Execute(std::make_unique<cq::ChqSetTrackMutedCommand>(track_id, true), tl).IsOk(),
+          "Execute SetTrackMuted");
+    Check(tl.FindTrack(track_id)->muted, "静音生效");
+    Check(hist.Undo(tl).IsOk() && !tl.FindTrack(track_id)->muted, "Undo 回旧值（不是裸写）");
+    Check(hist.Redo(tl).IsOk() && tl.FindTrack(track_id)->muted, "Redo 重放新值");
+    const int depth_before_muted = static_cast<int>(hist.UndoDepth());
+    Check(!hist.Execute(std::make_unique<cq::ChqSetTrackMutedCommand>(999999, true), tl).IsOk(),
+          "未知 track_id 失败（不静默成功）");
+    Check(static_cast<int>(hist.UndoDepth()) == depth_before_muted, "失败的静音不入栈");
 }
 
 // ---------------------------------------------------------------------------

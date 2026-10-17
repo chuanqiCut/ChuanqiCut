@@ -47,6 +47,16 @@ const ChqTrack* ChqTimeline::FindTrack(uint64_t track_id) const {
     return nullptr;
 }
 
+ChqStatus ChqTimeline::SetTrackMuted(uint64_t track_id, bool muted) {
+    for (ChqTrack& track : tracks_) {
+        if (track.id == track_id) {
+            track.muted = muted;
+            return ChqStatus::Ok();
+        }
+    }
+    return ChqStatus(ChqStatusCode::kInvalidArgument);
+}
+
 // ===========================================================================
 // 片段
 // ===========================================================================

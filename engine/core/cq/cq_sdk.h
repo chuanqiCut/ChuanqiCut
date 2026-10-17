@@ -217,6 +217,15 @@ int32_t cq_session_set_canvas(CQSession* session, int32_t width, int32_t height)
 
 int32_t cq_session_get_canvas(const CQSession* session, int32_t* out_width, int32_t* out_height);
 
+/* ---- 轨道静音（CORE-011；问卷 E1 裁定「先补内核 muted ABI」）----
+ *
+ * 异步提交、可撤销（走 ChqCommandHistory，不是绕过历史的裸写）。muted 用 int32 承载
+ * 0/1 —— 不用 bool 过 C ABI，与 cq_session_set_clip_effect_enabled 同口径；非 0 一律按静音。
+ * 轨不存在 → session 线程校验失败（版本不推进 + 观察者不回调），调用方经查询确认终态。
+ * 消费侧本来就有（预览混音与模型状态都读 `track.muted`），缺的只是这条写路径。
+ */
+int32_t cq_session_set_track_muted(CQSession* session, uint64_t track_id, int32_t muted);
+
 /* ---- 片段效果属性（MODEL-003；异步提交，经 ChqCommandHistory 可撤销）----
  *
  * 效果是**数据**（chq_property.h）：一个片段挂一条有序效果栈，每个效果有

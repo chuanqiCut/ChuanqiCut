@@ -1431,3 +1431,28 @@ core Debug **52/52**、Release **52/52**；6 包用例 26+52+77+16+81 = **252**�
 | 门禁步数 | `run_gate.sh` **19 → 20 步**（新增 `commit-msg`，`--fast` 档照跑；**L3 全量尚未跑过 20 步**，513s 那趟是 19 步） |
 | `--fast` 同档两趟（本批实测，`build/gate-logs/gate-history.tsv`） | 17:36 **PASS=9 / FAIL=0 / SKIP=3、墙钟 101s**（`core-dbg` 88s）；17:55 **9/0/3、38s**（`core-dbg` 21s、`Building CXX` 计数 **0** = 零重编，21s 全是 ctest 38 例；`commit-msg` 两趟均 **0s**） |
 | ⇒ 口径 | **同档同树差 2.7× 全在构建态**，与判据无关。引用 `--fast` 必须带步数与缓存态；**88s 那趟的重编构成未取证**（日志被后一趟覆盖），只报数不解释 |
+
+### CORE-011 轨道静音写路径（2026-10-17，本机集成机，实测）
+
+**窄检（L1，档位 = `gate_scope.sh` 路由）**
+
+| 项 | 命令 | 结果 |
+|---|---|---|
+| 编译 | `build_core.sh --platform=apple --config=Debug` | rc=0，重编 **18 TU** |
+| 单测 Debug | `… --config=Debug --test --skip-label=heavy` | **38/38，37.74s** |
+| 单测 Release | `… --config=Release --test` | **52/52，227.00s**，重编 **95 TU**；heavy **193.21 sec*proc / 14 例** |
+| Engine 静态库 | `build_core_apple.sh --config=Release` | rc=0 |
+| xcframework 拷贝 | `api/swift/prepare.sh` | rc=0 |
+| 绑定包 | `api/swift` `swift test` | **26/26，3.936s** |
+| 编辑器包 | `ui/ChuanqiCutEditor` `swift test` | **81/81，10.117s** |
+| iOS C++ 切片 | `check_ios_compile.sh --prime --config=Release` | rc=0（**只编 `cq_core` + `cq_platform_apple`，不碰 Swift/UIKit**） |
+| 双壳 | `check_apple_shells.sh` | rc=0，`pod install` ios **14/14** + mac **7/7**，两端 `BUILD SUCCEEDED`，`error:` **0**、warning 14/5 |
+| 格式 | `clang-format --dry-run -Werror` × 11 个 C/C++ 改动文件 | 违规 **0** |
+| API 文档 | `gen_api_reference.py --check` | rc=0，声明行 **88 → 89**（口径 `grep -cE '^[a-zA-Z_][a-zA-Z0-9_ *]*\(.*\);'`） |
+| 卫生 | `check_repo_hygiene.sh` | **5/5 PASS**，`git status --porcelain` = 24 M / 0 untracked |
+
+- **ctest 例数不变（52）**：新断言**塞进已有例**（`test_model_command` 的画布/跨轨例、
+  `test_editor_session` 新增函数但复用 `editor_session` 例、`test_c_abi_edit` 同例追加），
+  不新建文件 —— 避开 UIA-046 的写集。
+- ⚠️ 卡面原写「公共符号 103 → 104」是**无出处的估算**（那个 103 来自 INFRA-032 的**另一个计数器**），
+  已按实测 88 → 89 订正。

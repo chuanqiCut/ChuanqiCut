@@ -72,6 +72,8 @@ enum TrackClipEdit: Equatable {
     case trimEnd(clipId: UInt64, duration: RationalTime)
     /// 跨轨：改所属轨道，必要时一并改起点（UIA-040）。
     case moveToTrack(clipId: UInt64, trackId: UInt64, start: RationalTime)
+    /// 轨道静音（CORE-011）：改的是轨，不是片段。
+    case setTrackMuted(trackId: UInt64, muted: Bool)
 }
 
 /// reducer 请求宿主执行的动作。**reducer 自己一个都不执行。**
@@ -333,6 +335,9 @@ enum TrackIntentApplier {
         case .moveToTrack(let clipId, let trackId, let start):
             // 跨轨（UIA-040）：类型不匹配/重叠由内核拒绝，refreshFromKernel 回真值。
             viewModel.moveClipToTrack(clipId: clipId, to: trackId, start: start)
+        case .setTrackMuted(let trackId, let muted):
+            // 内核不认这条轨时会失败（不推进版本），下面的 refreshFromKernel 回真值。
+            viewModel.setTrackMuted(trackId: trackId, muted: muted)
         }
     }
 }

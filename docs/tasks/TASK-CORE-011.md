@@ -40,8 +40,10 @@ acceptance:
     移到显式 `case`，**其余不可翻译命令仍一律回滚**（ADR-0042 不变）
   - 三处单测新增且通过；ctest 用例名不新增文件级漂移（52 例 → 53 例只允许在 command/session 内加断言，
     若新增用例需在卡面登记新数）
-  - `gen_api_reference.py --check` 绿（符号 103 → 104，文档重生成）
-  - 全量门禁 `run_gate.sh` PASS=18 / FAIL=0 / SKIP=0 + 双壳 BUILD SUCCEEDED
+  - `gen_api_reference.py --check` 绿（声明行 **88 → 89**，数字径 = `grep -cE '^[a-zA-Z_][a-zA-Z0-9_ *]*\(.*\);'
+    docs/api/engine-api.md`；建卡时写的「103 → 104」是当时没有口径的估数，已按实测订正）
+  - 全量门禁 `run_gate.sh`（**现为 20 步**，INFRA-047 加了 `commit-msg`）PASS / FAIL=0 + 双壳 BUILD SUCCEEDED。
+    ⚠️ 按传哲 2026-10-17 裁定：**L3 随 v0.2.0 批末一趟**，本卡不单独跑全量（开发会话跑 L3 本身即违规）
 verification:
   - tools/build/build_core.sh --platform=apple --config=Debug --test
   - ctest --test-dir build -R "command|session|abi"  # 实为 ctest -R 正则，跑前按用例名核一次
@@ -108,6 +110,23 @@ parallel:    false
 ## 回写
 
 - `.ai/modules/core.md`（命令表新增一条 + 接口面）、`.ai/modules/session.md`、
-  `.ai/modules/model.md`、`.ai/modules/bindings.md`、`.ai/modules/ui-apple.md`（适配层去回滚）、
-  `docs/specs/AIEDIT-001` 无关；**池 [19] 关闭**（✅ + 门禁数字）；
-  `docs/tasks/TASK-BACKLOG.md` §16 行状态；实测数字进 `.ai/memory/baselines.md`。
+  `.ai/modules/model.md`、`.ai/modules/platform-apple.md`（**api/swift 归口这本，本仓没有 `bindings.md`**
+  —— 建卡时按不存在的册名写的，P174 同族重犯）、`.ai/modules/ui-apple.md`（适配层去回滚）、
+  **池 [19] 关闭**（✅ + 门禁数字）；`docs/tasks/TASK-BACKLOG.md` §16 行状态；
+  实测数字进 `.ai/memory/baselines.md`；坑进 `.ai/memory/pitfalls.md`（**P181**）；
+  UIKit 窄检覆盖缺口进池 **[29]**。
+
+## 落地后的写集偏差（对着 `git status` 核，不照抄上面）
+
+| 卡面 write_set | 实际 | 说明 |
+|---|---|---|
+| `tests/unit/abi/test_c_abi.c` | `tests/unit/abi/test_c_abi_edit.c` | INFRA-030 分模块后 abi 例拆成多文件，本卡命中的是 edit 那只 |
+| `api/swift/Sources/ChuanqiCut/Session.swift` | **未改** | C ABI 的 session 句柄方法都挂在 `Timeline.swift` 的 `Timeline` 上，`Session.swift` 不含这层 |
+| （卡面未列）`TrackInteraction.swift` | 已改 | `TrackClipEdit` 加 `.setTrackMuted` + `TrackIntentApplier` 转发 —— 少了这条链在 UI 侧不通 |
+| （卡面未列）`UIKit/TimelineKitAdapter.swift` | 已改 | 只改一行过期注释（"内核无写 muted 的 ABI（池 [19]）"），代码不动 |
+
+## 状态
+
+- ✅ **2026-10-17 编码闭环、L1 窄检全绿**（数字见 baselines「CORE-011 轨道静音写路径」）。
+  **L3 全量未跑** —— 按传哲 2026-10-17 裁定，v0.2.0 批编码全部闭环后一趟，绿了随批升号。
+  预览混音按轨静音属「理论上生效」，本卡不宣称已验证（见验收第 3 条），待真机趟取样。

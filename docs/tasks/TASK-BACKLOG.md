@@ -604,11 +604,16 @@ RENDER-001/红线 #6 路线，勿把相机滤镜直接当 SDK 能力引用。
 |---|---|---|---|---|---|---|
 | UIA-044 | UI | 轨道区接入 TimelineKit（本地 Pod）+ `TimelineKitAdapter` / `EditorTimelineKitView` + 删除旧自绘 | UIA-034/039/040/041/043 | `ui/ChuanqiCutEditor/**`、双 Podfile、podspec 拆子 spec | 双壳 BUILD SUCCEEDED；内核唯一真源、翻译不了的命令一律回滚；不改调试页冒充 | ✅ 2026-10-17（合并版问卷整卷通过；回收口径=**传哲整体判定，未逐项勾选/无截图**） |
 | UIA-045 | UI | 接入后四项回归：返回键分层 / 播放中编辑先暂停 / 拖轨道同步 seek / iPad 与 iPhone 统一 | UIA-044 | `ui/ChuanqiCutEditor/**`（AppEntry/TrackInteraction/EditorLayout/UIKit）+ 组件侧 3 处 | 底栏逐层退出；播放中编辑先停；iOS 只有一条轨道区实现 | ✅ 2026-10-17（同上回收趟；卡内「`.selectClip` 不暂停」一条**被 D5 裁定推翻**，转 UIA-046） |
-| UIA-046 | UI | 播放中**点选片段也暂停**（D5 裁定的行为变更） | UIA-044/045 | `TrackInteraction.swift`、`EditorViewController.swift:585`、`TimelineInteractionTests.swift` | 点选后 `!isPlaying`；谓词改名 `isEditing`→`pausesPlayback`；81 例零回归 + 双壳 | ⏳ **待开工**（等传哲指令；一行级改动但要重命名语义 + 发一张小问卷收手感） |
-| CORE-011 | SDK | 轨道静音写路径：`ChqTimeline::SetTrackMuted` + `ChqSetTrackMutedCommand` + `cq_session_set_track_muted` + Swift 穿透 + 适配层去回滚（E1 裁定） | 池 [19] | `cq_sdk.{h,cpp}`（**高冲突，集成机独占**）、`model/chq_timeline.*`、`command/chq_command.*`、`session/chq_editor_session.*`、`tests/unit/{command,session,abi}`、`api/swift/**`、`EditorTimelineKitView.swift`、`docs/api/engine-api.md` | 未知轨 `kInvalidArgument`；可撤销可重做；`--check` 符号 103→104；全量 18 步 + 双壳；**零改仓库外 TimelineKit** | ⏳ **待编码**（关池 [19] 的"待决策"态；`enabled` 是否同批由传哲定） |
+| UIA-046 | UI | 播放中**点选片段也暂停**（D5 裁定的行为变更） | UIA-044/045 | `TrackInteraction.swift`、`EditorViewController.swift:585`、`TimelineInteractionTests.swift` | 点选后 `!isPlaying`；谓词改名 `isEditing`→`pausesPlayback`；81 例零回归 + 双壳 | ⏳ **v0.2.0 射程第 4 张**（2026-10-17 已裁定；一行级改动但要重命名语义，手感题并入导出趟那张问卷、不单发） |
+| CORE-011 | SDK | 轨道静音写路径：`ChqTimeline::SetTrackMuted` + `ChqSetTrackMutedCommand` + `cq_session_set_track_muted` + Swift 穿透 + 适配层去回滚（E1 裁定） | 池 [19] | `cq_sdk.{h,cpp}`（**高冲突，集成机独占**）、`model/chq_timeline.*`、`command/chq_command.*`、`session/chq_editor_session.*`、`tests/unit/{command,session,abi}`、`api/swift/**`、`EditorTimelineKitView.swift`、`docs/api/engine-api.md` | 未知轨 `kInvalidArgument`；可撤销可重做；`--check` 声明行 **88→89**（卡面原「103→104」是无出处估算，已订正）；全量 20 步 + 双壳（L3 随 v0.2.0 批末一趟）；**零改仓库外 TimelineKit** | ✅ **2026-10-17 编码闭环、窄检全绿**（v0.2.0 射程第 1 张；关池 [19]；同批开池 [29] UIKit 窄检覆盖缺口 + P181）。Debug **38/38**、Release **52/52**、双壳 `BUILD SUCCEEDED`/error 0；`enabled` 是否同批仍等传哲一句话。**iOS 上看不到 M 按钮**（轨道头整条不创建）＝射程边界不是漏做 |
 
 **批次**：044 → 045（同域同批交付）→ 046 ∥ 011 之外**不得并行**（011 动 `cq_sdk.h`，
 且其 Swift/UI 段与 046 同写 `EditorViewController.swift` 邻域——**046 先、011 后**，或反过来，串行）。
 **关键路径**：CORE-011 → 轨道头恢复显示 →（B4 导出不含静音轨 / B5 混音 UI）。
+**v0.2.0 射程（2026-10-17 传哲裁定「五张 + 清欠账」）**：CORE-011 → EXPORT-001 → UIA-007 → UIA-046 →
+PALA-030，另加池 **[28]**。后三张号**磁盘无卡**且本节下方/§其他处的写集要点已过期
+（`core/src/export/*` 不存在，内核真源 = `engine/core/cq/`）→ **先建卡再编码**。
+L3 全量 = 编码闭环后跑一趟、绿了随批升 `0.2.0`；真机 = UIA-007 闭环后上一次并收 D5 手感题。
+细则见 [HANDOFF-026](../handoff/HANDOFF-026-infra收尾批与编辑批开工前置.md) §二。
 **明确不做**（本节）：收编 TimelineKit（池 [20]）、iPad 常驻右栏（F3 已裁"接受现状"）、
 锁定与轨道排序的写 ABI（内核仍无，UI 仍隐藏轨道头）。

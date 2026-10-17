@@ -197,6 +197,15 @@ extension Session {
         return Status(rawValue: cq_session_set_canvas(h, width, height))
     }
 
+    /// 设置轨道静音（CORE-011；异步提交，可撤销）。轨不存在 → session 线程校验失败
+    /// （版本不推进、观察者不回调），调用方经 `tracks()` 确认终态。
+    /// 过 C ABI 用 Int32 承载 0/1，与效果启用位同口径。
+    @discardableResult
+    public func setTrackMuted(trackId: UInt64, muted: Bool) -> Status {
+        guard let h = handle else { return .invalidArgument }
+        return Status(rawValue: cq_session_set_track_muted(h, trackId, muted ? 1 : 0))
+    }
+
     // MARK: 撤销 / 重做（UIA-005）
 
     /// 撤销最近一条命令。**异步**：命令历史是 session 线程状态，

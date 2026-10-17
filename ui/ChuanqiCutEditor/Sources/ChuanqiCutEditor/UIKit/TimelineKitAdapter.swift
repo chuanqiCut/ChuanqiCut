@@ -140,7 +140,7 @@ enum TimelineKitProjectBuilder {
                 // 而不是提交后被内核拒、再弹回原位。
                 overlapPolicy: hasOverlap(clips) ? .allow : .reject,
                 acceptedClipKinds: accepted,
-                // ⚠️ 只读回显：内核无写 `muted` 的 ABI（池 [19]），见文件头说明。
+                // 内核真值回显。写路径见 CORE-011（`cq_session_set_track_muted`）。
                 isMuted: track.muted,
                 isLocked: false,
                 isHidden: false))

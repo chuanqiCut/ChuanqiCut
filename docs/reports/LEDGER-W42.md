@@ -1257,3 +1257,39 @@ CA 首次提交事务走到「有 view / 无 layer」的畸形状态 →
   卡 = [`TASK-INFRA-047`](../tasks/TASK-INFRA-047-commitmessage硬线判据.md)；建卡登记欠账 = 池 **[28]**。
 - **未跑**：真机单（本批不动真机）、**L3 全量**（2f 步只进过 `--fast`：9/0/3，首趟 101s、提交 `add59ad` 后复跑 38s；
   差的 2.7× 全在构建态 = `core-dbg` 88s→21s 且复跑 0 TU 重编。513s 那趟是 19 步，两数不可互推，等下一趟版本批）。
+
+## 补记十五 · v0.2.0 编辑批三件裁定落定（2026-10-17 尾盘，Qoder 集成机）
+
+- **形式**：把「开工前三件必须问传哲」做成三道选择题（AskUserQuestion），他三选已回收。
+- **裁定 ①（射程）= 五张 + 清欠账**：串行链 **CORE-011 → EXPORT-001 → UIA-007 → UIA-046 → PALA-030**，
+  另加池 **[28]**（建卡登记做成机器可判）。后三张号磁盘**无卡**，且 BACKLOG 行里
+  `core/src/export/*` 是过期路径 → **先建卡再编码**。
+- **裁定 ②（L3）= 编码闭环后跑一趟**：绿了随批 `VERSION` 0.1.0 → 0.2.0，数字与升号同部落；
+  中途只跑 `gate_scope.sh` 路由的窄检，开发会话不跑 L3。
+- **裁定 ③（真机）= UIA-007 导出闭环后上一次** iPhone 17 Pro；`QUESTIONNAIRE-UIA-046`
+  的手感题**并入那一张**、不单发（ADR-0034：问卷未回收不得标记完成）。
+- **落点**：[HANDOFF-026](../handoff/HANDOFF-026-infra收尾批与编辑批开工前置.md) §二（三问已失效，改成执行清单）、
+  [VERSIONS](../reports/VERSIONS.md) §一 追加一条、[TASK-BACKLOG](../tasks/TASK-BACKLOG.md) §16 加射程段
+  并把两格状态从「待开工/待编码」改成「v0.2.0 射程第 N 张」。
+  ⚠️ 顺带订正一处过期口径：CORE-011 验收格原写「全量 18 步」，现口径 **20 步**。
+
+## 补记十六 · CORE-011 轨道静音写路径编码闭环（2026-10-17 尾盘，Qoder 集成机）
+
+- **射程**：`SetTrackMuted`（model）→ `ChqSetTrackMutedCommand`（可撤销）→ `SubmitSetTrackMuted`（session）
+  → `cq_session_set_track_muted`（C ABI，`int32_t` 承载 0/1，不过 bool）→ `Timeline` / `EditorViewModel`
+  / `TrackIntentApplier` → UIKit 适配层显式 `case`（从 `default` 的回滚里移出来）。
+  **一比一拓 `SetCanvas` 那条链，零新抽象；仓库外的 TimelineKit 一个字没改**（池 [20] 资产风险未被触发）。
+- **语义**：未知 `track_id` → `kInvalidArgument`，不静默成功；失败不入 history 栈。
+  UI 侧不在 `case` 里自己 reload——交给宿主提交后的强制重灌，否则一次编辑建两遍。
+- **验证**（L1 窄检，数字全在 baselines「CORE-011 轨道静音写路径」）：Debug ctest **38/38**、
+  Release **52/52**（**例数没变**，断言塞进已有例）、bindings **26/26**、editor **81/81**、
+  双壳两端 `BUILD SUCCEEDED` 且 `error:` 0、clang-format 违规 0、`--check` 声明行 **88→89**、hygiene **5/5**。
+  **L3 未跑**（裁定：随 v0.2.0 批末一趟）。
+- **两张新账**：池 **[19] 关闭**（ABI 本体清完，留「iOS 看不到 M 按钮」＝轨道头不创建的射程边界，
+  和「轨道 `enabled` 是否同批补」等传哲一句话）；池 **[29]** 新开 + **P181** =
+  改 UIKit 文件时窄检档**判不红**（SPM 与 `check_ios_compile` 都不编那两段，唯一判红点 = 双壳）。
+- **卡面订正 2 处**：验收「符号 103→104」是建卡时的无口径估数 → 实测 88→89；回写面 `.ai/modules/bindings.md`
+  **本仓不存在**（api/swift 归口 `platform-apple.md`）—— P174 同族重犯，卡里已写死正确册名。
+- **同批踩到的一次假绿风险**：`swift test` 首跑报 `Undefined symbols: _cq_session_set_track_muted`，
+  因为 SPM `.binaryTarget` 链的是**拷进仓库的旧 XCFramework**（**P70 第 3 条**的 SPM 变体）→
+  `build_core_apple.sh --config=Release` + `api/swift/prepare.sh` 后才绿。

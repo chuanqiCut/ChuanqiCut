@@ -198,13 +198,13 @@ include 用相对路径 `../chq_session_impl.h`，pod 构建无私有 search pat
 
 | ChqTask ID | 标题 | 状态 |
 |---|---|---|
-| — | 首次落账于下一阶段批；历史状态见 TASK-BACKLOG | — |
+| CORE-011 | 轨道静音写路径（`SubmitSetTrackMuted` → `ChqSetTrackMutedCommand`） | ✅ 2026-10-17（走既有 `Submit(...)` → 自动进 CommandHistory；未知轨在 session 线程失败：版本不推进 + 观察者不回调，session 用例新增断言覆盖） |
 
 ### 测试与门禁记录（阶段批）
 
 | 日期 | 阶段/范围 | 结论（数字） |
 |---|---|---|
-| — | 未实测（本模块无独立阶段批记录） | — |
+| 2026-10-17 | CORE-011 会话层窄检 | Debug ctest **38/38**（`--skip-label=heavy`，37.74s）、Release **52/52**（227.00s，heavy 193.21s*proc / 14 例）；**L3 未跑**（随 v0.2.0 批末一趟） |
 
 ### 调研 · 决策 · 池指针
 

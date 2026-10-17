@@ -362,10 +362,19 @@ final class EditorTimelineKitView: UIView {
                                 duration: TimelineKitTime.rational(duration)))
             }
 
+        case .setTrackMuted(let trackID, let muted):
+            guard let kernelTrack = TimelineKitIDs.trackID(from: trackID) else {
+                // 组件自建轨（内核没有）→ 不写内核，回滚到内核真值。
+                resync(reason: "setTrackMuted 目标轨非内核轨道")
+                return
+            }
+            commit(.setTrackMuted(trackId: kernelTrack, muted: muted))
+
         default:
-            // 轨道排序 / 静音 / 锁定 / 轨内重排 / 增删轨 / 增删片段 / 分割 / 转场 /
-            // 关键帧 / 画布 item / 蒙版 —— 内核暂无对应命令（静音写 ABI 见池 [19]）。
+            // 轨道排序 / 锁定 / 轨内重排 / 增删轨 / 增删片段 / 分割 / 转场 /
+            // 关键帧 / 画布 item / 蒙版 —— 内核暂无对应命令。
             // 组件的自我变更必须回滚，否则 UI 显示的状态内核不认。
+            // （静音在 CORE-011 已有写 ABI，走上面那条 case，不再回滚。）
             resync(reason: "组件命令无内核对应：\(command)")
         }
     }

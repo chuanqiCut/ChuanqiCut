@@ -584,6 +584,13 @@ public final class EditorViewModel: ObservableObject {
         session.setCanvas(width: width, height: height)
     }
 
+    /// 轨道静音（CORE-011；异步提交，可撤销）。终态由观察者回灌 `refreshFromKernel`，
+    /// 这里不手改本地态 —— 手改会造出「UI 静音了、内核没静音」的假开关。
+    @discardableResult
+    public func setTrackMuted(trackId: UInt64, muted: Bool) -> Status {
+        session.setTrackMuted(trackId: trackId, muted: muted)
+    }
+
     /// 跨轨移动（多轨操作；异步提交，可撤销）：片段 id 不变，落到目标轨道 start 处。
     @discardableResult
     public func moveClipToTrack(clipId: UInt64, to trackId: UInt64,

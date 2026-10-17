@@ -193,6 +193,7 @@ ARCH-004 §3、`PALA-0xx` 任务、ADR-0009（ChqRationalTime 网格）、EXPORT
 | 日期 | 阶段/范围 | 结论（数字） |
 |---|---|---|
 | 2026-10-07 | 全量门禁（Platform 在编） | PASS=9 / FAIL=0 / SKIP=0 |
+| 2026-10-17 | CORE-011 门面 + 预置库（窄检档） | bindings `swift test` **26/26** 3.94s；`build_core_apple.sh --config=Release` rc=0 → `api/swift/prepare.sh` rc=0。⚠️ `binaryTarget` 的 XCFramework 是 **复制进来的构建产物**：ABI 加符号后必须先重编 Apple 切片再 prepare，否则 Swift 侧红在 `Undefined symbols: _cq_session_set_track_muted`（本机第一次跑就撞上了）。双壳 **BUILD SUCCEEDED**（error 0，warning 14/5） |
 
 ### 调研 · 决策 · 池指针
 

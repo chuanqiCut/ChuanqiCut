@@ -316,6 +316,34 @@ void TestBackpressure() {
     session.Shutdown();
 }
 
+// ---- 11. 轨道静音写路径（CORE-011 / 问卷 E1 裁定）----
+void TestSubmitTrackMuted() {
+    std::printf("[test] 轨道静音写路径\n");
+    cq::ChqEditorSession session;
+    session.Start();
+
+    Check(session.SubmitAddTrack("add-track", cq::ChqTrackKind::kVideo).IsOk(), "提交 add-track");
+    Check(WaitVersion(session, 1), "add-track 后版本到 1");
+    const uint64_t track_id = session.CurrentTimeline()->Tracks().front().id;
+
+    Check(session.SubmitSetTrackMuted("set-track-muted", track_id, true).IsOk(), "静音提交已入队");
+    Check(WaitVersion(session, 2), "静音生效后版本到 2");
+    Check(session.CurrentTimeline()->FindTrack(track_id)->muted, "内核快照读得到静音");
+
+    Check(session.SubmitUndo("undo").IsOk(), "撤销提交已入队");
+    SleepMs(50);
+    Check(!session.CurrentTimeline()->FindTrack(track_id)->muted, "撤销经命令历史回旧值");
+
+    const auto v_before = session.CurrentSnapshot().version;
+    Check(session.SubmitSetTrackMuted("set-track-muted", 999999, true).IsOk(),
+          "未知轨也先入队（Ok = 已入队，不等于校验通过）");
+    SleepMs(50);
+    Check(session.CurrentSnapshot().version == v_before, "未知轨失败不推进版本");
+    Check(!session.CurrentTimeline()->FindTrack(track_id)->muted, "失败变更没动模型");
+
+    session.Shutdown();
+}
+
 }  // namespace
 
 int main() {
@@ -329,6 +357,7 @@ int main() {
     TestNoState();
     TestObserver();
     TestBackpressure();
+    TestSubmitTrackMuted();
 
     std::printf("\n%s: %d checks, %d failures\n", g_failures == 0 ? "PASSED" : "FAILED",
                 g_checks, g_failures);

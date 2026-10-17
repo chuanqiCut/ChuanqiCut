@@ -237,6 +237,25 @@ private:
 };
 
 // ---------------------------------------------------------------------------
+// 编辑类：轨道静音（CORE-011 / 问卷 E1 裁定）。只存新旧布尔，与
+// ChqSetCanvasCommand 同形；Do 先捕获 old 再写，未知 track_id 直接失败。
+// ---------------------------------------------------------------------------
+class ChqSetTrackMutedCommand : public ChqICommand {
+public:
+    ChqSetTrackMutedCommand(uint64_t track_id, bool muted)
+        : track_id_(track_id), new_muted_(muted) {}
+
+    ChqStatus Do(ChqTimeline& model) override;
+    ChqStatus Undo(ChqTimeline& model) override;
+    const char* Name() const override { return "set-track-muted"; }
+
+private:
+    uint64_t track_id_;
+    bool new_muted_;
+    bool old_muted_ = false;  // 首次 Do 时捕获
+};
+
+// ---------------------------------------------------------------------------
 // 编辑类：跨轨移动（UIA-040 多轨操作）。id 不变，只存起止（轨 + 起点）增量。
 // ---------------------------------------------------------------------------
 class ChqMoveClipToTrackCommand : public ChqICommand {

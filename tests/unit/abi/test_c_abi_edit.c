@@ -329,6 +329,23 @@ int main(void) {
               clips[1].track_id == tracks[0].track_id,
           "undo 跨轨回原轨原位");
 
+    /* ---- CORE-011：轨道静音写路径（可撤销 + 未知轨失败）---- */
+    Check(cq_session_set_track_muted(s2, tracks[0].track_id, 1) == 0, "静音入队");
+    DrainAfter(s2, 1);
+    n_tracks = -1;
+    Check(cq_session_query_tracks(s2, tracks, 4, &n_tracks) == 0 && tracks[0].muted == 1,
+          "查询回读 muted=1");
+    Check(cq_session_undo(s2) == 0, "undo 静音入队");
+    DrainAfter(s2, 1);
+    n_tracks = -1;
+    Check(cq_session_query_tracks(s2, tracks, 4, &n_tracks) == 0 && tracks[0].muted == 0,
+          "undo 回 muted=0（进撤销栈，不是绕过历史的裸写）");
+    Check(cq_session_set_track_muted(s2, 999999, 1) == 0, "未知轨也先入队（Ok≠校验通过）");
+    DrainAfter(s2, 0);
+    n_tracks = -1;
+    Check(cq_session_query_tracks(s2, tracks, 4, &n_tracks) == 0 && tracks[0].muted == 0,
+          "未知轨失败没动模型");
+
     /* ---- 新 ABI 参数校验（同步，调用侧）---- */
     Check(cq_session_split_clip(s2, a_id, 100, 0) == 7000, "split timescale=0 → 同步拒绝");
     Check(cq_session_trim_clip_in(s2, a_id, 100, 0) == 7000, "trim_in timescale=0 → 同步拒绝");
@@ -338,6 +355,7 @@ int main(void) {
     Check(cq_session_remove_track(NULL, 1) == 7000, "NULL session remove_track → 7000");
     Check(cq_session_move_clip_to_track(NULL, 1, 1, 0, TS) == 7000, "NULL session 跨轨 → 7000");
     Check(cq_session_set_canvas(NULL, 100, 100) == 7000, "NULL session set_canvas → 7000");
+    Check(cq_session_set_track_muted(NULL, 1, 1) == 7000, "NULL session set_track_muted → 7000");
     Check(cq_session_get_canvas(NULL, &cw, &ch) == 7000, "NULL session get_canvas → 7000");
 
     cq_session_destroy(s2);

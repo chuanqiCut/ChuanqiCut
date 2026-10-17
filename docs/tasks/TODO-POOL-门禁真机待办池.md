@@ -549,7 +549,7 @@ SPM 临时产物一律 `swift test --disable-sandbox --scratch-path "$ROOT/build
   ⚠️ 覆盖范围=**真机 device 切片 + macOS**，iOS **模拟器**仍不在门禁内（池 [16] 的 MetalFX 模拟器红
   本步不接，那条债归模拟器专项）。
 
-### [19] 内核缺「设置轨道静音」ABI —— 轨道头原声开关只能显示不能点（⏳ 待决策）
+### [19] 内核缺「设置轨道静音」ABI —— 轨道头原声开关只能显示不能点（✅ 2026-10-17 关闭，CORE-011 落地）
 
 - 来源：集成机 / 2026-10-13 UI 线 UIA-041 U1（`f?` 本批），由轨道头 S2 落地时捞出
 - 现象：`CQTrackInfo.muted` **只能读不能写**。
@@ -564,12 +564,21 @@ SPM 临时产物一律 `swift test --disable-sandbox --scratch-path "$ROOT/build
 - 连带影响：音频面板（U2/UIA-042）、混音 UI（B5）、**导出时的静音轨处理**（B4 可见出口
   若要支持「导出不含静音轨」必须先有这个状态的可写性）。
 - 待办：
-  [ ] 内核侧决策：Command（`ChqCommand::SetTrackMuted`）+ SDK  thin wrapper
+  [x] 内核侧决策：Command（`ChqCommand::SetTrackMuted`）+ SDK  thin wrapper
       `cq_session_set_track_muted(session, track_id, muted)` —— 需进 CommandHistory（可撤销）
       ，.edit approval 前先确认 B4/B5 的导出/混音是否依赖它（若要，优先级上调）
-  [ ] 绑定层 Swift：`EditorViewModel.setTrackMuted(trackId:muted:)` 穿透
+      **已落（2026-10-17 CORE-011）**：一比一拓 `SetCanvas` 那条链（model → command → session → C ABI），
+      可撤销可重做已单测；B4（导出不含静音轨）本就排在 v0.2.0 射程第 2 张，优先级不降。
+  [x] 绑定层 Swift：`EditorViewModel.setTrackMuted(trackId:muted:)` 穿透
+      **已落（2026-10-17 CORE-011）**：`Timeline.setTrackMuted` → `EditorViewModel` → `TrackIntentApplier`
+      → UIKit 适配层显式 `case`（不再回滚）。
   [ ] UI：把 `buildTrackHeaders` 里的 disabled 态换成真开关（届时一行改回）
+      **本条落点已作废**（见下方裁定订正 ①）：轨道头今天整条不创建（`showsTrackHeader: false`），
+      所以 **iOS 上仍看不到 M 按钮** —— 内核能写 ≠ 按钮可见。恢复显示归
+      BACKLOG §16 关键路径的下一环「轨道头恢复显示」，前提是 L/锁定与排序也有写 ABI（仍无）。
   [ ] 同期评估 `enabled`（单开关）是否也要写 —— 与其他268效果开关的关系
+      **本条按裁定订正 ③ 已拆清**：轨道 `ChqTrack::enabled` 与效果 `ChqEffectBinding::enabled` 不是一个字段。
+      轨道 `enabled` 要不要补**仍等传哲一句话**（卡面写明「一比一拓、成本极低」）；不阻塞本条目关闭。
 - 验收回填：本池条目 + LEDGER-W42 + RESEARCH-017 §2 S2 行
 - **2026-10-17 裁定（合并版问卷 E1，传哲：「先补内核 muted ABI」）**：
   待决策态**已解**，本条转 **TASK-CORE-011** 编码（不关条目 —— ABI 还没落地就还是欠账）。
@@ -584,6 +593,11 @@ SPM 临时产物一律 `swift test --disable-sandbox --scratch-path "$ROOT/build
      `ChqTrack::enabled` 与效果的 `ChqEffectBinding::enabled` 不是一个字段
      （mixer 在 `chq_preview_mixer.cpp:446` 同时消费 `!enabled || muted`）。
      轨道 `enabled` 要不要同批补，归传哲一句话，卡面已写明"一比一拓、成本极低"。
+- **2026-10-17 关闭（CORE-011 编码 + 窄检闭环）**：ABI 落地 = 本条目的欠账本体清掉。
+  数字与验证口径见 baselines「CORE-011 轨道静音写路径」（Debug 38/38、Release 52/52、双壳 rc=0）；
+  L3 全量随 v0.2.0 批末一趟（传哲裁定），不在本条留待验。
+  ⚠️ **同批开池 [29]**：本卡改了 UIKit 文件而窄检档**判不红**（SPM 与 `check_ios_compile` 都不编那两段），
+  路由缺一条 `check_apple_shells.sh` —— 这是本条目能被"绿色"混过去的路径，记在池里而不是靠人记得补跑。
 
 ### [20] TimelineKit 在仓库外且无版本控制 —— iOS 轨道区依赖一个不可复现的本地路径（⏳ 待决策 / 资产风险）
 
@@ -814,3 +828,16 @@ SPM 临时产物一律 `swift test --disable-sandbox --scratch-path "$ROOT/build
   "磁盘卡集合 ⊆ 登记表集合"，否则这张表会一直漂 —— 它已经漂了两代）。
 - 关联：`docs/README.md` §五 导航行已同步标注 46 张欠账；P179 是同一族的教训
   （**只写流程不落判据 = 流程不会被执行**）。
+
+### [29] 改 UIKit 文件时窄检档**判不红**，双壳是唯一覆盖点（开放 · 2026-10-17 发现，集成机）
+
+- 怎么发现的：CORE-011 在 `ui/ChuanqiCutEditor/Sources/ChuanqiCutEditor/UIKit/EditorTimelineKitView.swift`
+  新增一条 `case`。按 `gate_scope.sh` 路由的六条窄检跑完（Debug 38/38、Release 52/52、
+  bindings 26、editor 81、`check_ios_compile.sh`）**全绿**，但没有一步真编过这个文件：
+  R4 给的 `swift test` 在 macOS 上整段 UIKit 被 `#if os(iOS)` 跳过（P129），
+  R3 给的 `check_ios_compile.sh` 只构建 `cq_core` + `cq_platform_apple`（C++ 静态库，日志自陈）。
+- 覆盖点在门禁里 = `apple-shells`（`tools/ci/check_apple_shells.sh`，用 App 自己的 workspace 真编），
+  但 `--fast` 档把它跳了，`gate_scope.sh` 也不吐它 → ** UIKit 的编译错误在这一档是假阴**。
+- 要做的：`gate_scope.sh` 的 R4 命中 `ui/*/Sources/**/UIKit/**` 或 `apps/**` 时补吐
+  `tools/ci/check_apple_shells.sh`（并说明为什么不是"保守地全跑"）；同步记坑 **P181**。
+- 归口：`tools/ci/gate_scope.sh`（基建，模块册 = `.ai/modules/core.md`）；不塞进 CORE-011 的写集。

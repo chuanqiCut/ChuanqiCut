@@ -86,6 +86,10 @@ public:
     ChqStatus RemoveTrack(uint64_t track_id);
     const ChqTrack* FindTrack(uint64_t track_id) const;
     const std::vector<ChqTrack>& Tracks() const { return tracks_; }
+    // 轨道静音写路径（CORE-011 / 问卷 E1 裁定）。轨不存在 → kInvalidArgument，
+    // 不静默成功。消费侧本来就有（`chq_preview_mixer.cpp` 与
+    // `chq_editor_model_state.cpp` 都读 `track.muted`），缺的只是这里。
+    ChqStatus SetTrackMuted(uint64_t track_id, bool muted);
 
     // 片段
     ChqStatus InsertClip(uint64_t track_id, const ChqClip& clip, uint64_t& out_id);

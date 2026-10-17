@@ -202,6 +202,14 @@ ChqStatus ChqEditorSession::SubmitSetCanvas(const char* name, int32_t width, int
     });
 }
 
+ChqStatus ChqEditorSession::SubmitSetTrackMuted(const char* name, uint64_t track_id, bool muted) {
+    ChqEditorModelState* model = BuiltinModel();
+    if (model == nullptr) return ChqStatus{ChqStatusCode::kInternal};
+    return Submit(name, [model, track_id, muted]() -> ChqStatus {
+        return model->Execute(std::make_unique<ChqSetTrackMutedCommand>(track_id, muted));
+    });
+}
+
 ChqStatus ChqEditorSession::SubmitAddClipEffect(const char* name, uint64_t clip_id,
                                                 const ChqEffectBinding& effect) {
     ChqEditorModelState* model = BuiltinModel();
